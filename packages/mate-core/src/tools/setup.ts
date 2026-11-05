@@ -43,6 +43,8 @@ import { createUvPlugin } from "./setup/package-managers/uv";
 import type { PackageManagerSetupDeps } from "./setup/package-managers/uv";
 import { applyRequiredSelectionsToConfig } from "./setup/policy";
 import { invalidateInstallState } from "../lib/install";
+import type { StartupProgressController } from "../lib/components/startup-progress";
+import { emitWarning } from "../lib/live-progress";
 import {
   describeUnknownAudience,
   installPluginDeclarations,
@@ -68,10 +70,20 @@ export interface SetupInput {
   git?: "auto" | "default";
 }
 
+/** Reports setup's phases; `mate companion setup` passes its progress screen. */
+export type SetupProgress = Pick<StartupProgressController, "step">;
+
+const silentProgress: SetupProgress = {
+  async step(_id, _label, fn) {
+    return fn();
+  },
+};
+
 export interface SetupDependencies {
   cwd?: string;
   configStore?: ConfigStore;
   globalConfigStore?: GlobalConfigStore;
+  progress?: SetupProgress;
 }
 
 export interface CompanionSyncOptions {
@@ -299,33 +311,40 @@ export async function executeSetup(
   await configStore.save(config);
 
   const companionPath = path.resolve(cwd);
+  const progress = deps.progress ?? silentProgress;
   // Declared plugin packages install and hydrate before the setup plan runs,
   // so a fresh clone reaches a fully applied state from one setup run
   // (install → load → plan).
   const declarations = installPluginDeclarations(config);
   if (declarations.length) {
-    for (const result of await installDeclaredPlugins(companionPath, declarations)) {
-      if (result.status === "failed") {
-        process.stderr.write(
-          `${FRAMEWORK_NAME}: plugin "${result.package}" failed to install: ${result.error ?? "unknown error"}\n`,
-        );
+    await progress.step("plugins", "Installing plugins", async () => {
+      for (const result of await installDeclaredPlugins(companionPath, declarations)) {
+        if (result.status === "failed") {
+          emitWarning(
+            `${FRAMEWORK_NAME}: plugin "${result.package}" failed to install: ${result.error ?? "unknown error"}`,
+          );
+        }
       }
+      await hydrateDynamicPlugins({ companionPath });
+    });
+  }
+  await progress.step("capabilities", "Applying capabilities", () =>
+    applySetupCompatibilities(companionPath, config, "setup"),
+  );
+  await progress.step("register", "Registering companion", async () => {
+    const untracked = await untrackManagedSkillCopies(companionPath, config);
+    if (untracked.length > 0) {
+      emitWarning(
+        `${FRAMEWORK_NAME}: ${untracked.length} Mate skill copies are staged as deletions; the files stay on disk. Commit them with .gitignore.`,
+      );
     }
-    await hydrateDynamicPlugins({ companionPath });
-  }
-  await applySetupCompatibilities(companionPath, config, "setup");
-  const untracked = await untrackManagedSkillCopies(companionPath, config);
-  if (untracked.length > 0) {
-    process.stdout.write(
-      `${FRAMEWORK_NAME}: ${untracked.length} Mate skill copies are staged as deletions; the files stay on disk. Commit them with .gitignore.\n`,
-    );
-  }
-  await invalidateInstallState({
-    kind: config.type === "hub" ? "hub" : "companion",
-    companionPath,
-  });
+    await invalidateInstallState({
+      kind: config.type === "hub" ? "hub" : "companion",
+      companionPath,
+    });
 
-  await globalConfigStore.register(companionPath);
+    await globalConfigStore.register(companionPath);
+  });
 
   // Setup no longer fans out to linked repos: capabilities that touch a working repo
   // (companion files on launch, the tokensave/graphify graph via `mate cap index`)

@@ -9,6 +9,8 @@ import {
   isNewer,
 } from "../../lib/update-checker";
 import { confirmPrompt } from "../../lib/components/confirm-prompt";
+import { createStartupProgress } from "../../lib/components/startup-progress";
+import { releaseTerminal } from "../../lib/live-progress";
 import { resolvePackageRoot } from "../../lib/package-root";
 
 type InstallResult = ReturnType<typeof installPublicPackageSync>;
@@ -34,6 +36,7 @@ export const updateCommandDeps = {
   getCurrentVersion,
   isNewer,
   confirmPrompt,
+  createProgress: createStartupProgress,
   isNpmManagedInstall: () => {
     const packageName = getUpdateConfig().packageName;
     const packageRoot = resolvePackageRoot(process.argv[1], packageName);
@@ -76,18 +79,35 @@ export const updateCommandDeps = {
  * unavailable, or the current Mate install is not npm-managed.
  */
 export async function runUpdateCommand(argv: string[]): Promise<void> {
+  const progress = updateCommandDeps.createProgress("Checking for updates");
+  try {
+    await runUpdate(argv, progress);
+  } finally {
+    progress.stop();
+  }
+}
+
+async function runUpdate(
+  argv: string[],
+  progress: ReturnType<typeof createStartupProgress>,
+): Promise<void> {
   const checkOnly = argv.includes("--check");
   const skipConfirm = argv.includes("--yes");
   const current = updateCommandDeps.getCurrentVersion();
 
   let latest: string;
   try {
-    latest = await updateCommandDeps.fetchLatestVersion();
+    latest = await progress.step("registry", "Checking registry", () =>
+      updateCommandDeps.fetchLatestVersion(),
+    );
   } catch {
+    progress.stop();
     process.stderr.write(`${FRAMEWORK_NAME}: could not reach registry to check for updates\n`);
     process.exitCode = 1;
     return;
   }
+  // The version lines and the confirm prompt below own the terminal.
+  releaseTerminal();
 
   if (checkOnly) {
     if (updateCommandDeps.isNewer(latest, current)) {
@@ -140,14 +160,20 @@ export async function runUpdateCommand(argv: string[]): Promise<void> {
     return;
   }
 
+  // npm writes straight to the terminal: a labelled hand-over, no spinner.
+  progress.handOver("upgrade", `Upgrading to ${latest}`);
   const result = updateCommandDeps.installLatest(latest);
   if (result.status !== 0 || result.error) {
+    progress.fail("upgrade");
     process.stderr.write(
       `${FRAMEWORK_NAME}: upgrade command exited with status ${result.status ?? 1}\n`,
     );
     process.exitCode = 1;
     return;
   }
+  progress.succeed("upgrade");
+  // Post-install renders its own screen.
+  progress.stop();
 
   await updateCommandDeps.saveUpdateState(latest);
 

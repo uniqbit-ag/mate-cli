@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
+import { createStartupProgress } from "../../../lib/components/startup-progress";
 import type { CapabilityConfig } from "../../../lib/orchestrator/types";
 import { runIndexCapCommand, type SyncCapDeps } from "./index-cmd";
 
@@ -20,9 +21,19 @@ function makeDeps(options: {
   failGraphify?: (args: string[]) => boolean;
   failTokensave?: (args: string[]) => boolean;
   onTokensave?: (args: string[]) => void;
-}): { deps: SyncCapDeps; invocations: Invocation[] } {
+}): { deps: SyncCapDeps; invocations: Invocation[]; lines: string[] } {
   const invocations: Invocation[] = [];
+  /** Progress lines and tool runs, in the order they happened. */
+  const lines: string[] = [];
+  const stdout = {
+    isTTY: false,
+    write(chunk: string) {
+      lines.push(chunk.replace(/\n$/, ""));
+      return true;
+    },
+  } as unknown as NodeJS.WriteStream;
   const deps: SyncCapDeps = {
+    createProgress: (title) => createStartupProgress(title, { stdout }),
     ensureUnambiguousCompanion: options.ensureUnambiguousCompanion ?? (async () => true),
     loadCapabilities: async () => options.capabilities,
     isTokensaveInitialized: async () => options.tokensaveInitialized ?? true,
@@ -34,15 +45,17 @@ function makeDeps(options: {
     },
     runGraphify: async (args) => {
       invocations.push({ runner: "graphify", args });
+      lines.push(`graphify ${args.join(" ")}`);
       if (options.failGraphify?.(args)) process.exitCode = 1;
     },
     runTokensave: async (args) => {
       invocations.push({ runner: "tokensave", args });
+      lines.push(`tokensave ${args.join(" ")}`);
       options.onTokensave?.(args);
       if (options.failTokensave?.(args)) process.exitCode = 1;
     },
   };
-  return { deps, invocations };
+  return { deps, invocations, lines };
 }
 
 const cap = (name: string): CapabilityConfig => ({ name });
@@ -57,6 +70,38 @@ beforeEach(() => {
 // into the process exit code when this file runs last.
 afterEach(() => {
   process.exitCode = 0;
+});
+
+describe("runIndexCapCommand progress", () => {
+  test("labels a tokensave sync before and after the tool output", async () => {
+    const { deps, lines } = makeDeps({ capabilities: [cap("tokensave")] });
+
+    await runIndexCapCommand(["--tokensave"], deps);
+
+    expect(lines).toEqual([
+      "mate · Indexing capabilities",
+      "  Syncing tokensave",
+      "tokensave sync",
+      "  ✓ Syncing tokensave",
+    ]);
+  });
+
+  test("ends a failed graphify run with ✗", async () => {
+    const { deps, lines } = makeDeps({ capabilities: [cap("graphify")], failGraphify: () => true });
+
+    await runIndexCapCommand(["--graphify"], deps);
+
+    expect(lines.at(-1)).toBe("  ✗ Syncing graphify failed");
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("prints nothing when no step runs", async () => {
+    const { deps, lines } = makeDeps({ capabilities: [] });
+
+    await runIndexCapCommand([], deps);
+
+    expect(lines).toEqual([]);
+  });
 });
 
 describe("runIndexCapCommand", () => {

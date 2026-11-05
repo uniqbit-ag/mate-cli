@@ -63,6 +63,11 @@ function hexToRgb(hex: string): string {
 const NOTE_ON = `\x1b[38;2;${hexToRgb(BRAND_COLORS.mateGreen.hex)}m`;
 const NOTE_OFF = "\x1b[39m";
 
+/** `text` in the brand accent; callers check {@link colorEnabled} first. */
+export function accentText(text: string): string {
+  return `${NOTE_ON}${text}${NOTE_OFF}`;
+}
+
 /** Renders the logo as a string ready to write to a stream, rows separated by newlines. */
 export function renderLogo(options: LogoOptions): string {
   const choice = chooseLogo(options);

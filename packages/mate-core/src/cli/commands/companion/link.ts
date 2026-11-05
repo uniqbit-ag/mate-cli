@@ -20,6 +20,7 @@ import { runSetupFlowAtPath } from "../setup";
 import { runInstallCommand } from "../install";
 import type { CompanionSource, LinkedRepository } from "../../../lib/orchestrator/types";
 import { invalidateInstallState } from "../../../lib/install";
+import { createStartupProgress } from "../../../lib/components/startup-progress";
 import { companionGit, describeGitFailure, type GitResult } from "../../../runtime/companion-git";
 
 interface CompanionLinkCommandDeps {
@@ -42,6 +43,7 @@ interface CompanionLinkCommandDeps {
   installCompanion?: (companionPath: string) => Promise<boolean | void>;
   isDirectory?: (candidatePath: string) => Promise<boolean>;
   findDescendantRepoLocalRegistries?: typeof findDescendantRepoLocalRegistries;
+  createProgress?: typeof createStartupProgress;
 }
 
 /** All companions surfaced by the "existing companion" picker live under this directory. */
@@ -86,6 +88,7 @@ export async function runCompanionLinkCommandWithDeps(
       companionGit(path.dirname(destination), { prompt: "if-terminal" }).clone(url, destination));
   const mkdir = deps.mkdir ?? fs.mkdir;
   const stat = deps.stat ?? fs.stat;
+  const createProgress = deps.createProgress ?? createStartupProgress;
   const listCompanions =
     deps.listCompanions ??
     (() => {
@@ -151,7 +154,17 @@ export async function runCompanionLinkCommandWithDeps(
     const existingTarget = await stat(companionPath).catch(() => null);
     if (!existingTarget?.isDirectory()) {
       await mkdir(companionsDir, { recursive: true });
-      const clone = await cloneCompanion(gitUrl, companionPath);
+      // Git may ask for credentials: a labelled hand-over, never a spinner.
+      const progress = createProgress("Linking companion");
+      let clone: GitResult;
+      try {
+        progress.handOver("clone", "Cloning companion");
+        clone = await cloneCompanion(gitUrl, companionPath);
+        if (clone.status === 0) progress.succeed("clone");
+        else progress.fail("clone");
+      } finally {
+        progress.stop();
+      }
       if (clone.status !== 0) {
         const detail = describeGitFailure(clone);
         exitWithError(

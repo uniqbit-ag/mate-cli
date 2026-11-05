@@ -10,6 +10,20 @@ import {
 import type { LinkedRepository } from "../../../lib/orchestrator/types";
 import { FRAMEWORK_NAME } from "../../../framework";
 import * as editor from "../../../lib/orchestrator/editor";
+import { createStartupProgress } from "../../../lib/components/startup-progress";
+
+/** Plain progress whose lines the test reads back. */
+function plainProgress() {
+  const lines: string[] = [];
+  const stdout = {
+    isTTY: false,
+    write(chunk: string) {
+      lines.push(chunk);
+      return true;
+    },
+  } as unknown as NodeJS.WriteStream;
+  return { lines, create: (title: string) => createStartupProgress(title, { stdout }) };
+}
 
 function withProcessExitStub<T>(fn: () => Promise<T>): Promise<{ error: unknown }> {
   const originalExit = process.exit;
@@ -131,6 +145,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
     const runSetup = mock(async () => {});
     const installCompanion = mock(async () => {});
     const clone = mockClone({ status: 0 });
+    const progress = plainProgress();
 
     try {
       await runCompanionLinkCommandWithDeps([], {
@@ -150,6 +165,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
         installCompanion,
         registerRepository,
         registerCompanion: async () => {},
+        createProgress: progress.create,
       });
     } finally {
       Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
@@ -160,6 +176,11 @@ describe("runCompanionLinkCommandWithDeps", () => {
       path.join(process.env.HOME!, ".mate", "companions"),
       "test-companion",
     );
+    expect(progress.lines).toEqual([
+      "mate · Linking companion\n",
+      "  Cloning companion\n",
+      "  ✓ Cloning companion\n",
+    ]);
     expect(clone).toHaveBeenCalledWith(
       "https://github.com/user/test-companion.git",
       expectedCompanionPath,
@@ -276,6 +297,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
   });
 
   test("reports a failed clone and registers nothing", async () => {
+    const progress = plainProgress();
     const originalIsTTY = process.stdin.isTTY;
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
     const originalStderrWrite = process.stderr.write;
@@ -301,6 +323,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
           cloneCompanion: mockClone({ status: 128, stderr: "fatal: repository not found" }),
           registerRepository,
           registerCompanion: async () => {},
+          createProgress: progress.create,
         }),
       );
       expect(String(error)).toContain("EXIT:1");
@@ -309,6 +332,11 @@ describe("runCompanionLinkCommandWithDeps", () => {
       process.stderr.write = originalStderrWrite;
     }
 
+    expect(progress.lines).toEqual([
+      "mate · Linking companion\n",
+      "  Cloning companion\n",
+      "  ✗ Cloning companion failed\n",
+    ]);
     expect(stderr.join("")).toContain("failed to clone companion repository");
     expect(stderr.join("")).toContain("repository not found");
     expect(registerRepository).not.toHaveBeenCalled();

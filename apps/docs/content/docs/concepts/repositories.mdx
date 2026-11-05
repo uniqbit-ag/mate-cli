@@ -132,4 +132,13 @@ alone. An editor window that still has the old file open reports it as
 missing after the rename: close it and run `mate companion open` again.
 
 `mate companion tui` opens a shell rooted in the companion and exports
-`MATE_ARTIFACT_PATH` for the shell session.
+`MATE_ARTIFACT_PATH` for the shell session. It first prints a short header:
+
+```text
+mate v1.0.0
+  repo  /path/to/repo
+  mate  /path/to/companion
+```
+
+Paths are printed in full and wrap when they are wider than the terminal.
+`mate` is coloured only at a terminal and when `NO_COLOR` is not set.
