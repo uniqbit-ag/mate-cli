@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { parse as parseYaml } from "yaml";
 
 import { FRAMEWORK_NAME } from "../framework";
@@ -31,6 +31,10 @@ const tempRoots: string[] = [];
 // the rtk/tokensave teardowns shell out to whatever binary is on PATH
 // (`rtk init -g --uninstall` edits the developer's real global agent config).
 // Shadow both binaries for the whole file so no test can reach the real ones.
+// Restored in afterAll: Bun runs every test file in one process, so a leaked
+// stub `tokensave` breaks later files that start a real `tokensave serve`.
+const pathBeforeGuard = process.env.PATH;
+const prefetchBeforeFile = process.env.MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH;
 const guardBinDir = mkdtempSync(path.join(os.tmpdir(), "mate-setup-guard-bin-"));
 mkdirSync(guardBinDir, { recursive: true });
 for (const name of ["rtk", "tokensave"]) {
@@ -108,6 +112,13 @@ afterEach(async () => {
   process.env.PATH = originalPath;
   Object.assign(openSpecCliDeps, originalOpenSpecCliDeps);
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+});
+
+afterAll(async () => {
+  process.env.PATH = pathBeforeGuard;
+  if (prefetchBeforeFile === undefined) delete process.env.MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH;
+  else process.env.MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH = prefetchBeforeFile;
+  await fs.rm(guardBinDir, { recursive: true, force: true });
 });
 
 describe("executeSetup", () => {

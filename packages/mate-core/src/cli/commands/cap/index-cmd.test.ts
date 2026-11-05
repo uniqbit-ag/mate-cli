@@ -41,7 +41,7 @@ function makeDeps(options: {
     createProgress: (title) => createStartupProgress(title, { stdout }),
     ensureUnambiguousCompanion: options.ensureUnambiguousCompanion ?? (async () => true),
     loadCapabilities: async () => options.capabilities,
-    resolveRepositoryPath: async () => undefined,
+    resolveRepositoryPath: async () => "/acme",
     isTokensaveInitialized: async () => options.tokensaveInitialized ?? true,
     ensureTokensaveStoreExcluded: async () => {
       await options.onEnsureTokensaveStoreExcluded?.();
@@ -127,6 +127,24 @@ describe("runIndexCapCommand", () => {
 
     expect(invocations).toEqual([{ runner: "graphify", args: [".", "--update", "--code-only"] }]);
     expect(process.exitCode).toBe(0);
+  });
+
+  test("fails the tokensave step without a resolved working repository", async () => {
+    const { deps, invocations } = makeDeps({
+      capabilities: [cap("tokensave")],
+      tokensaveInitialized: false,
+    });
+    let excluded = false;
+    deps.resolveRepositoryPath = async () => undefined;
+    deps.ensureTokensaveStoreExcluded = async () => {
+      excluded = true;
+    };
+
+    await runIndexCapCommand(["--tokensave"], deps);
+
+    expect(invocations).toEqual([]);
+    expect(excluded).toBe(false);
+    expect(process.exitCode).toBe(1);
   });
 
   test("runs tokensave sync only when --tokensave is passed", async () => {

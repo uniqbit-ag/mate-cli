@@ -4,7 +4,12 @@ import os from "node:os";
 import path from "node:path";
 
 import { unlinkedRecord, upsertDelivery, writeDeliveryRecord, type DeliveryRecord } from "./record";
-import { resolveDeliveryBranch, worktreeAddArgs, type HasRef } from "./resolve-branch";
+import {
+  newBranchBase,
+  resolveDeliveryBranch,
+  worktreeAddArgs,
+  type HasRef,
+} from "./resolve-branch";
 
 const WEB = "acme/web";
 let companion: string;
@@ -216,5 +221,25 @@ describe("worktreeAddArgs", () => {
       "/wt",
       "origin/HEAD",
     ]);
+  });
+});
+
+describe("newBranchBase", () => {
+  const refs =
+    (...names: string[]) =>
+    async (ref: string) =>
+      names.some((name) => ref === `refs/remotes/origin/${name}`);
+
+  test("origin/HEAD, else origin/main or origin/master, else HEAD", async () => {
+    expect(await newBranchBase(refs("HEAD", "main"))).toBe("origin/HEAD");
+    expect(await newBranchBase(refs("main"))).toBe("origin/main");
+    expect(await newBranchBase(refs("master"))).toBe("origin/master");
+    expect(await newBranchBase(refs())).toBe("HEAD");
+  });
+
+  test("a new branch starts from the given base", () => {
+    expect(
+      worktreeAddArgs({ branch: "workset/acme", source: "new" }, "/wt", "origin/main"),
+    ).toEqual(["worktree", "add", "--no-track", "-b", "workset/acme", "/wt", "origin/main"]);
   });
 });

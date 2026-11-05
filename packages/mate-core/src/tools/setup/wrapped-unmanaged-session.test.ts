@@ -240,6 +240,8 @@ describe("a wrapped Working Repository with an empty Mate environment", () => {
     spawnSync("git", ["worktree", "add", "-q", "-b", "fix", worktree], { cwd: repoPath });
     await fs.mkdir(path.join(worktree, ".tokensave"), { recursive: true });
     await fs.writeFile(path.join(worktree, ".tokensave", "tokensave.db"), "");
+    // A fresh marker: routing skips its `tokensave sync`.
+    await fs.writeFile(path.join(worktree, ".tokensave", "mate-route-synced"), "");
     const payload = (cwd: string) => ({
       hook_event_name: "PreToolUse",
       tool_name: "mcp__tokensave__tokensave_search",

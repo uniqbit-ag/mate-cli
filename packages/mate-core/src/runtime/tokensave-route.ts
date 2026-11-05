@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -12,16 +13,114 @@ import { checkoutRootOf, isSameClone, readGitLayout } from "./git-layout";
 /** The tokensave store's database, relative to a checkout root. */
 export const TOKENSAVE_DB = path.join(".tokensave", "tokensave.db");
 
+/** Touched when routing last synced a worktree's index; its mtime throttles the next sync. */
+export const ROUTE_SYNC_MARKER = path.join(".tokensave", "mate-route-synced");
+
+/** At most one routed sync per worktree in this window. */
+const SYNC_INTERVAL_MS = 30_000;
+const SYNC_TIMEOUT_MS = 10_000;
+
+/**
+ * Graph query tools that take `graph_root`. Edit, git, memory, branch and
+ * config tools do not: they keep acting on the served checkout.
+ */
+const GRAPH_ROOT_TOOLS = new Set([
+  "annotations",
+  "ambiguous_calls",
+  "body",
+  "by_qualified_name",
+  "call_chain",
+  "callees",
+  "callers",
+  "callers_for",
+  "circular",
+  "complexity",
+  "constructors",
+  "context",
+  "coupling",
+  "dead_code",
+  "dependency_depth",
+  "derives",
+  "distribution",
+  "doc",
+  "doc_coverage",
+  "dsm",
+  "entities",
+  "field_sites",
+  "file_dependents",
+  "files",
+  "find_exact_symbol",
+  "gini",
+  "god_class",
+  "health",
+  "hotspots",
+  "impact",
+  "implementations",
+  "impls",
+  "imports",
+  "inheritance_depth",
+  "largest",
+  "module_api",
+  "node",
+  "rank",
+  "read",
+  "recursion",
+  "search",
+  "signature",
+  "signature_search",
+  "similar",
+  "status",
+  "test_coverage",
+  "test_map",
+  "test_risk",
+  "todos",
+  "type_hierarchy",
+  "unsafe_patterns",
+  "unused_imports",
+]);
+
+/**
+ * True for a tokensave graph query that takes `graph_root`, by the name Claude
+ * (`mcp__tokensave__tokensave_<tool>`) or OpenCode (`tokensave_tokensave_<tool>`) gives it.
+ */
+export function isRoutableTokensaveTool(tool: string): boolean {
+  const match = /^(?:mcp__tokensave__|tokensave_)tokensave_([a-z_]+)$/.exec(tool);
+  return match !== null && GRAPH_ROOT_TOOLS.has(match[1]!);
+}
+
+export interface RouteDeps {
+  /** Brings the worktree's index up to date; the default runs `tokensave sync`, throttled. */
+  refresh?: (root: string) => void;
+}
+
+/**
+ * Runs `tokensave sync` in `root` unless it ran within {@link SYNC_INTERVAL_MS}. Nothing
+ * else keeps a worktree's index fresh: the MCP server watches only the served checkout.
+ * Bounded and silent; a failure leaves the index as it was.
+ */
+export function refreshWorktreeIndex(root: string): void {
+  const marker = path.join(root, ROUTE_SYNC_MARKER);
+  const last = fs.statSync(marker, { throwIfNoEntry: false })?.mtimeMs ?? 0;
+  if (Date.now() - last < SYNC_INTERVAL_MS) return;
+  // Touched first, so a failing or slow sync is not retried on every call.
+  fs.writeFileSync(marker, "");
+  spawnSync("tokensave", ["sync"], { cwd: root, stdio: "ignore", timeout: SYNC_TIMEOUT_MS });
+}
+
 /**
  * `input` with `graph_root` set to the linked worktree containing `directory`,
- * when that worktree holds a tokensave index and `input` names no `graph_root`.
- * Otherwise, and on any error, `undefined`: the call passes unchanged.
+ * when `tool` takes `graph_root`, that worktree holds a tokensave index and
+ * `input` names no `graph_root`; the index is refreshed first. Otherwise, and
+ * on any error, `undefined`: the call passes unchanged.
  */
 export function routeTokensaveInput(
+  tool: string,
   directory: string,
   input: unknown,
+  deps: RouteDeps = {},
 ): Record<string, unknown> | undefined {
   try {
+    if (!isRoutableTokensaveTool(tool)) return undefined;
     // A tool with no arguments sends none; anything else must be an arguments object.
     const given = input === undefined ? {} : input;
     if (given === null || typeof given !== "object" || Array.isArray(given)) return undefined;
@@ -31,6 +130,11 @@ export function routeTokensaveInput(
     if (!root || readGitLayout(root)?.kind !== "linked") return undefined;
     if (!fs.statSync(path.join(root, TOKENSAVE_DB), { throwIfNoEntry: false })?.isFile())
       return undefined;
+    try {
+      (deps.refresh ?? refreshWorktreeIndex)(root);
+    } catch {
+      // A stale index still answers better than the main checkout's.
+    }
     return { ...args, graph_root: root };
   } catch {
     return undefined;

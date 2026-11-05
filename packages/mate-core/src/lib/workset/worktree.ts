@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
-import { gitEnvironment } from "../../runtime/companion-git";
+import { gitEnvironment, withoutAskPass } from "../../runtime/companion-git";
 import { withCompanionLock } from "../../runtime/companion-lock";
 import { errorMessage } from "../../runtime/error-message";
 import type { WrapRuntime } from "../../runtime/runtime-document-manifest";
@@ -12,6 +12,7 @@ import { cleanupWorkingRepository } from "../../tools/setup/working-repo-cleanup
 import { locateChange } from "../change-layout";
 import { type DeliveryRecord, readDeliveryRecord } from "../delivery/record";
 import {
+  newBranchBase,
   resolveDeliveryBranch,
   worktreeAddArgs,
   type BranchSource,
@@ -41,7 +42,17 @@ export interface GitResult {
   stderr: string;
 }
 
-export type GitRunner = (cwd: string, args: string[]) => Promise<GitResult>;
+export interface GitRunOptions {
+  /** Added to the promptless environment every command gets. */
+  env?: Record<string, string>;
+  timeoutMs?: number;
+}
+
+export type GitRunner = (
+  cwd: string,
+  args: string[],
+  options?: GitRunOptions,
+) => Promise<GitResult>;
 
 /** Runs an install command; `stream` passes its output through, otherwise it is discarded. */
 export type InstallRunner = (cwd: string, command: string[], stream: boolean) => Promise<boolean>;
@@ -117,18 +128,50 @@ export interface PruneResult {
   warnings: string[];
 }
 
-const runGit: GitRunner = (cwd, args) =>
+/** Never prompts: worktree creation runs unattended, often under `--json`. */
+function promptlessEnv(): NodeJS.ProcessEnv {
+  return {
+    ...withoutAskPass(gitEnvironment()),
+    GIT_TERMINAL_PROMPT: "0",
+    GCM_INTERACTIVE: "never",
+  } as NodeJS.ProcessEnv;
+}
+
+const runGit: GitRunner = (cwd, args, options = {}) =>
   new Promise<GitResult>((resolve) => {
-    execFile(
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const child = execFile(
       "git",
       args,
-      { cwd, env: gitEnvironment(), maxBuffer: 16 * 1024 * 1024 },
+      { cwd, env: { ...promptlessEnv(), ...options.env }, maxBuffer: 16 * 1024 * 1024 },
       (error, stdout, stderr) => {
+        clearTimeout(timer);
         const code = error ? (typeof error.code === "number" ? error.code : 1) : 0;
         resolve({ code, stdout: String(stdout), stderr: String(stderr) });
       },
     );
+    const { timeoutMs } = options;
+    if (timeoutMs !== undefined) {
+      // Resolved without awaiting `close`: an SSH grandchild may hold the pipes open.
+      timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        resolve({ code: 1, stdout: "", stderr: `git ${args[0]} timed out after ${timeoutMs} ms` });
+      }, timeoutMs);
+    }
   });
+
+const FETCH_TIMEOUT_MS = 60_000;
+
+/** `git fetch --prune origin`, bounded; SSH runs in batch mode unless the user set their own command. */
+async function fetchOrigin(git: GitRunner, checkout: string): Promise<GitResult> {
+  const ownSsh =
+    Boolean(process.env.GIT_SSH_COMMAND || process.env.GIT_SSH) ||
+    (await git(checkout, ["config", "--get", "core.sshCommand"])).code === 0;
+  return git(checkout, ["fetch", "--prune", "origin"], {
+    env: ownSsh ? {} : { GIT_SSH_COMMAND: "ssh -o BatchMode=yes" },
+    timeoutMs: FETCH_TIMEOUT_MS,
+  });
+}
 
 /** Serialized with `mate wrap`, Session Prepare and every sync, which rewrite the same manifests. */
 const runWrap: WorktreeWrapper = async (companionPath, repository, runtimes) => {
@@ -258,6 +301,8 @@ interface Plan {
   target: string;
   branch: string;
   source: BranchSource;
+  /** Start point when `source` is `new`. */
+  base?: string;
   reuse: boolean;
 }
 
@@ -331,19 +376,15 @@ async function planRepository(
     return [`${repository}: not linked to ${companionPath} on this machine`];
   }
   // Resolved after the fetch, so a branch pushed elsewhere counts as existing.
-  const fetched = await git(linked.path, ["fetch", "--prune", "origin"]);
+  const fetched = await fetchOrigin(git, linked.path);
   if (fetched.code !== 0) {
     warnings.push(
       `${repository}: fetching origin failed, using local refs: ${fetched.stderr.trim()}`,
     );
   }
-  const resolution = await resolveDeliveryBranch({
-    companionPath,
-    repository,
-    hasRef: async (ref) =>
-      (await git(linked.path, ["rev-parse", "--verify", "--quiet", ref])).code === 0,
-    worksetId,
-  });
+  const hasRef = async (ref: string) =>
+    (await git(linked.path, ["rev-parse", "--verify", "--quiet", ref])).code === 0;
+  const resolution = await resolveDeliveryBranch({ companionPath, repository, hasRef, worksetId });
   const { branch, source } = resolution;
   if (branch === null || source === null) {
     return resolution.diagnostics.map((line) => `${repository}: ${line}`);
@@ -375,12 +416,13 @@ async function planRepository(
     target,
     branch,
     source,
+    base: source === "new" ? await newBranchBase(hasRef) : undefined,
     reuse,
   };
 }
 
 async function addWorktree(git: GitRunner, plan: Plan): Promise<string | null> {
-  const result = await git(plan.checkout, worktreeAddArgs(plan, plan.target));
+  const result = await git(plan.checkout, worktreeAddArgs(plan, plan.target, plan.base));
   return result.code === 0 ? null : `creating the worktree failed: ${result.stderr.trim()}`;
 }
 
@@ -511,9 +553,29 @@ async function createTargetWorktrees(
     return { workset: worksetId, ok: false, repositories: [], diagnostics, warnings };
   }
   const repositories: WorktreeRepositoryResult[] = [];
+  const indexing: Promise<void>[] = [];
+  const progress = options.streamInstall
+    ? (line: string) => process.stderr.write(`${line}\n`)
+    : undefined;
   for (const plan of plans) {
     // oxlint-disable-next-line no-await-in-loop -- one repository at a time, installs included
-    repositories.push(await realize(companionPath, plan, options, git, deps, warnings));
+    const result = await realize(companionPath, plan, options, git, deps, warnings);
+    repositories.push(result);
+    if (result.index.reason === NOT_CREATED) continue;
+    // Indexing overlaps the next repository's setup; only the report waits for it.
+    indexing.push(
+      indexWorktree(plan.checkout, plan.target, companionPath, deps.tokensave, (action) =>
+        progress?.(`${plan.repository}: tokensave ${action} of ${plan.target}…`),
+      ).then((index) => {
+        result.index = index;
+      }),
+    );
+  }
+  await Promise.all(indexing);
+  for (const result of repositories) {
+    if (result.index.outcome === "failed") {
+      warnings.push(`${result.repository}: tokensave index step failed: ${result.index.reason}`);
+    }
   }
   return {
     workset: worksetId,
@@ -588,11 +650,7 @@ async function realize(
     result.install.outcome = ok ? "ok" : "failed";
     if (!ok) result.error ??= `${command.join(" ")} failed`;
   }
-  // After install and regardless of `--no-install`: the index is not a dependency install.
-  result.index = await indexWorktree(plan.checkout, plan.target, companionPath, deps.tokensave);
-  if (result.index.outcome === "failed") {
-    warnings.push(`${plan.repository}: tokensave index step failed: ${result.index.reason}`);
-  }
+  // The caller indexes after install, regardless of `--no-install`: the index is not a dependency install.
   result.missingEnv = await missingEnvFiles(git, plan.checkout, plan.target);
   return result;
 }

@@ -7,6 +7,7 @@ import {
   changeNameOf,
   changesDirOf,
   deltaSpecs,
+  isChangeName,
 } from "../change-layout";
 import { readFrontmatter } from "../frontmatter";
 import { isMateSchema } from "./stages";
@@ -73,12 +74,18 @@ export async function declaredDependencies(changeDir: string): Promise<string[]>
   }
   const names = new Set<string>();
   for (const file of files) {
+    let source: string;
+    try {
+      source = await fs.readFile(path.join(changeDir, file), "utf8");
+    } catch {
+      // An unreadable entry (a folder, a file gone since the listing) declares nothing.
+      continue;
+    }
     // A malformed header declares nothing; validation reports it elsewhere.
-    const dependsOn = readFrontmatter(
-      await fs.readFile(path.join(changeDir, file), "utf8"),
-    )?.dependsOn;
+    const dependsOn = readFrontmatter(source)?.dependsOn;
     for (const name of Array.isArray(dependsOn) ? dependsOn : [dependsOn]) {
-      if (typeof name === "string" && name.trim()) names.add(name.trim());
+      // Names become paths under the changes folder: only a single segment counts.
+      if (typeof name === "string" && isChangeName(name.trim())) names.add(name.trim());
     }
   }
   return [...names].toSorted();

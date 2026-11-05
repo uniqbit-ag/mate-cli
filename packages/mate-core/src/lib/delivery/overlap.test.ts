@@ -67,6 +67,12 @@ describe("declaredDependencies", () => {
     await writeArtifact("b", "tasks.md", "type: change-tasks\ndependsOn:\n  - c\n  - a");
     expect(await declaredDependencies(path.join(changes(), "b"))).toEqual(["a", "c"]);
   });
+
+  test("skips an unreadable entry and names that are not one path segment", async () => {
+    await writeArtifact("b", "proposal.md", "dependsOn: [a, ../escape, x/y, .hidden]");
+    await fs.mkdir(path.join(changes(), "b", "notes.md"));
+    expect(await declaredDependencies(path.join(changes(), "b"))).toEqual(["a"]);
+  });
 });
 
 describe("archiveWarnings", () => {

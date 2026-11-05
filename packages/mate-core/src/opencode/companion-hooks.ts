@@ -196,8 +196,12 @@ export async function registerCompanionHooks(
 
   await api.tool.hook("execute.before", async (event) => {
     await guardToolInput(context, event.tool, event.input, env);
-    await routeTokensaveCall(api, event);
   });
+}
+
+/** Registers tokensave worktree routing on an OpenCode V2 plugin context. */
+export async function registerTokensaveRouting(api: Context): Promise<void> {
+  await api.tool.hook("execute.before", (event) => routeTokensaveCall(api, event));
 }
 
 /** OpenCode names an MCP tool `<server>_<tool>`, also when called from inside `execute`. */
@@ -216,7 +220,11 @@ interface ToolCallEvent {
  */
 async function routeTokensaveCall(api: Context, event: ToolCallEvent): Promise<void> {
   if (!TOKENSAVE_TOOL.test(event.tool)) return;
-  const routed = routeTokensaveInput(await sessionDirectory(api, event.sessionID), event.input);
+  const routed = routeTokensaveInput(
+    event.tool,
+    await sessionDirectory(api, event.sessionID),
+    event.input,
+  );
   if (routed) event.input = routed;
 }
 

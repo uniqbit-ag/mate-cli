@@ -136,14 +136,27 @@ export async function resolveDeliveryBranch(
   };
 }
 
-/** `git worktree add` arguments that put `target` on the resolved branch. */
+/**
+ * Start point of a new branch: `origin/HEAD`, else `origin/main` or `origin/master`, else
+ * `HEAD`. A clone whose remote HEAD was never set has no `origin/HEAD`.
+ */
+export async function newBranchBase(hasRef: HasRef): Promise<string> {
+  for (const name of ["HEAD", "main", "master"]) {
+    // oxlint-disable-next-line no-await-in-loop -- the first existing ref wins
+    if (await hasRef(`refs/remotes/origin/${name}`)) return `origin/${name}`;
+  }
+  return "HEAD";
+}
+
+/** `git worktree add` arguments that put `target` on the resolved branch; `base` starts a new one. */
 export function worktreeAddArgs(
   { branch, source }: { branch: string; source: BranchSource },
   target: string,
+  base = "origin/HEAD",
 ): string[] {
   if (source === "local") return ["worktree", "add", target, branch];
   if (source === "remote") {
     return ["worktree", "add", "--track", "-b", branch, target, `origin/${branch}`];
   }
-  return ["worktree", "add", "--no-track", "-b", branch, target, "origin/HEAD"];
+  return ["worktree", "add", "--no-track", "-b", branch, target, base];
 }
