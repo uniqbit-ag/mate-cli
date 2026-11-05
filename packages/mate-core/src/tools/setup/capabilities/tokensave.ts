@@ -4,6 +4,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { parse as parseJsonc } from "jsonc-parser";
+
 import { isDeclinedByMember, readMemberChoices } from "../../../lib/member-choices";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import { DEFAULT_SECRET_DENY_PATTERNS, type SecretPolicy } from "../../../runtime/secret-patterns";
@@ -83,6 +85,9 @@ export const tokensaveDeps = {
   homeDir(): string {
     return os.homedir();
   },
+  env(name: string): string | undefined {
+    return process.env[name];
+  },
   readMemberChoices,
 };
 
@@ -159,9 +164,12 @@ function installTokensaveAgentIntegrations(providers: string[], cwd: string): vo
   }
 }
 
+/** JSONC-tolerant: agent configs may carry comments and trailing commas. */
 async function readJsonObject(filePath: string): Promise<Record<string, unknown> | undefined> {
   try {
-    const parsed: unknown = JSON.parse(await fs.readFile(filePath, "utf8"));
+    const parsed: unknown = parseJsonc(await fs.readFile(filePath, "utf8"), [], {
+      allowTrailingComma: true,
+    });
     return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : undefined;
@@ -179,24 +187,35 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
+/** Claude's global config dir, as tokensave resolves it. */
+function claudeConfigDir(): string {
+  return tokensaveDeps.env("CLAUDE_CONFIG_DIR") || path.join(tokensaveDeps.homeDir(), ".claude");
+}
+
+/** OpenCode's global config dir, as tokensave resolves it. */
+function opencodeConfigDir(): string {
+  const xdg = tokensaveDeps.env("XDG_CONFIG_HOME");
+  return path.join(xdg || path.join(tokensaveDeps.homeDir(), ".config"), "opencode");
+}
+
 /**
  * Read-only probe of the global files `tokensave install --agent <agent>` writes.
  * tokensave's own permission check reads only these global files, never the
  * companion-scoped settings Mate loads via `--settings`.
  */
 export async function isTokensaveAgentIntegrated(agent: string): Promise<boolean> {
-  const home = tokensaveDeps.homeDir();
   if (agent === "claude") {
-    const settings = await readJsonObject(path.join(home, ".claude", "settings.json"));
+    const configDir = claudeConfigDir();
+    const settings = await readJsonObject(path.join(configDir, "settings.json"));
     const allow = (settings?.permissions as { allow?: unknown } | undefined)?.allow;
     return (
       Array.isArray(allow) &&
       allow.includes("mcp__tokensave__*") &&
-      (await fileExists(path.join(home, ".claude", "rules", "tokensave.md")))
+      (await fileExists(path.join(configDir, "rules", "tokensave.md")))
     );
   }
   if (agent === "opencode") {
-    const configDir = path.join(home, ".config", "opencode");
+    const configDir = opencodeConfigDir();
     const config = await readJsonObject(path.join(configDir, "opencode.json"));
     /**
      * `tokensave install` writes the flat `mcp.<name>` entry, which OpenCode 2.x
