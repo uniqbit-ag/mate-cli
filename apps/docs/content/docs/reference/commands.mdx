@@ -76,27 +76,62 @@ record that lists the change, else the change's own single-change Workset,
 whose repositories come from the change's scopes. It writes no Workset record.
 An unknown change, a change listed in several Worksets, or a change whose
 scopes name no repository stops the command without changes. `--change` cannot
-be combined with a Workset id. On a protected branch, `mate-apply-change`
-offers it as an option: it creates the worktree, records nothing, and asks you
-to continue `mate-apply-change` in a new session inside the worktree.
+be combined with a Workset id.
 
-Each new worktree gets the companion link `mate working link` writes, and the
-install step of its first lockfile: `bun install`, `pnpm install`,
-`yarn install`, or `npm ci`. `--no-install` skips the install. A failed install
-keeps the worktree and exits non-zero. Env files are never read, copied, or
-linked: the command names the ignored `.env` and `.env.*` files of the main
-checkout that the worktree lacks, by path only, so you can provide them
-yourself. Example files such as `.env.example` are not named.
+`--enter`, valid only with `--change`, also records the Workset's Delivery
+Branch as the change's delivery for the current Working Repository, as
+`mate artifact link --branch` does, and reports how the current agent session
+moves into the worktree. The command never moves the session itself. In
+Claude Code the move is the `EnterWorktree` tool, which asks you to approve it;
+in OpenCode it is the Mate plugin's `mate_enter_worktree` tool. Any other
+runtime, or a current repository that got no worktree, gets a hand-off: start a
+new session in the worktree. A failed creation records nothing. When recording
+the branch fails, the worktrees stay, the reason is a warning, and the command
+hands off.
+
+On a protected branch, `mate-apply-change` offers the worktree as an option. It
+runs `--change <change> --enter`, moves the session into the worktree, and
+continues there with the worktree as the Working Repository. When the runtime
+cannot move, or you decline the move, it writes no code and asks you to
+continue `mate-apply-change` in a new session inside the worktree; the branch
+is already recorded, so that session does not ask about it.
+
+Each new worktree gets the companion link `mate working link` writes. When the
+main checkout is wrapped, the worktree is wrapped too, for the same agent
+runtimes, so a plain `claude` or `opencode` session started there gets the
+artifact guardrail, hooks, skills, and MCP servers; `git status` stays clean in
+both checkouts. A failed wrap keeps the worktree and exits non-zero, unless the
+worktree is reused and still wrapped from an earlier run; then it only warns. Each
+worktree then gets the install step of its first lockfile: `bun install`,
+`pnpm install`, `yarn install`, or `npm ci`. `--no-install` skips the install.
+A failed install keeps the worktree and exits non-zero. Env files are never
+read, copied, or linked: the command names the ignored `.env` and `.env.*`
+files of the main checkout that the worktree lacks, by path only, so you can
+provide them yourself. Example files such as `.env.example` are not named.
 
 The companion is the one the current checkout is paired with. When it is paired
 with several, pass `--companion <path>`. `--json` prints one object with each
-repository's path, branch, `created` or `reused`, the install command and its
-outcome (`ok`, `failed`, or `skipped`), and the missing env paths.
+repository's path, branch, `created` or `reused`, the wrapped runtimes and the
+install command with their outcomes (`ok`, `failed`, or `skipped`), and the
+missing env paths. With `--enter` it adds an `enter` field: `runtime`
+(`claude`, `opencode`, or `unknown`), `action`, either `tool` with the `tool`
+to call or `handoff` with a `reason`, and the current repository's worktree
+`path` when it has one.
 
 `mate working worktree prune` removes the worktrees of Done Worksets. It keeps
 and names any worktree with uncommitted changes, untracked files, or commits on
-no remote, and exits 0 either way. It never deletes the branch. It takes
-`--companion <path>` and `--json` as well.
+no remote, and exits 0 either way. Before removing a worktree it removes the
+worktree's wrap, including the Claude local-scope MCP entries kept for its
+path; when that fails, it keeps the worktree and names the reason. A locked
+worktree is kept as is. A worktree Git refuses to remove is kept and wrapped
+again. It never
+deletes the branch. It takes `--companion <path>` and `--json` as well.
+
+A `mate claude` or `mate opencode` session that moves into such a worktree
+keeps its launch environment, which names the main checkout. Mate then reads
+the worktree's own `.mate/` and reports the worktree as the Working Repository,
+as long as it is a worktree of the same repository linked to the same
+companion.
 
 ## Installation And Health
 

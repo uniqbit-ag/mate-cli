@@ -1,5 +1,9 @@
+import fs from "node:fs";
+
 import { MATE_ENV } from "./env-names";
 import { FRAMEWORK_NAME } from "./framework";
+import { isLinkedWorktreeOf } from "./git-layout";
+import { isWithin } from "./physical-path";
 import { isCapabilityEnabled, policyDocument, readCompanionPolicy } from "./policy";
 import { resolveProjection, type ResolvedProjection } from "./projection";
 
@@ -56,12 +60,21 @@ export interface CompanionRuntimeResolution {
  * The environment always wins: the projection is consulted only when no
  * `MATE_*` variable is set, so a managed session never reads it and no stale
  * or malformed projection can degrade a session a Mate launch configured.
+ * Only a session moved into a linked worktree of its repository reads that
+ * worktree's projection, for its repository path alone.
  */
 export function resolveCompanionRuntime(
   env: Record<string, string | undefined> = process.env,
   cwd: string = process.cwd(),
 ): CompanionRuntimeResolution {
-  if (hasLaunchEnvironment(env)) return { context: fromEnvironment(env), projection: null };
+  if (hasLaunchEnvironment(env)) {
+    const context = fromEnvironment(env);
+    const worktree = linkedWorktreePath(context, cwd);
+    return {
+      context: worktree ? { ...context, repositoryPath: worktree } : context,
+      projection: null,
+    };
+  }
 
   const projection = resolveProjection(cwd);
   if (!projection) return { context: fromEnvironment(env), projection: null };
@@ -80,6 +93,37 @@ export function resolveCompanionRuntime(
       reactDoctorEnabled: isCapabilityEnabled(policy, "react-doctor"),
     },
   };
+}
+
+/**
+ * The one exception to the environment's precedence: a managed session moved into a
+ * linked worktree of its Working Repository whose own projection names the same
+ * companion and repository id reports that worktree. Files only, no `git` process, and
+ * nothing is read while `cwd` lies inside the environment's repository. Any mismatch or
+ * error leaves the environment's answer.
+ */
+function linkedWorktreePath(context: CompanionRuntimeContext, cwd: string): string | null {
+  if (!context.repositoryPath || !context.companionPath) return null;
+  const realPath = fs.realpathSync;
+  try {
+    const repository = realPath(context.repositoryPath);
+    if (isWithin(realPath(cwd), repository)) return null;
+    const projection = resolveProjection(cwd);
+    if (!projection) return null;
+    const worktree = realPath(projection.repoRoot);
+    if (
+      worktree === repository ||
+      realPath(projection.repositoryPath) !== worktree ||
+      realPath(projection.companionPath) !== realPath(context.companionPath) ||
+      projection.repositoryId !== context.repositoryId ||
+      !isLinkedWorktreeOf(worktree, repository)
+    ) {
+      return null;
+    }
+    return projection.repositoryPath;
+  } catch {
+    return null;
+  }
 }
 
 export function readCompanionRuntimeContext(

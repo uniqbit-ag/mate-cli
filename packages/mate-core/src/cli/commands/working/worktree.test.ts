@@ -63,6 +63,7 @@ const created: WorktreeResult = {
       branch: "workset/acme-login",
       action: "created",
       install: { command: "bun install", outcome: "ok" },
+      wrap: { runtimes: ["claude"], outcome: "ok" },
       missingEnv: [".env"],
     },
   ],
@@ -90,6 +91,8 @@ describe("mate working worktree", () => {
     [["acme-login", "--change", "acme-form"]],
     [["--change"]],
     [["prune", "--change", "acme-form"]],
+    [["acme-login", "--enter"]],
+    [["prune", "--enter"]],
   ])("refuses %j with the usage", async (argv) => {
     let called = false;
     await runWorkingWorktreeCommand(
@@ -101,6 +104,7 @@ describe("mate working worktree", () => {
     );
     expect(process.exitCode).toBe(1);
     expect(err.join("\n")).toContain("usage: mate working worktree <workset-id>");
+    expect(err.join("\n")).toContain("--change <change> [--enter]");
     expect(called).toBe(false);
   });
 
@@ -203,6 +207,7 @@ describe("mate working worktree", () => {
     expect(text).toContain("acme/web: created /src/web.worktrees/acme-login on workset/acme-login");
     expect(text).toContain("install bun install ok");
     expect(text).toContain("(not copied): .env");
+    expect(text).toContain("acme/web: wrapped for claude");
   });
 
   test("prune passes only Done Worksets and exits 0 when it keeps one", async () => {
@@ -249,5 +254,185 @@ describe("mate working worktree", () => {
     expect(passed).toEqual(["acme-login"]);
     expect(process.exitCode).toBe(0);
     expect(JSON.parse(out.join("")).kept[0].reason).toBe("commits on no remote");
+  });
+
+  describe("--enter", () => {
+    const changed = (): WorktreeResult => ({
+      ...created,
+      workset: "acme-fix",
+      repositories: [
+        {
+          ...created.repositories[0]!,
+          path: "/src/web.worktrees/acme-fix",
+          branch: "workset/acme-fix",
+        },
+      ],
+      diagnostics: [],
+    });
+    const recorded = {
+      repository: "acme/web",
+      branch: "workset/acme-fix",
+      path: "/src/web.worktrees/acme-fix",
+    };
+
+    async function enter(
+      env: Record<string, string | undefined>,
+      overrides: Partial<WorkingWorktreeDeps> = {},
+    ): Promise<{ calls: string[] }> {
+      const calls: string[] = [];
+      await runWorkingWorktreeCommand(
+        ["--change", "acme-fix", "--enter", "--json"],
+        deps({
+          env,
+          createForChange: async () => changed(),
+          recordBranch: async (_companion, change, result) => {
+            calls.push(`${change} ${result.repositories[0]!.branch}`);
+            return recorded;
+          },
+          ...overrides,
+        }),
+      );
+      return { calls };
+    }
+
+    test("Claude: records the branch and names EnterWorktree", async () => {
+      const { calls } = await enter({ CLAUDECODE: "1" });
+      expect(process.exitCode).toBe(0);
+      expect(calls).toEqual(["acme-fix workset/acme-fix"]);
+      expect(JSON.parse(out.join("")).enter).toEqual({
+        runtime: "claude",
+        action: "tool",
+        tool: "EnterWorktree",
+        path: "/src/web.worktrees/acme-fix",
+      });
+    });
+
+    test("OpenCode: names mate_enter_worktree", async () => {
+      await enter({ OPENCODE_SESSION_ID: "ses_acme" });
+      expect(JSON.parse(out.join("")).enter).toEqual({
+        runtime: "opencode",
+        action: "tool",
+        tool: "mate_enter_worktree",
+        path: "/src/web.worktrees/acme-fix",
+      });
+    });
+
+    test("another runtime: records the branch and hands off with a reason", async () => {
+      const { calls } = await enter({});
+      expect(calls).toHaveLength(1);
+      expect(JSON.parse(out.join("")).enter).toMatchObject({
+        runtime: "unknown",
+        action: "handoff",
+        path: "/src/web.worktrees/acme-fix",
+        reason: "this Agent Runtime cannot move a running session",
+      });
+    });
+
+    test("the current repository got no worktree: hand off with a reason", async () => {
+      await enter(
+        { CLAUDECODE: "1" },
+        { recordBranch: async () => ({ skipped: "acme/api got no worktree for acme-fix" }) },
+      );
+      expect(process.exitCode).toBe(0);
+      const { enter: instruction } = JSON.parse(out.join(""));
+      expect(instruction).toMatchObject({
+        action: "handoff",
+        reason: "acme/api got no worktree for acme-fix",
+      });
+      // Never another repository's worktree.
+      expect(instruction.path).toBeUndefined();
+    });
+
+    test("text output without a worktree to enter names no path", async () => {
+      await runWorkingWorktreeCommand(
+        ["--change", "acme-fix", "--enter"],
+        deps({
+          env: { CLAUDECODE: "1" },
+          createForChange: async () => changed(),
+          recordBranch: async () => ({ skipped: "acme/api got no worktree for acme-fix" }),
+        }),
+      );
+      expect(out.join("")).toContain(
+        "mate: enter: not entering (acme/api got no worktree for acme-fix)\n",
+      );
+    });
+
+    test("records against the command's cwd", async () => {
+      let seen = "";
+      await enter(
+        { CLAUDECODE: "1" },
+        {
+          cwd: "/src/web",
+          recordBranch: async (_companion, _change, _result, cwd) => ((seen = cwd), recorded),
+        },
+      );
+      expect(seen).toBe("/src/web");
+    });
+
+    test("a failed creation records nothing and has no enter", async () => {
+      const { calls } = await enter(
+        { CLAUDECODE: "1" },
+        {
+          createForChange: async () => ({
+            ...changed(),
+            ok: false,
+            repositories: [],
+            diagnostics: ["acme/web: workset/acme-fix is already checked out at /src/web"],
+          }),
+        },
+      );
+      expect(process.exitCode).toBe(1);
+      expect(calls).toEqual([]);
+      expect(JSON.parse(out.join("")).enter).toBeUndefined();
+    });
+
+    test("a failed recording keeps the worktree, warns and hands off", async () => {
+      await enter(
+        { CLAUDECODE: "1" },
+        {
+          recordBranch: async () => ({ failed: ["mate: workset/acme-fix is a protected branch"] }),
+        },
+      );
+      expect(process.exitCode).toBe(0);
+      const parsed = JSON.parse(out.join(""));
+      expect(parsed.ok).toBe(true);
+      expect(parsed.warnings).toEqual(["mate: workset/acme-fix is a protected branch"]);
+      expect(parsed.repositories[0].path).toBe("/src/web.worktrees/acme-fix");
+      expect(parsed.enter).toMatchObject({
+        action: "handoff",
+        reason:
+          "recording the delivery branch failed: mate: workset/acme-fix is a protected branch",
+      });
+      expect(parsed.enter.path).toBeUndefined();
+      expect(err.join("\n")).toContain("protected branch");
+    });
+
+    test("without --enter nothing is recorded", async () => {
+      let called = false;
+      await runWorkingWorktreeCommand(
+        ["--change", "acme-fix", "--json"],
+        deps({
+          env: { CLAUDECODE: "1" },
+          createForChange: async () => changed(),
+          recordBranch: async () => ((called = true), recorded),
+        }),
+      );
+      expect(called).toBe(false);
+      expect(JSON.parse(out.join("")).enter).toBeUndefined();
+    });
+
+    test("text output prints one line for enter", async () => {
+      await runWorkingWorktreeCommand(
+        ["--change", "acme-fix", "--enter"],
+        deps({
+          env: { CLAUDECODE: "1" },
+          createForChange: async () => changed(),
+          recordBranch: async () => recorded,
+        }),
+      );
+      expect(out.join("")).toContain(
+        "mate: enter: call EnterWorktree with /src/web.worktrees/acme-fix\n",
+      );
+    });
   });
 });

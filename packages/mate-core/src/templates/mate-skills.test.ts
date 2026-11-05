@@ -1209,6 +1209,11 @@ describe("bundled Delivery Path stage skills", () => {
     expect(source).toContain("git log --oneline HEAD --not --remotes");
     expect(source).toContain("never move, reset, or rebase them");
     expect(source).toContain("Record the branch before writing any code");
+    expect(source).toContain('mate working worktree --change "<change-name>" --enter --json');
+    expect(source).toContain("When `enter.action` is `tool`");
+    expect(source).toContain(
+      "On `handoff`\n     or a declined move, report `enter.reason` and any warnings, write no code, and\n     stop",
+    );
   });
 
   test("archive runs through mate artifact archive and is allowed before the merge", async () => {
