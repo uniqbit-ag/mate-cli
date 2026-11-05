@@ -55,30 +55,59 @@
     "views": {
       "mate": [
         {
+          "id": "mate.workspace",
+          "name": "Mate",
+          "when": "!mate.workspaceReady"
+        },
+        {
           "id": "mate.sessions",
-          "name": "Sessions"
+          "name": "Sessions",
+          "when": "mate.workspaceReady"
         },
         {
           "id": "mate.worktrees",
-          "name": "Worktrees"
+          "name": "Worktrees",
+          "when": "mate.workspaceReady"
         },
         {
           "id": "mate.openChanges",
-          "name": "Open changes"
+          "name": "Open changes",
+          "when": "mate.workspaceReady"
         },
         {
           "id": "mate.readyToPublish",
-          "name": "Ready to publish"
+          "name": "Ready to publish",
+          "when": "mate.workspaceReady"
         }
       ]
     },
     "viewsWelcome": [
+      {
+        "view": "mate.workspace",
+        "contents": "Open the Mate workspace to use this sidebar.\n[Open workspace](command:mate.openWorkspace)",
+        "when": "mate.workspaceCanOpen && !mate.workspaceOpening"
+      },
+      {
+        "view": "mate.workspace",
+        "contents": "Preparing and opening the Mate workspace…",
+        "when": "mate.workspaceOpening"
+      },
+      {
+        "view": "mate.workspace",
+        "contents": "Open a local Git repository to use the Mate workspace.",
+        "when": "!mate.workspaceCanOpen && !mate.workspaceOpening"
+      },
       {
         "view": "mate.sessions",
         "contents": "Sessions you start here are listed, so you can resume, attach, and stop them. Sessions started in a terminal are not.\n[New session](command:mate.newSession)\n[About sessions](command:mate.sessionsInfo)"
       }
     ],
     "commands": [
+      {
+        "command": "mate.openWorkspace",
+        "title": "Open workspace",
+        "category": "Mate"
+      },
       {
         "command": "mate.newSession",
         "title": "New session",

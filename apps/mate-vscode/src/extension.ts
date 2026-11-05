@@ -9,6 +9,7 @@ import {
   groupSessions,
   latestSession,
   sessionLabel,
+  worksetProgress,
   worksetSessions,
   worksetsOf,
   type SessionGroupKind,
@@ -26,6 +27,7 @@ import {
   startClaudeBackground,
   stopClaude,
   stopOpenCode,
+  prepareWorkspace,
   type BackgroundStart,
 } from "./mate";
 import { toPendingItems } from "./pending";
@@ -44,19 +46,12 @@ import {
   type Session,
 } from "./sessions";
 import { TerminalTracker } from "./terminals";
+import { WorkspaceGate, resolveWorkspaceState } from "./workspace";
 
 const NO_REPOSITORY = "Mate needs a Git repository: open a folder inside one.";
 
 function workspaceRepository(): Promise<string | null> {
   return resolveRepository(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
-}
-
-/** Runs `load` for the window's repository, or shows the needs-a-repository message. */
-function forRepository(load: (repo: string) => Promise<SectionLoad>): () => Promise<SectionLoad> {
-  return async () => {
-    const repo = await workspaceRepository();
-    return repo ? load(repo) : { message: NO_REPOSITORY };
-  };
 }
 
 async function repositoryRoots(repo: string): Promise<string[]> {
@@ -129,6 +124,27 @@ const changeItem = (change: OpenChange): SectionItem => ({
     : {}),
 });
 
+export function worksetItem(workset: Workset, sessions: Session[]): SectionItem {
+  const onBranch = worksetSessions(workset, sessions);
+  const latest = latestSession(onBranch);
+  return {
+    id: `workset:${workset.key}`,
+    label: workset.label,
+    collapsed: true,
+    description: [
+      worksetProgress(workset),
+      onBranch.length > 0 ? `${onBranch.length} session${onBranch.length === 1 ? "" : "s"}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    tooltip: workset.branch,
+    icon: ICONS.workset,
+    contextValue: latest ? "workset.sessions" : "workset",
+    data: latest,
+    children: workset.changes.map(changeItem),
+  };
+}
+
 function sessionOf(item: SectionItem | undefined): Session | undefined {
   return item?.data as Session | undefined;
 }
@@ -165,8 +181,51 @@ const EARLY_FAILURE_POLL_MS = 5_000;
 const REGISTRY_DEBOUNCE_MS = 300;
 const REGISTRY_MIN_INTERVAL_MS = 3_000;
 
+function reportWorkspaceError(error: unknown) {
+  return vscode.window.showErrorMessage(
+    `Mate: ${error instanceof Error ? error.message : String(error)} Check Mate setup, then try Open workspace again.`,
+  );
+}
+
 export function activate(context: vscode.ExtensionContext): void {
+  void Promise.all(
+    ["mate.workspaceReady", "mate.workspaceCanOpen", "mate.workspaceOpening"].map((key) =>
+      vscode.commands.executeCommand("setContext", key, false),
+    ),
+  ).catch(reportWorkspaceError);
   const terminals = new TerminalTracker();
+  const workspace = new Section("mate.workspace", async () => ({ items: [] }));
+  const gate = new WorkspaceGate({
+    resolve: () =>
+      resolveWorkspaceState(
+        vscode.workspace.workspaceFolders?.[0]?.uri,
+        vscode.workspace.workspaceFile,
+      ),
+    update: async (state) => {
+      await Promise.all([
+        vscode.commands.executeCommand("setContext", "mate.workspaceCanOpen", state.canOpen),
+        vscode.commands.executeCommand("setContext", "mate.workspaceReady", state.ready),
+      ]);
+      for (const section of sections) section.refresh();
+    },
+    prepare: (repo) => prepareWorkspace(repo),
+    open: async (workspacePath) => {
+      await vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(workspacePath), {
+        forceReuseWindow: true,
+      });
+    },
+    opening: async (value) => {
+      await vscode.commands.executeCommand("setContext", "mate.workspaceOpening", value);
+    },
+  });
+  const refreshWorkspace = () => gate.refresh().catch(reportWorkspaceError);
+  const forRepository =
+    (load: (repo: string) => Promise<SectionLoad>) => async (): Promise<SectionLoad> => {
+      const repo = gate.state.repo;
+      if (!gate.ready || !repo) return { items: [] };
+      const result = await load(repo);
+      return gate.ready && gate.state.repo === repo ? result : { items: [] };
+    };
 
   /** Running here: a terminal of this window belongs to it. */
   const runningHere = (session: Session) => terminals.isRunning(session);
@@ -241,7 +300,7 @@ export function activate(context: vscode.ExtensionContext): void {
       return {
         items: groups.map((group): SectionItem => ({
           label: group.label,
-          description: group.kind === "workset" ? "Workset" : undefined,
+          description: group.description,
           icon: GROUP_ICONS[group.kind],
           collapsed: group.kind === "older",
           children: group.sessions.map((session) => sessionItem(session, view.worksets)),
@@ -277,26 +336,7 @@ export function activate(context: vscode.ExtensionContext): void {
         return { message: "This repository is not linked to a Companion Repository." };
       }
       return {
-        items: view.worksets.map((workset): SectionItem => {
-          const onBranch = worksetSessions(workset, view.sessions);
-          const latest = latestSession(onBranch);
-          return {
-            label: workset.label,
-            description: [
-              workset.branch ? "Workset" : "",
-              onBranch.length > 0
-                ? `${onBranch.length} session${onBranch.length === 1 ? "" : "s"}`
-                : "",
-            ]
-              .filter(Boolean)
-              .join(" · "),
-            tooltip: workset.branch,
-            icon: ICONS.workset,
-            contextValue: latest ? "workset.sessions" : "workset",
-            data: latest,
-            children: workset.changes.map(changeItem),
-          };
-        }),
+        items: view.worksets.map((workset) => worksetItem(workset, view.sessions)),
       };
     }),
   );
@@ -314,9 +354,6 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   const sections = [sessions, worktrees, openChanges, readyToPublish];
-  const refreshAll = () => {
-    for (const section of sections) section.refresh();
-  };
 
   /** Asked once per window; without `--bg`, Claude sessions start in the foreground as before. */
   let backgroundSupport: Promise<boolean> | undefined;
@@ -390,6 +427,7 @@ export function activate(context: vscode.ExtensionContext): void {
     new vscode.RelativePattern(vscode.Uri.file(path.join(os.homedir(), ".mate")), "sessions.json"),
   );
   const onRegistryChange = () => {
+    if (!gate.ready) return;
     if (registryTimer) return;
     const wait = Math.max(
       REGISTRY_DEBOUNCE_MS,
@@ -397,6 +435,7 @@ export function activate(context: vscode.ExtensionContext): void {
     );
     registryTimer = setTimeout(() => {
       registryTimer = undefined;
+      if (!gate.ready) return;
       const shown = [sessions, openChanges].filter((section) => section.view.visible);
       if (shown.length === 0) return;
       registryReloadedAt = Date.now();
@@ -406,13 +445,18 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     terminals,
+    workspace,
     ...sections,
     terminals.onDidChange(() => sessions.refresh()),
     registryWatcher,
     registryWatcher.onDidChange(onRegistryChange),
     registryWatcher.onDidCreate(onRegistryChange),
     { dispose: () => clearTimeout(registryTimer) },
-    vscode.commands.registerCommand("mate.refresh", refreshAll),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => void refreshWorkspace()),
+    vscode.commands.registerCommand("mate.openWorkspace", () =>
+      gate.open().catch(reportWorkspaceError),
+    ),
+    vscode.commands.registerCommand("mate.refresh", refreshWorkspace),
     vscode.commands.registerCommand("mate.sessionsInfo", () =>
       vscode.window.showInformationMessage("Mate sessions", {
         modal: true,
@@ -421,6 +465,11 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
 
     vscode.commands.registerCommand("mate.newSession", async () => {
+      if (!gate.ready) {
+        return void vscode.window.showInformationMessage(
+          "Open the Mate workspace before starting a session.",
+        );
+      }
       const repo = await workspaceRepository();
       if (!repo) return void vscode.window.showErrorMessage(NO_REPOSITORY);
 
@@ -532,6 +581,7 @@ export function activate(context: vscode.ExtensionContext): void {
       sessions.refresh();
     }),
   );
+  void refreshWorkspace();
 }
 
 export function deactivate(): void {}

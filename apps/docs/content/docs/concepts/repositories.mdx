@@ -195,6 +195,14 @@ are kept. It also sets `git.detectWorktrees` and
 worktrees of the working repository show in Source Control. If the file
 cannot be parsed, Mate leaves it unchanged, warns, and exits non-zero.
 
+The Mate extension offers the same setup through **Open workspace** when a
+repository folder or another workspace is open. The button replaces the normal
+sidebar sections until this repository's managed workspace is open. It prepares
+the document through `mate companion open --no-open --json`, then opens it in the
+current VS Code or Cursor window. Missing documents are created only on click;
+simply viewing the sidebar does not change files. Preparation needs an existing
+Repository Link but no editor CLI on PATH.
+
 Older Mate versions wrote `.mate/workspace.code-workspace`. The next
 `mate companion open` renames that file to the new name and keeps its
 contents; if both files exist, Mate uses the new one and leaves the old one

@@ -5,6 +5,7 @@ import { ICONS, type Icon } from "./icons";
 /** One sidebar section: loads its items on refresh and shows a failure as a single item. */
 
 export interface SectionItem {
+  id?: string;
   label: string;
   description?: string;
   tooltip?: string;
@@ -46,6 +47,7 @@ export class Section implements vscode.TreeDataProvider<SectionItem>, vscode.Dis
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.Expanded;
     const tree = new vscode.TreeItem(item.label, state);
+    tree.id = item.id;
     tree.description = item.description;
     tree.tooltip = item.tooltip;
     tree.contextValue = item.contextValue;

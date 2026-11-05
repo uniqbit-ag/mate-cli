@@ -83,6 +83,25 @@ export async function listSessions(cwd: string, run?: ShellRunner): Promise<Sess
   return result.sessions;
 }
 
+export async function prepareWorkspace(
+  cwd: string,
+  run: ShellRunner = loginShell,
+): Promise<{ workspacePath: string }> {
+  const help = await run("mate '--help'", cwd);
+  if (help.code === 127) throw new MateNotFoundError();
+  // Older CLIs silently ignore flags and would open an external editor.
+  const supported = help.stdout
+    .split(/\r?\n/)
+    .some(
+      (line) =>
+        /\bcompanion open\b/.test(line) && line.includes("--no-open") && line.includes("--json"),
+    );
+  if (help.code !== 0 || !supported) {
+    throw new Error("Update Mate, then run `mate vscode setup` to enable workspace preparation.");
+  }
+  return runMateJson(["companion", "open", "--no-open", "--json"], cwd, run);
+}
+
 export function addSession(
   session: { id: string; runtime: Runtime; cwd: string },
   run?: ShellRunner,

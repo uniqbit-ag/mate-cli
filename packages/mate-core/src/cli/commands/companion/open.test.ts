@@ -7,7 +7,9 @@ import { FRAMEWORK_NAME } from "../../../framework";
 import { writeRepoLocalRegistryEntry } from "../../../lib/orchestrator/repository-link";
 import { WorkingRepoRequiredError } from "../../../lib/orchestrator/types";
 import * as projection from "../../../lib/orchestrator/working-repo-projection";
+import * as jsonOutput from "../../write-json-stdout";
 import { launchAmbiguityDeps } from "../shared/companion-selection";
+import { runCompanionCommand } from "./companion";
 import { runWorkspaceOpenCommand, workspaceOpenCommandDeps } from "./open";
 
 const originalDeps = { ...workspaceOpenCommandDeps };
@@ -154,6 +156,84 @@ describe("runWorkspaceOpenCommand", () => {
 
     await expect(runWorkspaceOpenCommand()).rejects.toThrow(WorkingRepoRequiredError);
     expect(openEditorWorkspace).not.toHaveBeenCalled();
+  });
+
+  describe("preparation flags", () => {
+    test("dispatches flags and returns the absolute path without choosing an editor", async () => {
+      workspaceOpenCommandDeps.resolveCompanions = async () => [
+        match("/work/acme-notes-b"),
+        match("/work/acme-notes-a"),
+      ];
+      workspaceOpenCommandDeps.resolveProjection = () =>
+        ({ companionPath: "/work/acme-notes-b" }) as never;
+      workspaceOpenCommandDeps.findRepoRoot = async () => "/work/acme";
+      const prepare = mock(async () => ({
+        workspacePath: "/work/acme/.mate/acme.mate.code-workspace",
+      }));
+      workspaceOpenCommandDeps.prepareEditorWorkspace = prepare;
+      const preferred = mock(() => "code" as const);
+      workspaceOpenCommandDeps.getPreferredEditorCli = preferred;
+      const output = spyOn(jsonOutput, "writeJsonStdout").mockResolvedValue();
+
+      await runCompanionCommand("open", ["--no-open", "--json"]);
+
+      expect(prepare).toHaveBeenCalledWith(
+        ["/work/acme-notes-b", "/work/acme-notes-a"],
+        "/work/acme",
+      );
+      expect(output).toHaveBeenCalledWith({
+        workspacePath: "/work/acme/.mate/acme.mate.code-workspace",
+      });
+      expect(preferred).not.toHaveBeenCalled();
+      expect(openEditorWorkspace).not.toHaveBeenCalled();
+      expect(console.log).not.toHaveBeenCalled();
+    });
+
+    test("reports preparation failure on stderr without success JSON", async () => {
+      workspaceOpenCommandDeps.resolveCompanions = async () => [match("/work/acme-notes")];
+      workspaceOpenCommandDeps.prepareEditorWorkspace = async () => ({
+        workspacePath: "/work/acme/.mate/acme.mate.code-workspace",
+        error: new Error("invalid JSONC"),
+      });
+      const output = spyOn(jsonOutput, "writeJsonStdout").mockResolvedValue();
+      const error = spyOn(console, "error").mockImplementation(() => {});
+
+      await runWorkspaceOpenCommand(["--no-open", "--json"]);
+
+      expect(process.exitCode).toBe(1);
+      expect(error).toHaveBeenCalledWith(expect.stringContaining("invalid JSONC"));
+      expect(output).not.toHaveBeenCalled();
+      expect(openEditorWorkspace).not.toHaveBeenCalled();
+    });
+
+    test("missing links fail without preparing or opening", async () => {
+      workspaceOpenCommandDeps.resolveCompanions = async () => [];
+      const prepare = mock(async () => ({ workspacePath: "/work/acme" }));
+      workspaceOpenCommandDeps.prepareEditorWorkspace = prepare;
+      await expect(runWorkspaceOpenCommand(["--no-open", "--json"])).rejects.toThrow(
+        WorkingRepoRequiredError,
+      );
+      expect(prepare).not.toHaveBeenCalled();
+      expect(openEditorWorkspace).not.toHaveBeenCalled();
+    });
+
+    test("supports human preparation and JSON editor-open output", async () => {
+      workspaceOpenCommandDeps.resolveCompanions = async () => [match("/work/acme-notes")];
+      workspaceOpenCommandDeps.findRepoRoot = async () => "/work/acme";
+      workspaceOpenCommandDeps.prepareEditorWorkspace = async () => ({
+        workspacePath: "/work/acme/.mate/acme.mate.code-workspace",
+      });
+      await runWorkspaceOpenCommand(["--no-open"]);
+      expect(console.log).toHaveBeenCalledWith(
+        "Workspace: prepared .mate/acme.mate.code-workspace",
+      );
+      const output = spyOn(jsonOutput, "writeJsonStdout").mockResolvedValue();
+      await runWorkspaceOpenCommand(["--json"]);
+      expect(openEditorWorkspace).toHaveBeenCalledTimes(1);
+      expect(output).toHaveBeenCalledWith({
+        workspacePath: "/work/acme/.mate/acme.mate.code-workspace",
+      });
+    });
   });
 
   describe("with the real resolver", () => {

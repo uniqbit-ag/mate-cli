@@ -76,7 +76,7 @@ export const editorWorkspacePath = workspaceDocumentPath;
  * `.mate/<repo>.mate.code-workspace` and returns its path, or the error that
  * left the document unchanged. Backs `openEditorWorkspace`.
  */
-async function writeWorkspaceDocument(
+export async function prepareEditorWorkspace(
   companionPaths: string[],
   repoPath: string,
 ): Promise<{ workspacePath: string; error?: Error }> {
@@ -113,7 +113,7 @@ export async function openEditorWorkspace(
     return false;
   }
 
-  const { workspacePath, error } = await writeWorkspaceDocument(companionPaths, repoPath);
+  const { workspacePath, error } = await prepareEditorWorkspace(companionPaths, repoPath);
   if (error) {
     process.stderr.write(`mate: warning: ${workspacePath}: ${error.message}\n`);
     return false;

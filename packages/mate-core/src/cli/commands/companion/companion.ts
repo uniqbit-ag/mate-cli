@@ -36,7 +36,7 @@ export async function runCompanionCommand(
       await runCompanionUpdateCommand(argv);
       return;
     case "open":
-      await runWorkspaceOpenCommand();
+      await runWorkspaceOpenCommand(argv);
       return;
     case "tui":
       await runCompanionTuiCommand();

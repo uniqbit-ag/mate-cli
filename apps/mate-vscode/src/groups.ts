@@ -19,6 +19,7 @@ export type SessionGroupKind = "workset" | "branch" | "default" | "older" | "non
 export interface SessionGroup {
   kind: SessionGroupKind;
   label: string;
+  description?: string;
   sessions: Session[];
 }
 
@@ -42,6 +43,14 @@ export function worksetsOf(changes: OpenChange[]): Workset[] {
   }
   // oxlint-disable-next-line unicorn/no-array-sort -- engines.vscode 1.85 runs Node 18, which lacks toSorted
   return [...byKey.values()].sort((a, b) => a.label.localeCompare(b.label));
+}
+
+export function worksetProgress(workset: Workset): string {
+  const { done, total } = workset.changes.reduce(
+    (sum, change) => ({ done: sum.done + change.done, total: sum.total + change.total }),
+    { done: 0, total: 0 },
+  );
+  return `${done}/${total} tasks`;
 }
 
 function seenAt(session: Session): number {
@@ -74,7 +83,12 @@ export function groupSessions(
   const add = (key: string, kind: SessionGroupKind, label: string, session: Session) => {
     let group = groups.get(key);
     if (!group) {
-      group = { kind, label, sessions: [] };
+      group = {
+        kind,
+        label,
+        description: kind === "workset" ? session.branch : undefined,
+        sessions: [],
+      };
       groups.set(key, group);
     }
     group.sessions.push(session);
