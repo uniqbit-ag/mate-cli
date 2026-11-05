@@ -36,12 +36,12 @@
     },
     "apps/mate-cli": {
       "name": "@uniqbit/mate",
-      "version": "1.0.0-canary.0",
+      "version": "1.0.0-canary.1",
       "bin": {
         "mate": "src/cli-bootstrap.cjs",
       },
       "dependencies": {
-        "@uniqbit/mate-core": "1.0.0-canary.0",
+        "@uniqbit/mate-core": "1.0.0-canary.1",
         "yaml": "^2.9.0",
       },
       "devDependencies": {
@@ -74,7 +74,7 @@
     },
     "packages/mate-core": {
       "name": "@uniqbit/mate-core",
-      "version": "1.0.0-canary.0",
+      "version": "1.0.0-canary.1",
       "dependencies": {
         "@ai-sdk/harness": "1.0.167",
         "@ai-sdk/harness-claude-code": "1.0.171",
