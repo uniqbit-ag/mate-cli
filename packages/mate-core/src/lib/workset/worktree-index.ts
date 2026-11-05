@@ -34,6 +34,8 @@ export interface TokensaveRunner {
 const MAIN_NOT_INDEXED = "main checkout not indexed";
 const TOKENSAVE_NOT_ON_PATH = "tokensave not on PATH";
 
+const STDERR_TAIL = 4096;
+
 const CPU_USAGE_PROFILES = new Set(["low", "balanced", "performance"]);
 
 const runTokensave: TokensaveRunner = {
@@ -42,7 +44,10 @@ const runTokensave: TokensaveRunner = {
     new Promise((resolve) => {
       let stderr = "";
       const child = spawn("tokensave", args, { cwd, stdio: ["ignore", "ignore", "pipe"] });
-      child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf8")));
+      // Only the tail is reported; a full index can write a lot.
+      child.stderr.on("data", (chunk: Buffer) => {
+        stderr = (stderr + chunk.toString("utf8")).slice(-STDERR_TAIL);
+      });
       child.on("error", (error) => resolve(error.message));
       child.on("close", (code) => {
         const detail = stderr.trim().split("\n").at(-1);
@@ -71,13 +76,15 @@ async function cpuUsage(checkout: string): Promise<string | undefined> {
 
 /**
  * Indexes `worktree` like `checkout`: `init` plus Mate's posture when it has no
- * index yet, `sync` when it has one. Never throws; a failure is an outcome.
+ * index yet, `sync` when it has one. `onRun` fires before tokensave starts.
+ * Never throws; a failure is an outcome.
  */
 export async function indexWorktree(
   checkout: string,
   worktree: string,
   companionPath: string,
   tokensave: TokensaveRunner = runTokensave,
+  onRun?: (action: "init" | "sync") => void,
 ): Promise<IndexOutcome> {
   if (!(await isTokensaveIndexed(checkout)))
     return { outcome: "skipped", reason: MAIN_NOT_INDEXED };
@@ -88,10 +95,12 @@ export async function indexWorktree(
     let failure: string | null;
     if (await isTokensaveIndexed(worktree)) {
       await posture();
+      onRun?.("sync");
       failure = await tokensave.run(worktree, ["sync"]);
     } else {
       await ensureTokensaveStoreExcluded(worktree);
       const profile = await cpuUsage(checkout);
+      onRun?.("init");
       failure = await tokensave.run(worktree, [
         "init",
         worktree,

@@ -2,8 +2,7 @@ import fs from "node:fs";
 
 import { MATE_ENV } from "./env-names";
 import { FRAMEWORK_NAME } from "./framework";
-import { isLinkedWorktreeOf } from "./git-layout";
-import { isWithin } from "./physical-path";
+import { checkoutRootOf, isLinkedWorktreeOf } from "./git-layout";
 import { isCapabilityEnabled, policyDocument, readCompanionPolicy } from "./policy";
 import { resolveProjection, type ResolvedProjection } from "./projection";
 
@@ -98,16 +97,18 @@ export function resolveCompanionRuntime(
 /**
  * The one exception to the environment's precedence: a managed session moved into a
  * linked worktree of its Working Repository whose own projection names the same
- * companion and repository id reports that worktree. Files only, no `git` process, and
- * nothing is read while `cwd` lies inside the environment's repository. Any mismatch or
- * error leaves the environment's answer.
+ * companion and repository id reports that worktree, also one nested inside the main
+ * checkout. Files only, no `git` process, and no projection is read while `cwd`'s
+ * checkout is the environment's repository. Any mismatch or error leaves the
+ * environment's answer.
  */
 function linkedWorktreePath(context: CompanionRuntimeContext, cwd: string): string | null {
   if (!context.repositoryPath || !context.companionPath) return null;
   const realPath = fs.realpathSync;
   try {
     const repository = realPath(context.repositoryPath);
-    if (isWithin(realPath(cwd), repository)) return null;
+    const checkout = checkoutRootOf(cwd);
+    if (!checkout || checkout === repository) return null;
     const projection = resolveProjection(cwd);
     if (!projection) return null;
     const worktree = realPath(projection.repoRoot);

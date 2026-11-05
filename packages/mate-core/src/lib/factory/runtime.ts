@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { resolveDeliveryBranch, worktreeAddArgs } from "../delivery/resolve-branch";
+import { newBranchBase, resolveDeliveryBranch, worktreeAddArgs } from "../delivery/resolve-branch";
 import { resolveWorksetBranch } from "../workset/record";
 
 import { type CommandResult, type CommandRunner, runCommand } from "./command";
@@ -427,19 +427,21 @@ export class WorksetRuntime {
     repoDir: string,
     worktree: string,
   ): Promise<string> {
+    const hasRef = async (ref: string) =>
+      (await this.git(["-C", repoDir, "rev-parse", "--verify", "--quiet", ref])).status === 0;
     const resolution = await resolveDeliveryBranch({
       companionPath: companion,
       repository: request.repository,
-      hasRef: async (ref) =>
-        (await this.git(["-C", repoDir, "rev-parse", "--verify", "--quiet", ref])).status === 0,
+      hasRef,
       worksetId: request.id,
     });
     const { branch, source } = resolution;
     if (branch === null || source === null) {
       throw new FactoryError(resolution.diagnostics.join("\n"));
     }
+    const base = source === "new" ? await newBranchBase(hasRef) : undefined;
     await this.must(
-      this.git(["-C", repoDir, ...worktreeAddArgs({ branch, source }, worktree)]),
+      this.git(["-C", repoDir, ...worktreeAddArgs({ branch, source }, worktree, base)]),
       `creating the worktree for ${request.id}`,
     );
     return branch;

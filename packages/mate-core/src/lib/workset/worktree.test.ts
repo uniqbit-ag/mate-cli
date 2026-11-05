@@ -17,6 +17,7 @@ import {
   createChangeWorktrees,
   createWorksetWorktrees,
   type GitRunner,
+  type GitRunOptions,
   type InstallRunner,
   pruneWorksetWorktrees,
 } from "./worktree";
@@ -142,6 +143,33 @@ describe("createWorksetWorktrees", () => {
     expect(fs.readFileSync(path.join(companion, ".mate", "config", "registry.yaml"))).toEqual(
       registry,
     );
+  });
+
+  test("a clone without origin/HEAD starts the new branch from origin/<default>", async () => {
+    const web = checkout("web");
+    git(web, "remote", "set-head", "origin", "--delete");
+    // Git 2.48+ would otherwise recreate it on the plan-phase fetch.
+    git(web, "config", "remote.origin.followRemoteHEAD", "never");
+    link(web);
+    workset("acme-login", "acme/web");
+    const result = await createWorksetWorktrees(companion, "acme-login", options);
+    const target = path.join(root, "src", "web.worktrees", "acme-login");
+    expect(result.ok).toBe(true);
+    expect(git(target, "rev-parse", "HEAD")).toBe(git(web, "rev-parse", "origin/main"));
+  });
+
+  test("the plan-phase fetch never prompts and is bounded", async () => {
+    const web = checkout("web");
+    link(web);
+    workset("acme-login", "acme/web");
+    const fetches: (GitRunOptions | undefined)[] = [];
+    const recording: GitRunner = async (cwd, args, runOptions) => {
+      if (args[0] === "fetch") fetches.push(runOptions);
+      return realGit(cwd, args);
+    };
+    await createWorksetWorktrees(companion, "acme-login", options, { git: recording });
+    expect(fetches).toHaveLength(1);
+    expect(fetches[0]?.timeoutMs).toBeGreaterThan(0);
   });
 
   test("several repositories each get a worktree next to their main checkout", async () => {

@@ -2,6 +2,7 @@ import { Plugin } from "@opencode/plugin";
 import type { Context } from "@opencode/plugin/promise/plugin";
 import {
   registerCompanionHooks,
+  registerTokensaveRouting,
   repositoryWrappedForOpenCode,
 } from "../../src/opencode/companion-hooks";
 import { readContext } from "../../src/opencode/companion-policy";
@@ -54,6 +55,7 @@ export const MateOpenCodePlugin = Plugin.define({
 
     await registerCompanionAccess(api, context.companionPath);
     await registerCompanionHooks(api, context, env);
+    await registerTokensaveRouting(api);
     await registerCompanion(api, context, env);
     await registerEnterWorktree(api, context);
     /** Last: the guardrails above are live while the local phase holds `setup`. */

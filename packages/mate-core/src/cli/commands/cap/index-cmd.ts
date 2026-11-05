@@ -198,8 +198,13 @@ async function runSteps(
     onStepStart("tokensave");
     /** One checkout for check, init, posture and sync; `runTokensave` resolves the same one. */
     const resolved = await resolveRepositoryPath();
-    const repoPath = resolved ? tokensaveCheckout(cwd(), resolved) : cwd();
-    if (!(await isTokensaveInitialized(repoPath))) {
+    const repoPath = resolved ? tokensaveCheckout(cwd(), resolved) : null;
+    if (!repoPath) {
+      // Never the raw cwd: it may be a subfolder, and `runTokensave` would refuse anyway.
+      process.stderr.write("mate cap index: no working repository resolved for tokensave\n");
+      failed = true;
+      onStepDone("tokensave", false);
+    } else if (!(await isTokensaveInitialized(repoPath))) {
       await ensureStoreExcluded(repoPath);
       const initOk = await runCapStep(() => runTokensave(["init", "--no-git-hook"]));
       if (!initOk) {

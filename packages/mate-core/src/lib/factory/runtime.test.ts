@@ -47,7 +47,7 @@ function fake(): Fake {
     calls: [],
     containers: new Map(),
     imageId: "sha256:current",
-    remoteBranches: new Set(),
+    remoteBranches: new Set(["HEAD"]),
     worktreeBranches: new Map(),
     dirty: new Set(),
     unpushed: new Map(),

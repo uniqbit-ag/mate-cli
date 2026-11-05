@@ -5,13 +5,17 @@ import path from "node:path";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import { createTempDir, withEnv } from "../../../../test/fixtures";
-import { guardToolInput, registerCompanionHooks } from "./companion-hooks";
+import {
+  guardToolInput,
+  registerCompanionHooks,
+  registerTokensaveRouting,
+} from "./companion-hooks";
 import { readContext, type CompanionContext } from "./companion-policy";
 import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { MATE_ENV } from "../runtime/env-names";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
-import { TOKENSAVE_DB } from "../runtime/tokensave-route";
+import { ROUTE_SYNC_MARKER, TOKENSAVE_DB } from "../runtime/tokensave-route";
 const tempRoots: string[] = [];
 
 async function makeTempDir(prefix: string): Promise<string> {
@@ -330,6 +334,8 @@ describe("OpenCode tokensave routing", () => {
     spawnSync("git", ["worktree", "add", "-q", "-b", "fix", worktree], { cwd: repo });
     await fs.mkdir(path.join(worktree, ".tokensave"), { recursive: true });
     await fs.writeFile(path.join(worktree, TOKENSAVE_DB), "");
+    // A fresh marker: routing skips its `tokensave sync`.
+    await fs.writeFile(path.join(worktree, ROUTE_SYNC_MARKER), "");
     const context = await launchContext(companion, repo);
     return { repo, worktree: await fs.realpath(worktree), context };
   }
@@ -354,9 +360,9 @@ describe("OpenCode tokensave routing", () => {
   }
 
   test("routes a nested tokensave call and leaves execute and other tools alone", async () => {
-    const { worktree, context } = await routedFixture();
+    const { worktree } = await routedFixture();
     const { api, hooks } = sessionApi(worktree);
-    await registerCompanionHooks(api, context);
+    await registerTokensaveRouting(api);
     const before = hooks.get("tool.execute.before")!;
 
     const nested = search({ query: "alpha" });
@@ -372,9 +378,9 @@ describe("OpenCode tokensave routing", () => {
   });
 
   test("a session moved into the worktree is routed to it; the main checkout is not", async () => {
-    const { repo, worktree, context } = await routedFixture();
+    const { repo, worktree } = await routedFixture();
     const { api, hooks, move } = sessionApi(repo);
-    await registerCompanionHooks(api, context);
+    await registerTokensaveRouting(api);
     const before = hooks.get("tool.execute.before")!;
 
     const fromMain = search({ query: "alpha" });
@@ -388,16 +394,16 @@ describe("OpenCode tokensave routing", () => {
   });
 
   test("an explicit graph_root and a failing session lookup pass unchanged", async () => {
-    const { repo, worktree, context } = await routedFixture();
+    const { repo, worktree } = await routedFixture();
     const explicit = sessionApi(worktree);
-    await registerCompanionHooks(explicit.api, context);
+    await registerTokensaveRouting(explicit.api);
     const call = search({ graph_root: "/src/other" });
     await explicit.hooks.get("tool.execute.before")!(call);
     expect(call.input).toEqual({ graph_root: "/src/other" });
 
     /** No `session.get`: the lookup throws and the start directory, the main checkout, decides. */
     const { api, hooks } = fakeApi(repo);
-    await registerCompanionHooks(api, context);
+    await registerTokensaveRouting(api);
     const fallback = search({ query: "alpha" });
     await hooks.get("tool.execute.before")!(fallback);
     expect(fallback.input).toEqual({ query: "alpha" });

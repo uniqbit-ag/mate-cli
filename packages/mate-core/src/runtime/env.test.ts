@@ -330,6 +330,13 @@ describe("a managed session in a linked worktree", () => {
     expect(readCompanionRuntimeContext(env, claude).repositoryPath).toBe(web);
   });
 
+  test("a projected worktree nested inside the main checkout is reported", () => {
+    const { web, companionPath, env } = layout();
+    const nested = addWorktree(web, path.join(web, ".claude", "worktrees", "acme"));
+    project(nested, { companionPath });
+    expect(readCompanionRuntimeContext(env, nested).repositoryPath).toBe(nested);
+  });
+
   test("a malformed projection keeps the environment and raises nothing", () => {
     const { companionPath, worktree, env } = layout();
     project(worktree, { companionPath });

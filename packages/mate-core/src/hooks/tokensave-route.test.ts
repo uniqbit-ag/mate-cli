@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { addWorktree, initRepo } from "../../test/git-checkouts";
 import { createTempDir } from "../../../../test/fixtures";
-import { TOKENSAVE_DB } from "../runtime/tokensave-route";
+import { ROUTE_SYNC_MARKER, TOKENSAVE_DB } from "../runtime/tokensave-route";
 import { buildTokensaveRoute } from "./tokensave-route";
 
 const roots: string[] = [];
@@ -24,6 +24,8 @@ async function indexedWorktree() {
   for (const checkout of [main, worktree]) {
     await fs.mkdir(path.join(checkout, ".tokensave"), { recursive: true });
     await fs.writeFile(path.join(checkout, TOKENSAVE_DB), "");
+    // A fresh marker: routing skips its `tokensave sync`.
+    await fs.writeFile(path.join(checkout, ROUTE_SYNC_MARKER), "");
   }
   return { main, worktree };
 }
