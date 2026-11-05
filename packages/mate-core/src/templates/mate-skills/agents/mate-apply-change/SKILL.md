@@ -21,8 +21,11 @@ In the Working Repository, read local Git state only:
 
 ```bash
 git symbolic-ref --quiet --short HEAD          # current branch; fails when detached
-git symbolic-ref --quiet --short refs/remotes/origin/HEAD   # default branch
+git symbolic-ref --quiet --short refs/remotes/origin/HEAD   # repository's default branch
 ```
+
+The repository's default branch (`origin/HEAD`, e.g. `main`) is not the link result's
+`defaultBranch`, which is the change's resolved delivery branch (e.g. `workset/<id>`).
 
 Read the change's existing record without changing it:
 
@@ -33,14 +36,15 @@ mate artifact link "<change-name>" --json
 ## Step 2: Settle the delivery branch
 
 Read `defaultBranch`, `inheritedFrom`, `diagnostics`, `ticketFormat`, and
-`ticketCandidate` from the link result. Report every diagnostic;
+`ticketCandidate` from the link result. `defaultBranch` is the change's resolved
+delivery branch, never the repository's default branch. Report every diagnostic;
 never derive a default from a change or Workset name. `defaultBranch: null` means ask
 for a branch name, not infer one. When `inheritedFrom` is not empty, `defaultBranch` is
 the open branch of those `dependsOn` changes: say this change continues on it.
 Preserve recorded branches after membership changes;
 a mismatch is informational, and relinking requires explicit user confirmation.
 
-A branch is **protected** when it is the default branch or matches a configured
+A branch is **protected** when it is the repository's default branch or matches a configured
 protected pattern; `mate artifact link` refuses a
 protected branch unless it is recorded as a direct delivery. Mate never asks the forge,
 so a branch only the forge protects looks unprotected; hence the menu below.
@@ -82,7 +86,15 @@ so a branch only the forge protects looks unprotected; hence the menu below.
      repository's worktree, run `/mate-apply-change <change-name>` there. On failure,
      report its diagnostics and offer the other options again.
   3. **Use the current branch** (only when it is not protected): record it.
-  4. **Use another existing branch**: switch to the branch the user names and record it.
+  4. **Use or create another branch**: the user names it. Record it first with
+     `mate artifact link "<change-name>" --branch "<name>" --json`; only after that
+     succeeds, check local and `origin` refs: `git switch "<name>"` when local,
+     `git switch --track -c "<name>" "origin/<name>"` when remote-only, otherwise
+     `git switch -c "<name>"` from the current `HEAD`, so a refused name leaves no branch.
+     Uncommitted edits carry over. With `jira`, the menu hints to put the key in the name
+     (`feature/ABC-123-acme-retry`); a named branch carries its ticket only in its name,
+     so never pass `--ticket` for it. When the name holds no Jira key, say in one line
+     that no ticket is tracked, and continue.
   5. **Work directly here** (protected branch only) — only when the user explicitly chooses it.
      Record it as a direct delivery:
      `mate artifact link "<change-name>" --branch "<branch>" --direct --json`.
@@ -92,7 +104,8 @@ mention one. A ticket only names a new branch; it is stored nowhere else. With `
 when nothing is recorded or inherited and `defaultBranch` exists neither locally nor on
 `origin`, options 1 and 2 accept an optional Jira key in the same answer: say so in the
 menu (`1 ABC-123` names the new branch after the ticket; `1` alone creates it without
-one). Never ask a separate ticket question. An agent without a person to ask passes no
+one). Option 4 takes no key in the answer; its name carries it. Never ask a separate
+ticket question. An agent without a person to ask passes no
 ticket. On a refused key, name the expected format and ask once more.
 
 Record the branch before writing any code. When `mate artifact link` refuses, report
@@ -128,7 +141,9 @@ never invokes.
 - Above the section, label `/mate-show-me` and `/mate-simplify-code` as optional, in
   any order; they are not prerequisites for archive.
 - In the section, list `/mate-archive-change <change-name>`, after any required work
-  still open (a failing check, an unanswered question).
+  still open (a failing check, an unanswered question). Name the archive action only
+  there: omit the reference's completion sentence that also points to
+  `/mate-archive-change`.
 - Several changes on one branch: list their archives in dependency order, and say above
   the section that this order avoids an advisory archive warning; it is not a gate.
 

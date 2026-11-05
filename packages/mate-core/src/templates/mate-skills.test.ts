@@ -1260,6 +1260,29 @@ describe("bundled Delivery Path stage skills", () => {
     expect(source).not.toContain("ask once whether this change is delivered through it");
   });
 
+  test("apply names or creates another branch, recording it before creating it", async () => {
+    const flat = (source: string) => source.replace(/\s+/g, " ");
+    const source = flat(await readSkill("mate-apply-change"));
+    expect(source).toContain("**Use or create another branch**: the user names it.");
+    expect(source).not.toContain("Use another existing branch");
+    const link = source.indexOf('mate artifact link "<change-name>" --branch "<name>" --json');
+    const create = source.indexOf('`git switch -c "<name>"`');
+    expect(link).toBeGreaterThan(-1);
+    expect(create).toBeGreaterThan(link);
+    expect(source).toContain("so a refused name leaves no branch");
+    expect(source).toContain("so never pass `--ticket` for it");
+    expect(source).toContain(
+      "When the name holds no Jira key, say in one line that no ticket is tracked",
+    );
+    expect(source).toContain(
+      "`defaultBranch`, which is the change's resolved delivery branch (e.g. `workset/<id>`)",
+    );
+    expect(source).toContain("never the repository's default branch");
+    expect(source).toContain(
+      "Name the archive action only there: omit the reference's completion sentence that also points to `/mate-archive-change`.",
+    );
+  });
+
   test("propose, revise, archive, and publish never ask for or record a ticket", async () => {
     const flat = (source: string) => source.replace(/\s+/g, " ");
     for (const root of [skillsRoot, claudeSkillsRoot]) {

@@ -168,11 +168,14 @@ repository. A standalone change has an implicit single-change Workset whose id
 is its change name; no Workset record is written. A slice whose `dependsOn`
 change records a branch that is not merged yet continues on that branch, so the
 slices of one feature share one merge. On the recorded branch or the resolved
-default branch, apply continues without asking. On any other branch,
-protected or not, it shows one menu: create or switch to the default branch
+delivery branch, apply continues without asking. On any other branch,
+protected or not, it shows one menu: create or switch to the delivery branch
 (recommended), create a worktree, use the current branch (only when it is not
-protected), use another existing branch, or work directly (only on a protected
-branch, on explicit choice).
+protected), use or create another branch you name, or work directly (only on a
+protected branch, on explicit choice). Apply records a branch you name before it
+creates it, so a refused name leaves no branch behind. With Jira tickets, a
+branch you name carries its ticket only in its name, such as
+`feature/ABC-123-acme-retry`.
 
 Existing recorded branches, including `change/*` and custom names, remain valid.
 Regrouping a change never replaces its recorded branch: Mate reports the mismatch,
@@ -180,7 +183,7 @@ and relinking requires your confirmation. Ambiguous membership, identity collisi
 or invalid Workset records suppress unsafe defaults and ask you for a branch name.
 
 On a **protected branch** it does not implement by default. A branch is
-protected when it is the default branch or matches a pattern configured on the
+protected when it is the repository's default branch or matches a pattern configured on the
 companion's openspec capability. Mate does not ask GitHub, so add a branch only
 GitHub protects to the pattern list:
 
