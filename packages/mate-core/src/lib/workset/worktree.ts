@@ -2,15 +2,23 @@ import { execFile, spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { FRAMEWORK_NAME } from "../../framework";
 import { gitEnvironment } from "../../runtime/companion-git";
+import { withCompanionLock } from "../../runtime/companion-lock";
 import { errorMessage } from "../../runtime/error-message";
+import type { WrapRuntime } from "../../runtime/runtime-document-manifest";
+import { readWrapState, WRAP_RUNTIMES } from "../../runtime/wrap-state";
+import { cleanupWorkingRepository } from "../../tools/setup/working-repo-cleanup";
 import { locateChange } from "../change-layout";
 import { defaultDeliveryBranch } from "../delivery/record";
 import { scopedRepositories } from "../openspec-scopes";
+import { attendedLockOptions } from "../orchestrator/companion-git-sync";
 import {
   readCompanionRegistry,
   writeRepoLocalRegistryEntry,
 } from "../orchestrator/repository-link";
+import type { LinkedRepository } from "../orchestrator/types";
+import { runWrapPass } from "../orchestrator/wrap-pass";
 import { identityOf } from "./repositories";
 import {
   findWorkset,
@@ -23,7 +31,8 @@ import {
 /**
  * Workset worktrees outside the factory: one Git worktree per Working Repository at
  * `<main checkout>.worktrees/<workset-id>`, on the Workset's Delivery Branch, linked to
- * the companion and installed. Env files are reported by path, never opened.
+ * the companion, wrapped like its main checkout and installed. Env files are reported by
+ * path, never opened.
  */
 
 export interface GitResult {
@@ -37,13 +46,30 @@ export type GitRunner = (cwd: string, args: string[]) => Promise<GitResult>;
 /** Runs an install command; `stream` passes its output through, otherwise it is discarded. */
 export type InstallRunner = (cwd: string, command: string[], stream: boolean) => Promise<boolean>;
 
+/** Wraps the worktree for `runtimes`; resolves to the failure message, or null. */
+export type WorktreeWrapper = (
+  companionPath: string,
+  repository: LinkedRepository,
+  runtimes: readonly WrapRuntime[],
+) => Promise<string | null>;
+
 export interface WorktreeDeps {
   git?: GitRunner;
   install?: InstallRunner;
   writeLink?: typeof writeRepoLocalRegistryEntry;
+  readWrapState?: typeof readWrapState;
+  wrap?: WorktreeWrapper;
+  unwrap?: typeof cleanupWorkingRepository;
 }
 
 export type InstallOutcome = "ok" | "failed" | "skipped";
+
+export interface WrapOutcome {
+  /** The runtimes the main checkout is wrapped for. */
+  runtimes: WrapRuntime[];
+  outcome: InstallOutcome;
+  reason?: string;
+}
 
 export interface WorktreeRepositoryResult {
   repository: string;
@@ -53,6 +79,7 @@ export interface WorktreeRepositoryResult {
   branch: string;
   action: "created" | "reused";
   install: { command: string | null; outcome: InstallOutcome; reason?: string };
+  wrap: WrapOutcome;
   /** Env files of the main checkout the worktree lacks, relative to the repository root. */
   missingEnv: string[];
   /** Set when a step for this repository failed. */
@@ -91,6 +118,15 @@ const runGit: GitRunner = (cwd, args) =>
       },
     );
   });
+
+/** Serialized with `mate wrap`, Session Prepare and every sync, which rewrite the same manifests. */
+const runWrap: WorktreeWrapper = async (companionPath, repository, runtimes) => {
+  const locked = await withCompanionLock(companionPath, attendedLockOptions(companionPath), () =>
+    runWrapPass(companionPath, repository, { runtimes }),
+  );
+  if (!locked.acquired) return "another companion synchronization is still running";
+  return locked.value.kind === "failed" ? locked.value.message : null;
+};
 
 const runInstall: InstallRunner = (cwd, [command, ...args], stream) =>
   new Promise((resolve) => {
@@ -146,6 +182,8 @@ interface WorktreeEntry {
   path: string;
   /** Short branch name, or null when detached or bare. */
   branch: string | null;
+  /** `git worktree lock` set; `git worktree remove` refuses it without `--force`. */
+  locked: boolean;
 }
 
 async function listWorktrees(git: GitRunner, repo: string): Promise<WorktreeEntry[] | null> {
@@ -154,12 +192,14 @@ async function listWorktrees(git: GitRunner, repo: string): Promise<WorktreeEntr
   const entries = result.stdout.split(/\n\n+/).flatMap((block) => {
     let entryPath: string | null = null;
     let branch: string | null = null;
+    let locked = false;
     for (const line of block.split("\n")) {
       if (line.startsWith("worktree ")) entryPath = line.slice("worktree ".length);
       else if (line.startsWith("branch refs/heads/"))
         branch = line.slice("branch refs/heads/".length);
+      else if (line === "locked" || line.startsWith("locked ")) locked = true;
     }
-    return entryPath ? [{ path: entryPath, branch }] : [];
+    return entryPath ? [{ path: entryPath, branch, locked }] : [];
   });
   return Promise.all(
     entries.map(async (entry) => ({ ...entry, path: await canonical(entry.path) })),
@@ -171,8 +211,8 @@ async function linkedCheckout(
   companionPath: string,
   repository: string,
   git: GitRunner,
-): Promise<string | null> {
-  let repos: { path: string }[] = [];
+): Promise<LinkedRepository | null> {
+  let repos: LinkedRepository[] = [];
   try {
     repos = (await readCompanionRegistry(companionPath)).repos;
   } catch (error) {
@@ -190,11 +230,13 @@ async function linkedCheckout(
   const index = identities.findIndex(
     (identity) => identity?.toLowerCase() === repository.toLowerCase(),
   );
-  return index === -1 ? null : repos[index]!.path;
+  return index === -1 ? null : repos[index]!;
 }
 
 interface Plan {
   repository: string;
+  /** The main checkout's Repository Link id, which the worktree's link repeats. */
+  repositoryId: string;
   checkout: string;
   target: string;
   branch: string;
@@ -267,9 +309,9 @@ async function planRepository(
   }
   const linked = await linkedCheckout(companionPath, repository, git);
   if (!linked) return [`${repository}: not linked to ${companionPath} on this machine`];
-  const entries = await listWorktrees(git, linked);
+  const entries = await listWorktrees(git, linked.path);
   const main = entries?.[0];
-  if (!main) return [`${repository}: cannot list the worktrees of ${linked}`];
+  if (!main) return [`${repository}: cannot list the worktrees of ${linked.path}`];
   const target = await canonical(worktreePathFor(main.path, worksetId));
   const atTarget = entries.find((entry) => entry.path === target);
   const reuse = atTarget?.branch === branch;
@@ -278,7 +320,7 @@ async function planRepository(
   }
   const elsewhere = entries.find((entry) => entry.branch === branch && entry.path !== target);
   if (elsewhere) return [`${repository}: ${branch} is already checked out at ${elsewhere.path}`];
-  return { repository, checkout: main.path, target, branch, reuse };
+  return { repository, repositoryId: linked.id, checkout: main.path, target, branch, reuse };
 }
 
 async function addWorktree(git: GitRunner, plan: Plan, warnings: string[]): Promise<string | null> {
@@ -298,6 +340,41 @@ async function addWorktree(git: GitRunner, plan: Plan, warnings: string[]): Prom
       : ["worktree", "add", "--no-track", "-b", branch, target, "origin/HEAD"];
   const result = await git(plan.checkout, add);
   return result.code === 0 ? null : `creating the worktree failed: ${result.stderr.trim()}`;
+}
+
+/** The runtimes `checkout` is wrapped for, in wrap order. */
+async function wrappedRuntimes(checkout: string, deps: WorktreeDeps): Promise<WrapRuntime[]> {
+  const state = await (deps.readWrapState ?? readWrapState)(checkout);
+  return WRAP_RUNTIMES.filter((runtime) => state.runtimes.has(runtime));
+}
+
+/** Wraps the worktree for exactly the runtimes its main checkout is wrapped for. */
+async function wrapWorktree(
+  companionPath: string,
+  checkout: string,
+  repository: LinkedRepository,
+  deps: WorktreeDeps,
+): Promise<WrapOutcome> {
+  let runtimes: WrapRuntime[];
+  try {
+    runtimes = await wrappedRuntimes(checkout, deps);
+  } catch (error) {
+    return {
+      runtimes: [],
+      outcome: "failed",
+      reason: `cannot read the wrap of ${checkout}: ${errorMessage(error)}`,
+    };
+  }
+  if (runtimes.length === 0) {
+    return { runtimes, outcome: "skipped", reason: "main checkout not wrapped" };
+  }
+  let failure: string | null;
+  try {
+    failure = await (deps.wrap ?? runWrap)(companionPath, repository, runtimes);
+  } catch (error) {
+    failure = errorMessage(error);
+  }
+  return failure ? { runtimes, outcome: "failed", reason: failure } : { runtimes, outcome: "ok" };
 }
 
 async function installCommand(worktree: string): Promise<string[] | null> {
@@ -421,23 +498,42 @@ async function realize(
     branch: plan.branch,
     action: plan.reuse ? "reused" : "created",
     install: { command: null, outcome: "skipped" },
+    wrap: { runtimes: [], outcome: "skipped" },
     missingEnv: [],
   };
   if (!plan.reuse) {
     const failure = await addWorktree(git, plan, warnings);
-    if (failure)
-      return { ...result, install: { ...result.install, reason: NOT_CREATED }, error: failure };
+    if (failure) {
+      return {
+        ...result,
+        install: { ...result.install, reason: NOT_CREATED },
+        wrap: { ...result.wrap, reason: NOT_CREATED },
+        error: failure,
+      };
+    }
   }
+  // The main checkout's id: a session moved here keeps its `MATE_REPOSITORY_ID`.
+  const repository = { id: plan.repositoryId, path: plan.target };
   try {
-    // Named like `mate working link` names it: the repository part of the origin.
     await (deps.writeLink ?? writeRepoLocalRegistryEntry)(
       plan.target,
       companionPath,
-      { id: plan.repository.split("/").at(-1)!, path: plan.target },
+      repository,
       "existing",
     );
+    result.wrap = await wrapWorktree(companionPath, plan.checkout, repository, deps);
+    if (result.wrap.outcome === "failed") {
+      const message = `wrapping the worktree failed: ${result.wrap.reason}`;
+      // A reused worktree still wrapped from before stays usable; only refreshing it failed.
+      if (plan.reuse && (await stillWrapped(plan.target, result.wrap.runtimes, deps))) {
+        warnings.push(`${plan.repository}: ${message}; its earlier wrap stays`);
+      } else {
+        result.error = message;
+      }
+    }
   } catch (error) {
     result.error = `linking the worktree failed: ${errorMessage(error)}`;
+    result.wrap.reason = "worktree not linked";
   }
   const command = await installCommand(plan.target);
   result.install.command = command ? command.join(" ") : null;
@@ -451,6 +547,19 @@ async function realize(
   }
   result.missingEnv = await missingEnvFiles(git, plan.checkout, plan.target);
   return result;
+}
+
+async function stillWrapped(
+  worktree: string,
+  runtimes: readonly WrapRuntime[],
+  deps: WorktreeDeps,
+): Promise<boolean> {
+  try {
+    const own = await wrappedRuntimes(worktree, deps);
+    return runtimes.every((runtime) => own.includes(runtime));
+  } catch {
+    return false;
+  }
 }
 
 /** Why a worktree must stay, or null when it is clean and every commit is on a remote. */
@@ -469,32 +578,59 @@ async function pruneRepository(
   worksetId: string,
   repository: string,
   git: GitRunner,
+  deps: WorktreeDeps,
   result: PruneResult,
 ): Promise<void> {
   const linked = await linkedCheckout(companionPath, repository, git);
   if (!linked) return;
-  const entries = await listWorktrees(git, linked);
+  const entries = await listWorktrees(git, linked.path);
   const main = entries?.[0];
   if (!main) {
-    result.warnings.push(`${repository}: cannot list the worktrees of ${linked}`);
+    result.warnings.push(`${repository}: cannot list the worktrees of ${linked.path}`);
     return;
   }
   const target = await canonical(worktreePathFor(main.path, worksetId));
-  if (!entries.some((entry) => entry.path === target)) return;
+  const listed = entries.find((candidate) => candidate.path === target);
+  if (!listed) return;
   const entry = { workset: worksetId, repository, path: target };
-  const reason = await keepReason(git, target);
+  const reason = listed.locked ? "locked" : await keepReason(git, target);
   if (reason) {
     result.kept.push({ ...entry, reason });
     return;
   }
+  // Unwrap first: machine-local state keyed by its path (Claude local-scope MCP) must not outlive it.
+  try {
+    await (deps.unwrap ?? cleanupWorkingRepository)(target, [companionPath]);
+  } catch (error) {
+    result.kept.push({ ...entry, reason: `removing its wrap failed: ${errorMessage(error)}` });
+    return;
+  }
   const removed = await git(main.path, ["worktree", "remove", target]);
-  if (removed.code === 0) result.removed.push(entry);
-  else result.kept.push({ ...entry, reason: removed.stderr.trim() || "git refused" });
+  if (removed.code === 0) {
+    result.removed.push(entry);
+    return;
+  }
+  const refused = removed.stderr.trim() || "git refused";
+  // Kept, so it gets its guardrails back.
+  const rewrap = await wrapWorktree(
+    companionPath,
+    main.path,
+    { id: linked.id, path: target },
+    deps,
+  );
+  result.kept.push({
+    ...entry,
+    reason:
+      rewrap.outcome === "failed"
+        ? `${refused}; re-wrapping it failed, run \`${FRAMEWORK_NAME} wrap\` there: ${rewrap.reason}`
+        : refused,
+  });
 }
 
 /**
  * Removes the worktrees of the given (Done) Worksets that are clean and fully pushed,
- * without `--force`, and never deletes a branch. Every other worktree stays.
+ * without `--force`, and never deletes a branch. Every other worktree stays. Each is
+ * unwrapped before removal.
  */
 export async function pruneWorksetWorktrees(
   companionPath: string,
@@ -506,7 +642,7 @@ export async function pruneWorksetWorktrees(
   for (const record of done) {
     for (const repository of record.repositories) {
       // oxlint-disable-next-line no-await-in-loop -- Git operations on shared checkouts, one at a time
-      await pruneRepository(companionPath, record.id, repository, git, result);
+      await pruneRepository(companionPath, record.id, repository, git, deps, result);
     }
   }
   return result;

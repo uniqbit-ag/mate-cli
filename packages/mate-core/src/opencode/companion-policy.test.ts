@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { addWorktree, initRepo } from "../../test/git-checkouts";
 import { evaluate } from "../hooks/validate-artifact-path";
 import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { writeProjectionPair } from "../runtime/projection";
@@ -237,5 +238,24 @@ describe("OpenCode companion policy", () => {
     expect(shouldBlockArtifactWrite(context, path.join(repo, "docs", "usage", "tasks.md"))).toBe(
       true,
     );
+  });
+});
+
+describe("readContext in a linked worktree", () => {
+  test("a managed session moved into a wrapped worktree guards that worktree", async () => {
+    const root = await fs.realpath(await makeTempDir("mate-oc-worktree-"));
+    const companionPath = path.join(root, "companion");
+    await fs.mkdir(companionPath);
+    const web = initRepo(path.join(root, "web"));
+    const worktree = addWorktree(web, path.join(root, "web.worktrees", "acme-fix"));
+    await wrapRepo(worktree, companionPath);
+    const env = {
+      MATE_ARTIFACT_PATH: companionPath,
+      MATE_REPO_PATH: web,
+      MATE_REPO_ID: "acme",
+    };
+    const context = readContext(env, worktree);
+    expect(context.repositoryPath).toBe(worktree);
+    expect(shouldBlockArtifactWrite(context, path.join(worktree, "design.md"))).toBe(true);
   });
 });

@@ -1,13 +1,22 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 import { git, initRepo } from "../../../test/git-checkouts";
+import { ARTIFACT_REFUSAL_HEADLINE } from "../../runtime/artifact-refusal";
+import { MATE_ENV } from "../../runtime/env-names";
+import { readProjectionFile } from "../../runtime/projection";
+import { refreshRuntimeDirectory } from "../runtime-directory-refresh";
+import { runtimeDocumentDeps } from "../orchestrator/projection-runtime-documents";
+import { writeRepoLocalRegistryEntry } from "../orchestrator/repository-link";
+import { runWrapPass } from "../orchestrator/wrap-pass";
 import { readWorksets } from "./record";
 import {
   createChangeWorktrees,
   createWorksetWorktrees,
+  type GitRunner,
   type InstallRunner,
   pruneWorksetWorktrees,
 } from "./worktree";
@@ -100,6 +109,12 @@ function installs(ok = true): { calls: [string, string[]][]; install: InstallRun
 }
 
 const options = { install: true, streamInstall: false };
+
+/** The real `git`, as a runner a test can wrap. */
+const realGit: GitRunner = async (cwd, args) => {
+  const run = spawnSync("git", args, { cwd, encoding: "utf8" });
+  return { code: run.status ?? 1, stdout: run.stdout, stderr: run.stderr };
+};
 
 describe("createWorksetWorktrees", () => {
   test("one repository: a new branch from origin/HEAD, linked, with the companion registry unchanged", async () => {
@@ -392,10 +407,226 @@ describe("pruneWorksetWorktrees", () => {
     expect(result.kept[0]?.reason).toBe("uncommitted changes or untracked files");
   });
 
+  test("keeps a locked worktree without unwrapping it", async () => {
+    const { web, target } = await prepared();
+    git(web, "worktree", "lock", target);
+    let unwrapped = false;
+    const result = await pruneWorksetWorktrees(companion, await done("acme-login"), {
+      unwrap: async () => {
+        unwrapped = true;
+      },
+    });
+    expect(result.kept[0]?.reason).toBe("locked");
+    expect(unwrapped).toBe(false);
+    expect(fs.existsSync(target)).toBe(true);
+  });
+
   test("leaves the worktrees of Worksets that are not Done", async () => {
     const { target } = await prepared();
     const result = await pruneWorksetWorktrees(companion, await done());
     expect(result).toEqual({ removed: [], kept: [], warnings: [] });
     expect(fs.existsSync(target)).toBe(true);
   });
+});
+
+describe("wrapping worktrees", () => {
+  const originalHomeDir = runtimeDocumentDeps.homeDir;
+  let home: string;
+
+  // Wrapped hook commands name the runtime link.
+  beforeAll(async () => {
+    await refreshRuntimeDirectory();
+  });
+
+  beforeEach(() => {
+    // Local-scope MCP lands in the user's home; never the real one.
+    home = path.join(root, "home");
+    fs.mkdirSync(home);
+    runtimeDocumentDeps.homeDir = () => home;
+    fs.writeFileSync(
+      path.join(companion, ".mate", "config", "framework.yaml"),
+      "type: companion\nallowedAgents:\n  - claude\n  - opencode\ncapabilities:\n  - name: tokensave\n",
+    );
+  });
+
+  afterEach(() => {
+    runtimeDocumentDeps.homeDir = originalHomeDir;
+  });
+
+  async function wrappedMain(): Promise<string> {
+    const web = checkout("web");
+    link(web);
+    await writeRepoLocalRegistryEntry(web, companion, { id: "web", path: web }, "existing");
+    const wrapped = await runWrapPass(companion, { id: "web", path: web });
+    expect(wrapped.kind).not.toBe("failed");
+    return web;
+  }
+
+  function claudeProjects(): Record<string, { mcpServers?: Record<string, unknown> }> {
+    const file = path.join(home, ".claude.json");
+    if (!fs.existsSync(file)) return {};
+    return (JSON.parse(fs.readFileSync(file, "utf8")) as { projects?: object }).projects ?? {};
+  }
+
+  const target = () => path.join(root, "src", "web.worktrees", "acme-login");
+
+  test("a wrapped main checkout gets a wrapped worktree and both stay clean", async () => {
+    const web = await wrappedMain();
+    workset("acme-login", "acme/web");
+    const result = await createWorksetWorktrees(companion, "acme-login", options);
+    expect(result.ok).toBe(true);
+    expect(result.repositories[0]!.wrap).toEqual({
+      runtimes: ["claude", "opencode"],
+      outcome: "ok",
+    });
+    expect(readProjectionFile(target())?.projection).toMatchObject({
+      companionPath: companion,
+      repositoryPath: target(),
+    });
+    expect(fs.existsSync(path.join(target(), ".claude", "settings.local.json"))).toBe(true);
+    expect(fs.existsSync(path.join(target(), ".opencode", "opencode.json"))).toBe(true);
+    expect(Object.keys(claudeProjects()[target()]?.mcpServers ?? {})).toEqual(["tokensave"]);
+    expect(git(target(), "status", "--short")).toBe("");
+    expect(git(web, "status", "--short")).toBe("");
+  }, 30000);
+
+  test("an unwrapped main checkout gets only the link", async () => {
+    link(checkout("web"));
+    workset("acme-login", "acme/web");
+    let wrapped = false;
+    const result = await createWorksetWorktrees(companion, "acme-login", options, {
+      wrap: async () => ((wrapped = true), null),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.repositories[0]!.wrap).toEqual({
+      runtimes: [],
+      outcome: "skipped",
+      reason: "main checkout not wrapped",
+    });
+    expect(wrapped).toBe(false);
+    expect(fs.existsSync(path.join(target(), ".mate"))).toBe(true);
+    expect(readProjectionFile(target())).toBeNull();
+    expect(fs.existsSync(path.join(target(), ".claude"))).toBe(false);
+  });
+
+  test("a reused worktree is wrapped again", async () => {
+    await wrappedMain();
+    workset("acme-login", "acme/web");
+    await createWorksetWorktrees(companion, "acme-login", options);
+    fs.rmSync(path.join(target(), ".claude", "settings.local.json"));
+    const second = await createWorksetWorktrees(companion, "acme-login", options);
+    expect(second.repositories[0]).toMatchObject({ action: "reused", wrap: { outcome: "ok" } });
+    expect(fs.existsSync(path.join(target(), ".claude", "settings.local.json"))).toBe(true);
+  }, 30000);
+
+  test("the worktree's link repeats the main checkout's id, not the origin's name", async () => {
+    const web = checkout("web");
+    fs.writeFileSync(
+      path.join(companion, ".mate", "config", "registry.yaml"),
+      `repos:\n  - id: acme-core\n    path: ${web}\n`,
+    );
+    workset("acme-login", "acme/web");
+    const ids: string[] = [];
+    await createWorksetWorktrees(companion, "acme-login", options, {
+      writeLink: async (_repo, _companion, repository) => {
+        ids.push(repository.id);
+      },
+    });
+    expect(ids).toEqual(["acme-core"]);
+  });
+
+  test("a reused worktree whose refresh fails keeps its earlier wrap and only warns", async () => {
+    await wrappedMain();
+    workset("acme-login", "acme/web");
+    await createWorksetWorktrees(companion, "acme-login", options);
+    const second = await createWorksetWorktrees(companion, "acme-login", options, {
+      wrap: async () => "acme refused",
+    });
+    expect(second.ok).toBe(true);
+    expect(second.repositories[0]!.error).toBeUndefined();
+    expect(second.warnings).toEqual([
+      "acme/web: wrapping the worktree failed: acme refused; its earlier wrap stays",
+    ]);
+  }, 30000);
+
+  test("a failed wrap keeps the worktree and fails its repository", async () => {
+    await wrappedMain();
+    workset("acme-login", "acme/web");
+    const result = await createWorksetWorktrees(companion, "acme-login", options, {
+      wrap: async () => "acme refused",
+    });
+    expect(result.ok).toBe(false);
+    expect(result.repositories[0]).toMatchObject({
+      wrap: { outcome: "failed", reason: "acme refused" },
+      error: "wrapping the worktree failed: acme refused",
+    });
+    expect(fs.existsSync(path.join(target(), ".git"))).toBe(true);
+  }, 30000);
+
+  test("the guard of a wrapped worktree blocks an artifact write in an unmanaged session", async () => {
+    await wrappedMain();
+    workset("acme-login", "acme/web");
+    await createWorksetWorktrees(companion, "acme-login", options);
+    const settings = JSON.parse(
+      fs.readFileSync(path.join(target(), ".claude", "settings.local.json"), "utf8"),
+    ) as { hooks: Record<string, { hooks: { command: string }[] }[]> };
+    const guard = settings.hooks.PreToolUse![0]!.hooks[0]!.command;
+    const env: Record<string, string | undefined> = { ...process.env };
+    for (const name of Object.values(MATE_ENV)) delete env[name];
+    const blocked = spawnSync("sh", ["-c", guard], {
+      cwd: target(),
+      env,
+      encoding: "utf8",
+      input: JSON.stringify({
+        tool_name: "Write",
+        tool_input: { file_path: path.join(target(), "design.md") },
+      }),
+    });
+    expect(blocked.status).toBe(2);
+    expect(blocked.stderr).toContain(ARTIFACT_REFUSAL_HEADLINE);
+  }, 30000);
+
+  test("prune removes the wrap with the worktree", async () => {
+    await wrappedMain();
+    workset("acme-login", "acme/web");
+    await createWorksetWorktrees(companion, "acme-login", options);
+    expect(claudeProjects()[target()]).toBeDefined();
+    const done = (await readWorksets(companion)).worksets;
+    const result = await pruneWorksetWorktrees(companion, done);
+    expect(result.removed.map((entry) => entry.path)).toEqual([target()]);
+    expect(fs.existsSync(target())).toBe(false);
+    expect(claudeProjects()[target()]).toBeUndefined();
+  }, 30000);
+
+  test("a worktree git refuses to remove is wrapped again", async () => {
+    await wrappedMain();
+    workset("acme-login", "acme/web");
+    await createWorksetWorktrees(companion, "acme-login", options);
+    const done = (await readWorksets(companion)).worksets;
+    const wrapped: string[] = [];
+    const result = await pruneWorksetWorktrees(companion, done, {
+      git: async (cwd, args) =>
+        args[0] === "worktree" && args[1] === "remove"
+          ? { code: 128, stdout: "", stderr: "fatal: acme refused" }
+          : realGit(cwd, args),
+      wrap: async (_companion, repository) => (wrapped.push(repository.path), null),
+    });
+    expect(result.kept[0]?.reason).toBe("fatal: acme refused");
+    expect(wrapped).toEqual([target()]);
+  }, 30000);
+
+  test("a failed unwrap keeps the worktree and names the reason", async () => {
+    await wrappedMain();
+    workset("acme-login", "acme/web");
+    await createWorksetWorktrees(companion, "acme-login", options);
+    const done = (await readWorksets(companion)).worksets;
+    const result = await pruneWorksetWorktrees(companion, done, {
+      unwrap: async () => {
+        throw new Error("acme locked");
+      },
+    });
+    expect(result.removed).toEqual([]);
+    expect(result.kept[0]?.reason).toBe("removing its wrap failed: acme locked");
+    expect(fs.existsSync(target())).toBe(true);
+  }, 30000);
 });

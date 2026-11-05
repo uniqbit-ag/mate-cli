@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { addWorktree, initRepo } from "../../test/git-checkouts";
 import { MATE_ENV, isManagedCompanionContext, readCompanionRuntimeContext } from "./env";
 import { companionFrameworkConfigPath, policyDocument } from "./policy";
 import { defaultSecretPolicy, parseSecretsConfig } from "./secret-patterns";
@@ -255,5 +256,101 @@ describe("isManagedCompanionContext", () => {
     expect(isManagedCompanionContext(managed)).toBe(true);
     expect(isManagedCompanionContext(missingRepo)).toBe(true);
     expect(isManagedCompanionContext(missingCompanion)).toBe(false);
+  });
+});
+
+describe("a managed session in a linked worktree", () => {
+  /** `<root>/web` with a linked worktree at `<root>/web.worktrees/acme-fix`. */
+  function layout() {
+    const root = fs.realpathSync(makeTempDir("env-worktree-"));
+    const companionPath = path.join(root, "companion");
+    fs.mkdirSync(companionPath);
+    const web = initRepo(path.join(root, "web"));
+    const worktree = addWorktree(web, path.join(root, "web.worktrees", "acme-fix"));
+    const env = {
+      [MATE_ENV.companionPath]: companionPath,
+      [MATE_ENV.repositoryPath]: web,
+      [MATE_ENV.repositoryId]: "web",
+      [MATE_ENV.policyJson]: '{"acme":true}',
+    };
+    return { root, companionPath, web, worktree, env };
+  }
+
+  function project(repoRoot: string, projection: Partial<MateProjection>): void {
+    const registryPath = repoLocalRegistryPath(repoRoot);
+    fs.mkdirSync(path.dirname(registryPath), { recursive: true });
+    fs.writeFileSync(registryPath, "companions: []\n", "utf8");
+    writeProjectionPair(repoRoot, {
+      stamp: "stamp",
+      projection: {
+        version: "0.15.5",
+        companionPath: "",
+        repositoryPath: repoRoot,
+        repositoryId: "web",
+        wrapperBinPath: "/install/mate/wrappers/bin",
+        reactDoctorBinPath: "/install/mate/node_modules/.bin/react-doctor",
+        graphifyOut: "/acme/graphify-out",
+        ...projection,
+      },
+    });
+  }
+
+  test("reports the worktree as repository path and keeps every other value", () => {
+    const { companionPath, worktree, env } = layout();
+    project(worktree, { companionPath });
+    const nested = path.join(worktree, "apps", "acme");
+    fs.mkdirSync(nested, { recursive: true });
+    expect(readCompanionRuntimeContext(env, nested)).toEqual({
+      ...readCompanionRuntimeContext(env, "/"),
+      repositoryPath: worktree,
+    });
+  });
+
+  test("a worktree of another repository keeps the environment", () => {
+    const { root, companionPath, env } = layout();
+    const api = initRepo(path.join(root, "api"));
+    const other = addWorktree(api, path.join(root, "api.worktrees", "acme-fix"));
+    project(other, { companionPath });
+    expect(readCompanionRuntimeContext(env, other).repositoryPath).toBe(
+      env[MATE_ENV.repositoryPath]!,
+    );
+  });
+
+  test("a worktree linked to another companion keeps the environment", () => {
+    const { root, worktree, env } = layout();
+    project(worktree, { companionPath: path.join(root, "other-companion") });
+    expect(readCompanionRuntimeContext(env, worktree).repositoryPath).toBe(
+      env[MATE_ENV.repositoryPath]!,
+    );
+  });
+
+  test("a worktree without its own projection keeps the environment", () => {
+    const { web, env } = layout();
+    const claude = addWorktree(web, path.join(web, ".claude", "worktrees", "acme"));
+    expect(readCompanionRuntimeContext(env, claude).repositoryPath).toBe(web);
+  });
+
+  test("a malformed projection keeps the environment and raises nothing", () => {
+    const { companionPath, worktree, env } = layout();
+    project(worktree, { companionPath });
+    fs.writeFileSync(path.join(worktree, ".mate", "projection.yaml"), "stamp: [unclosed\n");
+    expect(readCompanionRuntimeContext(env, worktree).repositoryPath).toBe(
+      env[MATE_ENV.repositoryPath]!,
+    );
+  });
+
+  test("a session whose environment already names the worktree keeps it", () => {
+    const { companionPath, worktree, env } = layout();
+    project(worktree, { companionPath });
+    const factory = { ...env, [MATE_ENV.repositoryPath]: worktree };
+    expect(readCompanionRuntimeContext(factory, worktree).repositoryPath).toBe(worktree);
+  });
+
+  test("inside the environment's repository no projection is read", () => {
+    const { companionPath, web, env } = layout();
+    const nested = path.join(web, "packages", "acme");
+    fs.mkdirSync(nested, { recursive: true });
+    project(nested, { companionPath, repositoryPath: nested });
+    expect(readCompanionRuntimeContext(env, nested).repositoryPath).toBe(web);
   });
 });

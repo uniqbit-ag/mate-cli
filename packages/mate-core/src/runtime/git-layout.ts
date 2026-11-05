@@ -76,6 +76,13 @@ export function readGitLayout(checkoutPath: string): GitLayout | null {
     : { kind: "own", gitDir, commonDir: gitDir };
 }
 
+/** True when `worktree` is a linked worktree of the clone `checkout` belongs to. */
+export function isLinkedWorktreeOf(worktree: string, checkout: string): boolean {
+  const own = readGitLayout(worktree);
+  const main = readGitLayout(checkout);
+  return own?.kind === "linked" && !!main && own.commonDir === main.commonDir;
+}
+
 const CONFIG_ESCAPES: Record<string, string> = { n: "\n", t: "\t" };
 
 /** A config value without its comment, quotes and escapes, as Git reads it. */

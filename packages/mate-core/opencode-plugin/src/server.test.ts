@@ -178,7 +178,7 @@ describe("Mate OpenCode server plugin", () => {
           "shell.create.before",
           "tool.execute.before",
         ]);
-        expect(tools.map((tool) => tool.name)).toEqual(["companion_paths"]);
+        expect(tools.map((tool) => tool.name)).toEqual(["companion_paths", "mate_enter_worktree"]);
 
         const event = { system: [{ type: "text", text: "base prompt" }] };
         await hooks.get("session.context")!(event);

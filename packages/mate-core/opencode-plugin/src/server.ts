@@ -5,6 +5,7 @@ import {
   repositoryWrappedForOpenCode,
 } from "../../src/opencode/companion-hooks";
 import { readContext } from "../../src/opencode/companion-policy";
+import { registerEnterWorktree } from "../../src/opencode/enter-worktree";
 import { registerSessionPrepare } from "../../src/opencode/session-prepare";
 import { hasLaunchEnvironment } from "../../src/runtime/env";
 import { spawnPrepareRunner } from "../../src/runtime/session-prepare-runner";
@@ -54,6 +55,7 @@ export const MateOpenCodePlugin = Plugin.define({
     await registerCompanionAccess(api, context.companionPath);
     await registerCompanionHooks(api, context, env);
     await registerCompanion(api, context, env);
+    await registerEnterWorktree(api, context);
     /** Last: the guardrails above are live while the local phase holds `setup`. */
     const prepareCleanup = await registerPrepare(api, context.companionPath, env);
     return async () => {

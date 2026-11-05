@@ -66,7 +66,8 @@ function onDiskSpelling(walked: string): string {
   }
 }
 
-function realPathOrNull(filePath: string): string | null {
+/** The real path, or null when it does not resolve. */
+export function realPathOrNull(filePath: string): string | null {
   try {
     return fs.realpathSync.native(filePath);
   } catch {
