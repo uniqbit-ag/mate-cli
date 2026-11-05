@@ -1,4 +1,10 @@
-import type { CapabilityConfig, CliToolConfig, FrameworkConfig, GitModeProfile } from "./types";
+import type {
+  CapabilityConfig,
+  CliToolConfig,
+  FrameworkConfig,
+  GitModeProfile,
+  TicketFormat,
+} from "./types";
 
 export type GitModeSelection = GitModeProfile | "default";
 export const DEFAULT_GIT_MODE_SELECTION: GitModeSelection = "default";
@@ -26,11 +32,56 @@ const BUILTIN_GIT_MODE_COMPATIBILITIES: GitModeCompatibility[] = [
   },
 ];
 
+export interface TicketCompatibility {
+  id: TicketFormat;
+  label: string;
+  description: string;
+}
+
+const TICKET_COMPATIBILITIES: TicketCompatibility[] = [
+  {
+    id: "none",
+    label: "None",
+    description: "Changes record no ticket, and no skill asks for one.",
+  },
+  {
+    id: "jira",
+    label: "Jira",
+    description:
+      "Propose, apply, and archive ask for an optional Jira key (ABC-123), which names the Delivery Branch workset/<KEY>-<workset-id>.",
+  },
+];
+
+export function listSetupTicketCompatibilities(): TicketCompatibility[] {
+  return [...TICKET_COMPATIBILITIES];
+}
+
 export interface SetupSelections {
   allowedAgents: string[];
   packageManagers: string[];
   capabilities: CapabilityConfig[];
   selectedGitMode: GitModeSelection;
+  /** The openspec capability's ticket setting; absent means `none`. */
+  selectedTicket?: TicketFormat;
+}
+
+/** The saved ticket setting; only `jira` counts as on. */
+function ticketSelectionOf(capabilities: readonly CapabilityConfig[]): TicketFormat {
+  return capabilities.find((capability) => capability.name === "openspec")?.ticket === "jira"
+    ? "jira"
+    : "none";
+}
+
+/** Writes `ticket: jira` on the openspec capability, or removes the key for `none`. */
+export function withTicketSetting(
+  capabilities: CapabilityConfig[],
+  ticket: TicketFormat,
+): CapabilityConfig[] {
+  return capabilities.map((capability) => {
+    if (capability.name !== "openspec") return capability;
+    const { ticket: _previous, ...settings } = capability;
+    return ticket === "jira" ? { ...settings, ticket } : settings;
+  });
 }
 
 interface SetupCompatibilityBase {
@@ -203,6 +254,7 @@ export function getSetupSelectionsFromConfig(config: FrameworkConfig): SetupSele
     ],
     capabilities: dedupeCapabilities(config.capabilities ?? []),
     selectedGitMode: config.git ?? DEFAULT_GIT_MODE_SELECTION,
+    selectedTicket: ticketSelectionOf(config.capabilities ?? []),
   };
 }
 

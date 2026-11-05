@@ -342,7 +342,9 @@ async function resolved(
     resolved: {
       anchorName,
       commitPaths,
-      ...(delivery.status === "legacy" ? { warning: legacyDeliveryWarning(anchorName) } : {}),
+      ...(delivery.status === "legacy"
+        ? { warning: legacyDeliveryWarning(anchorName, delivery.record) }
+        : {}),
     },
   };
 }

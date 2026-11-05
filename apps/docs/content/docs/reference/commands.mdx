@@ -62,8 +62,9 @@ parallel. For each Working Repository of the Workset, it creates a Git worktree
 next to the main checkout linked to the companion, at
 `<checkout>.worktrees/<workset-id>`; for a checkout at `~/src/web` that is
 `~/src/web.worktrees/acme-login`. The worktree is on the Workset's Delivery
-Branch `workset/<workset-id>`: the local branch, else a new branch tracking
-`origin/workset/<workset-id>`, else a new branch from `origin/HEAD`. It fetches
+Branch, resolved as `mate artifact link` resolves `defaultBranch` (normally
+`workset/<workset-id>`): the local branch, else a new branch tracking
+`origin/<branch>`, else a new branch from `origin/HEAD`. It fetches
 `origin` first and warns when that fails. It checks every repository before it
 creates anything: an unknown Workset, a repository not linked on this machine,
 a branch already checked out elsewhere, or a foreign directory at the target
@@ -573,8 +574,8 @@ failures, such as a rejected push, still fail the command.
 `mate artifact pending --json` also reports each archive's delivery: `merged`
 and `not-applicable` archives are publishable; `waiting`, `unlinked`, and
 `dropped` ones are held back, and `mate artifact publish` refuses them. A
-`legacy` archive (no `delivery.yaml`) publishes with a warning that its merge
-was not checked. An archive is also held back while it
+`legacy` archive (no `delivery.yaml`, or a record holding only a ticket)
+publishes with a warning that its merge was not checked. An archive is also held back while it
 shares a canonical spec with a pending archive that is held back, since its
 commit would carry that archive's unmerged requirements.
 
@@ -592,6 +593,10 @@ that file, for active and archived changes. Options:
 - `--not-applicable <reason>` records that no branch delivers the change.
 - `--pr <url>` records the PR; with `--refresh` it picks that PR when several
   share the branch.
+- `--ticket <KEY>` records the change's Jira ticket (`ABC-123`), alone or with
+  other options, also on a change without `delivery.yaml`. It is refused unless
+  the companion's openspec capability sets `ticket: jira`; see
+  [Your First Change](/docs/scenarios/first-change).
 - `--refresh` asks GitHub for the merge state when a
   [forge token](/docs/concepts/forge-token) is available, and otherwise checks
   the repository's local checkout (source `git`); see
@@ -605,11 +610,19 @@ that file, for active and archived changes. Options:
 - `--confirm-merged`, `--confirm-open`, and `--confirm-dropped` record your own
   answer, with source `user`.
 - `--json` prints one result per named change; several changes on one branch
-  can be linked in one call. Each result includes `defaultBranch` (the resolved
-  `workset/<workset-id>` or `null`) and `diagnostics`. A standalone change uses
-  its change name as the implicit Workset id. Diagnostics also go to stderr;
-  ambiguous membership, identity collisions, or invalid records suppress unsafe
-  defaults. Recorded branches remain unchanged when membership changes.
+  can be linked in one call. Each result includes `defaultBranch`, `diagnostics`,
+  `ticketFormat` (`none` or `jira`), and `ticketCandidate`. A standalone change
+  uses its change name as the implicit Workset id. `defaultBranch` is the
+  Workset's Delivery Branch: the branch its changes record when they agree, else
+  an existing `workset/<TICKET>-<workset-id>`, else an existing
+  `workset/<workset-id>`, else the computed name, which carries the ticket when
+  the Workset's changes record exactly one. It is `null` when the changes record
+  different branches, and ambiguous membership, identity collisions, or invalid
+  records also suppress it; the diagnostics, also on stderr, say why. Recorded
+  branches remain unchanged when membership changes. With `ticketFormat` `jira`
+  and no recorded ticket, `ticketCandidate` is the single Jira key in the
+  recorded branch, else the current branch; it is only a suggestion and is
+  never recorded without `--ticket`.
 
 Without an edit option or `--refresh`, `mate artifact link` only reads the
 record and writes nothing. When the change's scopes name repositories, a
@@ -629,7 +642,7 @@ dependency, incomplete-planning, and unscoped-delivery warnings to stderr before
 leaves a `delivery.yaml`, and then runs `openspec archive`. Without a recorded
 delivery it archives nothing and reports `needs-branch`; answer with
 `--branch <branch>` (`--direct` for a protected one), `--not-applicable <reason>`,
-or `--skip-branch`; add `--repository <org/repo>` when the Working
+or `--skip-branch`, which marks the record `skipped` so publication asks again; add `--repository <org/repo>` when the Working
 Repository has no `origin` remote Mate can read. See [Your First Change](/docs/scenarios/first-change)
 for how the commands fit together.
 

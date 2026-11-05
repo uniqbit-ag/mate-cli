@@ -60,7 +60,25 @@ export interface Delivery {
 export interface DeliveryRecord {
   version: 1;
   change: string;
+  /** The change's Jira ticket; names its computed Delivery Branch. */
+  ticket?: string;
+  /** Set by `archive --skip-branch`, so a ticket-only record stays held back. */
+  skipped?: true;
   deliveries: Delivery[];
+}
+
+const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
+const JIRA_KEYS = /(?<![A-Za-z0-9])[A-Z][A-Z0-9]+-\d+(?!\d)/g;
+
+/** A Jira issue key such as `ABC-123`. */
+export function isJiraKey(value: string): boolean {
+  return JIRA_KEY.test(value);
+}
+
+/** The single distinct Jira key in a branch name; null for none or several. */
+export function ticketCandidateOf(branch: string): string | null {
+  const keys = new Set(branch.match(JIRA_KEYS) ?? []);
+  return keys.size === 1 ? [...keys][0]! : null;
 }
 
 export type DeliveryPatch = Partial<Omit<Delivery, "repository">>;
@@ -107,13 +125,17 @@ export function isPublishable(status: DeliveryStatus): boolean {
   return status === "merged" || status === "not-applicable" || status === "legacy";
 }
 
-/** The warning a `legacy` archive publishes with. */
-export function legacyDeliveryWarning(anchorName: string): string {
+/** The warning a `legacy` archive publishes with; a ticket-only record names its ticket. */
+export function legacyDeliveryWarning(anchorName: string, record?: DeliveryRecord | null): string {
+  if (record?.ticket) {
+    return `${anchorName}: ticket ${record.ticket} records no delivery branch, so its merge was not checked; publishing it as a legacy archive.`;
+  }
   return `${anchorName} has no delivery.yaml, so its merge was not checked; publishing it as a legacy archive.`;
 }
 
-export function defaultDeliveryBranch(worksetId: string): string {
-  return `workset/${worksetId}`;
+/** `workset/<workset-id>`, or `workset/<TICKET>-<workset-id>` with a ticket. */
+export function defaultDeliveryBranch(worksetId: string, ticket?: string | null): string {
+  return ticket ? `workset/${ticket}-${worksetId}` : `workset/${worksetId}`;
 }
 
 export function legacyDeliveryBranch(change: string): string {
@@ -183,6 +205,10 @@ export function settleDelivery(
   const missing = scoped.filter((repository) => !findDelivery(record, repository));
   const unscoped = unscopedDeliveries(record, scoped);
   if (record.deliveries.length === 0) {
+    // A ticket-only record was archived past Mate; it publishes like a legacy archive.
+    if (record.ticket && !record.skipped) {
+      return { status: "legacy", unsettled: [], missing: [], unscoped };
+    }
     return { status: "unlinked", unsettled: missing, missing, unscoped };
   }
   const branches = record.deliveries.filter((entry) => entry.notApplicable === undefined);
@@ -297,11 +323,28 @@ export async function readDeliveryRecord(changeDir: string): Promise<DeliveryRec
   const document = parsed as Record<string, unknown>;
   const deliveries = document.deliveries ?? [];
   if (!Array.isArray(deliveries)) throw malformed(file, "deliveries must be a list");
+  const ticket = optionalString(document.ticket, file, "ticket");
+  if (ticket !== undefined && !isJiraKey(ticket)) {
+    throw malformed(file, "ticket must be a Jira key such as ABC-123");
+  }
   return {
     version: 1,
     change:
       optionalString(document.change, file, "change") ?? changeNameOf(path.basename(changeDir)),
+    ...(ticket !== undefined ? { ticket } : {}),
+    ...(document.skipped === true ? { skipped: true as const } : {}),
     deliveries: deliveries.map((entry) => parseDelivery(entry, file)),
+  };
+}
+
+/** Keys in file order: `version, change, ticket, skipped, deliveries`. */
+function orderedRecord(record: DeliveryRecord): DeliveryRecord {
+  return {
+    version: record.version,
+    change: record.change,
+    ...(record.ticket ? { ticket: record.ticket } : {}),
+    ...(record.skipped ? { skipped: true as const } : {}),
+    deliveries: record.deliveries,
   };
 }
 
@@ -356,5 +399,5 @@ export async function writeDeliveryRecord(
   changeDir: string,
   record: DeliveryRecord,
 ): Promise<void> {
-  await fs.writeFile(path.join(changeDir, DELIVERY_FILE), stringify(record), "utf8");
+  await fs.writeFile(path.join(changeDir, DELIVERY_FILE), stringify(orderedRecord(record)), "utf8");
 }

@@ -10,6 +10,7 @@ import {
 import {
   getSetupSelectionsFromConfig,
   keepCapabilitySettings,
+  withTicketSetting,
 } from "../../lib/orchestrator/setup-compatibilities";
 import { confirm } from "../confirm";
 import { selectCompanion } from "../companion-selector";
@@ -20,6 +21,7 @@ import {
   parseGitMode,
   parseFlags,
   parsePackageManagers,
+  parseTicket,
 } from "../parse-flags";
 
 interface SetupCommandDependencies {
@@ -62,6 +64,8 @@ export async function runSetupCommand(argv: string[]): Promise<void> {
  * - `--package-manager <name>` — repeatable; parsed via `parsePackageManagers`.
  * - `--capability <name>` — repeatable; parsed via `parseCapabilities`.
  * - `--git-mode <auto|default>` — parsed via `parseGitMode`.
+ * - `--ticket <none|jira>` — the openspec capability's ticket setting; needs openspec saved or
+ *   selected.
  * @remarks When any flag above is present, the whole selection is treated as
  * explicit and the interactive picker is skipped.
  */
@@ -141,11 +145,17 @@ async function runSetupFlow(
   const flagPackageManagers = parsePackageManagers(flags);
   const flagCapabilities = parseCapabilities(flags);
   const flagGitMode = parseGitMode(flags);
+  const flagTicket = parseTicket(flags);
+  if (typeof flagTicket === "object") {
+    process.stderr.write(`mate: --ticket expects none or jira, not ${flagTicket.invalid}.\n`);
+    process.exit(1);
+  }
   const hasExplicitSelections =
     flagAllowedAgents !== undefined ||
     flagPackageManagers !== undefined ||
     flagCapabilities !== undefined ||
-    flagGitMode !== undefined;
+    flagGitMode !== undefined ||
+    flagTicket !== undefined;
 
   const currentSelections =
     preflight.kind === "unrecognized"
@@ -163,6 +173,7 @@ async function runSetupFlow(
         capabilities: flagCapabilities ?? currentSelections.capabilities,
         git: flagGitMode ?? currentSelections.selectedGitMode,
         selectedGitMode: flagGitMode ?? currentSelections.selectedGitMode,
+        selectedTicket: flagTicket ?? currentSelections.selectedTicket,
       }
     : await selectCompatibilities({ initialSelections: currentSelections });
 
@@ -170,12 +181,25 @@ async function runSetupFlow(
     process.stderr.write("Aborted.\n");
     process.exit(1);
   }
+  if (
+    flagTicket !== undefined &&
+    !selections.capabilities.some((capability) => capability.name === "openspec")
+  ) {
+    process.stderr.write(
+      "mate: --ticket configures the openspec capability; save or select openspec (--capability openspec).\n",
+    );
+    process.exit(1);
+  }
 
   const result = await runExecuteSetup(
     {
       allowedAgents: selections.allowedAgents,
       packageManagers: selections.packageManagers,
-      capabilities: keepCapabilitySettings(selections.capabilities, currentSelections.capabilities),
+      // The ticket choice wins over the saved setting `keepCapabilitySettings` restores.
+      capabilities: withTicketSetting(
+        keepCapabilitySettings(selections.capabilities, currentSelections.capabilities),
+        selections.selectedTicket ?? "none",
+      ),
       git: selections.selectedGitMode,
     },
     { cwd: targetCwd },

@@ -5,7 +5,7 @@ import {
   type RecordDeliveryDeps,
 } from "../../../../lib/delivery/record-delivery";
 import { applyWarnings, type DependencyWarning } from "../../../../lib/delivery/overlap";
-import type { MergeState } from "../../../../lib/delivery/record";
+import { isJiraKey, type MergeState } from "../../../../lib/delivery/record";
 import { type BooleanFlagSet, parseFlags, positionalArgs, stringFlag } from "../../../parse-flags";
 import {
   branchFlagsFrom,
@@ -57,6 +57,7 @@ function refusalMessage(refusal: DeliveryRefusal): string {
 
 function renderHuman(result: LinkResult): string[] {
   const lines = [`${result.change}: ${result.settlement.status}`];
+  if (result.record.ticket) lines.push(`  ticket: ${result.record.ticket}`);
   lines.push(...result.record.deliveries.map(renderDelivery));
   for (const repository of result.settlement.missing) {
     lines.push(`  ${repository}: no delivery recorded (named in the change's scopes)`);
@@ -78,6 +79,8 @@ function renderHuman(result: LinkResult): string[] {
  * - `--direct` — with `--branch`, record a direct delivery, settled only by the user's answer; required for a protected branch.
  * - `--not-applicable <reason>` — no branch delivers this change in the repository.
  * - `--pr <url>` — record the PR URL; with `--refresh`, picks that PR among several.
+ * - `--ticket <KEY>` — record the change's Jira ticket (`ABC-123`), alone or with other edits;
+ *   refused unless the companion's openspec capability sets `ticket: jira`.
  * - `--refresh` — ask the forge (with `MATE_GIT_TOKEN`), then a local checkout, for the merge
  *   state of each recorded branch; a direct delivery is reported as needing the user's answer.
  * - `--fetch` — with `--refresh`, fetch the default and delivery branches first even when the
@@ -97,12 +100,19 @@ export async function runArtifactLinkCommand(
 ): Promise<void> {
   const { emitOut, emitErr, refuse } = commandOutput(deps);
   const flags = parseFlags(argv, BOOLEAN_FLAGS);
-  const flagError = valueFlagError(flags, ["repository", "branch", "not-applicable", "pr"]);
+  const flagError = valueFlagError(flags, [
+    "repository",
+    "branch",
+    "not-applicable",
+    "pr",
+    "ticket",
+  ]);
   if (flagError) return refuse(flagError);
   const changes = positionalArgs(argv, BOOLEAN_FLAGS);
   const branchFlags = branchFlagsFrom(flags);
   const { branch, notApplicable } = branchFlags;
   const pr = stringFlag(flags.pr);
+  const ticket = stringFlag(flags.ticket);
   const confirmations = Object.keys(CONFIRMATIONS).filter((flag) => flags[flag] === true);
 
   if (changes.length === 0) return refuse("mate: artifact link requires a change name.");
@@ -119,11 +129,15 @@ export async function runArtifactLinkCommand(
   if (pr !== undefined && !/^https?:\/\/\S+$/.test(pr)) {
     return refuse("mate: --pr expects the PR's URL.");
   }
+  if (ticket !== undefined && !isJiraKey(ticket)) {
+    return refuse("mate: --ticket expects a Jira key such as ABC-123.");
+  }
   const requested = repositoryFlag(flags);
   if ("error" in requested) return refuse(requested.error);
 
   const environment = await resolveDeliveryEnvironment(deps);
   if ("error" in environment) return refuse(environment.error);
+  if (environment.ticket?.diagnostic) emitErr(`warning: ${environment.ticket.diagnostic}`);
   const repository = canonicalRepository(environment, requested.repository);
   const confirm = confirmations.length === 1 ? CONFIRMATIONS[confirmations[0]] : undefined;
   const delivery = deliveryEditFrom(branchFlags);
@@ -136,6 +150,7 @@ export async function runArtifactLinkCommand(
         ...(delivery ? { delivery } : {}),
         ...(pr !== undefined ? { pr } : {}),
         ...(confirm ? { confirm } : {}),
+        ...(ticket !== undefined ? { ticket } : {}),
       },
       refresh: flags.refresh === true,
       fetch: flags.fetch === true,

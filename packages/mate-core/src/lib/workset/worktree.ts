@@ -10,7 +10,11 @@ import type { WrapRuntime } from "../../runtime/runtime-document-manifest";
 import { readWrapState, WRAP_RUNTIMES } from "../../runtime/wrap-state";
 import { cleanupWorkingRepository } from "../../tools/setup/working-repo-cleanup";
 import { locateChange } from "../change-layout";
-import { defaultDeliveryBranch } from "../delivery/record";
+import {
+  resolveDeliveryBranch,
+  worktreeAddArgs,
+  type BranchSource,
+} from "../delivery/resolve-branch";
 import { scopedRepositories } from "../openspec-scopes";
 import { attendedLockOptions } from "../orchestrator/companion-git-sync";
 import {
@@ -240,6 +244,7 @@ interface Plan {
   checkout: string;
   target: string;
   branch: string;
+  source: BranchSource;
   reuse: boolean;
 }
 
@@ -283,15 +288,17 @@ async function planWorktrees(
   companionPath: string,
   target: Target,
   git: GitRunner,
-): Promise<{ plans: Plan[]; diagnostics: string[] }> {
+): Promise<{ plans: Plan[]; diagnostics: string[]; warnings: string[] }> {
+  const warnings: string[] = [];
   const checked = await Promise.all(
     target.repositories.map((repository) =>
-      planRepository(companionPath, target.id, repository, git),
+      planRepository(companionPath, target.id, repository, git, warnings),
     ),
   );
   return {
     plans: checked.filter((entry): entry is Plan => !Array.isArray(entry)),
     diagnostics: checked.flatMap((entry) => (Array.isArray(entry) ? entry : [])),
+    warnings,
   };
 }
 
@@ -301,14 +308,33 @@ async function planRepository(
   worksetId: string,
   repository: string,
   git: GitRunner,
+  warnings: string[],
 ): Promise<Plan | string[]> {
-  const branch = defaultDeliveryBranch(worksetId);
-  const resolution = await resolveWorksetBranch(companionPath, worksetId, repository);
-  if (resolution.id === null) {
+  const linked = await linkedCheckout(companionPath, repository, git);
+  if (!linked) {
+    // An identity problem outranks the missing link.
+    const identity = await resolveWorksetBranch(companionPath, worksetId, repository);
+    if (identity.id === null) return identity.diagnostics.map((line) => `${repository}: ${line}`);
+    return [`${repository}: not linked to ${companionPath} on this machine`];
+  }
+  // Resolved after the fetch, so a branch pushed elsewhere counts as existing.
+  const fetched = await git(linked.path, ["fetch", "--prune", "origin"]);
+  if (fetched.code !== 0) {
+    warnings.push(
+      `${repository}: fetching origin failed, using local refs: ${fetched.stderr.trim()}`,
+    );
+  }
+  const resolution = await resolveDeliveryBranch({
+    companionPath,
+    repository,
+    hasRef: async (ref) =>
+      (await git(linked.path, ["rev-parse", "--verify", "--quiet", ref])).code === 0,
+    worksetId,
+  });
+  const { branch, source } = resolution;
+  if (branch === null || source === null) {
     return resolution.diagnostics.map((line) => `${repository}: ${line}`);
   }
-  const linked = await linkedCheckout(companionPath, repository, git);
-  if (!linked) return [`${repository}: not linked to ${companionPath} on this machine`];
   const entries = await listWorktrees(git, linked.path);
   const main = entries?.[0];
   if (!main) return [`${repository}: cannot list the worktrees of ${linked.path}`];
@@ -320,25 +346,19 @@ async function planRepository(
   }
   const elsewhere = entries.find((entry) => entry.branch === branch && entry.path !== target);
   if (elsewhere) return [`${repository}: ${branch} is already checked out at ${elsewhere.path}`];
-  return { repository, repositoryId: linked.id, checkout: main.path, target, branch, reuse };
+  return {
+    repository,
+    repositoryId: linked.id,
+    checkout: main.path,
+    target,
+    branch,
+    source,
+    reuse,
+  };
 }
 
-async function addWorktree(git: GitRunner, plan: Plan, warnings: string[]): Promise<string | null> {
-  const fetched = await git(plan.checkout, ["fetch", "--prune", "origin"]);
-  if (fetched.code !== 0) {
-    warnings.push(
-      `${plan.repository}: fetching origin failed, using local refs: ${fetched.stderr.trim()}`,
-    );
-  }
-  const has = async (ref: string) =>
-    (await git(plan.checkout, ["rev-parse", "--verify", "--quiet", ref])).code === 0;
-  const { branch, target } = plan;
-  const add = (await has(`refs/heads/${branch}`))
-    ? ["worktree", "add", target, branch]
-    : (await has(`refs/remotes/origin/${branch}`))
-      ? ["worktree", "add", "--track", "-b", branch, target, `origin/${branch}`]
-      : ["worktree", "add", "--no-track", "-b", branch, target, "origin/HEAD"];
-  const result = await git(plan.checkout, add);
+async function addWorktree(git: GitRunner, plan: Plan): Promise<string | null> {
+  const result = await git(plan.checkout, worktreeAddArgs(plan, plan.target));
   return result.code === 0 ? null : `creating the worktree failed: ${result.stderr.trim()}`;
 }
 
@@ -464,11 +484,10 @@ async function createTargetWorktrees(
   }
   const worksetId = target.id;
   const git = deps.git ?? runGit;
-  const { plans, diagnostics } = await planWorktrees(companionPath, target, git);
+  const { plans, diagnostics, warnings } = await planWorktrees(companionPath, target, git);
   if (diagnostics.length > 0) {
-    return { workset: worksetId, ok: false, repositories: [], diagnostics, warnings: [] };
+    return { workset: worksetId, ok: false, repositories: [], diagnostics, warnings };
   }
-  const warnings: string[] = [];
   const repositories: WorktreeRepositoryResult[] = [];
   for (const plan of plans) {
     // oxlint-disable-next-line no-await-in-loop -- one repository at a time, installs included
@@ -502,7 +521,7 @@ async function realize(
     missingEnv: [],
   };
   if (!plan.reuse) {
-    const failure = await addWorktree(git, plan, warnings);
+    const failure = await addWorktree(git, plan);
     if (failure) {
       return {
         ...result,

@@ -10,6 +10,7 @@ import {
   selectSetupCompatibilities,
   toggleSelectableItem,
   WIZARD_STEPS,
+  wizardStepsFor,
 } from "./setup-selector";
 
 function createInitialSelections(overrides: Partial<ReturnType<typeof getInitialSelections>> = {}) {
@@ -184,7 +185,75 @@ describe("selectSetupCompatibilities", () => {
   });
 
   test("wizard always has the agents, capabilities, and git mode steps", () => {
-    expect(WIZARD_STEPS).toEqual(["providers", "capabilities", "gitMode"]);
+    expect(WIZARD_STEPS).toEqual(["providers", "capabilities", "gitMode", "tickets"]);
+    expect(wizardStepsFor(new Set())).toEqual(["providers", "capabilities", "gitMode"]);
+    expect(wizardStepsFor(new Set(["openspec"]))).toEqual(WIZARD_STEPS);
+  });
+
+  test("tickets is a radio step with None first", () => {
+    expect(getItemsForStep("tickets").map((item) => item.id)).toEqual(["none", "jira"]);
+    const state = {
+      selectedProviders: new Set<string>(["claude"]),
+      selectedPackageManagers: new Set<string>(["bun"]),
+      selectedCapabilities: new Set<string>(["openspec"]),
+      selectedGitMode: "default" as const,
+    };
+    const jira = getItemsForStep("tickets").find((item) => item.id === "jira");
+    expect(selectRadioItem(state, jira!)).toMatchObject({
+      selectedGitMode: "default",
+      selectedTicket: "jira",
+    });
+  });
+
+  async function runWizard(
+    initial: Partial<ReturnType<typeof getInitialSelections>> & {
+      selectedTicket?: "none" | "jira";
+    },
+    keys: string[][],
+  ) {
+    const stdin = createTtyInput();
+    const stdout = createTtyOutput();
+    let output = "";
+    stdout.on("data", (chunk) => {
+      output += chunk.toString();
+    });
+    const selection = selectSetupCompatibilities({
+      initialSelections: createInitialSelections(initial),
+      stdin,
+      stdout,
+      stderr: createTtyOutput(),
+    });
+    for (const batch of keys) {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      for (const key of batch) stdin.write(key);
+    }
+    return { result: await selection, output: () => output };
+  }
+
+  test("choosing Jira on the Tickets step resolves with it", async () => {
+    const { result, output } = await runWizard({ capabilities: [{ name: "openspec" }] }, [
+      ["\r", "\r"],
+      ["\r"],
+      ["\u001b[B", "\r"],
+      ["\r"],
+    ]);
+    expect(result?.selectedTicket).toBe("jira");
+    expect(output()).toContain("4 / 4");
+  });
+
+  test("a rerun preselects the saved Jira choice", async () => {
+    const { result } = await runWizard(
+      { capabilities: [{ name: "openspec" }], selectedTicket: "jira" },
+      [["\r", "\r"], ["\r"], ["\r"]],
+    );
+    expect(result?.selectedTicket).toBe("jira");
+  });
+
+  test("without openspec the wizard ends after Git Auto Mode at 3 / 3", async () => {
+    const { result, output } = await runWizard({}, [["\r", "\r"], ["\r"]]);
+    expect(result).not.toBeNull();
+    expect(output()).toContain("3 / 3");
+    expect(output()).not.toContain("Tickets");
   });
 
   test("navigates through every step and submits updated selections", async () => {
@@ -220,11 +289,14 @@ describe("selectSetupCompatibilities", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     stdin.write("\r");
 
+    stdin.write("\r");
+
     await expect(selectionPromise).resolves.toEqual({
       allowedAgents: ["claude", "opencode"],
       packageManagers: ["bun"],
       capabilities: [{ name: "openspec" }, { name: "rtk" }],
       selectedGitMode: "default",
+      selectedTicket: "none",
     });
 
     expect(output).toContain("Agents");
@@ -259,6 +331,7 @@ describe("selectSetupCompatibilities", () => {
       packageManagers: ["bun"],
       capabilities: [{ name: "rtk" }],
       selectedGitMode: "default",
+      selectedTicket: "none",
     });
   });
 
@@ -305,6 +378,7 @@ describe("selectSetupCompatibilities", () => {
       packageManagers: ["bun"],
       capabilities: [],
       selectedGitMode: "default",
+      selectedTicket: "none",
     });
   });
 
@@ -327,11 +401,14 @@ describe("selectSetupCompatibilities", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     stdin.write("\r");
 
+    stdin.write("\r");
+
     await expect(selectionPromise).resolves.toEqual({
       allowedAgents: ["claude"],
       packageManagers: ["bun"],
       capabilities: [{ name: "openspec" }],
       selectedGitMode: "default",
+      selectedTicket: "none",
     });
   });
 
@@ -368,11 +445,14 @@ describe("selectSetupCompatibilities", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     stdin.write("\r");
 
+    stdin.write("\r");
+
     await expect(selectionPromise).resolves.toEqual({
       allowedAgents: ["claude"],
       packageManagers: ["bun"],
       capabilities: [{ name: "openspec" }],
       selectedGitMode: "default",
+      selectedTicket: "none",
     });
   });
 
@@ -405,6 +485,7 @@ describe("selectSetupCompatibilities", () => {
       packageManagers: ["bun"],
       capabilities: [],
       selectedGitMode: "default",
+      selectedTicket: "none",
     });
   });
 
@@ -433,6 +514,7 @@ describe("selectSetupCompatibilities", () => {
       packageManagers: ["bun"],
       capabilities: [],
       selectedGitMode: "default",
+      selectedTicket: "none",
     });
   });
 
@@ -466,6 +548,7 @@ describe("selectSetupCompatibilities", () => {
       packageManagers: ["bun"],
       capabilities: [],
       selectedGitMode: "default",
+      selectedTicket: "none",
     });
   });
 
@@ -496,6 +579,7 @@ describe("selectSetupCompatibilities", () => {
       packageManagers: ["bun"],
       capabilities: [],
       selectedGitMode: "default",
+      selectedTicket: "none",
     });
   });
 });

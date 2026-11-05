@@ -30,6 +30,7 @@ function repoGit(existing: string[] = []): WorkingRepoGit {
     remoteUrl: async () => "https://github.com/acme/acme-app.git",
     unpushedCommits: async () => [],
     branchExists: async (branch) => existing.includes(branch),
+    hasRef: async (ref) => existing.some((branch) => ref === `refs/heads/${branch}`),
   };
 }
 
@@ -156,10 +157,17 @@ describe("mate artifact archive", () => {
     expect(result.record.deliveries[0]).toMatchObject({ branch: "main", direct: true });
   });
 
-  test("--skip-branch archives with an unlinked record", async () => {
+  test("--skip-branch archives with an unlinked record marked skipped", async () => {
     const result = await run(["x", "--skip-branch"]);
     expect(result).toMatchObject({ status: "archived", settlement: { status: "unlinked" } });
-    expect(await archivedRecord("x")).toContain("deliveries: []");
+    expect(await archivedRecord("x")).toContain("skipped: true\ndeliveries: []");
+  });
+
+  test("--skip-branch keeps a ticket-only record held back", async () => {
+    await writeDeliveryRecord(changeDir("x"), { ...unlinkedRecord("x"), ticket: "ABC-123" });
+    const result = await run(["x", "--skip-branch"]);
+    expect(result.settlement.status).toBe("unlinked");
+    expect(await archivedRecord("x")).toContain("ticket: ABC-123\nskipped: true");
   });
 
   test("a not-applicable change is archived and publishable", async () => {

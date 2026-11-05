@@ -117,8 +117,14 @@ mate companion setup \
   --allowed-agent opencode \
   --capability openspec \
   --capability react-doctor \
-  --git-mode default
+  --git-mode default \
+  --ticket none
 ```
+
+`--ticket <none|jira>` is the openspec capability's ticket setting, asked as the
+wizard's Tickets step when openspec is selected. `none`, the default, keeps every
+skill free of ticket questions; `jira` lets changes record a Jira key that names
+their branch. It needs openspec saved or selected.
 
 Changing setup selections invalidates the companion install state. Run
 `mate install` from that companion or a linked working repository afterward.

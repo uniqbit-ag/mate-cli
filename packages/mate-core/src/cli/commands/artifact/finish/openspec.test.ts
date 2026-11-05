@@ -337,6 +337,33 @@ describe("openspecFinisher merge gate", () => {
     expect(result.ok ? result.resolved.warning : "").toContain("merge was not checked");
   });
 
+  test("a ticket-only archive publishes with a warning naming its ticket", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-08-01-acme");
+    await fs.writeFile(
+      path.join(root, "openspec", "changes", "archive", "2026-08-01-acme", "delivery.yaml"),
+      "version: 1\nchange: acme\nticket: ABC-123\ndeliveries: []\n",
+    );
+
+    const result = await resolve(root, "acme");
+
+    expect(result.ok).toBe(true);
+    expect(result.ok ? result.resolved.warning : "").toContain(
+      "ticket ABC-123 records no delivery branch, so its merge was not checked",
+    );
+  });
+
+  test("a skipped ticket-only archive stays held back", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-08-01-acme");
+    await fs.writeFile(
+      path.join(root, "openspec", "changes", "archive", "2026-08-01-acme", "delivery.yaml"),
+      "version: 1\nchange: acme\nticket: ABC-123\nskipped: true\ndeliveries: []\n",
+    );
+
+    expect((await resolve(root, "acme")).ok).toBe(false);
+  });
+
   test("an archive sharing a canonical spec with a pending held-back archive is held", async () => {
     const root = await makeCompanion();
     await seedArchive(root, "2026-08-01-alpha", ["acme"]);

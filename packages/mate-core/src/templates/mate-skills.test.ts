@@ -1216,6 +1216,40 @@ describe("bundled Delivery Path stage skills", () => {
     );
   });
 
+  test("apply shows one delivery menu off its own branch and gates tickets on jira", async () => {
+    const flat = (source: string) => source.replace(/\s+/g, " ");
+    const source = flat(await readSkill("mate-apply-change"));
+    expect(source).toContain(
+      "**On any other branch**, protected or not → do not implement there yet.",
+    );
+    expect(source).toContain("**Use the current branch** (only when it is not protected)");
+    expect(source).toContain("**Work directly here** (protected branch only)");
+    expect(source).toContain("On another Workset's `workset/<id>` branch, name that Workset.");
+    expect(source).toContain(
+      "**Tickets** exist only when `ticketFormat` is `jira`; otherwise never ask for, offer, or mention one.",
+    );
+    expect(source).toContain("before creating the branch or running the worktree command");
+    expect(source).not.toContain("ask once whether this change is delivered through it");
+  });
+
+  test("propose, revise, and archive ask for a ticket only with jira", async () => {
+    const flat = (source: string) => source.replace(/\s+/g, " ");
+    for (const root of [skillsRoot, claudeSkillsRoot]) {
+      const propose = flat(await readSkillFrom(root, "mate-propose-change"));
+      expect(propose).toContain(
+        "Only when it is `jira`, ask once per run for an optional Jira ticket",
+      );
+      expect(propose).toContain("An empty answer records nothing");
+      expect(propose).toContain("With `none`, never ask.");
+      const revise = flat(await readReference(root, "mate-propose-change", "mate-revise.md"));
+      expect(revise).toContain("reports `ticketFormat` `jira` and no `record.ticket`");
+      const archive = flat(await readSkillFrom(root, "mate-archive-change"));
+      expect(archive).toContain("holds exactly one Jira key");
+      const publish = flat(await readSkillFrom(root, "mate-publish-artifact"));
+      expect(publish).toContain("whose `delivery.record.ticket` is set");
+    }
+  });
+
   test("archive runs through mate artifact archive and is allowed before the merge", async () => {
     const source = await readSkill("mate-archive-change");
     expect(source).toContain('mate artifact archive "<change-name>" --json');

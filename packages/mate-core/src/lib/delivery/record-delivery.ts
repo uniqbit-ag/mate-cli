@@ -1,12 +1,12 @@
-import type { ProtectionReason } from "./branches";
+import { workingRepoGit, type ProtectionReason, type TicketFormat } from "./branches";
 import { changeNameOf, locateChange, type ChangeLocation } from "../change-layout";
-import { resolveWorksetOf } from "../workset/record";
 import { companionRelative, type DeliveryEnvironment } from "./environment";
 import {
-  defaultDeliveryBranch,
   findDelivery,
+  ticketCandidateOf,
   legacyDeliveryBranch,
   readOrUnlinkedRecord,
+  sameRepository,
   settleChangeDir,
   upsertDelivery,
   writeDeliveryRecord,
@@ -20,6 +20,7 @@ import {
   type RefreshAccess,
   type RefreshCache,
 } from "./refresh";
+import { resolveDeliveryBranch, type HasRef } from "./resolve-branch";
 import {
   repositoryAccessFor,
   type RepositoryAccess,
@@ -33,6 +34,8 @@ export interface DeliveryEdit {
   pr?: string;
   /** The user's answer, recorded after any refresh with source `user`. */
   confirm?: MergeState;
+  /** A Jira key recorded for the change; refused while the companion's tickets are off. */
+  ticket?: string;
 }
 
 export interface DeliveryRequest {
@@ -56,11 +59,14 @@ export interface DeliveryRequest {
   includeArchived?: boolean;
   /** A change left without any delivery answers `needsBranch` and nothing is written. */
   requireDelivery?: boolean;
+  /** Marks a record left without any delivery as `skipped`, so it stays held back. */
+  markSkipped?: boolean;
 }
 
 export type DeliveryRefusal =
   | { reason: "unknown-change"; change: string }
   | { reason: "no-repository" }
+  | { reason: "tickets-off" }
   | { reason: "protected-branch"; branch: string; protection: ProtectionReason | null }
   | {
       reason: "no-delivery-branch";
@@ -72,6 +78,14 @@ export type DeliveryRefusal =
 export interface DeliveryResult {
   defaultBranch: string | null;
   diagnostics: string[];
+  /** The companion's ticket setting. */
+  ticketFormat: TicketFormat;
+  /**
+   * With `ticketFormat` `jira` and no recorded ticket: the single Jira key in the branch
+   * recorded for the repository, else in the Working Repository's current branch. Never
+   * recorded without an explicit `--ticket`.
+   */
+  ticketCandidate: string | null;
   change: string;
   /** Companion-relative path of the change directory. */
   path: string;
@@ -100,6 +114,21 @@ export type DeliveryOutcome =
 export interface RecordDeliveryDeps extends RepositoryAccessDeps {
   now?: () => Date;
   repositoryAccess?: (repository: string) => RepositoryAccess;
+}
+
+/** Ref lookup in the repository's local checkout; null when none is known. */
+async function hasRefIn(
+  environment: DeliveryEnvironment,
+  repository: string,
+): Promise<HasRef | null> {
+  const working = environment.workingRepo;
+  if (working?.slug && sameRepository(working.slug, repository)) {
+    return (ref) => working.git.hasRef(ref);
+  }
+  const checkout = await environment.checkoutOf?.(repository);
+  if (!checkout) return null;
+  const git = workingRepoGit(checkout);
+  return (ref) => git.hasRef(ref);
 }
 
 function hasDeliveryBranch(record: DeliveryRecord, repository: string): boolean {
@@ -132,8 +161,14 @@ export async function recordDelivery(
   }
 
   const repository = request.repository ?? environment.workingRepo?.slug ?? null;
-  const edits = edit.delivery !== undefined || edit.pr !== undefined || edit.confirm !== undefined;
-  if (edits && !repository) return { refusal: { reason: "no-repository" } };
+  const ticketFormat = environment.ticket?.format ?? "none";
+  if (edit.ticket !== undefined && ticketFormat === "none") {
+    return { refusal: { reason: "tickets-off" } };
+  }
+  const repositoryEdits =
+    edit.delivery !== undefined || edit.pr !== undefined || edit.confirm !== undefined;
+  const edits = repositoryEdits || edit.ticket !== undefined || request.markSkipped === true;
+  if (repositoryEdits && !repository) return { refusal: { reason: "no-repository" } };
   if (repository && edit.delivery && "branch" in edit.delivery) {
     const { branch, direct } = edit.delivery;
     const protection = await access(repository).protection(branch);
@@ -150,22 +185,26 @@ export async function recordDelivery(
   };
   const cache: RefreshCache = new Map();
   const resolved: Array<DeliveryResult & { dir: string }> = [];
+  const hasRef = repository ? await hasRefIn(environment, repository) : null;
+  const currentBranch = (await environment.workingRepo?.git.currentBranch()) ?? null;
 
   for (const { change, dir, archived } of located) {
     let record = await readOrUnlinkedRecord(dir, change);
-    const resolution = await resolveWorksetOf(
-      environment.companionPath,
+    const resolution = await resolveDeliveryBranch({
+      companionPath: environment.companionPath,
+      repository,
+      hasRef,
       change,
-      repository ?? undefined,
-    );
-    const defaultBranch = resolution.id === null ? null : defaultDeliveryBranch(resolution.id);
-    const diagnostics = [...resolution.diagnostics];
+    });
+    const diagnostics = resolution.diagnostics;
+    const defaultBranch = resolution.branch;
     const recordedBranch = repository ? findDelivery(record, repository)?.branch : undefined;
     if (recordedBranch && defaultBranch && recordedBranch !== defaultBranch) {
       diagnostics.push(
         `Recorded branch ${recordedBranch} differs from default ${defaultBranch}; preserving recorded delivery unless explicitly relinked.`,
       );
     }
+    if (edit.ticket !== undefined) record = { ...record, ticket: edit.ticket };
     if (repository && edit.delivery) {
       record = upsertDelivery(record, repository, edit.delivery);
       // Recording a branch keeps its local tip, so a later deletion cannot hide the merge.
@@ -185,6 +224,9 @@ export async function recordDelivery(
         }
       }
       return { needsBranch: { change, record, defaultBranch, diagnostics, suggestedBranch } };
+    }
+    if (request.markSkipped && record.deliveries.length === 0) {
+      record = { ...record, skipped: true };
     }
 
     if (repository && edit.pr !== undefined) {
@@ -214,9 +256,15 @@ export async function recordDelivery(
       });
     }
 
+    const candidateSource = recordedBranch ?? currentBranch;
     resolved.push({
       defaultBranch,
       diagnostics,
+      ticketFormat,
+      ticketCandidate:
+        ticketFormat === "jira" && !record.ticket && candidateSource
+          ? ticketCandidateOf(candidateSource)
+          : null,
       dir,
       change: record.change,
       path: companionRelative(environment, dir),

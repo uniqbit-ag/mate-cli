@@ -30,6 +30,7 @@ function repoGit(existing: string[] = []): WorkingRepoGit {
     remoteUrl: async () => "https://github.com/acme/acme-app.git",
     unpushedCommits: async () => [],
     branchExists: async (branch) => existing.includes(branch),
+    hasRef: async (ref) => existing.some((branch) => ref === `refs/heads/${branch}`),
   };
 }
 
@@ -114,7 +115,7 @@ afterEach(async () => {
 });
 
 describe("archiveChange", () => {
-  test("regrouping preserves delivery and exposes mismatch through archive", async () => {
+  test("regrouping keeps the recorded delivery through archive", async () => {
     await writeDeliveryRecord(
       changeDir("x"),
       upsertDelivery(unlinkedRecord("x"), REPO, { branch: "workset/x" }),
@@ -125,10 +126,7 @@ describe("archiveChange", () => {
       `id: acme-login\nrepositories: [${REPO}]\nchanges: [x]\n`,
     );
     const result = await archive();
-    expect(result.defaultBranch).toBe("workset/acme-login");
-    expect(result.diagnostics.join()).toContain(
-      "Recorded branch workset/x differs from default workset/acme-login",
-    );
+    expect(result.defaultBranch).toBe("workset/x");
     expect(await archivedRecord("x")).toContain("workset/x");
   });
 

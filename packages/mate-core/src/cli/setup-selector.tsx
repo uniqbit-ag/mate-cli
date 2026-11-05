@@ -17,7 +17,9 @@ import {
   listSetupGitModeCompatibilities,
   listSetupPackageManagerCompatibilities,
   listSetupProviderCompatibilities,
+  listSetupTicketCompatibilities,
 } from "../lib/orchestrator/setup-compatibilities";
+import type { TicketFormat } from "../lib/orchestrator/types";
 
 interface SetupSelectorOptions {
   initialSelections: SetupSelections;
@@ -26,7 +28,7 @@ interface SetupSelectorOptions {
   stderr?: NodeJS.WriteStream;
 }
 
-export type WizardStep = "providers" | "capabilities" | "gitMode";
+export type WizardStep = "providers" | "capabilities" | "gitMode" | "tickets";
 
 interface SetupSelectorProps {
   activeIndex: number;
@@ -35,6 +37,7 @@ interface SetupSelectorProps {
   selectedPackageManagers: Set<string>;
   selectedCapabilities: Set<string>;
   selectedGitMode: GitModeSelection;
+  selectedTicket: TicketFormat;
   onMounted?: () => void;
 }
 
@@ -43,7 +46,7 @@ export const setupSelectorDeps = {
 };
 
 export interface SetupSelectorItem {
-  kind: "provider" | "packageManager" | "capability" | "gitMode";
+  kind: "provider" | "packageManager" | "capability" | "gitMode" | "ticket";
   id: string;
   label: string;
   description: string;
@@ -59,15 +62,29 @@ export interface SetupSelectorState {
   selectedPackageManagers: Set<string>;
   selectedCapabilities: Set<string>;
   selectedGitMode: GitModeSelection;
+  selectedTicket?: TicketFormat;
 }
 
-export const WIZARD_STEPS: readonly WizardStep[] = ["providers", "capabilities", "gitMode"];
+export const WIZARD_STEPS: readonly WizardStep[] = [
+  "providers",
+  "capabilities",
+  "gitMode",
+  "tickets",
+];
+
+/** The Tickets step configures openspec, so it is shown only while openspec is selected. */
+export function wizardStepsFor(selectedCapabilities: ReadonlySet<string>): WizardStep[] {
+  return WIZARD_STEPS.filter((step) => step !== "tickets" || selectedCapabilities.has("openspec"));
+}
 
 const STEP_DISPLAY_NAMES: Record<WizardStep, string> = {
   providers: "Agents",
   capabilities: "Capabilities",
   gitMode: "Git Auto Mode",
+  tickets: "Tickets",
 };
+
+const RADIO_STEPS: ReadonlySet<WizardStep> = new Set(["gitMode", "tickets"]);
 
 export function parseSelectorInput(
   input: string,
@@ -149,6 +166,12 @@ export function getSelectableItems(): SetupSelectorItem[] {
       label: entry.label,
       description: entry.description,
     })),
+    ...listSetupTicketCompatibilities().map((entry) => ({
+      kind: "ticket" as const,
+      id: entry.id,
+      label: entry.label,
+      description: entry.description,
+    })),
   ]);
 }
 
@@ -157,6 +180,7 @@ export function getItemsForStep(step: WizardStep): SetupSelectorItem[] {
     providers: "provider",
     capabilities: "capability",
     gitMode: "gitMode",
+    tickets: "ticket",
   };
   return getSelectableItems().filter((item) => item.kind === kindMap[step]);
 }
@@ -217,6 +241,7 @@ export function toggleSelectableItem(
     selectedPackageManagers,
     selectedCapabilities,
     selectedGitMode: state.selectedGitMode,
+    ...(state.selectedTicket ? { selectedTicket: state.selectedTicket } : {}),
   };
 }
 
@@ -224,21 +249,29 @@ export function selectRadioItem(
   state: SetupSelectorState,
   current: SetupSelectorItem,
 ): SetupSelectorState {
-  if (current.kind !== "gitMode") return state;
-  return {
+  if (current.kind !== "gitMode" && current.kind !== "ticket") return state;
+  const next: SetupSelectorState = {
     selectedProviders: new Set(state.selectedProviders),
     selectedPackageManagers: new Set(state.selectedPackageManagers),
     selectedCapabilities: new Set(state.selectedCapabilities),
-    selectedGitMode: current.id as GitModeSelection,
+    selectedGitMode: state.selectedGitMode,
+    ...(state.selectedTicket ? { selectedTicket: state.selectedTicket } : {}),
   };
+  if (current.kind === "gitMode") next.selectedGitMode = current.id as GitModeSelection;
+  else next.selectedTicket = current.id as TicketFormat;
+  return next;
 }
 
 function getInitialActiveIndexForStep(
   step: WizardStep,
   selectedGitMode: GitModeSelection = DEFAULT_GIT_MODE_SELECTION,
+  selectedTicket: TicketFormat = "none",
 ): number {
-  if (step !== "gitMode") return 0;
-  const index = getItemsForStep(step).findIndex((item) => item.id === selectedGitMode);
+  let selected: string;
+  if (step === "gitMode") selected = selectedGitMode;
+  else if (step === "tickets") selected = selectedTicket;
+  else return 0;
+  const index = getItemsForStep(step).findIndex((item) => item.id === selected);
   return index >= 0 ? index : 0;
 }
 
@@ -249,18 +282,20 @@ function SetupSelectorApp({
   selectedPackageManagers,
   selectedCapabilities,
   selectedGitMode,
+  selectedTicket,
   onMounted,
 }: SetupSelectorProps) {
   useEffect(() => {
     onMounted?.();
   }, [onMounted]);
 
-  const totalSteps = WIZARD_STEPS.length;
-  const stepKey = WIZARD_STEPS[currentStep];
+  const steps = wizardStepsFor(selectedCapabilities);
+  const totalSteps = steps.length;
+  const stepKey = steps[currentStep];
   const stepName = STEP_DISPLAY_NAMES[stepKey];
   const disabledCapabilityIds = getDisabledCapabilityIds(selectedPackageManagers);
   const navigableItems = getItemsForStep(stepKey);
-  const isRadioStep = stepKey === "gitMode";
+  const isRadioStep = RADIO_STEPS.has(stepKey);
   const isLastStep = currentStep === totalSteps - 1;
   const enterHint = isLastStep ? "enter confirm" : "enter next";
   const backHint = currentStep > 0 ? " · ← back" : "";
@@ -300,6 +335,16 @@ function SetupSelectorApp({
           label: item.label,
           description: item.description,
           indicator: renderIndicator(selectedGitMode === item.id, { mode: "radio" }),
+        },
+      ];
+    }
+    if (item.kind === "ticket") {
+      return [
+        {
+          key: `ticket:${item.id}`,
+          label: item.label,
+          description: item.description,
+          indicator: renderIndicator(selectedTicket === item.id, { mode: "radio" }),
         },
       ];
     }
@@ -350,6 +395,7 @@ export async function selectSetupCompatibilities(
     let selectedPackageManagers = new Set(initialSelections.packageManagers);
     let selectedCapabilities = new Set(initialSelections.capabilities.map((entry) => entry.name));
     let selectedGitMode = initialSelections.selectedGitMode;
+    let selectedTicket: TicketFormat = initialSelections.selectedTicket ?? "none";
     let rendered: ReturnType<typeof inkRender> | undefined;
 
     const cleanup = () => {
@@ -368,7 +414,8 @@ export async function selectSetupCompatibilities(
       resolve(value);
     };
 
-    const getCurrentStep = () => WIZARD_STEPS[currentStep];
+    const steps = () => wizardStepsFor(selectedCapabilities);
+    const getCurrentStep = () => steps()[currentStep];
     const getCurrentItems = () => getItemsForStep(getCurrentStep());
 
     const rerender = () => {
@@ -380,6 +427,7 @@ export async function selectSetupCompatibilities(
           selectedPackageManagers={selectedPackageManagers}
           selectedCapabilities={selectedCapabilities}
           selectedGitMode={selectedGitMode}
+          selectedTicket={selectedTicket}
         />,
       );
     };
@@ -437,30 +485,34 @@ export async function selectSetupCompatibilities(
 
       if (action === "submit") {
         const stepKey = getCurrentStep();
-        if (stepKey === "gitMode") {
+        if (RADIO_STEPS.has(stepKey)) {
           const current = getCurrentItems()[activeIndex];
-          if (current && current.id !== selectedGitMode) {
+          const selected = stepKey === "gitMode" ? selectedGitMode : selectedTicket;
+          if (current && current.id !== selected) {
             const next = selectRadioItem(
               {
                 selectedProviders,
                 selectedPackageManagers,
                 selectedCapabilities,
                 selectedGitMode,
+                selectedTicket,
               },
               current,
             );
-            selectedProviders = next.selectedProviders;
-            selectedPackageManagers = next.selectedPackageManagers;
-            selectedCapabilities = next.selectedCapabilities;
             selectedGitMode = next.selectedGitMode;
+            selectedTicket = next.selectedTicket ?? selectedTicket;
             rerender();
             return;
           }
         }
 
-        if (currentStep < WIZARD_STEPS.length - 1) {
+        if (currentStep < steps().length - 1) {
           currentStep++;
-          activeIndex = getInitialActiveIndexForStep(WIZARD_STEPS[currentStep], selectedGitMode);
+          activeIndex = getInitialActiveIndexForStep(
+            steps()[currentStep],
+            selectedGitMode,
+            selectedTicket,
+          );
           rerender();
           return;
         }
@@ -480,6 +532,7 @@ export async function selectSetupCompatibilities(
               .map((id) => ({ name: id })),
           ],
           selectedGitMode,
+          selectedTicket,
         });
         rendered?.unmount();
         return;
@@ -511,6 +564,7 @@ export async function selectSetupCompatibilities(
           selectedPackageManagers={selectedPackageManagers}
           selectedCapabilities={selectedCapabilities}
           selectedGitMode={selectedGitMode}
+          selectedTicket={selectedTicket}
           onMounted={onMounted}
         />,
         { stdin, stdout, stderr, exitOnCtrlC: true, interactive: true },

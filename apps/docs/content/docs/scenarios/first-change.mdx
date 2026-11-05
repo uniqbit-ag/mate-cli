@@ -138,6 +138,10 @@ names, flags, exit codes, JSON output fields, config keys, and exported package
 symbols. Otherwise it uses `mate-v1`.
 One prompt writes every artifact of the chosen schema.
 
+When the companion's openspec capability sets `ticket: jira`, propose asks once
+for an optional Jira ticket and records it on every change it creates, before
+any branch exists. Leave the answer empty to skip it.
+
 When you skipped explore, propose applies the same slicing test first, unless
 you already decided to keep one change. The test passes only when the feature
 holds several behaviours that can each ship and be reviewed on their own, or more
@@ -162,10 +166,15 @@ passing validation is not a review.
 
 `/mate-apply-change for <change-name>` first records the **delivery branch**:
 the Working Repository branch your change is merged through. Its default is
-`workset/<workset-id>`. A Workset groups changes delivered in one merge per
+`workset/<workset-id>`, or `workset/<TICKET>-<workset-id>` when the change
+records a ticket. A Workset groups changes delivered in one merge per
 repository. A standalone change has an implicit single-change Workset whose id
-is its change name; no Workset record is written. On the resolved default branch,
-apply records it without asking; on another branch it asks once.
+is its change name; no Workset record is written. On the recorded branch or the
+resolved default branch, apply continues without asking. On any other branch,
+protected or not, it shows one menu: create or switch to the default branch
+(recommended), create a worktree, use the current branch (only when it is not
+protected), use another existing branch, or work directly (only on a protected
+branch, on explicit choice).
 
 Existing recorded branches, including `change/*` and custom names, remain valid.
 Regrouping a change never replaces its recorded branch: Mate reports the mismatch,
@@ -184,10 +193,24 @@ capabilities:
     protectedBranches: ["release/*", "develop"]
 ```
 
-It offers to create or switch to `workset/<workset-id>` (uncommitted edits carry over), to
-switch to another branch, or, only when you explicitly choose it, to work there
-as a recorded direct delivery. It names local commits that are not pushed yet
-and never moves them. Then it implements the tasks. Open your PR whenever you
+Creating or switching to the default branch carries uncommitted edits over.
+Whenever the menu shows, apply names local commits that are not pushed yet and
+never moves them.
+
+Tickets are off by default. Turn them on with `mate companion setup --ticket jira`,
+or the wizard's Tickets step, which writes:
+
+```yaml
+# .mate/config/framework.yaml
+capabilities:
+  - name: openspec
+    ticket: jira
+```
+
+With Jira on and no ticket recorded, you can give one with the create or worktree
+answer (`1 ABC-123`), and the branch is named after it. On a branch such as
+`feature/ABC-123-retry`, apply offers to record `ABC-123` with it; archive does the
+same for the branch you name. A detected key is never recorded without your answer. Then it implements the tasks. Open your PR whenever you
 like; Mate does not open, merge, or push anything.
 
 For a long task list you can ask for **compact apply**:

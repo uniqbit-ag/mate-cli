@@ -93,6 +93,14 @@ function change(name: string, ...repositories: string[]): void {
   );
 }
 
+/** Writes the change's `delivery.yaml` from the lines after `change`. */
+function record(name: string, body: string): void {
+  fs.writeFileSync(
+    path.join(companion, "openspec", "changes", name, "delivery.yaml"),
+    `version: 1\nchange: ${name}\n${body}`,
+  );
+}
+
 function branches(repo: string): string {
   return git(repo, "branch", "--list", "--format=%(refname:short) %(upstream:short)");
 }
@@ -349,6 +357,47 @@ describe("createChangeWorktrees", () => {
     expect(result.ok).toBe(false);
     expect(result.diagnostics).toEqual(["no active change acme-missing"]);
     expect(fs.existsSync(path.join(root, "src", "web.worktrees"))).toBe(false);
+  });
+
+  test("a recorded ticket names the new branch", async () => {
+    link(checkout("web"));
+    change("acme-fix", "acme/web");
+    record("acme-fix", "ticket: ABC-123\ndeliveries: []\n");
+    const result = await createChangeWorktrees(companion, "acme-fix", options);
+    expect(result.repositories).toMatchObject([{ branch: "workset/ABC-123-acme-fix" }]);
+  });
+
+  test("an existing workset/<id> stays after a later ticket", async () => {
+    const web = checkout("web");
+    link(web);
+    git(web, "branch", "workset/acme-fix");
+    change("acme-fix", "acme/web");
+    record("acme-fix", "ticket: ABC-123\ndeliveries: []\n");
+    const result = await createChangeWorktrees(companion, "acme-fix", options);
+    expect(result.repositories).toMatchObject([{ branch: "workset/acme-fix" }]);
+  });
+
+  test("a branch pushed elsewhere wins over a later ticket", async () => {
+    const web = checkout("web");
+    link(web);
+    git(web, "push", "-q", "origin", "HEAD:refs/heads/workset/acme-fix");
+    // Only the origin has it: drop the tracking ref the push left behind.
+    git(web, "update-ref", "-d", "refs/remotes/origin/workset/acme-fix");
+    change("acme-fix", "acme/web");
+    record("acme-fix", "ticket: ABC-123\ndeliveries: []\n");
+    const result = await createChangeWorktrees(companion, "acme-fix", options);
+    expect(result.repositories).toMatchObject([{ branch: "workset/acme-fix", action: "created" }]);
+    expect(branches(web)).toContain("workset/acme-fix origin/workset/acme-fix");
+    expect(branches(web)).not.toContain("ABC-123");
+  });
+
+  test("a recorded branch is the worktree's branch", async () => {
+    link(checkout("web"));
+    listing("acme-login", ["acme/web"], ["acme-form"]);
+    change("acme-form", "acme/web");
+    record("acme-form", "deliveries:\n  - repository: acme/web\n    branch: feature/acme\n");
+    const result = await createChangeWorktrees(companion, "acme-form", options);
+    expect(result.repositories).toMatchObject([{ branch: "feature/acme", action: "created" }]);
   });
 
   test("an implicit change without scoped repositories creates nothing", async () => {

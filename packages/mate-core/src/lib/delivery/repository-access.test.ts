@@ -16,6 +16,7 @@ function git(overrides: Partial<WorkingRepoGit> = {}): WorkingRepoGit {
     remoteUrl: async () => "git@github.com:acme/acme-app.git",
     unpushedCommits: async () => [],
     branchExists: async () => false,
+    hasRef: async () => false,
     ...overrides,
   };
 }
