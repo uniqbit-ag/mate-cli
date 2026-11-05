@@ -316,7 +316,7 @@ export async function runWorkingWorktreeCommand(
       const { worksets } = await (deps.worksetStages ?? readCompanionWorksetStages)(companion);
       const done = worksets
         .filter((entry) => entry.derived.stage === "done")
-        .map((entry) => entry.record);
+        .map(({ record }) => ({ id: record.id, changes: record.changes }));
       const result = await (deps.prune ?? pruneWorksetWorktrees)(companion, done);
       reportProblems([], result.warnings);
       if (parsed.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

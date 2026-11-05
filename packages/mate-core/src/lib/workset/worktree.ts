@@ -10,6 +10,7 @@ import type { WrapRuntime } from "../../runtime/runtime-document-manifest";
 import { readWrapState, WRAP_RUNTIMES } from "../../runtime/wrap-state";
 import { cleanupWorkingRepository } from "../../tools/setup/working-repo-cleanup";
 import { locateChange } from "../change-layout";
+import { type DeliveryRecord, readDeliveryRecord } from "../delivery/record";
 import {
   resolveDeliveryBranch,
   worktreeAddArgs,
@@ -24,13 +25,7 @@ import {
 import type { LinkedRepository } from "../orchestrator/types";
 import { runWrapPass } from "../orchestrator/wrap-pass";
 import { identityOf } from "./repositories";
-import {
-  findWorkset,
-  readWorksets,
-  resolveWorksetBranch,
-  resolveWorksetOf,
-  type WorksetRecord,
-} from "./record";
+import { findWorkset, readWorksets, resolveWorksetBranch, resolveWorksetOf } from "./record";
 
 /**
  * Workset worktrees outside the factory: one Git worktree per Working Repository at
@@ -64,6 +59,8 @@ export interface WorktreeDeps {
   readWrapState?: typeof readWrapState;
   wrap?: WorktreeWrapper;
   unwrap?: typeof cleanupWorkingRepository;
+  /** The process's working directory; a worktree holding it is kept. */
+  cwd?: () => string;
 }
 
 export type InstallOutcome = "ok" | "failed" | "skipped";
@@ -102,6 +99,12 @@ export interface PruneEntry {
   workset: string;
   repository: string;
   path: string;
+}
+
+/** A Workset to prune: its id and the changes whose Delivery Records name its branches. */
+export interface PruneTarget {
+  id: string;
+  changes: readonly string[];
 }
 
 export interface PruneResult {
@@ -188,6 +191,8 @@ interface WorktreeEntry {
   branch: string | null;
   /** `git worktree lock` set; `git worktree remove` refuses it without `--force`. */
   locked: boolean;
+  /** Set when Git marks the entry prunable (its directory or `.git` file is gone): Git's reason. */
+  stale: string | null;
 }
 
 async function listWorktrees(git: GitRunner, repo: string): Promise<WorktreeEntry[] | null> {
@@ -197,13 +202,17 @@ async function listWorktrees(git: GitRunner, repo: string): Promise<WorktreeEntr
     let entryPath: string | null = null;
     let branch: string | null = null;
     let locked = false;
+    let stale: string | null = null;
     for (const line of block.split("\n")) {
       if (line.startsWith("worktree ")) entryPath = line.slice("worktree ".length);
       else if (line.startsWith("branch refs/heads/"))
         branch = line.slice("branch refs/heads/".length);
       else if (line === "locked" || line.startsWith("locked ")) locked = true;
+      else if (line === "prunable" || line.startsWith("prunable ")) {
+        stale = line.slice("prunable".length).trim() || "prunable";
+      }
     }
-    return entryPath ? [{ path: entryPath, branch, locked }] : [];
+    return entryPath ? [{ path: entryPath, branch, locked, stale }] : [];
   });
   return Promise.all(
     entries.map(async (entry) => ({ ...entry, path: await canonical(entry.path) })),
@@ -340,6 +349,15 @@ async function planRepository(
   if (!main) return [`${repository}: cannot list the worktrees of ${linked.path}`];
   const target = await canonical(worktreePathFor(main.path, worksetId));
   const atTarget = entries.find((entry) => entry.path === target);
+  // A stale entry is never reused: wrapping it would only refill a folder without a checkout.
+  const stale = entries.find(
+    (entry) => entry.stale && (entry.path === target || entry.branch === branch),
+  );
+  if (stale) {
+    return [
+      `${repository}: ${stale.path} is a stale worktree entry (${stale.stale}); remove any folder left there, run \`git worktree prune\` in ${main.path}, then retry`,
+    ];
+  }
   const reuse = atTarget?.branch === branch;
   if (!reuse && (atTarget || (await exists(target)))) {
     return [`${repository}: ${target} exists and is not a worktree of ${repository} on ${branch}`];
@@ -581,8 +599,22 @@ async function stillWrapped(
   }
 }
 
+/** Whether `cwd` is the worktree or lies inside it. */
+async function holds(worktree: string, cwd: string): Promise<boolean> {
+  const relative = path.relative(worktree, await canonical(cwd));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
 /** Why a worktree must stay, or null when it is clean and every commit is on a remote. */
-async function keepReason(git: GitRunner, worktree: string): Promise<string | null> {
+async function keepReason(
+  git: GitRunner,
+  listed: WorktreeEntry,
+  cwd: string,
+): Promise<string | null> {
+  if (listed.locked) return "locked";
+  if (listed.stale) return `stale worktree entry (${listed.stale}); run \`git worktree prune\``;
+  const worktree = listed.path;
+  if (await holds(worktree, cwd)) return "in use (current directory)";
   const status = await git(worktree, ["status", "--porcelain"]);
   if (status.code !== 0) return `cannot read its status: ${status.stderr.trim()}`;
   if (status.stdout.trim()) return "uncommitted changes or untracked files";
@@ -592,10 +624,40 @@ async function keepReason(git: GitRunner, worktree: string): Promise<string | nu
   return null;
 }
 
+/** Recorded Delivery Branches per Working Repository; not-applicable deliveries name none. */
+async function recordedBranches(
+  companionPath: string,
+  changes: readonly string[],
+  warnings: string[],
+): Promise<Map<string, Set<string>>> {
+  const byRepository = new Map<string, Set<string>>();
+  for (const change of changes) {
+    // oxlint-disable-next-line no-await-in-loop -- a few small files, in order
+    const location = await locateChange(companionPath, change);
+    if (!location) continue;
+    let record: DeliveryRecord | null;
+    try {
+      // oxlint-disable-next-line no-await-in-loop -- a few small files, in order
+      record = await readDeliveryRecord(location.dir);
+    } catch (error) {
+      warnings.push(`${change}: cannot read its Delivery Record: ${errorMessage(error)}`);
+      continue;
+    }
+    for (const delivery of record?.deliveries ?? []) {
+      if (!delivery.branch || delivery.notApplicable) continue;
+      const branches = byRepository.get(delivery.repository) ?? new Set<string>();
+      branches.add(delivery.branch);
+      byRepository.set(delivery.repository, branches);
+    }
+  }
+  return byRepository;
+}
+
 async function pruneRepository(
   companionPath: string,
   worksetId: string,
   repository: string,
+  branches: ReadonlySet<string>,
   git: GitRunner,
   deps: WorktreeDeps,
   result: PruneResult,
@@ -608,11 +670,43 @@ async function pruneRepository(
     result.warnings.push(`${repository}: cannot list the worktrees of ${linked.path}`);
     return;
   }
-  const target = await canonical(worktreePathFor(main.path, worksetId));
-  const listed = entries.find((candidate) => candidate.path === target);
-  if (!listed) return;
+  // The first entry is the main checkout; a detached HEAD has no branch and never matches.
+  const candidates = entries
+    .slice(1)
+    .filter((entry) => entry.branch !== null && branches.has(entry.branch));
+  for (const listed of candidates) {
+    // oxlint-disable-next-line no-await-in-loop -- Git operations on one checkout, one at a time
+    await pruneWorktree(
+      companionPath,
+      { worksetId, repository, main: main.path, linked, listed },
+      git,
+      deps,
+      result,
+    );
+  }
+}
+
+interface PruneCandidate {
+  worksetId: string;
+  repository: string;
+  /** The main checkout's path. */
+  main: string;
+  linked: LinkedRepository;
+  listed: WorktreeEntry;
+}
+
+async function pruneWorktree(
+  companionPath: string,
+  candidate: PruneCandidate,
+  git: GitRunner,
+  deps: WorktreeDeps,
+  result: PruneResult,
+): Promise<void> {
+  const { worksetId, repository, main, linked, listed } = candidate;
+  const target = listed.path;
   const entry = { workset: worksetId, repository, path: target };
-  const reason = listed.locked ? "locked" : await keepReason(git, target);
+  const cwd = (deps.cwd ?? process.cwd)();
+  const reason = await keepReason(git, listed, cwd);
   if (reason) {
     result.kept.push({ ...entry, reason });
     return;
@@ -624,19 +718,14 @@ async function pruneRepository(
     result.kept.push({ ...entry, reason: `removing its wrap failed: ${errorMessage(error)}` });
     return;
   }
-  const removed = await git(main.path, ["worktree", "remove", target]);
+  const removed = await git(main, ["worktree", "remove", target]);
   if (removed.code === 0) {
     result.removed.push(entry);
     return;
   }
   const refused = removed.stderr.trim() || "git refused";
   // Kept, so it gets its guardrails back.
-  const rewrap = await wrapWorktree(
-    companionPath,
-    main.path,
-    { id: linked.id, path: target },
-    deps,
-  );
+  const rewrap = await wrapWorktree(companionPath, main, { id: linked.id, path: target }, deps);
   result.kept.push({
     ...entry,
     reason:
@@ -648,20 +737,24 @@ async function pruneRepository(
 
 /**
  * Removes the worktrees of the given (Done) Worksets that are clean and fully pushed,
- * without `--force`, and never deletes a branch. Every other worktree stays. Each is
- * unwrapped before removal.
+ * without `--force`, and never deletes a branch. A worktree belongs to a Workset when it is
+ * a linked worktree with a Delivery Branch of the Workset's changes checked out, wherever
+ * it lives. The main checkout and a worktree holding the working directory stay, as does
+ * every other worktree. Each is unwrapped before removal.
  */
 export async function pruneWorksetWorktrees(
   companionPath: string,
-  done: readonly WorksetRecord[],
+  done: readonly PruneTarget[],
   deps: WorktreeDeps = {},
 ): Promise<PruneResult> {
   const git = deps.git ?? runGit;
   const result: PruneResult = { removed: [], kept: [], warnings: [] };
-  for (const record of done) {
-    for (const repository of record.repositories) {
+  for (const workset of done) {
+    // oxlint-disable-next-line no-await-in-loop -- Worksets one at a time
+    const branches = await recordedBranches(companionPath, workset.changes, result.warnings);
+    for (const [repository, names] of branches) {
       // oxlint-disable-next-line no-await-in-loop -- Git operations on shared checkouts, one at a time
-      await pruneRepository(companionPath, record.id, repository, git, deps, result);
+      await pruneRepository(companionPath, workset.id, repository, names, git, deps, result);
     }
   }
   return result;

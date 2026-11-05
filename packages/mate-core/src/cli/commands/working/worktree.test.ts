@@ -210,9 +210,9 @@ describe("mate working worktree", () => {
     expect(text).toContain("acme/web: wrapped for claude");
   });
 
-  test("prune passes only Done Worksets and exits 0 when it keeps one", async () => {
-    const record = (id: string) => ({ id }) as WorksetRecord;
-    const passed: string[] = [];
+  test("prune passes only Done Worksets, with their changes, and exits 0 when it keeps one", async () => {
+    const record = (id: string) => ({ id, changes: [id] }) as unknown as WorksetRecord;
+    const passed: { id: string; changes: readonly string[] }[] = [];
     await runWorkingWorktreeCommand(
       ["prune", "--json"],
       deps({
@@ -235,7 +235,7 @@ describe("mate working worktree", () => {
           problems: [],
         }),
         prune: async (_companion, done) => {
-          passed.push(...done.map((entry) => entry.id));
+          passed.push(...done);
           return {
             removed: [],
             kept: [
@@ -251,7 +251,7 @@ describe("mate working worktree", () => {
         },
       }),
     );
-    expect(passed).toEqual(["acme-login"]);
+    expect(passed).toEqual([{ id: "acme-login", changes: ["acme-login"] }]);
     expect(process.exitCode).toBe(0);
     expect(JSON.parse(out.join("")).kept[0].reason).toBe("commits on no remote");
   });

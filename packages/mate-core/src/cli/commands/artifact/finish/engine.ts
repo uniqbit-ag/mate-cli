@@ -1,3 +1,4 @@
+import type { PruneResult } from "../../../../lib/workset/worktree";
 import { describeSecretFindings, type SecretFinding } from "../../../../runtime/secret-scan";
 import type { ArtifactFinisher, Produced } from "./finisher";
 import { RemoteFetchError, type GitOps } from "./git";
@@ -39,6 +40,11 @@ export interface FinishResult {
   secretFindings?: SecretFinding[];
   /** The finisher's warning about what it resolved; publication continued. */
   warning?: string;
+  /**
+   * Set on the result whose publication made a Workset Done: the worktrees cleaned up
+   * after it. Best effort; it never changes `status`.
+   */
+  worktrees?: PruneResult;
 }
 
 export interface EngineOptions {
@@ -53,6 +59,22 @@ export interface EngineDeps {
   stderr: (line: string) => void;
   /** Scans the staged outputs for secrets; absent means no scan step. */
   secretScan?: (commitPaths: string[]) => Promise<PublicationSecretScan>;
+  /** False leaves printing the result to the caller; progress lines still go to stderr. */
+  printResult?: boolean;
+}
+
+/** Prints a result: JSON with `json`, else the message on stdout when it succeeded, stderr otherwise. */
+export function printFinishResult(
+  result: FinishResult,
+  out: Pick<EngineDeps, "json" | "stdout" | "stderr">,
+): void {
+  if (out.json) {
+    out.stdout(JSON.stringify(result));
+  } else if (result.status === "ok" || result.status === "skipped") {
+    out.stdout(result.message);
+  } else {
+    out.stderr(result.message);
+  }
 }
 
 /**
@@ -94,13 +116,7 @@ export async function runFinishEngine(
   };
 
   const emit = (): void => {
-    if (deps.json) {
-      deps.stdout(JSON.stringify(result));
-    } else if (result.status === "ok" || result.status === "skipped") {
-      deps.stdout(result.message);
-    } else {
-      deps.stderr(result.message);
-    }
+    if (deps.printResult !== false) printFinishResult(result, deps);
   };
 
   /** Exits zero: the publication is kept locally and resumable, so it must not block the caller. */

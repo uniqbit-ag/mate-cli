@@ -5,7 +5,7 @@ import { WorkingRepoRequiredError } from "../../../../lib/orchestrator/types";
 import { type BooleanFlagSet, parseFlags } from "../../../parse-flags";
 import { ensureUnambiguousCompanion } from "../../shared/companion-selection";
 import { discoverArchives, pendingArchives } from "../pending/discovery";
-import { type FinishResult, runFinishEngine } from "./engine";
+import { type FinishResult, printFinishResult, runFinishEngine } from "./engine";
 import type { ArtifactFinisher, FinishContext, FinisherFactory } from "./finisher";
 import { defaultGitOps, type GitOps } from "./git";
 import {
@@ -16,6 +16,7 @@ import {
 } from "./openspec";
 import { DEFAULT_FINISHER_TYPE, knownFinisherTypes, selectFinisher } from "./registry";
 import { type PublicationSecretScan, scanPublication } from "./secret-scan";
+import { cleanUpCompletedWorksets, type WorktreeCleanupDeps } from "./worktree-cleanup";
 
 export interface PublishCommandDeps {
   ensureUnambiguousCompanion?: (cwd: string) => Promise<boolean>;
@@ -32,6 +33,8 @@ export interface PublishCommandDeps {
     companionPath: string,
     commitPaths: string[],
   ) => Promise<PublicationSecretScan>;
+  /** Injectable readers and prune for the cleanup after a Workset becomes Done. */
+  worktreeCleanup?: WorktreeCleanupDeps;
   stdout?: (line: string) => void;
   stderr?: (line: string) => void;
 }
@@ -244,8 +247,38 @@ export async function runArtifactPublishCommand(
     secretScan: (commitPaths: string[]) => scanPublicationFn(context.companionPath, commitPaths),
   };
 
-  const runChange = (target: string): Promise<FinishResult> =>
-    runFinishEngine(finisher, { name: target, noPush }, engineDeps);
+  const runChange = (target: string, printResult = true): Promise<FinishResult> =>
+    runFinishEngine(finisher, { name: target, noPush }, { ...engineDeps, printResult });
+
+  /**
+   * Cleans up the Worksets these change results made Done and attaches each outcome to the
+   * result that completed it. Runs after every status and exit code is final; never throws.
+   */
+  const cleanUpWorktrees = async (changeResults: readonly FinishResult[]): Promise<void> => {
+    const published = changeResults.flatMap((result) =>
+      result.status === "ok" && result.anchorName ? [result.anchorName] : [],
+    );
+    const outcomes = await cleanUpCompletedWorksets(
+      context.companionPath,
+      published,
+      deps.worktreeCleanup,
+    );
+    for (const result of changeResults) {
+      const outcome = result.anchorName ? outcomes.get(result.anchorName) : undefined;
+      if (outcome) result.worktrees = outcome;
+    }
+  };
+
+  const printWorktrees = (changeResults: readonly FinishResult[]): void => {
+    if (json) return;
+    for (const { worktrees } of changeResults) {
+      for (const entry of worktrees?.removed ?? []) emitErr(`mate: removed worktree ${entry.path}`);
+      for (const entry of worktrees?.kept ?? []) {
+        emitErr(`mate: kept worktree ${entry.path} (${entry.reason})`);
+      }
+      for (const warning of worktrees?.warnings ?? []) emitErr(`warning: ${warning}`);
+    }
+  };
 
   const runSpecs = async (requested: string[]): Promise<FinishResult | null> => {
     const drift = await resolveDriftedSpecs(context.companionPath, git, requested);
@@ -266,6 +299,7 @@ export async function runArtifactPublishCommand(
 
   if (allMode) {
     const results: FinishResult[] = [];
+    const changeResults: FinishResult[] = [];
     const changed = await git.changedPaths();
     const changeKinds = (await git.changedPathKinds?.()) ?? {};
     const archives = await discoverArchives(context.companionPath, changed, changeKinds);
@@ -286,7 +320,11 @@ export async function runArtifactPublishCommand(
       }
       const result = await runChange(entry.anchor);
       results.push(result);
+      changeResults.push(result);
       if (halted(result)) {
+        // Worksets completed before the halt are still cleaned up.
+        await cleanUpWorktrees(changeResults);
+        printWorktrees(changeResults);
         if (json) emitOut(JSON.stringify(results));
         return;
       }
@@ -296,6 +334,8 @@ export async function runArtifactPublishCommand(
     const specResult = await runSpecs([]);
     if (specResult) results.push(specResult);
 
+    await cleanUpWorktrees(changeResults);
+    printWorktrees(changeResults);
     if (json) emitOut(JSON.stringify(results));
     else if (results.length === 0) emitOut("Nothing to publish.");
     return;
@@ -313,5 +353,9 @@ export async function runArtifactPublishCommand(
     return;
   }
 
-  await runChange(positionals[0]);
+  // Printed here, after cleanup, so `--json` stays one object that carries `worktrees`.
+  const result = await runChange(positionals[0], false);
+  await cleanUpWorktrees([result]);
+  printFinishResult(result, { json, stdout: emitOut, stderr: emitErr });
+  printWorktrees([result]);
 }
