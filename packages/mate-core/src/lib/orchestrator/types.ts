@@ -51,6 +51,11 @@ export type CompanionSource = "git" | "existing" | "local";
 export interface LinkedRepository {
   id: string;
   path: string;
+  /**
+   * Companion registry only: the real path of the clone's shared Git folder, so
+   * a deleted Registered Checkout can be handed over to another Checkout.
+   */
+  gitCommonDir?: string;
 }
 
 export interface CliToolConfig {

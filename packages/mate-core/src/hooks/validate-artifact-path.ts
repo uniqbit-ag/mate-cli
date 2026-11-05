@@ -20,7 +20,7 @@ import { readCompanionRuntimeContext } from "../runtime/env";
 import { companionLinkPath } from "../runtime/repo-local";
 import { checkSecretAccess, type SecretToolCall } from "../runtime/secret-guard";
 import { stripHeredocBodies } from "../runtime/shell-heredoc";
-import type { HookEnv } from "./hook-io";
+import { hookFolder, type HookEnv } from "./hook-io";
 
 export interface HookOutcome {
   exitCode: number;
@@ -372,7 +372,11 @@ export async function run(): Promise<number> {
   } catch {
     payload = {};
   }
-  const outcome = await evaluate(payload, process.env);
+  const outcome = await evaluate(
+    payload,
+    process.env,
+    hookFolder(payload, process.env, process.cwd()),
+  );
   if (outcome.stderr) process.stderr.write(outcome.stderr);
   return outcome.exitCode;
 }

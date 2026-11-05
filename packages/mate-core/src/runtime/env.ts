@@ -4,7 +4,7 @@ import { MATE_ENV } from "./env-names";
 import { FRAMEWORK_NAME } from "./framework";
 import { checkoutRootOf, isLinkedWorktreeOf } from "./git-layout";
 import { isCapabilityEnabled, policyDocument, readCompanionPolicy } from "./policy";
-import { resolveProjection, type ResolvedProjection } from "./projection";
+import { projectionCheckout, resolveProjection, type ResolvedProjection } from "./projection";
 
 export { MATE_ENV, type MateEnvVariable } from "./env-names";
 
@@ -60,11 +60,14 @@ export interface CompanionRuntimeResolution {
  * `MATE_*` variable is set, so a managed session never reads it and no stale
  * or malformed projection can degrade a session a Mate launch configured.
  * Only a session moved into a linked worktree of its repository reads that
- * worktree's projection, for its repository path alone.
+ * worktree's projection, for its repository path alone. `borrow: false` answers
+ * no projection for a linked worktree that only borrows one: plain `opencode` in
+ * a worktree Mate never ran in stays out of scope.
  */
 export function resolveCompanionRuntime(
   env: Record<string, string | undefined> = process.env,
   cwd: string = process.cwd(),
+  options: { borrow?: boolean } = {},
 ): CompanionRuntimeResolution {
   if (hasLaunchEnvironment(env)) {
     const context = fromEnvironment(env);
@@ -76,7 +79,9 @@ export function resolveCompanionRuntime(
   }
 
   const projection = resolveProjection(cwd);
-  if (!projection) return { context: fromEnvironment(env), projection: null };
+  if (!projection || (options.borrow === false && projection.borrowedFrom)) {
+    return { context: fromEnvironment(env), projection: null };
+  }
 
   const policy = readCompanionPolicy(projection.companionPath);
   return {
@@ -111,7 +116,7 @@ function linkedWorktreePath(context: CompanionRuntimeContext, cwd: string): stri
     if (!checkout || checkout === repository) return null;
     const projection = resolveProjection(cwd);
     if (!projection) return null;
-    const worktree = realPath(projection.repoRoot);
+    const worktree = realPath(projectionCheckout(projection));
     if (
       worktree === repository ||
       realPath(projection.repositoryPath) !== worktree ||

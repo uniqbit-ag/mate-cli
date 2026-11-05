@@ -101,11 +101,7 @@ export async function reconcileClaudeLinks(
     const link = path.join(targetRoot, entry.name);
     const target = await linkTarget(link);
     if (target === null) continue;
-    const record = recorded[recordKey(entry.name)];
-    const owned = record
-      ? (await realOrResolved(record.target)) === target
-      : roots.some((candidate) => path.dirname(target) === candidate);
-    if (!owned) continue;
+    if (!(await ownsLink(target, recorded[recordKey(entry.name)], roots))) continue;
 
     const wanted = currentRoot ? path.join(currentRoot, entry.name) : null;
     if (wanted && sourceNames.has(entry.name) && (await realOrResolved(wanted)) === target) {
@@ -138,6 +134,57 @@ export async function reconcileClaudeLinks(
     changed = true;
   }
   return changed ? "written" : "current";
+}
+
+/**
+ * Mate owns a link it recorded with this target, or an unrecorded one that
+ * resolves into one of `roots`.
+ */
+async function ownsLink(
+  target: string,
+  record: LinkRecord | undefined,
+  roots: readonly string[],
+): Promise<boolean> {
+  return record
+    ? (await realOrResolved(record.target)) === target
+    : roots.some((candidate) => path.dirname(target) === candidate);
+}
+
+/** Mate has linked at least one entry of `root` in the Working Repository at `repoPath`. */
+export async function carriesClaudeLinks(root: ClaudeLinkRoot, repoPath: string): Promise<boolean> {
+  const manifest = await readManifest(repoPath).catch(() => null);
+  return (
+    manifest !== null &&
+    Object.keys(links(manifest, "claude", { prefix: keyPrefix(root) })).length > 0
+  );
+}
+
+/**
+ * `root`'s folder in the Working Repository is missing or holds only Mate's
+ * links: recorded ones, or ones resolving into a registered, current or
+ * projected companion.
+ */
+export async function holdsOnlyMateLinks(
+  root: ClaudeLinkRoot,
+  repoPath: string,
+  companionPath: string | null,
+  registeredCompanionPaths: string[],
+): Promise<boolean> {
+  const targetRoot = path.join(path.resolve(repoPath), rootPath(root));
+  const existing = await fs.readdir(targetRoot, { withFileTypes: true }).catch(() => []);
+  if (existing.length === 0) return true;
+  const roots = await registeredRoots(root, repoPath, companionPath, registeredCompanionPaths);
+  const manifest = await readManifest(repoPath).catch(() => null);
+  const recorded = manifest ? links(manifest, "claude", { prefix: keyPrefix(root) }) : {};
+  const owned = await Promise.all(
+    existing.map(async (entry) => {
+      if (!entry.isSymbolicLink()) return false;
+      const target = await linkTarget(path.join(targetRoot, entry.name));
+      if (target === null) return false;
+      return ownsLink(target, recorded[`${keyPrefix(root)}${entry.name}`], roots);
+    }),
+  );
+  return owned.every(Boolean);
 }
 
 function sortedEntries(records: Record<string, LinkRecord>): [string, LinkRecord][] {

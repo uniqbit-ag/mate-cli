@@ -12,6 +12,9 @@ import {
 } from "../../runtime/policy";
 import { writeProjectionPair } from "../../runtime/projection";
 import { repoLocalRegistryPath } from "../../runtime/repo-local";
+import { addWorktree } from "../../../test/git-checkouts";
+import { project, projectedClone } from "../../../test/projected-clone";
+import { FRAMEWORK_NAME } from "../../runtime/framework";
 import { companionRegistryPath } from "./repository-link";
 import { GlobalConfigStore } from "./global-config-store";
 import { querySessionContext } from "./session-context-link";
@@ -330,4 +333,26 @@ describe("querySessionContext", () => {
 
     expect(await codeOf(repoRoot, new GlobalConfigStore(configPath))).toBe("ok");
   });
+});
+
+describe("querySessionContext in a worktree of the linked clone", () => {
+  const worktreeOfClone = (adopted: boolean) => {
+    const clone = projectedClone(tempRoots);
+    const worktree = addWorktree(clone.main, path.join(clone.root, "acme-fix"));
+    if (adopted) project(clone, worktree);
+    const configStore = new GlobalConfigStore(
+      path.join(clone.env.HOME, `.${FRAMEWORK_NAME}`, "config.yaml"),
+    );
+    return { worktree, configStore };
+  };
+
+  for (const adopted of [true, false]) {
+    test(`answers the worktree when it ${adopted ? "is adopted" : "borrows"}`, async () => {
+      const { worktree, configStore } = worktreeOfClone(adopted);
+
+      const result = await querySessionContext(worktree, { configStore });
+
+      expect(result.ok && result.context.repositoryPath).toBe(worktree);
+    });
+  }
 });

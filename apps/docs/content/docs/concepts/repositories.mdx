@@ -76,13 +76,83 @@ regions in `.opencode/opencode.json` and copies of the companion's `.opencode/`
 files, all git-excluded. `mate unwrap` withdraws them and keeps the link. See
 [Wrapping](/docs/reference/commands#wrapping).
 
+## Worktrees
+
+A clone can have several checkouts: its main worktree and each linked worktree
+made with `git worktree add`, `claude --worktree`, or a tool such as T3 Code. A
+companion lists a clone once, with one repository ID and one Graphify graph. The
+folder that entry names is the clone's _Registered Checkout_, usually the one
+you ran `mate companion link` in.
+
+The first time Mate runs in another checkout of the clone, it adopts that
+checkout: it writes the checkout's own `.mate/` link with the entry's ID and the
+checkout's own path, projects the companion there, and wraps the checkout for
+the runtimes the Registered Checkout is wrapped for. A managed launch, `mate
+wrap`, `mate session prepare` and the session-prepare hook of a plain `claude`
+session all adopt. The companion's registry keeps its one entry, so `mate
+companion list` does not grow with every short-lived worktree.
+
+- **A copied `.mate/` folder.** A `.mate/` folder copied from another checkout,
+  by `.worktreeinclude`, a setup script or `cp -r`, names that other checkout.
+  Mate ignores it and adopts the worktree with its own.
+- **Nested worktrees.** A worktree inside the main worktree, such as
+  `.claude/worktrees/<name>`, is a checkout of its own. Mate's upward search for
+  a link stops at a linked worktree's root, so it never picks up the main
+  worktree's `.mate/`.
+- **The first plain `claude` session.** A new worktree has no `.mate/` yet.
+  Until it is adopted, plain `claude` there borrows the main worktree's
+  projection (or that of the first linked worktree that has one), so the
+  artifact guard and the companion guidance work in that first session, and the
+  session-prepare hook adopts the worktree. Plain `opencode` does not borrow:
+  run `mate opencode` or `mate wrap` once in a new worktree.
+- **Claude settings.** In a linked worktree, Claude Code reads the main
+  worktree's `.claude/settings.local.json` as well as the worktree's own. So the
+  main worktree's Claude wrap serves its linked worktrees, and a worktree's own
+  wrap leaves out the hook groups the main worktree's wrap already carries, so
+  each hook runs once. `mate claude` and `mate wrap` in a worktree wrap the main
+  worktree for Claude first when it is not. A worktree of a bare clone, and
+  every worktree on Windows, uses only its own wrap.
+- **Inside a Mate session.** When a `mate claude` session moves into another
+  checkout of the clone, for example through `EnterWorktree` or a subagent with
+  worktree isolation, the artifact guard and the companion instructions follow
+  the checkout the session is in.
+- **A removed Registered Checkout.** When the entry's folder is gone but the
+  clone still has checkouts, Mate moves the entry to the main worktree, or to
+  the first linked worktree that still exists.
+
+`mate unwrap` and `mate working cleanup` in a worktree other than the Registered
+Checkout hold only until Mate runs there again, which adopts it again. Both say
+so. See [Mate is missing in a Git
+worktree](/docs/troubleshooting#mate-is-missing-in-a-git-worktree) when a
+worktree runs without Mate.
+
+### Hand-Linked Worktrees Are Merged
+
+Earlier versions gave each worktree you linked by hand an entry of its own. The
+first registry write after upgrading merges the entries of one clone into one:
+the main worktree's, or for a bare clone the first one listed. Each merged
+worktree's link and projection take the kept ID, and Mate prints one notice per
+merged entry:
+
+```text
+mate: merged app-fix (/work/app-fix) into app, the entry of its clone in /work/companion; /work/app-fix now uses app, and the Graphify graph stored under app-fix (…) is no longer used.
+```
+
+Sessions in that worktree then see the kept ID in `MATE_REPO_ID`, and the
+Graphify graph stored under the old ID is no longer used. Delete it once you no
+longer need it.
+
 ## Resolution Order
 
 For normal local commands, Mate resolves the context in this order:
 
 1. `MATE_ARTIFACT_PATH`, when running inside an agent session.
-2. The nearest repo-local `.mate/config/registry.yaml`.
-3. A local companion configuration in the current directory for commands that
+2. The nearest repo-local `.mate/config/registry.yaml`, up to the root of a
+   linked worktree. A link that names another checkout of the clone does not
+   count.
+3. A registered companion whose registry lists the clone of the Git checkout
+   you are in. Mate then adopts the checkout (see [Worktrees](#worktrees)).
+4. A local companion configuration in the current directory for commands that
    support companion-root execution.
 
 Launch commands require a working-repository match. Capability commands may

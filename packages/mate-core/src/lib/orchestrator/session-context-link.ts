@@ -1,4 +1,5 @@
 import { FRAMEWORK_NAME } from "../../framework";
+import { checkoutCommonDir } from "../../runtime/git-layout";
 import { physicalPath } from "../../runtime/physical-path";
 import {
   resolveSessionContext,
@@ -7,6 +8,7 @@ import {
   type SessionContextResult,
 } from "../../runtime/session-context";
 import { GlobalConfigStore } from "./global-config-store";
+import { entryOfClone } from "./registry-checkouts";
 import { readCompanionRegistry } from "./repository-link";
 
 export interface SessionContextQueryDeps {
@@ -22,9 +24,10 @@ async function isRegistered(companionPath: string, configStore: GlobalConfigStor
 }
 
 /**
- * Matches the checkout the projection was found in, not the one it claims: a
- * cloned repository's projection could name another linked checkout. Read
- * errors other than ENOENT propagate so the command answers `internal`.
+ * Matches the Checkout the projection serves, not the one it claims: a cloned
+ * repository's projection could name another linked checkout. The clone's one
+ * entry links each of its Checkouts. Read errors other than ENOENT propagate
+ * so the command answers `internal`.
  */
 async function linksCheckout(context: SessionContext, checkoutRoot: string): Promise<boolean> {
   const registry = await readCompanionRegistry(context.companionPath).catch((error: unknown) => {
@@ -32,8 +35,11 @@ async function linksCheckout(context: SessionContext, checkoutRoot: string): Pro
     throw error;
   });
   const checkout = physicalPath(checkoutRoot);
+  const clone = checkoutCommonDir(checkoutRoot);
   return registry.repos.some(
-    (repo) => repo.id === context.repositoryId && physicalPath(repo.path) === checkout,
+    (repo) =>
+      repo.id === context.repositoryId &&
+      (physicalPath(repo.path) === checkout || (clone !== null && entryOfClone(repo, clone))),
   );
 }
 
@@ -41,7 +47,7 @@ async function linksCheckout(context: SessionContext, checkoutRoot: string): Pro
  * `mate session context`'s answer for `dir`. A projection is only a claim (a
  * cloned repository can carry one), and the answer decides which files a
  * Claude plugin hands to Claude, so the companion must be registered and its
- * registry must link this checkout by ID and path.
+ * registry must link this checkout, or its clone, by ID.
  */
 export async function querySessionContext(
   dir: string,
