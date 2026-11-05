@@ -5,10 +5,13 @@ import {
   registerTokensaveRouting,
   repositoryWrappedForOpenCode,
 } from "../../src/opencode/companion-hooks";
+import { registerMateServer } from "../../src/opencode/background-server";
 import { readContext } from "../../src/opencode/companion-policy";
 import { registerEnterWorktree } from "../../src/opencode/enter-worktree";
 import { registerSessionPrepare } from "../../src/opencode/session-prepare";
+import { registerOpenCodeSessions } from "../../src/opencode/session-register";
 import { hasLaunchEnvironment } from "../../src/runtime/env";
+import { guardLaunchEnvironment } from "../../src/runtime/launch-env-guard";
 import { spawnPrepareRunner } from "../../src/runtime/session-prepare-runner";
 import { readWrapStateSync } from "../../src/runtime/wrap-state";
 
@@ -49,18 +52,26 @@ async function registerPrepare(api: Context, companionPath: string, env: LaunchE
 export const MateOpenCodePlugin = Plugin.define({
   id: "mate-opencode-plugin",
   async setup(api) {
-    const env = pluginLaunchEnvironment(process.env, process.argv);
+    /** First: drops the server password from `process.env` before any shell can start. */
+    const server = await registerMateServer(api);
+    const env = { ...pluginLaunchEnvironment(process.env, process.argv) };
+    guardLaunchEnvironment(env, api.location.directory);
     const context = readContext(env, api.location.directory);
-    if (!context.companionPath) return;
+    if (!context.companionPath) return server ? async () => server.dispose() : undefined;
 
     await registerCompanionAccess(api, context.companionPath);
     await registerCompanionHooks(api, context, env);
     await registerTokensaveRouting(api);
     await registerCompanion(api, context, env);
     await registerEnterWorktree(api, context);
+    const sessionsCleanup = await registerOpenCodeSessions(api).catch(() => undefined);
+    if (sessionsCleanup) server?.onStop(() => sessionsCleanup());
     /** Last: the guardrails above are live while the local phase holds `setup`. */
     const prepareCleanup = await registerPrepare(api, context.companionPath, env);
     return async () => {
+      server?.dispose();
+      /** A Mate OpenCode server's sessions outlive a location; its idle stop ends them. */
+      await sessionsCleanup?.({ keepSessions: Boolean(server) });
       await prepareCleanup?.();
     };
   },

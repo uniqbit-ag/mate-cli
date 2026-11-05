@@ -6,6 +6,7 @@ import {
 } from "../../../../lib/delivery/record-delivery";
 import { applyWarnings, type DependencyWarning } from "../../../../lib/delivery/overlap";
 import { isJiraKey, normalizeJiraKey, type MergeState } from "../../../../lib/delivery/record";
+import { attributeCurrentSession } from "../../../../lib/session-attribution";
 import { type BooleanFlagSet, parseFlags, positionalArgs, stringFlag } from "../../../parse-flags";
 import {
   branchFlagsFrom,
@@ -27,6 +28,9 @@ import {
 export interface LinkCommandDeps extends DeliveryEnvironmentDeps, RecordDeliveryDeps {
   stdout?: (line: string) => void;
   stderr?: (line: string) => void;
+  /** Records the change on the agent session this runs in. */
+  attribute?: typeof attributeCurrentSession;
+  sessionEnv?: Record<string, string | undefined>;
 }
 
 const BOOLEAN_FLAGS: BooleanFlagSet = new Set([
@@ -165,6 +169,13 @@ export async function runArtifactLinkCommand(
     deps,
   );
   if ("refusal" in outcome) return refuse(refusalMessage(outcome.refusal));
+  // One change names the session's work; a batch link names none.
+  if (changes.length === 1) {
+    await (deps.attribute ?? attributeCurrentSession)(
+      { change: changes[0]! },
+      deps.sessionEnv ?? process.env,
+    );
+  }
   const results: LinkResult[] = [];
   for (const result of "results" in outcome ? outcome.results : []) {
     for (const diagnostic of result.diagnostics) emitErr(`warning: ${diagnostic}`);

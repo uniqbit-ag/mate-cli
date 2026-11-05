@@ -43,7 +43,13 @@ import {
   getCompanionClaudeMcpConfigPath,
   getCompanionClaudeSettingsPath,
 } from "../../../tools/setup/providers/claude";
-import { ClaudeAdapter, launchSettingsPath } from "./claude";
+import {
+  backgroundLaunchSettingsPath,
+  ClaudeAdapter,
+  isBackgroundLaunch,
+  launchSettingsPath,
+} from "./claude";
+import { MATE_ENV } from "../../../runtime/env-names";
 import { OpenCodeAdapter } from "./opencode";
 import type { AdapterContext } from "./base";
 import { withEnv } from "../../../../../../test/fixtures";
@@ -847,5 +853,135 @@ describe("Adapter base-URL rewriting is gone", () => {
 
     expect(launch.env.ANTHROPIC_BASE_URL).toBeUndefined();
     expect(launch.env.OPENAI_BASE_URL).toBeUndefined();
+  });
+});
+
+describe("Claude background launch", () => {
+  const settingsArg = (args: string[]) => args[args.indexOf("--settings") + 1]!;
+
+  test("carries the launch environment in a derived --settings file, none in the process", async () => {
+    const { companionPath } = await claudeCompanion("mate-bg-companion-");
+    const context = { ...makeContext(), companionPath };
+    const foreground = await prepareClaudeLaunch(context, []);
+    const launch = await prepareClaudeLaunch(context, ["--bg"]);
+
+    const target = settingsArg(launch.args);
+    const content = await fs.readFile(target, "utf8");
+    expect(target).toBe(backgroundLaunchSettingsPath(companionPath, "app", content));
+    expect(launch.args).toContain("--bg");
+
+    const settings = JSON.parse(content) as { env: Record<string, string> };
+    expect(settings.env.MATE_REPO_PATH).toBe("/tmp/app");
+    expect(settings.env.MATE_POLICY_JSON).toBe(foreground.env.MATE_POLICY_JSON!);
+    expect(settings.env.MATE_REACT_DOCTOR_BIN_PATH).toBe("");
+    expect(settings.env.PATH).toBe(foreground.env.PATH!);
+
+    for (const name of Object.keys(launch.env)) {
+      expect(Object.values(MATE_ENV) as string[]).not.toContain(name);
+    }
+    expect(launch.env.PATH).toBe(process.env.PATH);
+  });
+
+  test("an editor's session origin reaches the session, not the daemon", async () => {
+    const companionPath = await makeTempDir("mate-bg-origin-");
+    const context = { ...makeContext(), companionPath };
+    const editor = await withEnv("MATE_SESSION_ORIGIN", "editor", () =>
+      prepareClaudeLaunch(context, ["--bg"]),
+    );
+    expect(editor.env.MATE_SESSION_ORIGIN).toBeUndefined();
+    const settings = JSON.parse(await fs.readFile(settingsArg(editor.args), "utf8"));
+    expect(settings.env.MATE_SESSION_ORIGIN).toBe("editor");
+
+    const plain = await withEnv("MATE_SESSION_ORIGIN", undefined, () =>
+      prepareClaudeLaunch(context, ["--bg"]),
+    );
+    const plainSettings = JSON.parse(await fs.readFile(settingsArg(plain.args), "utf8"));
+    expect(plainSettings.env.MATE_SESSION_ORIGIN).toBe("");
+  });
+
+  test("a launch without a settings file gets one; month-old ones are dropped", async () => {
+    const companionPath = await makeTempDir("mate-bg-bare-");
+    const stale = path.join(companionPath, ".claude", "state", "launch-settings.app.old.bg.json");
+    await fs.mkdir(path.dirname(stale), { recursive: true });
+    await fs.writeFile(stale, "{}");
+    const old = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+    await fs.utimes(stale, old, old);
+    const launch = await prepareClaudeLaunch({ ...makeContext(), companionPath }, ["--background"]);
+    expect(settingsArg(launch.args)).toEndWith(".bg.json");
+    await expect(fs.stat(stale)).rejects.toThrow();
+  });
+
+  test("launches with another environment write separate files", async () => {
+    const companionPath = await makeTempDir("mate-bg-two-");
+    const first = await prepareClaudeLaunch({ ...makeContext(), companionPath }, ["--bg"]);
+    const other = {
+      ...makeContext(),
+      companionPath,
+      repository: { id: "app", path: "/tmp/app-wt" },
+      launchWorkingDirectory: "/tmp/app-wt",
+    };
+    const second = await prepareClaudeLaunch(other, ["--bg"]);
+    expect(settingsArg(second.args)).not.toBe(settingsArg(first.args));
+    const firstSettings = JSON.parse(await fs.readFile(settingsArg(first.args), "utf8"));
+    expect(firstSettings.env.MATE_REPO_PATH).toBe("/tmp/app");
+  });
+
+  test("merges the user's --settings, a file or inline JSON, into the one file", async () => {
+    const companionPath = await makeTempDir("mate-bg-user-");
+    const userFile = path.join(companionPath, "user-settings.json");
+    await fs.writeFile(userFile, JSON.stringify({ model: "sonnet", env: { ACME: "1" } }));
+    const fromFile = await prepareClaudeLaunch({ ...makeContext(), companionPath }, [
+      "--bg",
+      `--settings=${userFile}`,
+    ]);
+    const inline = await prepareClaudeLaunch({ ...makeContext(), companionPath }, [
+      "--bg",
+      "--settings",
+      '{"model":"opus"}',
+    ]);
+    for (const launch of [fromFile, inline]) {
+      expect(launch.args.filter((arg) => arg.startsWith("--settings"))).toEqual(["--settings"]);
+    }
+    const fileSettings = JSON.parse(await fs.readFile(settingsArg(fromFile.args), "utf8"));
+    expect(fileSettings).toMatchObject({ model: "sonnet", env: { ACME: "1" } });
+    expect(fileSettings.env.MATE_REPO_PATH).toBe("/tmp/app");
+    const inlineSettings = JSON.parse(await fs.readFile(settingsArg(inline.args), "utf8"));
+    expect(inlineSettings.model).toBe("opus");
+  });
+
+  test("a later --settings appends hook groups and permission lists, not replaces them", async () => {
+    const companionPath = await makeTempDir("mate-bg-hooks-");
+    const group = (command: string) => ({ hooks: [{ type: "command", command }] });
+    const first = {
+      hooks: { SessionStart: [group("mate-prepare")], PreToolUse: [group("mate-guard")] },
+      permissions: { allow: ["Read"], defaultMode: "default" },
+    };
+    const second = {
+      hooks: { Stop: [group("acme-stop")], PreToolUse: [group("acme-guard")] },
+      permissions: { allow: ["Read", "Edit"], defaultMode: "plan" },
+    };
+    const launch = await prepareClaudeLaunch({ ...makeContext(), companionPath }, [
+      "--bg",
+      "--settings",
+      JSON.stringify(first),
+      "--settings",
+      JSON.stringify(second),
+    ]);
+    const settings = JSON.parse(await fs.readFile(settingsArg(launch.args), "utf8"));
+    expect(settings.hooks).toEqual({
+      SessionStart: [group("mate-prepare")],
+      PreToolUse: [group("mate-guard"), group("acme-guard")],
+      Stop: [group("acme-stop")],
+    });
+    expect(settings.permissions).toEqual({ allow: ["Read", "Edit"], defaultMode: "plan" });
+  });
+
+  test("a foreground launch is unchanged", async () => {
+    const { companionPath } = await claudeCompanion("mate-fg-companion-");
+    const launch = await prepareClaudeLaunch({ ...makeContext(), companionPath }, []);
+    expect(launch.env.MATE_REPO_PATH).toBe("/tmp/app");
+    expect(launch.args.join(" ")).not.toContain(".bg.json");
+    expect(isBackgroundLaunch(["--print", "--bg"])).toBe(true);
+    expect(isBackgroundLaunch(["--print"])).toBe(false);
   });
 });

@@ -399,6 +399,28 @@ describe("mate working worktree", () => {
       });
     });
 
+    test("records the change and the worktree on the agent session", async () => {
+      const attributed: unknown[] = [];
+      await enter(
+        { CLAUDE_CODE_SESSION_ID: "0b7c-acme" },
+        {
+          attribute: async (attribution, env) => {
+            attributed.push([attribution, env?.CLAUDE_CODE_SESSION_ID]);
+            return null;
+          },
+        },
+      );
+      expect(attributed).toEqual([
+        [
+          {
+            change: "acme-fix",
+            move: { cwd: "/src/web.worktrees/acme-fix", branch: "workset/acme-fix" },
+          },
+          "0b7c-acme",
+        ],
+      ]);
+    });
+
     test("OpenCode: names mate_enter_worktree", async () => {
       await enter({ OPENCODE_SESSION_ID: "ses_acme" });
       expect(JSON.parse(out.join("")).enter).toEqual({

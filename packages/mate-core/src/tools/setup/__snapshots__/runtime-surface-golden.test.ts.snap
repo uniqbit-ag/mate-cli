@@ -259,6 +259,40 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
       },
       {
         "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -1063,6 +1097,40 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
       },
       {
         "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -1666,6 +1734,40 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -2556,6 +2658,40 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
       {
         "at": [
           "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
           "UserPromptSubmit",
         ],
         "kind": "list",
@@ -3167,6 +3303,40 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -3896,6 +4066,40 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
       },
       {
         "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -4433,6 +4637,40 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -5146,6 +5384,40 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
       },
       {
         "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -5721,6 +5993,40 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -6528,6 +6834,40 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -7378,6 +7718,40 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
                 "type": "command",
               },
             ],

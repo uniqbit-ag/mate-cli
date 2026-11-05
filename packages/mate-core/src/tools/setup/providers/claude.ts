@@ -50,10 +50,12 @@ import {
   type ClaudeSettings,
 } from "./claude-format";
 import {
+  mateAttentionHookGroups,
   mateBannerHookGroups,
   mateGuardHookGroups,
   mateGuidanceHookGroups,
   mateInstructionHookGroups,
+  mateSessionEndHookGroups,
   mateSessionPrepareHookGroups,
   mateTokensaveRouteHookGroups,
 } from "./claude-plugin-hooks";
@@ -375,6 +377,8 @@ function claudeSettingsRegions(
       ...mateSessionPrepareHookGroups(),
     ],
     SubagentStart: mateInstructionHookGroups(),
+    SessionEnd: mateSessionEndHookGroups(),
+    Notification: mateAttentionHookGroups(),
   };
   const events = [...new Set([...Object.keys(mateHooks), ...Object.keys(capabilityHooks)])];
   return [
