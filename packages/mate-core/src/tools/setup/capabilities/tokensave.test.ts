@@ -691,6 +691,7 @@ describe("tokensave agent integration install requirements", () => {
     home = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-home-"));
     tempRoots.push(home);
     tokensaveDeps.homeDir = () => home;
+    tokensaveDeps.env = () => undefined;
     tokensaveDeps.isCommandOnPath = () => false;
   });
 
@@ -775,6 +776,57 @@ describe("tokensave agent integration install requirements", () => {
       JSON.stringify({ mcp: { tokensave: { type: "local", command: ["tokensave", "serve"] } } }),
     );
 
+    expect(await isTokensaveAgentIntegrated("opencode")).toBe(true);
+  });
+
+  /** Files `tokensave install --agent claude` writes into a claude config dir. */
+  async function writeClaudeIntegration(dir: string): Promise<void> {
+    await fs.mkdir(path.join(dir, "rules"), { recursive: true });
+    await fs.writeFile(
+      path.join(dir, "settings.json"),
+      JSON.stringify({ permissions: { allow: ["mcp__tokensave__*"] } }),
+    );
+    await fs.writeFile(path.join(dir, "rules", "tokensave.md"), "");
+  }
+
+  /** Files `tokensave install --agent opencode` writes into an opencode config dir. */
+  async function writeOpencodeIntegration(dir: string, config: string): Promise<void> {
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, "tokensave.md"), "");
+    await fs.writeFile(path.join(dir, "opencode.json"), config);
+  }
+
+  const flatOpencodeConfig = JSON.stringify({ mcp: { tokensave: {} } });
+
+  test("detects claude integration under CLAUDE_CONFIG_DIR", async () => {
+    const dir = path.join(home, "acme-claude");
+    await writeClaudeIntegration(dir);
+    expect(await isTokensaveAgentIntegrated("claude")).toBe(false);
+    tokensaveDeps.env = (name) => (name === "CLAUDE_CONFIG_DIR" ? dir : undefined);
+    expect(await isTokensaveAgentIntegrated("claude")).toBe(true);
+  });
+
+  test("detects opencode integration under XDG_CONFIG_HOME", async () => {
+    const xdg = path.join(home, "acme-xdg");
+    await writeOpencodeIntegration(path.join(xdg, "opencode"), flatOpencodeConfig);
+    expect(await isTokensaveAgentIntegrated("opencode")).toBe(false);
+    tokensaveDeps.env = (name) => (name === "XDG_CONFIG_HOME" ? xdg : undefined);
+    expect(await isTokensaveAgentIntegrated("opencode")).toBe(true);
+  });
+
+  test("reads an opencode config with comments and trailing commas", async () => {
+    await writeOpencodeIntegration(
+      path.join(home, ".config", "opencode"),
+      '{\n  // acme\n  "mcp": { "tokensave": { "type": "local", }, },\n}\n',
+    );
+    expect(await isTokensaveAgentIntegrated("opencode")).toBe(true);
+  });
+
+  test("empty config env vars fall back to home", async () => {
+    tokensaveDeps.env = () => "";
+    await writeClaudeIntegration(path.join(home, ".claude"));
+    await writeOpencodeIntegration(path.join(home, ".config", "opencode"), flatOpencodeConfig);
+    expect(await isTokensaveAgentIntegrated("claude")).toBe(true);
     expect(await isTokensaveAgentIntegrated("opencode")).toBe(true);
   });
 
