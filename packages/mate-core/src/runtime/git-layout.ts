@@ -76,6 +76,24 @@ export function readGitLayout(checkoutPath: string): GitLayout | null {
     : { kind: "own", gitDir, commonDir: gitDir };
 }
 
+/** The real path of the nearest folder at or above `directory` holding a `.git` entry. */
+export function checkoutRootOf(directory: string): string | null {
+  let current = realPath(directory);
+  for (;;) {
+    if (fs.existsSync(path.join(current, ".git"))) return current;
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
+/** True when both Checkouts belong to one clone: the same one, or worktrees of one Git folder. */
+export function isSameClone(first: string, second: string): boolean {
+  const one = readGitLayout(first);
+  const other = readGitLayout(second);
+  return !!one && !!other && one.commonDir === other.commonDir;
+}
+
 /** True when `worktree` is a linked worktree of the clone `checkout` belongs to. */
 export function isLinkedWorktreeOf(worktree: string, checkout: string): boolean {
   const own = readGitLayout(worktree);

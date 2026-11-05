@@ -2,18 +2,21 @@ import { spawnSync } from "node:child_process";
 
 import { resolveForLaunch } from "../../../lib/orchestrator/framework-context";
 import type { CapabilityConfig } from "../../../lib/orchestrator/types";
+import { tokensaveCheckout } from "../../../runtime/tokensave-route";
 import { ensureTokensaveInstalled } from "../../../tools/setup/capabilities/tokensave";
 
 interface TokensaveCapDeps {
   resolveForLaunch?: typeof resolveForLaunch;
   ensureInstalled?: (repoPath: string, options?: { upgrade?: boolean }) => Promise<boolean>;
   spawn?: typeof spawnSync;
+  cwd?: () => string;
 }
 
 /**
  * @command mate cap tokensave [...args]
  * @description Forwards `[...args]` to the `tokensave` CLI, run from the
- * active working repository. Requires the `tokensave` capability to be enabled
+ * active working repository, or from the linked worktree of it the command
+ * runs in. Requires the `tokensave` capability to be enabled
  * in `.mate/config/framework.yaml` and a registered working repo for the
  * current `MATE_REPO_ID`. Ensures the `tokensave` binary is installed in that
  * repo (via {@link ensureTokensaveInstalled}) before forwarding. Never upgrades:
@@ -27,10 +30,9 @@ export async function runTokensaveCapCommand(
   const resolveLaunch = deps.resolveForLaunch ?? resolveForLaunch;
   const ensureInstalled = deps.ensureInstalled ?? ensureTokensaveInstalled;
   const spawn = deps.spawn ?? spawnSync;
+  const cwd = deps.cwd ?? (() => process.cwd());
 
-  const { repositoryId, repository, configStore, workingRepoStore } = await resolveLaunch(
-    process.cwd(),
-  );
+  const { repositoryId, repository, configStore, workingRepoStore } = await resolveLaunch(cwd());
   const config = await configStore.load();
 
   const capability = (config.capabilities ?? []).find(
@@ -56,7 +58,7 @@ export async function runTokensaveCapCommand(
   }
 
   const result = spawn("tokensave", args, {
-    cwd: repo.path,
+    cwd: tokensaveCheckout(cwd(), repo.path),
     stdio: "inherit",
   });
 

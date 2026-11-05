@@ -796,3 +796,122 @@ describe("wrapping worktrees", () => {
     expect(fs.existsSync(target())).toBe(true);
   }, 30000);
 });
+
+describe("worktree tokensave index", () => {
+  const target = () => path.join(root, "src", "web.worktrees", "acme-login");
+
+  function indexStore(checkout: string, config: Record<string, unknown>): void {
+    fs.mkdirSync(path.join(checkout, ".tokensave"), { recursive: true });
+    fs.writeFileSync(path.join(checkout, ".tokensave", "tokensave.db"), "");
+    fs.writeFileSync(path.join(checkout, ".tokensave", "config.json"), JSON.stringify(config));
+  }
+
+  /** A fake tokensave whose `init` creates the store it would. */
+  function tokensave(failure: string | null = null, available = true) {
+    const calls: [string, string[]][] = [];
+    return {
+      calls,
+      runner: {
+        available: () => available,
+        run: async (cwd: string, args: string[]) => {
+          calls.push([cwd, args]);
+          if (!failure && args[0] === "init") indexStore(cwd, { root_dir: cwd, auto_track: true });
+          return failure;
+        },
+      },
+    };
+  }
+
+  function indexedMain(): void {
+    const web = checkout("web");
+    indexStore(web, { cpu_usage: "balanced" });
+    link(web);
+    workset("acme-login", "acme/web");
+  }
+
+  test("an indexed main checkout seeds the worktree with its profile and Mate's posture", async () => {
+    indexedMain();
+    const { calls, runner } = tokensave();
+    const result = await createWorksetWorktrees(companion, "acme-login", options, {
+      tokensave: runner,
+    });
+    expect(result.repositories[0]!.index).toEqual({ outcome: "ok" });
+    expect(calls).toEqual([
+      [target(), ["init", target(), "--no-git-hook", "--cpu-usage", "balanced"]],
+    ]);
+    const config = JSON.parse(
+      fs.readFileSync(path.join(target(), ".tokensave", "config.json"), "utf8"),
+    );
+    expect(config).toMatchObject({ auto_track: false, suppress_scope_warning: true });
+  });
+
+  test("--no-install still seeds the index", async () => {
+    indexedMain();
+    const { calls, runner } = tokensave();
+    const result = await createWorksetWorktrees(
+      companion,
+      "acme-login",
+      { ...options, install: false },
+      { tokensave: runner },
+    );
+    expect(result.repositories[0]!.index.outcome).toBe("ok");
+    expect(calls).toHaveLength(1);
+  });
+
+  test("an unindexed main checkout runs no tokensave command", async () => {
+    link(checkout("web"));
+    workset("acme-login", "acme/web");
+    const { calls, runner } = tokensave();
+    const result = await createWorksetWorktrees(companion, "acme-login", options, {
+      tokensave: runner,
+    });
+    expect(result.repositories[0]!.index).toEqual({
+      outcome: "skipped",
+      reason: "main checkout not indexed",
+    });
+    expect(calls).toEqual([]);
+  });
+
+  test("tokensave missing from PATH skips with a reason", async () => {
+    indexedMain();
+    const { calls, runner } = tokensave(null, false);
+    const result = await createWorksetWorktrees(companion, "acme-login", options, {
+      tokensave: runner,
+    });
+    expect(result.repositories[0]!.index).toEqual({
+      outcome: "skipped",
+      reason: "tokensave not on PATH",
+    });
+    expect(calls).toEqual([]);
+  });
+
+  test("a reused worktree with an index syncs it", async () => {
+    indexedMain();
+    const first = tokensave();
+    await createWorksetWorktrees(companion, "acme-login", options, { tokensave: first.runner });
+    const { calls, runner } = tokensave();
+    const second = await createWorksetWorktrees(companion, "acme-login", options, {
+      tokensave: runner,
+    });
+    expect(second.repositories[0]).toMatchObject({ action: "reused", index: { outcome: "ok" } });
+    expect(calls).toEqual([[target(), ["sync"]]]);
+  });
+
+  test("a failed init keeps the worktree, warns, and leaves the result ok", async () => {
+    indexedMain();
+    const { runner } = tokensave("tokensave init exited 1: acme");
+    const result = await createWorksetWorktrees(companion, "acme-login", options, {
+      tokensave: runner,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.repositories[0]!.error).toBeUndefined();
+    expect(result.repositories[0]!.index).toEqual({
+      outcome: "failed",
+      reason: "tokensave init exited 1: acme",
+    });
+    expect(result.warnings).toContain(
+      "acme/web: tokensave index step failed: tokensave init exited 1: acme",
+    );
+    expect(fs.existsSync(path.join(target(), ".git"))).toBe(true);
+  });
+});

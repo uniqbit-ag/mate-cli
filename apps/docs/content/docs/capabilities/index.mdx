@@ -175,6 +175,26 @@ TokenSave provides code-graph exploration through MCP and keeps its native
 mate cap index --tokensave
 ```
 
+Run inside a linked worktree of the working repository, it refreshes that
+worktree's own index, initializing one when the worktree has none.
+
+#### TokenSave in worktrees
+
+The TokenSave MCP server stays bound to the checkout where the session
+started. Mate sends a session that works in a linked worktree to that
+worktree's own index instead:
+
+- `mate working worktree` gives each new worktree an index when the main
+  checkout has one.
+- Every TokenSave tool call made from inside an indexed worktree gets the
+  worktree's root as its `graph_root`, so results reflect the worktree's code.
+  A `graph_root` the agent passes itself is kept. Claude Code does this through
+  a Mate hook and OpenCode through the Mate plugin, also after the session
+  moves into the worktree with `EnterWorktree` or `mate_enter_worktree`.
+- In the main checkout, or in a worktree without an index, calls run
+  unchanged. Routing never creates or changes an index and never blocks a
+  call.
+
 ### React Doctor
 
 React Doctor installs the `mate-react-doctor` skill for Claude and OpenCode. It

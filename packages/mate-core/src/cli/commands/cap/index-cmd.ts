@@ -4,6 +4,7 @@ import {
 } from "../../../lib/orchestrator/capabilities";
 import { resolveForCapability } from "../../../lib/orchestrator/framework-context";
 import { resolveSecretPolicy } from "../../../runtime/policy";
+import { tokensaveCheckout } from "../../../runtime/tokensave-route";
 import type { CapabilityConfig } from "../../../lib/orchestrator/types";
 import {
   ensureTokensaveBranchingPosture,
@@ -25,7 +26,10 @@ export type SyncCapStep = "graphify" | "tokensave";
 export interface SyncCapDeps {
   ensureUnambiguousCompanion?: (cwd: string) => Promise<boolean>;
   loadCapabilities?: () => Promise<CapabilityConfig[]>;
-  isTokensaveInitialized?: () => Promise<boolean>;
+  /** The resolved Working Repository's path, if any. */
+  resolveRepositoryPath?: () => Promise<string | undefined>;
+  cwd?: () => string;
+  isTokensaveInitialized?: (repoPath: string) => Promise<boolean>;
   ensureTokensaveStoreExcluded?: (repoPath: string) => Promise<void>;
   ensureTokensaveBranchingPosture?: (repoPath: string) => Promise<void>;
   runGraphify?: CapRunner;
@@ -53,12 +57,11 @@ async function defaultLoadCapabilities(): Promise<CapabilityConfig[]> {
   return config.capabilities ?? [];
 }
 
-async function defaultIsTokensaveInitialized(): Promise<boolean> {
+async function defaultResolveRepositoryPath(): Promise<string | undefined> {
   const { repositoryId, repository, workingRepoStore } = await resolveForCapability(process.cwd());
   const repo =
     repository ?? (await workingRepoStore.load()).repos.find((entry) => entry.id === repositoryId);
-  if (!repo) return false;
-  return isTokensaveIndexed(repo.path);
+  return repo?.path;
 }
 
 // The reused cap commands (runGraphifyCapCommand / runTokensaveCapCommand) signal
@@ -167,7 +170,9 @@ async function runSteps(
   { onStepStart, onStepDone }: Required<Pick<SyncCapDeps, "onStepStart" | "onStepDone">>,
   deps: SyncCapDeps,
 ): Promise<void> {
-  const isTokensaveInitialized = deps.isTokensaveInitialized ?? defaultIsTokensaveInitialized;
+  const resolveRepositoryPath = deps.resolveRepositoryPath ?? defaultResolveRepositoryPath;
+  const cwd = deps.cwd ?? (() => process.cwd());
+  const isTokensaveInitialized = deps.isTokensaveInitialized ?? isTokensaveIndexed;
   const ensureStoreExcluded = deps.ensureTokensaveStoreExcluded ?? ensureTokensaveStoreExcluded;
   const ensureBranchingPosture =
     deps.ensureTokensaveBranchingPosture ?? defaultEnsureBranchingPosture;
@@ -191,8 +196,10 @@ async function runSteps(
 
   if (!options.includeGraphify && hasTokensaveCapability(capabilities)) {
     onStepStart("tokensave");
-    const repoPath = process.env.MATE_REPO_PATH ?? process.cwd();
-    if (!(await isTokensaveInitialized())) {
+    /** One checkout for check, init, posture and sync; `runTokensave` resolves the same one. */
+    const resolved = await resolveRepositoryPath();
+    const repoPath = resolved ? tokensaveCheckout(cwd(), resolved) : cwd();
+    if (!(await isTokensaveInitialized(repoPath))) {
       await ensureStoreExcluded(repoPath);
       const initOk = await runCapStep(() => runTokensave(["init", "--no-git-hook"]));
       if (!initOk) {

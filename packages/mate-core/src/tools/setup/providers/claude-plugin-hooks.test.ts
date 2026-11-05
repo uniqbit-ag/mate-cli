@@ -9,6 +9,7 @@ import {
   mateBannerHookGroups,
   mateGuardHookGroups,
   mateGuidanceHookGroups,
+  mateTokensaveRouteHookGroups,
 } from "./claude-plugin-hooks";
 import type { ClaudeHookGroup } from "./claude-format";
 
@@ -36,6 +37,15 @@ describe("working-target plugin hook groups", () => {
     const [installForm] = mateGuardHookGroups(getClaudePluginRoot());
     expect(isMateGuardHookGroup(runtimeForm!)).toBe(true);
     expect(isMateGuardHookGroup(installForm!)).toBe(true);
+  });
+
+  test("the tokensave route is carried for tokensave tools and recognized as Mate's", () => {
+    const [route] = mateTokensaveRouteHookGroups();
+    expect(route?.matcher).toBe("mcp__tokensave__.*");
+    expect(commands([route!])).toEqual([
+      `node "${runtimeClaudePluginRoot()}/hooks/tokensave-route.mjs"`,
+    ]);
+    expect(isMateGuardHookGroup(route!)).toBe(true);
   });
 
   test("a group naming another root is not recognized", () => {

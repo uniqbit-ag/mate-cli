@@ -64,6 +64,7 @@ const created: WorktreeResult = {
       action: "created",
       install: { command: "bun install", outcome: "ok" },
       wrap: { runtimes: ["claude"], outcome: "ok" },
+      index: { outcome: "ok" },
       missingEnv: [".env"],
     },
   ],
@@ -161,8 +162,32 @@ describe("mate working worktree", () => {
       branch: "workset/acme-login",
       action: "created",
       install: { command: "bun install", outcome: "ok" },
+      index: { outcome: "ok" },
       missingEnv: [".env"],
     });
+  });
+
+  test("a skipped tokensave index carries its reason in JSON and text", async () => {
+    const skipped: WorktreeResult = {
+      ...created,
+      repositories: [
+        {
+          ...created.repositories[0]!,
+          index: { outcome: "skipped", reason: "main checkout not indexed" },
+        },
+      ],
+    };
+    await runWorkingWorktreeCommand(
+      ["acme-login", "--json"],
+      deps({ create: async () => skipped }),
+    );
+    expect(JSON.parse(out.join("")).repositories[0].index).toEqual({
+      outcome: "skipped",
+      reason: "main checkout not indexed",
+    });
+    out.length = 0;
+    await runWorkingWorktreeCommand(["acme-login"], deps({ create: async () => skipped }));
+    expect(out.join("")).toContain("acme/web: tokensave index skipped (main checkout not indexed)");
   });
 
   test("--change resolves through the change entry point with the same JSON", async () => {
@@ -206,6 +231,7 @@ describe("mate working worktree", () => {
     const text = out.join("");
     expect(text).toContain("acme/web: created /src/web.worktrees/acme-login on workset/acme-login");
     expect(text).toContain("install bun install ok");
+    expect(text).toContain("acme/web: tokensave index ok");
     expect(text).toContain("(not copied): .env");
     expect(text).toContain("acme/web: wrapped for claude");
   });
