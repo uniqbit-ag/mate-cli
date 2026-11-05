@@ -51,6 +51,12 @@ beforeEach(async () => {
   script = { calls: [], parts: [{ type: "finish", finishReason: "stop" } as { type: string }] };
   dir = await fs.mkdtemp(path.join(os.tmpdir(), "acme-harness-turn-"));
   await fs.writeFile(path.join(dir, "AGENTS.md"), "Acme companion rules.\n");
+  // No capability deploys Mate skills, so a turn sees only the fixture's own.
+  await fs.mkdir(path.join(dir, ".mate", "config"), { recursive: true });
+  await fs.writeFile(
+    path.join(dir, ".mate", "config", "framework.yaml"),
+    "type: companion\nallowedAgents: [claude]\ncapabilities: []\n",
+  );
 });
 
 function stageAgent(runs: Run) {

@@ -9,6 +9,7 @@ import { parse } from "yaml";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
 import type { GitOps } from "../artifact/finish/git";
 import { defaultGitOps } from "../artifact/finish/git";
+import { skillIgnoreEntries, untrackSkillCopies } from "../../../tools/setup/mate-skill-copies";
 import type { ManagedOutputEntry, ManagedOutputReport } from "../../../tools/setup/plugin";
 import {
   companionUpdateDeps,
@@ -60,6 +61,7 @@ interface Setup {
   skills: ReturnType<typeof mock>;
   floor: ReturnType<typeof mock>;
   confirm: ReturnType<typeof mock>;
+  untrack: ReturnType<typeof mock>;
 }
 
 function setup(
@@ -75,6 +77,8 @@ function setup(
     interactive?: boolean;
     git?: Partial<GitOps>;
     world?: World;
+    /** Paths the untrack step removes from the index. */
+    untracked?: string[];
   } = {},
 ): Setup {
   const world = options.world ?? { changed: new Set(), content: new Map() };
@@ -88,6 +92,7 @@ function setup(
   });
   const answers = [...(options.answers ?? [])];
   const confirm = mock(async () => answers.shift() ?? false);
+  const untrack = mock(async () => options.untracked ?? []);
   Object.assign(companionUpdateDeps, {
     resolveCompanionPath: async () => COMPANION,
     resolveProjectedCompanionPath: () => undefined,
@@ -99,6 +104,7 @@ function setup(
     },
     loadConfig: async () => CONFIG,
     syncCompanionFiles: sync,
+    untrackSkillCopies: untrack,
     refreshWorkingClaudeLinks: async () => [],
     writeEngineFloor: floor,
     hasSkillsLock: async () => options.skillsLock ?? false,
@@ -109,7 +115,7 @@ function setup(
     confirm,
     isInteractive: () => options.interactive ?? true,
   });
-  return { world, git, sync, skills, floor, confirm };
+  return { world, git, sync, skills, floor, confirm, untrack };
 }
 
 function captureOutput(): { out: () => string; err: () => string; restore: () => void } {
@@ -286,10 +292,11 @@ describe("mate companion update — regeneration", () => {
     });
     await run();
     expect(skills).toHaveBeenCalledWith(COMPANION);
-    expect(git.commit).toHaveBeenCalledWith("chore(mate): update companion to mate 0.17.0", [
-      ".claude/skills/acme-skill/SKILL.md",
-      "skills-lock.json",
-    ]);
+    expect(git.commit).toHaveBeenCalledWith(
+      "chore(mate): update companion to mate 0.17.0",
+      [".claude/skills/acme-skill/SKILL.md", "skills-lock.json"],
+      { removed: [] },
+    );
   });
 
   test("skips the skills CLI when skills-lock.json is absent", async () => {
@@ -322,10 +329,10 @@ describe("mate companion update — commit scope", () => {
     const { git } = setup({ world, sync: regenerateSkill, answers: [true, false] });
     await run();
     const committed = (git.commit as ReturnType<typeof mock>).mock.calls[0]?.[1] as string[];
-    expect(committed).toEqual([
-      ".claude/skills/mate-grill-me/SKILL.md",
-      ".mate/config/framework.yaml",
-    ]);
+    expect(committed).toEqual(
+      [".claude/skills/mate-grill-me/SKILL.md", ".mate/config/framework.yaml"],
+      { removed: [] },
+    );
     expect(committed).not.toContain("notes/acme.md");
   });
 
@@ -535,6 +542,68 @@ describe("mate companion update — commit scope", () => {
     expect(process.exitCode ?? 0).toBe(0);
   });
 
+  test("commits untracked Mate skill copies as deletions, never as a conflict", async () => {
+    const proposeCopy = ".claude/skills/mate-propose-change/SKILL.md";
+    const doctorCopy = ".agents/skills/mate-react-doctor/SKILL.md";
+    const world: World = { changed: new Set(), content: new Map() };
+    write(world, proposeCopy, "local edit");
+    write(world, doctorCopy, "local edit");
+    const { git, untrack, confirm } = setup({
+      world,
+      sync: (w) => {
+        write(w, proposeCopy, "new skill");
+        write(w, doctorCopy, "new skill");
+        write(w, ".gitignore", "managed block with skill entries");
+        return [mateSkill(".claude/skills/mate-propose-change")];
+      },
+      untracked: [proposeCopy, doctorCopy],
+      answers: [false],
+    });
+    const { err } = await run();
+    expect(untrack).toHaveBeenCalledWith(COMPANION, CONFIG);
+    expect(err).not.toContain("can no longer be separated");
+    expect(err).toContain(`overwrote local edits to Mate-managed skills:\n  ${proposeCopy}\n`);
+    expect(err).not.toContain(doctorCopy);
+    expect(confirm).toHaveBeenCalled();
+    // Declined: the removals stay staged by the untrack step, nothing is committed.
+    expect(git.commit).not.toHaveBeenCalled();
+    expect(process.exitCode ?? 0).toBe(0);
+  });
+
+  test("a conflict says the untracked copies stay staged", async () => {
+    const world: World = { changed: new Set(), content: new Map() };
+    write(world, ".gitignore", "local edit");
+    const { git } = setup({
+      world,
+      sync: (w) => {
+        write(w, ".gitignore", "managed block rewritten");
+        w.changed.add(".claude/skills/mate-propose-change/SKILL.md");
+      },
+      untracked: [".claude/skills/mate-propose-change/SKILL.md"],
+    });
+    const { err } = await run();
+    expect(err).toContain("can no longer be separated");
+    expect(err).toContain("stay staged as deletions");
+    expect(git.commit).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("offers the untracked copies with the .gitignore change in one commit", async () => {
+    const copy = ".claude/skills/mate-propose-change/SKILL.md";
+    const { git } = setup({
+      sync: (w) => {
+        w.changed.add(copy);
+        write(w, ".gitignore", "managed block with skill entries");
+      },
+      untracked: [copy],
+      answers: [true, false],
+    });
+    await run();
+    const [, committed, options] = (git.commit as ReturnType<typeof mock>).mock.calls[0] ?? [];
+    expect(committed).toEqual([".gitignore", copy, ".mate/config/framework.yaml"].toSorted());
+    expect(options).toEqual({ removed: [copy] });
+  });
+
   test("excludes a user skill with a retired name that the sync left in place", async () => {
     const world: World = { changed: new Set(), content: new Map() };
     write(world, ".claude/skills/mate-openspec-backfill/SKILL.md", "user edit");
@@ -587,10 +656,11 @@ describe("mate companion update — commit and push prompts", () => {
     const { out } = await run();
     expect(out).toContain(".claude/skills/mate-grill-me/SKILL.md");
     expect(confirm).toHaveBeenCalledTimes(2);
-    expect(git.commit).toHaveBeenCalledWith("chore(mate): update companion to mate 0.17.0", [
-      ".claude/skills/mate-grill-me/SKILL.md",
-      ".mate/config/framework.yaml",
-    ]);
+    expect(git.commit).toHaveBeenCalledWith(
+      "chore(mate): update companion to mate 0.17.0",
+      [".claude/skills/mate-grill-me/SKILL.md", ".mate/config/framework.yaml"],
+      { removed: [] },
+    );
     expect(git.push).toHaveBeenCalled();
     expect(process.exitCode ?? 0).toBe(0);
   });
@@ -742,6 +812,75 @@ describe("mate companion update — real working tree", () => {
       conflict: [],
       overwritten: [],
     });
+  });
+
+  test("untracked Mate skill copies are committed as deletions and stay on disk", async () => {
+    const write = async (relative: string, content: string) => {
+      await fs.mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+      await fs.writeFile(path.join(root, relative), content);
+    };
+    const propose = ".claude/skills/mate-propose-change/SKILL.md";
+    const shared = ".agents/skills/mate-propose-change/SKILL.md";
+    const retired = ".claude/skills/mate-artifact-publish/SKILL.md";
+    const team = ".agents/skills/acme/SKILL.md";
+    for (const file of [propose, shared, team]) await write(file, "v1\n");
+    await write(retired, "---\nmetadata:\n  author: mate\n---\n");
+    git("add", ".");
+    git("commit", "-q", "-m", "skills");
+    // A local edit to a copy before the update runs.
+    await write(propose, "local edit\n");
+    const ops = defaultGitOps(root, undefined);
+    const before = await snapshotChangedPaths(root, ops);
+
+    // The sync: rewrites the copies, removes the retired skill, writes the managed block.
+    await write(propose, "v2\n");
+    await write(shared, "v2\n");
+    await fs.rm(path.dirname(path.join(root, retired)), { recursive: true });
+    const entries = skillIgnoreEntries(["mate-propose-change"]);
+    await write(".gitignore", `${entries.join("\n")}\n`);
+    const untracked = await untrackSkillCopies(root, entries);
+
+    const changes = await diffChangedPaths(
+      root,
+      ops,
+      before,
+      [
+        mateSkill(".claude/skills/mate-propose-change"),
+        removed(".claude/skills/mate-artifact-publish", "mate"),
+      ],
+      untracked,
+    );
+    expect(changes).toEqual({
+      written: [
+        ".agents/skills/mate-propose-change/SKILL.md",
+        ".claude/skills/mate-artifact-publish/SKILL.md",
+        ".claude/skills/mate-propose-change/SKILL.md",
+        ".gitignore",
+      ],
+      conflict: [],
+      overwritten: [propose],
+    });
+    await ops.add(changes.written);
+    await ops.commit("update", changes.written, { removed: untracked });
+
+    const show = spawnSync("git", ["show", "--format=", "--name-status", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    expect(show.stdout.trim().split("\n")).toEqual([
+      `D\t${shared}`,
+      `D\t${retired}`,
+      `D\t${propose}`,
+      "A\t.gitignore",
+    ]);
+    const tracked = spawnSync("git", ["ls-files"], { cwd: root, encoding: "utf8" }).stdout;
+    expect(tracked).toContain(team);
+    expect(tracked).not.toContain("mate-propose-change");
+    expect(await fs.readFile(path.join(root, propose), "utf8")).toBe("v2\n");
+
+    // Once ignored, a later edit to a copy is never a changed path.
+    await write(shared, "local edit\n");
+    expect(await ops.changedPaths()).toEqual([]);
   });
 
   test("raises engines.mate, preserves other keys, and leaves an equal floor untouched", async () => {

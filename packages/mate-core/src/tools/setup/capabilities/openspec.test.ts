@@ -66,10 +66,22 @@ afterEach(async () => {
 describe("createOpenspecPlugin", () => {
   test("ignores the machine-local store metadata in the companion, even once disabled", () => {
     const plugin = createOpenspecPlugin();
-    expect(plugin.gitignoreEntries?.(makeCtx("/tmp/companion", ["claude"]))).toEqual([
+    expect(plugin.gitignoreEntries?.(makeCtx("/tmp/companion", ["claude"], []))).toEqual([
       ".openspec-store/",
     ]);
     expect(plugin.persistGitignoreEntries).toBe(true);
+  });
+
+  test("ignores every deployed Mate skill copy by exact name, whatever runtimes are active", () => {
+    const plugin = createOpenspecPlugin();
+    const entries = plugin.gitignoreEntries?.(makeCtx("/tmp/companion", [])) ?? [];
+    for (const skill of MATE_SKILLS) {
+      expect(entries).toContain(`.claude/skills/${skill}/`);
+      expect(entries).toContain(`.agents/skills/${skill}/`);
+    }
+    expect(entries).toContain(".claude/skills/mate-propose-change/");
+    expect(entries.some((entry) => entry.includes("*"))).toBe(false);
+    expect(entries).not.toContain(".claude/skills/mate-acme/");
   });
 
   test("initializes OpenSpec without tool output and runs no update", async () => {

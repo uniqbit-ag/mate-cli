@@ -177,6 +177,8 @@ export interface CompanionGitOptions {
   /** Bound on each local command, applied within `budgetMs`. */
   commandCapMs?: number;
   env?: Record<string, string | undefined>;
+  /** Index file local commands use instead of the repository's own. */
+  indexFile?: string;
 }
 
 export interface CompanionGit {
@@ -309,7 +311,10 @@ export function companionGit(
   options: CompanionGitOptions,
   deps: typeof companionGitDeps = companionGitDeps,
 ): CompanionGit {
-  const baseEnv = gitEnvironment(options.env ?? process.env);
+  const baseEnv: Record<string, string | undefined> = {
+    ...gitEnvironment(options.env ?? process.env),
+    ...(options.indexFile ? { GIT_INDEX_FILE: options.indexFile } : {}),
+  };
   const mayPrompt = options.prompt === "if-terminal" && deps.isTerminal();
   const deadline =
     options.budgetMs === undefined ? Number.POSITIVE_INFINITY : Date.now() + options.budgetMs;

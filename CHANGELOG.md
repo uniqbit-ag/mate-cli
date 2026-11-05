@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Mate skills stay out of the companion's Git
+
+- Mate's own skill copies in `.claude/skills/` and `.agents/skills/` are now local files, regenerated on every sync. The companion's managed `.gitignore` block lists each one by exact name, so a skill of your own, even one named `mate-acme`, stays tracked.
+- The next `mate companion update` stops tracking copies that are still committed. The files stay on disk, and the update offers the deletions and the `.gitignore` entries in its commit. Setup untracks them as well; a session launch or prepare never changes the Git index.
+- A companion pull by Mate syncs right after it merges, so the copies come back at once. After a manual `git pull` of that commit, the copies are gone until the next sync, and the first session may lack Mate skills; a restart brings them back. Before a manual `git pull`, run `git checkout -- .claude/skills .agents/skills` so locally modified copies do not block it.
+- Edits to Mate skills stay local and are overwritten by the next sync, as before. To share a customized skill, give it its own name.
+
 ### Skill handoffs follow the agent runtime
 
 - Mate skills that hand off to another skill write the invocation in the syntax of the runtime you use: `/name` in Claude Code and Cursor, `@name` in OpenCode, `$name` in Codex, and `/skill:name` in Pi. The runtime counts only when you name it or the runtime identifies itself; otherwise handoffs keep `/name`. Run `mate companion update` to deploy the updated skills.

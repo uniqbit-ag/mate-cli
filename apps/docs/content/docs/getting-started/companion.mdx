@@ -138,6 +138,18 @@ settings, and the managed `.gitignore` block are refreshed at every launch too;
 OpenSpec's generated skills and commands are refreshed only by setup and
 `mate companion update`. Commit these files with the rest of the companion.
 
+Mate's own skills are the exception: they are local copies, regenerated from
+your installed Mate on every sync, and the managed `.gitignore` block lists each
+one by name, so Git does not track them. A fresh clone gets them with its first
+sync. Edits to them stay on your machine and are overwritten by the next sync;
+to share a changed skill, give it its own name. Companions that still track the
+copies stop tracking them at the next setup or `mate companion update`, which
+keeps the files on disk and commits their removal. A pull by Mate syncs right
+after it, so the copies come straight back; after a manual `git pull` they return
+with the next sync. Before a manual `git pull`, run
+`git checkout -- .claude/skills .agents/skills` so locally modified copies do
+not block it.
+
 Put rules every session should follow in `AGENTS.md`. Claude sessions in your
 repositories receive `AGENTS.md`, plus the blocks Mate manages in `CLAUDE.md`;
 other text you add to `CLAUDE.md` reaches only sessions started in the companion

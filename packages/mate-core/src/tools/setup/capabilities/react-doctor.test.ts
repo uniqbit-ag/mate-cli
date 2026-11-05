@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { getReactDoctorBinPath } from "../../../lib/package-paths";
 import type { SetupContext } from "../plugin";
+import { collectManagedGitignoreEntries } from "../plugins/gitignore";
 import { createReactDoctorPlugin } from "./react-doctor";
 
 const reactDoctorPlugin = createReactDoctorPlugin();
@@ -87,6 +88,19 @@ describe("reactDoctorPlugin", () => {
         fs.access(path.join(trees[0].sourceDir, "references", "explain.md")),
       ).resolves.toBeNull();
     }
+  });
+
+  test("ignores its skill copies while enabled", () => {
+    const entries = collectManagedGitignoreEntries(context("/tmp/acme"), [reactDoctorPlugin]);
+    expect(entries).toContain(".claude/skills/mate-react-doctor/");
+    expect(entries).toContain(".agents/skills/mate-react-doctor/");
+  });
+
+  test("drops its ignore entries once disabled", () => {
+    const entries = collectManagedGitignoreEntries(context("/tmp/acme", false), [
+      reactDoctorPlugin,
+    ]);
+    expect(entries.some((entry) => entry.includes("mate-react-doctor"))).toBe(false);
   });
 
   test("pre-seeds the skill and the pinned binary instead of npx", async () => {

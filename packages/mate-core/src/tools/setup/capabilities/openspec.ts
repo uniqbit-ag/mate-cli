@@ -11,6 +11,7 @@ import {
 } from "../../../lib/openspec-cli";
 import { getWrapperBinPath } from "../../../lib/package-paths";
 import { FRAMEWORK_NAME } from "../../../framework";
+import type { FrameworkConfig } from "../../../lib/orchestrator/types";
 import { removeRecorded } from "../managed-output";
 import type {
   CapabilityPlugin,
@@ -21,6 +22,7 @@ import type {
 import { mergeDir, pruneEmptyAncestors } from "../utils";
 import { applyMateSkills, MATE_SKILLS, readSkillAuthor, teardownMateSkills } from "../mate";
 import { getSharedSkillsDir, isSharedSkillRootActive } from "../providers/agents-skill-root";
+import { skillIgnoreEntries } from "../mate-skill-copies";
 
 export { MATE_SKILLS } from "../mate";
 
@@ -384,6 +386,10 @@ async function reconcileOpenSpecSchema(ctx: SetupContext): Promise<void> {
   await ensureManagedOpenSpecConfig(ctx.companionPath);
 }
 
+function isOpenSpecEnabled(config: FrameworkConfig): boolean {
+  return (config.capabilities ?? []).some((c) => c.name === "openspec");
+}
+
 export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityPlugin {
   const depsWithDefaults = {
     runOpenSpec: deps.runOpenSpec ?? runOpenSpec,
@@ -397,7 +403,7 @@ export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityP
     label: "OpenSpec",
     description: "Route OpenSpec commands to the companion root and enable planning workflows.",
     defaultSelected: true,
-    isEnabled: (config) => (config.capabilities ?? []).some((c) => c.name === "openspec"),
+    isEnabled: isOpenSpecEnabled,
     // Permission pre-seeds are declared and reconciled by the Claude Runtime
     // Surface. Skill trees stay imperative on purpose: the workflow skills are
     // written by the external `openspec` CLI (foreign trees), and the
@@ -416,7 +422,11 @@ export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityP
         },
       };
     },
-    gitignoreEntries: () => OPENSPEC_GITIGNORE_ENTRIES,
+    // Mate skill copies are regenerated on every sync, so only an enabled capability ignores them.
+    gitignoreEntries: (ctx) => [
+      ...OPENSPEC_GITIGNORE_ENTRIES,
+      ...(isOpenSpecEnabled(ctx.config) ? skillIgnoreEntries(MATE_SKILLS) : []),
+    ],
     persistGitignoreEntries: true,
     async apply(ctx) {
       // OpenSpec output is committed in the companion, so only setup and

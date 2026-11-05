@@ -24,6 +24,7 @@ import {
   collectManagedGitignoreEntries,
   writeManagedGitignoreBlock,
 } from "./setup/plugins/gitignore";
+import { untrackSkillCopies } from "./setup/mate-skill-copies";
 import { createManagedOutputCollector } from "./setup/managed-output";
 import type {
   ManagedOutputReport,
@@ -199,14 +200,29 @@ export async function inspectClaudePluginDirectories(
   };
 }
 
+function managedGitignoreEntries(companionPath: string, config: FrameworkConfig): string[] {
+  const ctx: SetupContext = { companionPath, config, mode: "sync", activeProviders: [] };
+  return collectManagedGitignoreEntries(ctx, getActiveDistribution().registry.getAll());
+}
+
 export async function updateProjectGitignore(
   companionPath: string,
   config: FrameworkConfig,
 ): Promise<void> {
-  const ctx: SetupContext = { companionPath, config, mode: "sync", activeProviders: [] };
-  const plugins = getActiveDistribution().registry.getAll();
-  const entries = collectManagedGitignoreEntries(ctx, plugins);
+  const entries = managedGitignoreEntries(companionPath, config);
   await writeManagedGitignoreBlock(path.join(companionPath, ".gitignore"), FRAMEWORK_NAME, entries);
+}
+
+/**
+ * Stops tracking the Mate skill copies the managed `.gitignore` block lists; the
+ * files stay on disk. Only setup and `mate companion update` call it, never a
+ * launch or prepare. Returns the paths removed from the index.
+ */
+export async function untrackManagedSkillCopies(
+  companionPath: string,
+  config: FrameworkConfig,
+): Promise<string[]> {
+  return untrackSkillCopies(companionPath, managedGitignoreEntries(companionPath, config));
 }
 
 export interface CompanionSyncResult {
@@ -298,6 +314,12 @@ export async function executeSetup(
     await hydrateDynamicPlugins({ companionPath });
   }
   await applySetupCompatibilities(companionPath, config, "setup");
+  const untracked = await untrackManagedSkillCopies(companionPath, config);
+  if (untracked.length > 0) {
+    process.stdout.write(
+      `${FRAMEWORK_NAME}: ${untracked.length} Mate skill copies are staged as deletions; the files stay on disk. Commit them with .gitignore.\n`,
+    );
+  }
   await invalidateInstallState({
     kind: config.type === "hub" ? "hub" : "companion",
     companionPath,

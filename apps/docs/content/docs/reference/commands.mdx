@@ -31,10 +31,14 @@ release; otherwise it stops and asks you to run `mate update` first. It
 regenerates the companion's Mate-managed files, skills, and OpenSpec output,
 raises `engines.mate` to the running version, and then offers to commit and push
 exactly the files it wrote. `--yes` commits and pushes without asking. Outside
-an interactive shell and without `--yes`, the changes stay uncommitted. A local
-edit to a Mate-managed skill is overwritten: the update lists it as a warning
-and commits the new version. A local edit to any other file the update rewrites
-blocks the commit: the update lists that file and exits without committing.
+an interactive shell and without `--yes`, the changes stay uncommitted. Mate's
+own skills are local copies that the managed `.gitignore` block excludes; when
+the companion still tracks some, the update removes them from Git, keeps the
+files on disk, and includes the deletions in its commit. Declining the commit
+leaves the removals staged. A local edit to a Mate-managed skill is
+overwritten: the update lists it as a warning and never commits it. A local
+edit to any other file the update rewrites blocks the commit: the update lists
+that file and exits without committing.
 
 `mate working cleanup` runs from a working repository linked to a companion. It
 removes the local `.mate` projection, Mate's Git excludes, and the OpenSpec
