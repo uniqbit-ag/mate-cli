@@ -24,6 +24,7 @@ import { hookGroupKey, type ClaudeHookGroup } from "./claude-format";
  */
 
 const GUARD_HOOK_SHIM = "validate-artifact-path.mjs";
+const TOKENSAVE_ROUTE_HOOK_SHIM = "tokensave-route.mjs";
 const GUIDANCE_HOOK_SHIM = "session-guidance.mjs";
 const BANNER_HOOK_SHIM = "session-banner.mjs";
 const PREPARE_HOOK_SHIM = "session-prepare.mjs";
@@ -84,6 +85,16 @@ export function mateGuardHookGroups(
 }
 
 /**
+ * The tokensave routing `PreToolUse` group, resolved the same way. Input-pure
+ * like the guard, so a session loading both copies routes each call once.
+ */
+export function mateTokensaveRouteHookGroups(
+  commandRoot: string = runtimeClaudePluginRoot(),
+): ClaudeHookGroup[] {
+  return groupsFor("PreToolUse", TOKENSAVE_ROUTE_HOOK_SHIM, commandRoot);
+}
+
+/**
  * The guidance hook's `SessionStart` groups, resolved the same way. This is the
  * channel that replaces `--append-system-prompt` where no launch supplies one:
  * a settings document can declare a hook, and there is no settings key for the
@@ -139,6 +150,7 @@ export function mateSessionPrepareHookGroups(
 function mateOwnHookGroups(commandRoot: string): ClaudeHookGroup[] {
   return [
     ...mateGuardHookGroups(commandRoot),
+    ...mateTokensaveRouteHookGroups(commandRoot),
     ...mateGuidanceHookGroups(commandRoot),
     ...mateBannerHookGroups(commandRoot),
     ...mateSessionPrepareHookGroups(commandRoot),

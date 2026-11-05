@@ -194,6 +194,15 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
             ],
             "matcher": "Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Bash",
           },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/tokensave-route.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "mcp__tokensave__.*",
+          },
         ],
       },
       {
@@ -987,6 +996,15 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
             ],
             "matcher": "Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Bash",
           },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/tokensave-route.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "mcp__tokensave__.*",
+          },
         ],
       },
       {
@@ -1574,6 +1592,15 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
               },
             ],
             "matcher": "Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Bash",
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/tokensave-route.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "mcp__tokensave__.*",
           },
           {
             "hooks": [
@@ -2448,6 +2475,15 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
           {
             "hooks": [
               {
+                "command": "node "<runtime-claude-plugin>/hooks/tokensave-route.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "mcp__tokensave__.*",
+          },
+          {
+            "hooks": [
+              {
                 "args": [
                   "hook-pre-tool-use",
                 ],
@@ -3065,6 +3101,15 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
               },
             ],
             "matcher": "Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Bash",
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/tokensave-route.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "mcp__tokensave__.*",
           },
         ],
       },
@@ -3776,6 +3821,15 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
             ],
             "matcher": "Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Bash",
           },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/tokensave-route.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "mcp__tokensave__.*",
+          },
         ],
       },
       {
@@ -4309,6 +4363,15 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
               },
             ],
             "matcher": "Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Bash",
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/tokensave-route.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "mcp__tokensave__.*",
           },
         ],
       },
@@ -5004,6 +5067,15 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
             ],
             "matcher": "Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Bash",
           },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/tokensave-route.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "mcp__tokensave__.*",
+          },
         ],
       },
       {
@@ -5575,6 +5647,15 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
               },
             ],
             "matcher": "Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Bash",
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/tokensave-route.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "mcp__tokensave__.*",
           },
         ],
       },
@@ -6371,6 +6452,15 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
               },
             ],
             "matcher": "Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Bash",
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/tokensave-route.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "mcp__tokensave__.*",
           },
         ],
       },
@@ -7198,6 +7288,15 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
               },
             ],
             "matcher": "Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Bash",
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/tokensave-route.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "mcp__tokensave__.*",
           },
           {
             "hooks": [

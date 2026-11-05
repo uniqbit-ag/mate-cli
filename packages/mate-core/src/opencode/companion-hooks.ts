@@ -13,6 +13,7 @@ import { hasLaunchEnvironment } from "../runtime/env";
 import { MATE_ENV } from "../runtime/env-names";
 import { resolveProjection } from "../runtime/projection";
 import { checkSecretAccess, type SecretToolCall } from "../runtime/secret-guard";
+import { routeTokensaveInput } from "../runtime/tokensave-route";
 import { readWrapStateSync } from "../runtime/wrap-state";
 import {
   buildArtifactError,
@@ -193,7 +194,41 @@ export async function registerCompanionHooks(
    */
   await repairCompanionGitOnce(context, env, api.location.directory).catch(() => []);
 
-  await api.tool.hook("execute.before", (event) =>
-    guardToolInput(context, event.tool, event.input, env),
-  );
+  await api.tool.hook("execute.before", async (event) => {
+    await guardToolInput(context, event.tool, event.input, env);
+    await routeTokensaveCall(api, event);
+  });
+}
+
+/** OpenCode names an MCP tool `<server>_<tool>`, also when called from inside `execute`. */
+const TOKENSAVE_TOOL = /^tokensave_/;
+
+interface ToolCallEvent {
+  tool: string;
+  readonly sessionID: string;
+  input: unknown;
+}
+
+/**
+ * Points a tokensave call at the linked worktree the calling session works in.
+ * The session's directory is read per call: `mate_enter_worktree` moves a
+ * session after the plugin, and `api.location`, were set up.
+ */
+async function routeTokensaveCall(api: Context, event: ToolCallEvent): Promise<void> {
+  if (!TOKENSAVE_TOOL.test(event.tool)) return;
+  const routed = routeTokensaveInput(await sessionDirectory(api, event.sessionID), event.input);
+  if (routed) event.input = routed;
+}
+
+/**
+ * The session's current directory, else the plugin's start directory: routing
+ * never blocks a call.
+ */
+async function sessionDirectory(api: Context, sessionID: string): Promise<string> {
+  try {
+    const session = await api.session.get({ sessionID: sessionID as never });
+    return session.location.directory;
+  } catch {
+    return api.location.directory;
+  }
 }

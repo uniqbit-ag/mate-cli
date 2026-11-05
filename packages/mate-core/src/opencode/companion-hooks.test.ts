@@ -11,6 +11,7 @@ import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { MATE_ENV } from "../runtime/env-names";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
+import { TOKENSAVE_DB } from "../runtime/tokensave-route";
 const tempRoots: string[] = [];
 
 async function makeTempDir(prefix: string): Promise<string> {
@@ -317,5 +318,88 @@ describe("OpenCode secret guardrails", () => {
         content: GITHUB_TOKEN,
       }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("OpenCode tokensave routing", () => {
+  async function routedFixture() {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-route-");
+    const identity = ["-c", "user.name=acme", "-c", "user.email=acme@example.com"];
+    spawnSync("git", [...identity, "commit", "-q", "--allow-empty", "-m", "init"], { cwd: repo });
+    const worktree = path.join(path.dirname(repo), "repo.worktrees", "fix");
+    spawnSync("git", ["worktree", "add", "-q", "-b", "fix", worktree], { cwd: repo });
+    await fs.mkdir(path.join(worktree, ".tokensave"), { recursive: true });
+    await fs.writeFile(path.join(worktree, TOKENSAVE_DB), "");
+    const context = await launchContext(companion, repo);
+    return { repo, worktree: await fs.realpath(worktree), context };
+  }
+
+  /** A session whose directory `move` changes, as `api.session.move` does. */
+  function sessionApi(start: string) {
+    const location = { directory: start };
+    const { api, hooks } = fakeApi(start) as unknown as {
+      api: { session: Record<string, unknown> };
+      hooks: Map<string, Hook>;
+    };
+    api.session.get = async () => ({ location });
+    return {
+      api: api as never,
+      hooks,
+      move: (directory: string) => (location.directory = directory),
+    };
+  }
+
+  function search(input: Record<string, unknown>, tool = "tokensave_tokensave_search") {
+    return { tool, sessionID: "s", input };
+  }
+
+  test("routes a nested tokensave call and leaves execute and other tools alone", async () => {
+    const { worktree, context } = await routedFixture();
+    const { api, hooks } = sessionApi(worktree);
+    await registerCompanionHooks(api, context);
+    const before = hooks.get("tool.execute.before")!;
+
+    const nested = search({ query: "alpha" });
+    await before(nested);
+    expect(nested.input).toEqual({ query: "alpha", graph_root: worktree });
+
+    const wrapper = search({ code: "tools.tokensave" }, "execute");
+    const other = search({ query: "alpha" }, "acme_search");
+    await before(wrapper);
+    await before(other);
+    expect(wrapper.input).toEqual({ code: "tools.tokensave" });
+    expect(other.input).toEqual({ query: "alpha" });
+  });
+
+  test("a session moved into the worktree is routed to it; the main checkout is not", async () => {
+    const { repo, worktree, context } = await routedFixture();
+    const { api, hooks, move } = sessionApi(repo);
+    await registerCompanionHooks(api, context);
+    const before = hooks.get("tool.execute.before")!;
+
+    const fromMain = search({ query: "alpha" });
+    await before(fromMain);
+    expect(fromMain.input).toEqual({ query: "alpha" });
+
+    move(worktree);
+    const moved = search({ task: "alpha" }, "tokensave_tokensave_context");
+    await before(moved);
+    expect(moved.input).toEqual({ task: "alpha", graph_root: worktree });
+  });
+
+  test("an explicit graph_root and a failing session lookup pass unchanged", async () => {
+    const { repo, worktree, context } = await routedFixture();
+    const explicit = sessionApi(worktree);
+    await registerCompanionHooks(explicit.api, context);
+    const call = search({ graph_root: "/src/other" });
+    await explicit.hooks.get("tool.execute.before")!(call);
+    expect(call.input).toEqual({ graph_root: "/src/other" });
+
+    /** No `session.get`: the lookup throws and the start directory, the main checkout, decides. */
+    const { api, hooks } = fakeApi(repo);
+    await registerCompanionHooks(api, context);
+    const fallback = search({ query: "alpha" });
+    await hooks.get("tool.execute.before")!(fallback);
+    expect(fallback.input).toEqual({ query: "alpha" });
   });
 });

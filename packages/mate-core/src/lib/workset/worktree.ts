@@ -25,6 +25,7 @@ import {
 import type { LinkedRepository } from "../orchestrator/types";
 import { runWrapPass } from "../orchestrator/wrap-pass";
 import { identityOf } from "./repositories";
+import { indexWorktree, type IndexOutcome, type TokensaveRunner } from "./worktree-index";
 import { findWorkset, readWorksets, resolveWorksetBranch, resolveWorksetOf } from "./record";
 
 /**
@@ -59,6 +60,7 @@ export interface WorktreeDeps {
   readWrapState?: typeof readWrapState;
   wrap?: WorktreeWrapper;
   unwrap?: typeof cleanupWorkingRepository;
+  tokensave?: TokensaveRunner;
   /** The process's working directory; a worktree holding it is kept. */
   cwd?: () => string;
 }
@@ -81,6 +83,8 @@ export interface WorktreeRepositoryResult {
   action: "created" | "reused";
   install: { command: string | null; outcome: InstallOutcome; reason?: string };
   wrap: WrapOutcome;
+  /** The worktree's tokensave index; a failure only warns. */
+  index: IndexOutcome;
   /** Env files of the main checkout the worktree lacks, relative to the repository root. */
   missingEnv: string[];
   /** Set when a step for this repository failed. */
@@ -536,6 +540,7 @@ async function realize(
     action: plan.reuse ? "reused" : "created",
     install: { command: null, outcome: "skipped" },
     wrap: { runtimes: [], outcome: "skipped" },
+    index: { outcome: "skipped" },
     missingEnv: [],
   };
   if (!plan.reuse) {
@@ -545,6 +550,7 @@ async function realize(
         ...result,
         install: { ...result.install, reason: NOT_CREATED },
         wrap: { ...result.wrap, reason: NOT_CREATED },
+        index: { outcome: "skipped", reason: NOT_CREATED },
         error: failure,
       };
     }
@@ -581,6 +587,11 @@ async function realize(
     const ok = await (deps.install ?? runInstall)(plan.target, command, options.streamInstall);
     result.install.outcome = ok ? "ok" : "failed";
     if (!ok) result.error ??= `${command.join(" ")} failed`;
+  }
+  // After install and regardless of `--no-install`: the index is not a dependency install.
+  result.index = await indexWorktree(plan.checkout, plan.target, companionPath, deps.tokensave);
+  if (result.index.outcome === "failed") {
+    warnings.push(`${plan.repository}: tokensave index step failed: ${result.index.reason}`);
   }
   result.missingEnv = await missingEnvFiles(git, plan.checkout, plan.target);
   return result;

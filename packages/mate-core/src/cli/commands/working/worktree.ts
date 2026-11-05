@@ -263,6 +263,10 @@ function printCreated(result: WorktreeResult): void {
           ? `${prefix} install skipped (${reason})\n`
           : `${prefix} install ${command} ${outcome}\n`,
       );
+      const { index } = entry;
+      process.stdout.write(
+        `${prefix} tokensave index ${index.outcome}${index.reason ? ` (${index.reason})` : ""}\n`,
+      );
       if (entry.missingEnv.length > 0) {
         process.stdout.write(
           `${prefix} env files missing in the worktree (not copied): ${entry.missingEnv.join(", ")}\n`,

@@ -1,5 +1,10 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
+import { createTempDir } from "../../../../../../test/fixtures";
+import { addWorktree, initRepo } from "../../../../test/git-checkouts";
 import type { CapabilityConfig } from "../../../lib/orchestrator/types";
 import { runIndexCapCommand, type SyncCapDeps } from "./index-cmd";
 
@@ -25,6 +30,7 @@ function makeDeps(options: {
   const deps: SyncCapDeps = {
     ensureUnambiguousCompanion: options.ensureUnambiguousCompanion ?? (async () => true),
     loadCapabilities: async () => options.capabilities,
+    resolveRepositoryPath: async () => undefined,
     isTokensaveInitialized: async () => options.tokensaveInitialized ?? true,
     ensureTokensaveStoreExcluded: async () => {
       await options.onEnsureTokensaveStoreExcluded?.();
@@ -355,5 +361,70 @@ describe("runIndexCapCommand", () => {
 
     expect(invocations).toEqual([]);
     expect(process.exitCode).toBe(1);
+  });
+});
+
+describe("runIndexCapCommand tokensave checkout", () => {
+  const roots: string[] = [];
+
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  });
+
+  async function checkouts() {
+    const root = await createTempDir("mate-cap-index-");
+    roots.push(root);
+    const main = initRepo(path.join(root, "acme"));
+    const worktree = addWorktree(main, path.join(root, "acme.worktrees", "fix"));
+    await fs.mkdir(path.join(main, ".tokensave"), { recursive: true });
+    await fs.writeFile(path.join(main, ".tokensave", "tokensave.db"), "");
+    return { main, worktree };
+  }
+
+  /** Runs the tokensave step from `cwd` with the Working Repository resolved to `main`. */
+  async function indexFrom(cwd: string, main: string) {
+    const touched: string[] = [];
+    const { deps, invocations } = makeDeps({ capabilities: [cap("tokensave")] });
+    await runIndexCapCommand(["--tokensave"], {
+      ...deps,
+      resolveRepositoryPath: async () => main,
+      cwd: () => cwd,
+      isTokensaveInitialized: undefined,
+      ensureTokensaveStoreExcluded: async (repoPath) => void touched.push(`exclude ${repoPath}`),
+      ensureTokensaveBranchingPosture: async (repoPath) => void touched.push(`posture ${repoPath}`),
+    });
+    return { touched, invocations };
+  }
+
+  test("from an indexed worktree, syncs the worktree only", async () => {
+    const { main, worktree } = await checkouts();
+    await fs.mkdir(path.join(worktree, ".tokensave"), { recursive: true });
+    await fs.writeFile(path.join(worktree, ".tokensave", "tokensave.db"), "");
+
+    const { touched, invocations } = await indexFrom(path.join(worktree, "src"), main);
+
+    expect(touched).toEqual([`posture ${worktree}`]);
+    expect(invocations).toEqual([{ runner: "tokensave", args: ["sync"] }]);
+  });
+
+  test("from the main checkout, syncs it as before", async () => {
+    const { main } = await checkouts();
+
+    const { touched, invocations } = await indexFrom(main, main);
+
+    expect(touched).toEqual([`posture ${main}`]);
+    expect(invocations).toEqual([{ runner: "tokensave", args: ["sync"] }]);
+  });
+
+  test("from an unindexed worktree, initialises it there", async () => {
+    const { main, worktree } = await checkouts();
+
+    const { touched, invocations } = await indexFrom(worktree, main);
+
+    expect(touched).toEqual([`exclude ${worktree}`, `posture ${worktree}`]);
+    expect(invocations).toEqual([
+      { runner: "tokensave", args: ["init", "--no-git-hook"] },
+      { runner: "tokensave", args: ["sync"] },
+    ]);
   });
 });

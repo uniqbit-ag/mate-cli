@@ -12,7 +12,7 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 
 import { readCompanionGitRecord } from "../runtime/companion-git-state";
 import { projectionEnvPath, projectionYamlPath } from "../runtime/projection";
-import { repoLocalRegistryPath } from "../runtime/repo-local";
+import { companionLinkPath, repoLocalRegistryPath } from "../runtime/repo-local";
 import { makeSshStub, stubSshUrl } from "../../../../test/ssh-stub";
 
 // Local-only, opt-in verification that mate's companion-guidance injection ends
@@ -770,6 +770,7 @@ async function runPlainClaude(
   cwd: string,
   args: string[],
   mock: MockModelServer,
+  env: NodeJS.ProcessEnv = {},
 ): Promise<CliRunResult> {
   return new Promise((resolve, reject) => {
     const child = spawn("claude", args, {
@@ -779,6 +780,7 @@ async function runPlainClaude(
         PWD: cwd,
         ANTHROPIC_API_KEY: DUMMY_API_KEY,
         ANTHROPIC_BASE_URL: mock.baseUrl,
+        ...env,
       }),
       stdio: "pipe",
     });
@@ -1082,6 +1084,181 @@ describe.skipIf(!runRealAgentTests || !hasClaude)(
       },
       240_000,
     );
+  },
+);
+
+/** Tokensave routing: a real `tokensave serve` bound to the main checkout, a session moved into a worktree. */
+
+const hasTokensave = isBinaryOnPath("tokensave");
+const ROUTE_PROMPT = "ACME-ROUTE: search the code graph for alpha";
+const GIT_IDENTITY = ["-c", "user.email=mate-e2e@example.com", "-c", "user.name=Mate E2E"];
+
+function runTokensaveIn(scenario: E2EScenario, cwd: string, args: string[]): void {
+  const result = spawnSync("tokensave", args, {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: plainEnv(scenario),
+  });
+  if (result.status !== 0) throw new Error(`tokensave ${args.join(" ")}: ${result.stderr}`);
+}
+
+/**
+ * `src/acme.ts` defines `alphaMain` in the main checkout and `alphaWorktree` in a
+ * linked worktree linked to the companion like a Workset worktree; both indexed.
+ */
+async function indexedWorktree(scenario: E2EScenario): Promise<string> {
+  const source = (name: string) => `export function ${name}(): number {\n  return 1;\n}\n`;
+  await fs.mkdir(path.join(scenario.working, "src"), { recursive: true });
+  await fs.writeFile(path.join(scenario.working, "src", "acme.ts"), source("alphaMain"));
+  runGit(scenario.working, ["add", "src"]);
+  runGit(scenario.working, [...GIT_IDENTITY, "commit", "-qm", "acme"]);
+  const worktree = path.join(scenario.root, "app-worktree");
+  runGit(scenario.working, ["worktree", "add", "-q", "-b", "acme-fix", worktree]);
+  for (const file of [repoLocalRegistryPath, projectionYamlPath, projectionEnvPath]) {
+    await fs.mkdir(path.dirname(file(worktree)), { recursive: true });
+    await fs.copyFile(file(scenario.working), file(worktree));
+  }
+  await fs.symlink(scenario.companion, companionLinkPath(worktree));
+  await fs.writeFile(path.join(worktree, "src", "acme.ts"), source("alphaWorktree"));
+  for (const checkout of [scenario.working, worktree]) {
+    runTokensaveIn(scenario, checkout, ["init", checkout, "--no-git-hook", "--cpu-usage", "low"]);
+  }
+  return worktree;
+}
+
+function toolResults(body: string): string[] {
+  const messages = (JSON.parse(body) as { messages?: Array<{ content?: unknown }> }).messages;
+  return (messages ?? [])
+    .flatMap((message) => (Array.isArray(message.content) ? message.content : []))
+    .filter((block: { type?: string }) => block?.type === "tool_result")
+    .map((block: { content?: unknown }) => JSON.stringify(block.content));
+}
+
+/** A tool the moved session's servers have not offered yet. */
+const NOT_YET_CONNECTED = "Unknown tool";
+const SEARCH_ATTEMPTS = 20;
+
+/**
+ * Enter the worktree, then search, again while the search tool is not yet
+ * connected; the request after the last search holds its result.
+ */
+function enterThenSearch(enterTool: string, enterInput: unknown, search: MockReply): MockResponder {
+  return (request) => {
+    if (toolNames(request.body).length === 0) return { text: "ok" };
+    if (!flattenRequest(request.body).includes(ROUTE_PROMPT)) return { text: "ok" };
+    const results = toolResults(request.body);
+    if (results.length === 0) return { toolUse: { name: enterTool, input: enterInput } };
+    if (results.length === 1) return search;
+    if (results.at(-1)!.includes(NOT_YET_CONNECTED) && results.length <= SEARCH_ATTEMPTS) {
+      return search;
+    }
+    return { text: "ok" };
+  };
+}
+
+/** The move's result and the last search's, once the search ran. */
+function afterSearch(mock: MockModelServer): string {
+  const found = mock.requests.findLast((request) => toolResults(request.body).length >= 2);
+  if (!found) throw new Error(`the search never ran (${mock.requests.length} requests)`);
+  const results = toolResults(found.body);
+  return [results[0], results.at(-1)].join("\n");
+}
+
+describe.skipIf(!runRealAgentTests || !hasClaude || !hasTokensave)(
+  "real claude — tokensave routing into a worktree",
+  () => {
+    test("a session moved by EnterWorktree gets the worktree's code graph", async () => {
+      const scenario = await claudeScenario("mate-cli-e2e-claude-tokensave-route-");
+      expect((await runMate(scenario, { cwd: scenario.working, args: ["wrap"] })).exitCode).toBe(0);
+      const worktree = await indexedWorktree(scenario);
+      const mcpConfig = path.join(scenario.root, "mcp.json");
+      await fs.writeFile(
+        mcpConfig,
+        JSON.stringify({ mcpServers: { tokensave: { command: "tokensave", args: ["serve"] } } }),
+      );
+      const mock = await startMockModelServer(
+        enterThenSearch(
+          "EnterWorktree",
+          { path: worktree },
+          { toolUse: { name: "mcp__tokensave__tokensave_search", input: { query: "alpha" } } },
+        ),
+      );
+
+      try {
+        const result = await runPlainClaude(
+          scenario,
+          scenario.working,
+          ["--print", "--mcp-config", mcpConfig, "--dangerously-skip-permissions", ROUTE_PROMPT],
+          mock,
+          { ENABLE_TOOL_SEARCH: "false" },
+        );
+
+        expect(result.exitCode).toBe(0);
+        const conversation = afterSearch(mock);
+        expect(conversation).toContain("alphaWorktree");
+        expect(conversation).not.toContain("alphaMain");
+      } finally {
+        await mock.close();
+      }
+    }, 180_000);
+  },
+);
+
+describe.skipIf(!runRealAgentTests || !hasOpenCode || !hasTokensave)(
+  "real opencode — tokensave routing into a worktree",
+  () => {
+    /**
+     * OpenCode 2.x reaches both tools only through `execute`, so the search is a
+     * nested call. OpenCode 2.1.4 reconnects MCP servers for the moved session's
+     * directory, so the search is retried until tokensave is offered again; that
+     * server is then bound to the worktree, and the plugin's routing names it too.
+     */
+    test("a session moved by mate_enter_worktree gets the worktree's code graph", async () => {
+      const scenario = await createScenario("mate-cli-e2e-opencode-tokensave-route-");
+      initWorkingRepoGit(scenario);
+      expect((await setupCompanion(scenario, ["opencode"])).exitCode).toBe(0);
+      expect((await linkRepository(scenario)).exitCode).toBe(0);
+      expect((await runMate(scenario, { cwd: scenario.working, args: ["wrap"] })).exitCode).toBe(0);
+      const worktree = await indexedWorktree(scenario);
+      const mock = await startMockModelServer(
+        enterThenSearch(
+          "execute",
+          {
+            code: `return await tools.mate_enter_worktree({ path: ${JSON.stringify(worktree)} });`,
+          },
+          {
+            toolUse: {
+              name: "execute",
+              input: { code: 'return await tools.tokensave.tokensave_search({ query: "alpha" });' },
+            },
+          },
+        ),
+      );
+      try {
+        const result = await runMate(scenario, {
+          cwd: scenario.working,
+          args: ["opencode", "run", "--standalone", "-m", OPENCODE_MODEL, ROUTE_PROMPT],
+          input: "y\n",
+          env: {
+            ANTHROPIC_API_KEY: DUMMY_API_KEY,
+            ANTHROPIC_BASE_URL: mock.baseUrl,
+            OPENCODE_CONFIG_CONTENT: JSON.stringify({
+              provider: { anthropic: { options: { baseURL: mock.baseUrl } } },
+              mcp: { servers: { tokensave: { type: "local", command: ["tokensave", "serve"] } } },
+            }),
+          },
+        });
+
+        expect(result.exitCode).toBe(0);
+        const results = afterSearch(mock);
+        expect(results).toContain(`Moved this session to ${worktree}`);
+        expect(results).toContain("alphaWorktree");
+        expect(results).not.toContain("alphaMain");
+      } finally {
+        await mock.close();
+      }
+    }, 180_000);
   },
 );
 

@@ -1,5 +1,5 @@
 {
-  "description": "Mate hooks \u2014 PreToolUse artifact-path and secret guardrail, SessionStart banner, companion guidance, session prepare then companion instructions, SubagentStart companion instructions",
+  "description": "Mate hooks \u2014 PreToolUse artifact-path and secret guardrail, PreToolUse tokensave worktree routing, SessionStart banner, companion guidance, session prepare then companion instructions, SubagentStart companion instructions",
   "hooks": {
     "PreToolUse": [
       {
@@ -8,6 +8,15 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/validate-artifact-path.mjs\""
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__tokensave__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/tokensave-route.mjs\""
           }
         ]
       }

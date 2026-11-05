@@ -194,8 +194,9 @@ describe("a wrapped Working Repository with an empty Mate environment", () => {
     await runWrapCommand(["--companion", companionPath], repoPath);
 
     const commands = hookCommands(await readSettings(repoPath), "PreToolUse");
-    expect(commands).toHaveLength(1);
+    expect(commands).toHaveLength(2);
     expect(commands[0]).toContain("validate-artifact-path");
+    expect(commands[1]).toContain("tokensave-route");
 
     const blocked = runHookCommand(
       commands[0]!,
@@ -211,6 +212,50 @@ describe("a wrapped Working Repository with an empty Mate environment", () => {
       repoPath,
     );
     expect(allowed.exitCode).toBe(0);
+  }, 20000);
+
+  test("the carried tokensave route sends a worktree's calls to its own index", async () => {
+    const { repoPath, companionPath } = await makeCompanionAndRepo("mate-m3-route-", []);
+    await runWrapCommand(["--companion", companionPath], repoPath);
+    const route = hookCommands(await readSettings(repoPath), "PreToolUse").find((command) =>
+      command.includes("tokensave-route"),
+    )!;
+
+    spawnSync(
+      "git",
+      [
+        "-c",
+        "user.name=acme",
+        "-c",
+        "user.email=acme@example.com",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "init",
+      ],
+      { cwd: repoPath },
+    );
+    const worktree = path.join(path.dirname(repoPath), "working.worktrees", "fix");
+    spawnSync("git", ["worktree", "add", "-q", "-b", "fix", worktree], { cwd: repoPath });
+    await fs.mkdir(path.join(worktree, ".tokensave"), { recursive: true });
+    await fs.writeFile(path.join(worktree, ".tokensave", "tokensave.db"), "");
+    const payload = (cwd: string) => ({
+      hook_event_name: "PreToolUse",
+      tool_name: "mcp__tokensave__tokensave_search",
+      tool_input: { query: "alpha" },
+      cwd,
+    });
+
+    const routed = runHookCommand(route, payload(worktree), repoPath);
+    expect(routed.exitCode).toBe(0);
+    expect(JSON.parse(routed.stdout)).toEqual({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        updatedInput: { query: "alpha", graph_root: fsSync.realpathSync(worktree) },
+      },
+    });
+    expect(runHookCommand(route, payload(repoPath), repoPath).stdout).toBe("");
   }, 20000);
 
   /**
