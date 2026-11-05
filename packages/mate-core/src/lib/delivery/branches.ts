@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+import { readCompanionConfig } from "../orchestrator/config-store";
 import type { CapabilityConfig, TicketFormat } from "../orchestrator/types";
+import { listRefsWith } from "./resolve-branch";
 
 export type { TicketFormat };
 
@@ -68,6 +70,16 @@ export function configuredTicketFormat(capabilities: readonly CapabilityConfig[]
   };
 }
 
+/** Why `--ticket` is refused while the companion's tickets are off. */
+export const TICKETS_OFF =
+  "tickets are off for this companion; set `ticket: jira` on the openspec capability (mate setup --ticket jira) to use one.";
+
+/** The ticket setting in a companion's `framework.yaml`, as `mate artifact link` reads it. */
+export async function companionTicketFormat(companionPath: string): Promise<TicketFormat> {
+  const config = await readCompanionConfig(companionPath);
+  return configuredTicketFormat(config.capabilities ?? []).format;
+}
+
 /** Read-only local Git queries against a Working Repository. Nothing here touches the network. */
 export interface WorkingRepoGit {
   /** Checked-out branch, or null in a detached HEAD. */
@@ -82,6 +94,8 @@ export interface WorkingRepoGit {
   branchExists(branch: string): Promise<boolean>;
   /** True when the ref (`refs/heads/<b>`, `refs/remotes/origin/<b>`) resolves. */
   hasRef(ref: string): Promise<boolean>;
+  /** Full names of the refs under the given prefixes; empty when Git fails. */
+  listRefs?(prefixes: string[]): Promise<string[]>;
 }
 
 export function workingRepoGit(repoPath: string): WorkingRepoGit {
@@ -128,5 +142,6 @@ export function workingRepoGit(repoPath: string): WorkingRepoGit {
       );
     },
     hasRef,
+    listRefs: listRefsWith((args) => run(...args)),
   };
 }

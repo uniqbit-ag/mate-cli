@@ -527,4 +527,56 @@ describe("mate working worktree", () => {
       );
     });
   });
+
+  describe("--ticket", () => {
+    test("passes the normalised key to the worktree", async () => {
+      const seen: Array<string | undefined> = [];
+      await runWorkingWorktreeCommand(
+        ["--change", "acme-fix", "--ticket", "abc-123", "--json"],
+        deps({
+          ticketFormat: async () => "jira",
+          createForChange: async (_companion, _change, options) => {
+            seen.push(options.ticket);
+            return created;
+          },
+        }),
+      );
+      expect(process.exitCode).toBe(0);
+      expect(seen).toEqual(["ABC-123"]);
+    });
+
+    test("is refused while tickets are off and creates nothing", async () => {
+      let called = false;
+      await runWorkingWorktreeCommand(
+        ["acme-login", "--ticket", "ABC-123"],
+        deps({
+          ticketFormat: async () => "none",
+          create: async () => ((called = true), created),
+        }),
+      );
+      expect(process.exitCode).toBe(1);
+      expect(err.join("\n")).toContain("ticket: jira");
+      expect(called).toBe(false);
+    });
+
+    test("an invalid key names the format and creates nothing", async () => {
+      let called = false;
+      await runWorkingWorktreeCommand(
+        ["acme-login", "--ticket", "abc123"],
+        deps({
+          ticketFormat: async () => "jira",
+          create: async () => ((called = true), created),
+        }),
+      );
+      expect(process.exitCode).toBe(1);
+      expect(err.join("\n")).toContain("Jira key such as ABC-123");
+      expect(called).toBe(false);
+    });
+
+    test("is refused with prune", async () => {
+      await runWorkingWorktreeCommand(["prune", "--ticket", "ABC-123"], deps());
+      expect(process.exitCode).toBe(1);
+      expect(err.join("\n")).toContain("usage: mate working worktree");
+    });
+  });
 });

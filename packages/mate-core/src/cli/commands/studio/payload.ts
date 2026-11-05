@@ -7,6 +7,7 @@ import {
   parseAnchor,
   SPECS_RELATIVE_DIR,
 } from "../../../lib/change-layout";
+import { companionTicketFormat, type TicketFormat } from "../../../lib/delivery/branches";
 import { linkedRepositoryIdentities } from "../../../lib/workset/repositories";
 import type { readWorksets, WorksetProblem } from "../../../lib/workset/record";
 import type { WorksetStageId, WorksetTurn } from "../../../lib/workset/stage";
@@ -97,6 +98,8 @@ export interface StudioCompanionPayload {
   worksets: StudioWorkset[];
   /** `org/repository` identities linked to the companion: what a new Workset may name. */
   linkedRepositories: string[];
+  /** The companion's ticket setting; the Outcome form offers a Ticket field only for `jira`. */
+  ticketFormat: TicketFormat;
   /** Records that could not be read, by path and reason. */
   worksetProblems: WorksetProblem[];
   warnings: string[];
@@ -123,6 +126,7 @@ export interface CompanionPayloadDeps {
   hasArchivedProposal?: (companionPath: string, anchor: string) => Promise<boolean>;
   readWorksets?: typeof readWorksets;
   linkedRepositoryIdentities?: typeof linkedRepositoryIdentities;
+  ticketFormat?: typeof companionTicketFormat;
   archiveAnchors?: typeof archiveAnchors;
   /** Whether an archive's Publication Merge Gate is open: merged, not applicable, or legacy. */
   archiveMergeSettled?: (companionPath: string, anchor: string) => Promise<boolean>;
@@ -379,7 +383,7 @@ export async function assembleCompanionPayload(
   );
 
   const shippedChanges = "changes" in shipped ? shipped.changes : [];
-  const [worksets, linkedRepositories] = await Promise.all([
+  const [worksets, linkedRepositories, ticketFormat] = await Promise.all([
     collectWorksets(companionPath, changes, shippedChanges, deps).catch((error: unknown) => {
       warnings.push(`worksets: ${errorMessage(error)}`);
       return { worksets: [], problems: [] };
@@ -388,6 +392,12 @@ export async function assembleCompanionPayload(
       (error: unknown) => {
         warnings.push(`linked repositories: ${errorMessage(error)}`);
         return [];
+      },
+    ),
+    (deps.ticketFormat ?? companionTicketFormat)(companionPath).catch(
+      (error: unknown): TicketFormat => {
+        warnings.push(`ticket setting: ${errorMessage(error)}`);
+        return "none";
       },
     ),
   ]);
@@ -412,6 +422,7 @@ export async function assembleCompanionPayload(
     topology: topology.ok ? topology.value : null,
     worksets: worksets.worksets,
     linkedRepositories,
+    ticketFormat,
     worksetProblems: worksets.problems,
     warnings,
   };

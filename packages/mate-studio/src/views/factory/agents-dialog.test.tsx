@@ -147,6 +147,7 @@ describe("the Agents button", () => {
           payload={{
             worksets: board.worksets,
             linkedRepositories: ["acme/web"],
+            ticketFormat: "none",
             topology: null,
             worksetProblems: [],
             warnings: [],

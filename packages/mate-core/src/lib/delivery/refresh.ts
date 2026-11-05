@@ -181,16 +181,15 @@ async function localLookup(
   const base = { repository, branch };
   const fetch = options.fetch ? await local.fetch(branch) : undefined;
   const withFetch = fetch ? { fetch } : {};
-  const live = await local.git.tip(branch);
-  const head =
-    live ?? (recordedHead && (await local.git.hasCommit(recordedHead)) ? recordedHead : null);
-  const onDefault = head !== null && (await local.git.isAncestor(head, local.defaultBranch));
-  // A fast-forward and a branch without commits of its own look the same: only a merge
-  // commit settles by itself.
-  if (onDefault && !(await local.git.onFirstParent(head, local.defaultBranch))) {
+  const { live, head, merged, suggestion } = await localMergeEvidence(
+    local.git,
+    local.defaultBranch,
+    branch,
+    recordedHead,
+  );
+  if (merged && head) {
     return { ...base, ...withFetch, result: "merged", needsAnswer: false, source: "git", head };
   }
-  const suggestion = await suggestionFor(local, head, onDefault);
   const fetchedAt = await local.git.lastFetchedAt();
   return {
     ...base,
@@ -204,15 +203,36 @@ async function localLookup(
   };
 }
 
-/** What local Git can only suggest: a head on the default branch's own line, else a patch match. */
-async function suggestionFor(
-  local: LocalMergeAccess,
-  head: string | null,
-  onDefault: boolean,
-): Promise<PatchMatch | null> {
-  if (!head) return null;
-  if (onDefault) return { commit: head, style: "fast-forward" };
-  return local.git.patchMatch(head, local.defaultBranch);
+/** What a local checkout alone knows about a branch's merge; no fetch, no forge. */
+export interface LocalMergeEvidence {
+  /** The branch tip, on `origin` or local; null when the branch is gone. */
+  live: string | null;
+  /** `live`, else the recorded head while the commit still exists. */
+  head: string | null;
+  /** A merge commit on the default branch settles it. */
+  merged: boolean;
+  /** Short of `merged`: a head on the default branch's own line, else a patch match. */
+  suggestion: PatchMatch | null;
+}
+
+export async function localMergeEvidence(
+  git: MergeGit,
+  defaultBranch: string,
+  branch: string,
+  recordedHead: string | undefined,
+): Promise<LocalMergeEvidence> {
+  const live = await git.tip(branch);
+  const head = live ?? (recordedHead && (await git.hasCommit(recordedHead)) ? recordedHead : null);
+  const onDefault = head !== null && (await git.isAncestor(head, defaultBranch));
+  // A fast-forward and a branch without commits of its own look the same: only a merge
+  // commit settles by itself.
+  if (onDefault && !(await git.onFirstParent(head, defaultBranch))) {
+    return { live, head, merged: true, suggestion: null };
+  }
+  let suggestion: PatchMatch | null = null;
+  if (head && onDefault) suggestion = { commit: head, style: "fast-forward" };
+  else if (head) suggestion = await git.patchMatch(head, defaultBranch);
+  return { live, head, merged: false, suggestion };
 }
 
 async function forgeLookup(

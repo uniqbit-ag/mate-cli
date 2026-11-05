@@ -8,9 +8,7 @@ them, and keeps them consistent with each other. Not a Delivery Path stage.
 
 2. **Follow the OpenSpec workflow.** Read
    [openspec-update-change.md](openspec-update-change.md) and follow it. Propose the requested edit together with the matching edits to the other
-   artifacts, and write each one only after the user confirms it. Ask for a ticket only when
-   `mate artifact link "<name>" --json` reports `ticketFormat` `jira` and no
-   `record.ticket`, as Step 3 of `SKILL.md` does.
+   artifacts, and write each one only after the user confirms it. Never ask for a ticket.
 
 3. **Upgrade a minimal change when it outgrows the gate.** When a revision makes a
    `mate-minimal` change fail a statement of the minimal gate (Step 1 of `SKILL.md`), or

@@ -1,6 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import { newBranchBase, resolveDeliveryBranch, worktreeAddArgs } from "../delivery/resolve-branch";
+import {
+  listRefsWith,
+  newBranchBase,
+  resolveDeliveryBranch,
+  worktreeAddArgs,
+} from "../delivery/resolve-branch";
 import { resolveWorksetBranch } from "../workset/record";
 
 import { type CommandResult, type CommandRunner, runCommand } from "./command";
@@ -433,6 +438,10 @@ export class WorksetRuntime {
       companionPath: companion,
       repository: request.repository,
       hasRef,
+      listRefs: listRefsWith(async (args) => {
+        const listed = await this.git(["-C", repoDir, ...args]);
+        return listed.status === 0 ? listed.stdout : null;
+      }),
       worksetId: request.id,
     });
     const { branch, source } = resolution;

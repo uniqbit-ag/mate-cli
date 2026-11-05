@@ -135,6 +135,31 @@ describe("describing an outcome", () => {
     handler.close();
   });
 
+  test("with Jira on, a ticket is recorded on the Workset", async () => {
+    fs.writeFileSync(
+      path.join(companion, ".mate", "config", "framework.yaml"),
+      "type: companion\ncapabilities:\n  - name: openspec\n    ticket: jira\n",
+    );
+    const handler = handlerFor();
+    await create(handler, { ticket: "abc-123" });
+    expect(record().ticket).toBe("ABC-123");
+    handler.close();
+  });
+
+  test("with tickets off, a submitted ticket is refused and nothing is written", async () => {
+    const handler = handlerFor();
+    await expect(create(handler, { ticket: "ABC-123" })).rejects.toThrow("ticket: jira");
+    expect(fs.existsSync(path.join(companion, "worksets"))).toBe(false);
+    handler.close();
+  });
+
+  test("an empty ticket field records none", async () => {
+    const handler = handlerFor();
+    await create(handler, { ticket: "" });
+    expect(record().ticket).toBeUndefined();
+    handler.close();
+  });
+
   test("refuses a companion that is not registered", async () => {
     const handler = handlerFor();
     await expect(

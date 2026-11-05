@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { activeChanges } from "../../change-layout";
+import { companionTicketFormat, TICKETS_OFF } from "../../delivery/branches";
 import {
   createOutcome,
   findWorkset,
@@ -161,9 +162,18 @@ async function acceptedAction(
 /** A new Outcome from the outcome input; true when it was started. */
 async function createOutcomeFrom(companionPath: string, fields: OutcomeFields): Promise<boolean> {
   const start = fields("start") !== "later";
+  const ticket = fields("ticket").trim();
+  if (ticket && (await companionTicketFormat(companionPath)) !== "jira") {
+    throw new WorksetError(TICKETS_OFF);
+  }
   await createOutcome(
     companionPath,
-    { text: fields("text"), repository: fields("repository"), ...(start ? { start } : {}) },
+    {
+      text: fields("text"),
+      repository: fields("repository"),
+      ...(start ? { start } : {}),
+      ...(ticket ? { ticket } : {}),
+    },
     await linkedRepositoryIdentities(companionPath),
   );
   return start;

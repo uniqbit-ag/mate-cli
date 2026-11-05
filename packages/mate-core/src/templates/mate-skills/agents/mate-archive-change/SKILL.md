@@ -38,11 +38,6 @@ merge. Archiving is local and uncommitted; it publishes nothing.
    - `--not-applicable "<reason>"` — for a specification-only change;
    - `--skip-branch` — when the user skips the question; publication will ask again.
 
-   Before re-running with a named branch, read `mate artifact link "<change-name>" --json`.
-   Only when it reports `ticketFormat` `jira` and no `record.ticket`, and the branch name
-   holds exactly one Jira key (`feature/ABC-123-retry`), offer to record that ticket first:
-   `mate artifact link "<change-name>" --ticket "<KEY>" --json`.
-
 3. **Report.** Relay every entry of `warnings` first: another active change that
    modifies the same requirement, a declared dependency that is not archived yet, or
    planning artifacts its schema requires that are missing (`incomplete-planning`).
