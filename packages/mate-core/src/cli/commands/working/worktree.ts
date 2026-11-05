@@ -23,7 +23,7 @@ import { errorMessage } from "../../../runtime/error-message";
 import { gitEnvironment } from "../../../runtime/companion-git";
 import { resolveDeliveryEnvironment } from "../artifact/delivery/environment";
 import { sharedRefusalMessage } from "../artifact/delivery/output";
-import { ensureUnambiguousCompanion } from "../shared/companion-selection";
+import { ensureUnambiguousCompanion, launchAmbiguityDeps } from "../shared/companion-selection";
 import { readCompanionWorksetStages } from "../studio/payload";
 
 const execFileAsync = promisify(execFile);
@@ -152,7 +152,12 @@ async function resolveCompanion(
       roots.includes(await canonicalPath(pairing.repository.path)) ? pairing.companionPath : null,
     ),
   );
-  const companions = [...new Set(paired.filter((entry): entry is string => entry !== null))];
+  const pairedCompanions = [...new Set(paired.filter((entry): entry is string => entry !== null))];
+  // A registry entry naming a removed folder pairs with nothing; the repo-local link still holds.
+  const companions =
+    pairedCompanions.length > 0
+      ? pairedCompanions
+      : (await launchAmbiguityDeps.resolveLinkedCompanions(cwd)).map((m) => m.companionPath);
   if (companions.length === 1) return { companion: companions[0]! };
   if (companions.length === 0) {
     return { error: `${roots[0]} is not linked to a companion; pass --companion <path>` };

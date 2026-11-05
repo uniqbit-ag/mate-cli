@@ -126,6 +126,72 @@ describe("mate working worktree", () => {
     expect(called).toBe(false);
   });
 
+  describe("a stale companion registry entry", () => {
+    function stale(companion: string): WorkspaceInventoryV1 {
+      return {
+        schemaVersion: 1,
+        companions: [],
+        pairings: [
+          {
+            companionPath: companion,
+            repository: { id: "web", path: path.join(root, "src", "web.worktrees", "old") },
+            health: "missing-repository",
+            ambiguous: false,
+          },
+        ],
+      };
+    }
+
+    function linkLocally(...companions: string[]): void {
+      const config = path.join(root, "src", "web", ".mate", "config");
+      fs.mkdirSync(config, { recursive: true });
+      const pointers = companions.map((c) => `  - path: ${c}\n    repositoryId: web\n`).join("");
+      fs.writeFileSync(path.join(config, "registry.yaml"), `companions:\n${pointers}`);
+    }
+
+    test("resolves the companion through the repo-local link", async () => {
+      const companion = companionAt("acme-companion");
+      linkLocally(companion);
+      const seen: string[] = [];
+      await runWorkingWorktreeCommand(
+        ["acme-login"],
+        deps({
+          collectInventory: async () => stale(companion),
+          create: async (used) => (seen.push(used), created),
+        }),
+      );
+      expect(process.exitCode).toBe(0);
+      expect(seen).toEqual([companion]);
+    });
+
+    test("a repo-local link to two companions names both and creates nothing", async () => {
+      const first = companionAt("acme-one");
+      const second = companionAt("acme-two");
+      linkLocally(first, second);
+      let called = false;
+      await runWorkingWorktreeCommand(
+        ["acme-login"],
+        deps({
+          collectInventory: async () => stale(first),
+          create: async () => ((called = true), created),
+        }),
+      );
+      expect(process.exitCode).toBe(1);
+      expect(err.join("\n")).toContain(`${first}, ${second}`);
+      expect(called).toBe(false);
+    });
+
+    test("no repo-local link asks for --companion", async () => {
+      fs.mkdirSync(path.join(root, "src", "web"), { recursive: true });
+      await runWorkingWorktreeCommand(
+        ["acme-login"],
+        deps({ collectInventory: async () => stale(companionAt("acme-companion")) }),
+      );
+      expect(process.exitCode).toBe(1);
+      expect(err.join("\n")).toContain("is not linked to a companion; pass --companion <path>");
+    });
+  });
+
   test("--companion overrides the pairings", async () => {
     const explicit = companionAt("acme-explicit");
     const seen: string[] = [];
