@@ -1,7 +1,7 @@
 {
   "name": "@uniqbit/mate-vscode",
   "displayName": "Mate",
-  "version": "1.0.0-canary.4",
+  "version": "1.0.0-canary.5",
   "description": "Mate sidebar for VS Code and Cursor: park and resume sessions, worktrees, open changes, and changes ready to publish. Install with `mate vscode setup`.",
   "categories": [
     "Other"
