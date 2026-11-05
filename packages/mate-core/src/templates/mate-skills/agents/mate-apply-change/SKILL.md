@@ -32,28 +32,29 @@ mate artifact link "<change-name>" --json
 
 ## Step 2: Settle the delivery branch
 
-Read `defaultBranch` and `diagnostics` from the link result. Report every diagnostic;
+Read `defaultBranch`, `diagnostics`, `ticketFormat`, `ticketCandidate`, and
+`record.ticket` from the link result. Report every diagnostic;
 never derive a default from a change or Workset name. `defaultBranch: null` means ask
 for a branch name, not infer one. Preserve recorded branches after membership changes;
 a mismatch is informational, and relinking requires explicit user confirmation.
 
 A branch is **protected** when it is the default branch or matches a configured
 protected pattern; `mate artifact link` refuses a
-protected branch unless it is recorded as a direct delivery.
+protected branch unless it is recorded as a direct delivery. Mate never asks the forge,
+so a branch only the forge protects looks unprotected; hence the menu below.
 
 - **A branch is already recorded** and it is the current branch → continue. When the
   current branch differs, warn, name both branches, and ask before implementing
   whether to switch to the recorded branch or record the current one.
-- **On the safe `defaultBranch`** → record it without asking:
+- **On `defaultBranch`** → record it without asking:
   `mate artifact link "<change-name>" --branch "<defaultBranch>" --json`.
-- **On another unprotected branch** (a shared feature branch) → ask once whether this
-  change is delivered through it, then record it on confirmation.
 - **Detached HEAD** → ask for the branch name, then record it.
-- **On a protected branch** → do not implement there by default. First name every
-  local commit that is not on the remote (`git log --oneline HEAD --not --remotes`) and
-  leave them where they are; never move, reset, or rebase them. Then offer:
-  1. **Create or switch to `defaultBranch`** (default, normally `workset/<workset-id>`):
-     check local and `origin` refs; `git switch "<defaultBranch>"` when local,
+- **On any other branch**, protected or not → do not implement there yet. First name
+  every local commit that is not on the remote (`git log --oneline HEAD --not --remotes`)
+  and leave them where they are; never move, reset, or rebase them. On another
+  Workset's `workset/<id>` branch, name that Workset. Then offer one menu:
+  1. **Create or switch to `defaultBranch`** (recommended): check local and `origin`
+     refs; `git switch "<defaultBranch>"` when local,
      `git switch --track -c "<defaultBranch>" "origin/<defaultBranch>"` when remote-only,
      otherwise `git switch -c "<defaultBranch>"`. Uncommitted edits carry over. Record it.
      When `defaultBranch` is null, ask for a name instead; do not offer an inferred branch.
@@ -66,9 +67,20 @@ protected branch unless it is recorded as a direct delivery.
      stop. `## Next steps`: name each `repositories[].path`, open a new session in this
      repository's worktree, run `/mate-apply-change <change-name>` there. On failure,
      report its diagnostics and offer the other options again.
-  3. **Use an existing branch**: switch to the branch the user names and record it.
-  4. **Work directly here** — only when the user explicitly chooses it. Record it as a
-     direct delivery: `mate artifact link "<change-name>" --branch "<branch>" --direct --json`.
+  3. **Use the current branch** (only when it is not protected): record it. When
+     `ticketCandidate` is set, offer it with and without recording that ticket
+     (`--ticket "<ticketCandidate>"` on the same link call).
+  4. **Use another existing branch**: switch to the branch the user names and record it.
+  5. **Work directly here** (protected branch only) — only when the user explicitly chooses it.
+     Record it as a direct delivery:
+     `mate artifact link "<change-name>" --branch "<branch>" --direct --json`.
+
+**Tickets** exist only when `ticketFormat` is `jira`; otherwise never ask for, offer, or
+mention one. With `jira` and no `record.ticket`, options 1 and 2 accept an optional Jira
+key in the answer (`1 ABC-123`). Record it first with
+`mate artifact link "<change-name>" --ticket "<KEY>" --json`, then read `defaultBranch`
+again with `mate artifact link "<change-name>" --json` before creating the branch or
+running the worktree command. On a refused key, name the expected format and ask once more.
 
 Record the branch before writing any code. When `mate artifact link` refuses, report
 its message and ask; never work around it.

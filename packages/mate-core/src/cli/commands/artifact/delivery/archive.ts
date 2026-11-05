@@ -59,13 +59,14 @@ function renderHuman(result: ArchiveResult): string[] {
  *   to the Working Repository.
  * - `--branch <branch>` / `--direct` — record the delivery branch first, as `artifact link`.
  * - `--not-applicable <reason>` — record that no branch delivers this change.
- * - `--skip-branch` — archive with an unlinked record when the user skips the question.
+ * - `--skip-branch` — archive with an unlinked record marked `skipped` when the user skips the
+ *   question, so publication asks again even when the record holds a ticket.
  * - `--fetch` — fetch the default and delivery branches before the merge check even when the
  *   companion's Git mode is not `auto`.
  * - `--json` — emit an {@link ArchiveResult}.
  * @remarks Without a recorded delivery and none of the branch flags, nothing is archived:
  * the result is `needs-branch`, a question rather than a refusal (exit 0), with
- * the safe `workset/<workset-id>` default suggested before legacy `change/<change-name>`
+ * the change's resolved Delivery Branch suggested before legacy `change/<change-name>`
  * when either exists, so the caller can ask the user.
  */
 export async function runArtifactArchiveCommand(

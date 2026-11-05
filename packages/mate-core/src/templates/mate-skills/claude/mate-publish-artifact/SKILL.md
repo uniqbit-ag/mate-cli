@@ -15,7 +15,7 @@ Publish archived work deliberately: discover what is pending, let the user selec
 
 Archiving a change is a local OpenSpec operation and never publishes anything. Publication is this skill: an explicit selection followed by `mate artifact publish` calls. That CLI owns capability sync, the scoped commit, remote synchronization, the dated tag, the push, and conflict handoff. For a change it publishes work that is **already archived** and refuses anything that is not archived yet. Archiving is a precondition owned by `mate-archive-change`, which may run before the merge. This skill discovers, settles each archive's delivery, selects, sequences, and reports.
 
-Published canonical specs describe the default branch, so an archive is publishable only when every delivery branch in its `delivery.yaml` is merged, or it is marked not applicable. Anything else stays visible but is **waiting for merge** and cannot be selected. An archive without a `delivery.yaml` is a **legacy** archive (made before delivery records, or past `mate artifact archive`); it is selectable, and `mate artifact publish` publishes it with a warning that its merge was not checked. An archive sharing a canonical spec with a held-back pending archive is refused by `mate artifact publish` too, since its commit would carry that archive's unmerged requirements.
+Published canonical specs describe the default branch, so an archive is publishable only when every delivery branch in its `delivery.yaml` is merged, or it is marked not applicable. Anything else stays visible but is **waiting for merge** and cannot be selected. An archive without a `delivery.yaml`, or whose record holds only a ticket, is a **legacy** archive (made before delivery records, or past `mate artifact archive`); it is selectable, and `mate artifact publish` publishes it with a warning that its merge was not checked. An archive sharing a canonical spec with a held-back pending archive is refused by `mate artifact publish` too, since its commit would carry that archive's unmerged requirements.
 
 Two things publish, and they are separate units:
 
@@ -95,9 +95,11 @@ A drifted spec is published in its own right. It is never shipped by republishin
 
    `touchedByArchives` names every archive whose delta specs mention that spec, oldest first. It is **provenance only** — a hint about which change once touched the spec. It does not decide anything, it is not needed to publish the spec, and an empty list does not make a spec unpublishable.
 
-   `delivery.status` is the archive's settlement: `merged`, `not-applicable`, or `legacy` (no record; selectable, published with a warning), or `waiting`, `unlinked`, or `dropped` (held back). An entry with `delivery.error` has an unreadable record: report the error and hold it back. `delivery.missing` lists repositories the change's scopes name without any delivery; each holds the archive back.
+   `delivery.status` is the archive's settlement: `merged`, `not-applicable`, or `legacy` (no record, or only a ticket; selectable, published with a warning), or `waiting`, `unlinked`, or `dropped` (held back). An entry with `delivery.error` has an unreadable record: report the error and hold it back. `delivery.missing` lists repositories the change's scopes name without any delivery; each holds the archive back.
 
    Use these fields verbatim. Do not `ls` the archive, run `git status` yourself, parse `openspec list`, read tags by hand, or recompute names, dates, anchors, or tags.
+
+   A `legacy` archive whose `delivery.record.ticket` is set: read `mate artifact link "<anchor>" --json`; when its `defaultBranch` exists locally or on `origin`, offer to record it (`--branch "<defaultBranch>"`) before presenting. When the user declines or it does not exist, keep the archive selectable and relay its warning.
 
 2. **Settle each held-back archive's delivery, once per branch.** Before presenting anything, work through the pending entries whose `delivery.status` is `waiting`, `unlinked`, or `dropped`. Settle by **branch**, not by archive: group entries by repository and branch so three archives on one feature branch cost one lookup or one question.
 

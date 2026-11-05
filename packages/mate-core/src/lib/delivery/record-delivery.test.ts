@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import type { ProtectionReason, WorkingRepoGit } from "./branches";
+import type { ProtectionReason, TicketFormat, WorkingRepoGit } from "./branches";
 import type { DeliveryEnvironment } from "./environment";
 import type { ForgeAdapter, PullClassification } from "./forge";
 import {
@@ -62,24 +62,36 @@ function fakeAccess(repositories: Record<string, FakeRepository> = {}) {
   return { accessFor, lookups };
 }
 
-function git(existing: string[] = []): WorkingRepoGit {
+function git(existing: string[] = [], current = "change/x"): WorkingRepoGit {
   return {
-    currentBranch: async () => "change/x",
+    currentBranch: async () => current,
     defaultBranch: async () => "main",
     remoteUrl: async () => "git@github.com:acme/acme-app.git",
     unpushedCommits: async () => [],
     branchExists: async (branch) => existing.includes(branch),
+    hasRef: async (ref) => existing.some((branch) => ref === `refs/heads/${branch}`),
   };
 }
 
 function environment(
-  options: { slug?: string | null; branches?: string[] } = {},
+  options: {
+    slug?: string | null;
+    branches?: string[];
+    current?: string;
+    ticket?: TicketFormat;
+  } = {},
 ): DeliveryEnvironment {
   const slug = options.slug === undefined ? APP : options.slug;
   return {
     companionPath: companion,
-    workingRepo: { path: "/repo", slug, forgeRepo: null, git: git(options.branches) },
+    workingRepo: {
+      path: "/repo",
+      slug,
+      forgeRepo: null,
+      git: git(options.branches, options.current),
+    },
     protectedPatterns: [],
+    ...(options.ticket ? { ticket: { format: options.ticket, diagnostic: null } } : {}),
   };
 }
 
@@ -151,14 +163,25 @@ describe("Workset branch defaults", () => {
     expect(outcome.needsBranch.diagnostics.join()).toContain("acme-invalid.yaml");
   });
 
-  test("regrouping preserves recorded branches through reads and refresh", async () => {
+  test("regrouping keeps a recorded branch as the Workset's default", async () => {
     await link("x", "workset/x");
     await workset("acme-login", ["x"]);
+    const result = results(await run({ changes: ["x"] }))[0];
+    expect(result.defaultBranch).toBe("workset/x");
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("regrouping preserves differing recorded branches and reports them", async () => {
+    await link("x", "workset/x");
+    await link("a", "workset/acme-login");
+    await workset("acme-login", ["x", "a"]);
     for (const refresh of [false, true]) {
       const result = results(await run({ changes: ["x"], refresh }))[0];
-      expect(result.defaultBranch).toBe("workset/acme-login");
+      expect(result.defaultBranch).toBeNull();
       expect(result.record.deliveries[0].branch).toBe("workset/x");
-      expect(result.diagnostics.join()).toContain("preserving recorded delivery");
+      expect(result.diagnostics.join()).toContain(
+        "record different branches for acme/acme-app (workset/x, workset/acme-login)",
+      );
     }
     expect((await written("x"))?.deliveries[0].branch).toBe("workset/x");
   });
@@ -597,5 +620,81 @@ describe("recordDelivery with a local checkout", () => {
       expect(fetches).toEqual(expected);
       expect(results(outcome)[0].outcomes[0]).toMatchObject({ answerReason: "not-on-default" });
     }
+  });
+});
+
+describe("tickets", () => {
+  const jira = (options: { branches?: string[]; current?: string } = {}) =>
+    environment({ ...options, ticket: "jira" });
+
+  test("--ticket is refused while tickets are off and writes nothing", async () => {
+    const outcome = await run({ changes: ["x"], edit: { ticket: "ABC-123" } });
+    expect(outcome).toMatchObject({ refusal: { reason: "tickets-off" } });
+    expect(await written("x")).toBeNull();
+  });
+
+  test("a ticket is recorded before any branch and settles as legacy", async () => {
+    const [result] = results(
+      await run({ changes: ["x"], edit: { ticket: "ABC-123" } }, {}, jira()),
+    );
+    expect(await written("x")).toEqual({
+      version: 1,
+      change: "x",
+      ticket: "ABC-123",
+      deliveries: [],
+    });
+    expect(result.settlement.status).toBe("legacy");
+  });
+
+  test("a ticket is recorded with a branch", async () => {
+    await run(
+      {
+        changes: ["x"],
+        edit: { ticket: "ABC-123", delivery: { branch: "workset/ABC-123-x", direct: false } },
+      },
+      {},
+      jira(),
+    );
+    expect(await written("x")).toMatchObject({
+      ticket: "ABC-123",
+      deliveries: [{ repository: APP, branch: "workset/ABC-123-x" }],
+    });
+  });
+
+  test("defaultBranch carries a recorded ticket, also with tickets off", async () => {
+    await writeDeliveryRecord(changeDir("x"), { ...unlinkedRecord("x"), ticket: "ABC-123" });
+    for (const env of [environment(), jira()]) {
+      const [result] = results(await run({ changes: ["x"] }, {}, env));
+      expect(result.defaultBranch).toBe("workset/ABC-123-x");
+    }
+  });
+
+  test("ticketCandidate comes from the current branch only with jira", async () => {
+    const current = "feature/ABC-123-retry";
+    const [on] = results(await run({ changes: ["x"] }, {}, jira({ current })));
+    expect(on).toMatchObject({ ticketFormat: "jira", ticketCandidate: "ABC-123" });
+    const [off] = results(await run({ changes: ["x"] }, {}, environment({ current })));
+    expect(off).toMatchObject({ ticketFormat: "none", ticketCandidate: null });
+    expect(await written("x")).toBeNull();
+  });
+
+  test("ticketCandidate prefers the recorded branch and is null once a ticket is recorded", async () => {
+    await link("x", "feature/XYZ-9-acme");
+    const current = "feature/ABC-123-retry";
+    const [recorded] = results(await run({ changes: ["x"] }, {}, jira({ current })));
+    expect(recorded.ticketCandidate).toBe("XYZ-9");
+    await run({ changes: ["x"], edit: { ticket: "XYZ-9" } }, {}, jira());
+    const [ticketed] = results(await run({ changes: ["x"] }, {}, jira({ current })));
+    expect(ticketed.ticketCandidate).toBeNull();
+  });
+
+  test("markSkipped marks only a record without deliveries", async () => {
+    await writeDeliveryRecord(changeDir("x"), { ...unlinkedRecord("x"), ticket: "ABC-123" });
+    const [result] = results(await run({ changes: ["x"], markSkipped: true }));
+    expect(result.settlement.status).toBe("unlinked");
+    expect((await written("x"))?.skipped).toBe(true);
+    await link("a", "workset/a");
+    await run({ changes: ["a"], markSkipped: true });
+    expect((await written("a"))?.skipped).toBeUndefined();
   });
 });

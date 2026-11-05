@@ -60,10 +60,15 @@ export interface CliToolConfig {
 
 export type GitModeProfile = "auto";
 
+/** How changes record tickets, from the openspec capability's `ticket` setting. */
+export type TicketFormat = "none" | "jira";
+
 export interface CapabilityConfig {
   name: string;
   /** openspec only: branch glob patterns (`release/*`) treated as protected besides the default branch. */
   protectedBranches?: string[];
+  /** openspec only: how changes record tickets; absent means `none`. */
+  ticket?: string;
 }
 
 export type FrameworkType = "working" | "companion" | "hub";

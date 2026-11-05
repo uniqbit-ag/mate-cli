@@ -285,6 +285,25 @@ describe("spawn", () => {
     );
   });
 
+  test("a recorded ticket names the new Delivery Branch", async () => {
+    fs.mkdirSync(path.join(companion, "worksets"));
+    fs.writeFileSync(
+      path.join(companion, "worksets/acme-login.yaml"),
+      "id: acme-login\nrepositories: [acme/app]\nchanges: [acme-form]\n",
+    );
+    const form = path.join(companion, "openspec/changes/acme-form");
+    fs.mkdirSync(form, { recursive: true });
+    fs.writeFileSync(
+      path.join(form, "delivery.yaml"),
+      "version: 1\nchange: acme-form\nticket: ABC-123\ndeliveries: []\n",
+    );
+    const info = await spawnAcme();
+    expect(info.branch).toBe("workset/ABC-123-acme-login");
+    expect(gitCalls().find((args) => args[2] === "worktree")).toContain(
+      "workset/ABC-123-acme-login",
+    );
+  });
+
   test("a second spawn reuses the worktree unchanged", async () => {
     await spawnAcme();
     const worktree = path.join(root, "state", "worktrees", "acme-login");

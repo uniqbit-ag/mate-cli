@@ -6,12 +6,15 @@ import path from "node:path";
 import {
   DELIVERY_FILE,
   defaultDeliveryBranch,
+  isJiraKey,
   isPublishable,
   legacyDeliveryBranch,
+  legacyDeliveryWarning,
   readDeliveryRecord,
   readDeliveryState,
   readOrUnlinkedRecord,
   settleDelivery,
+  ticketCandidateOf,
   unlinkedRecord,
   upsertDelivery,
   writeDeliveryRecord,
@@ -334,5 +337,72 @@ describe("readDeliveryState", () => {
     expect(state.status).toBe("waiting");
     expect(state.missing).toEqual([OTHER]);
     expect(isPublishable(state.status)).toBe(false);
+  });
+});
+
+describe("tickets", () => {
+  const ticketOnly: DeliveryRecord = { ...unlinkedRecord("x"), ticket: "ABC-123" };
+
+  test("a ticket and the skipped marker round-trip in file order", async () => {
+    const record: DeliveryRecord = { ...ticketOnly, skipped: true };
+    await writeDeliveryRecord(companion, record);
+    const source = await fs.readFile(path.join(companion, DELIVERY_FILE), "utf8");
+    expect(source).toBe("version: 1\nchange: x\nticket: ABC-123\nskipped: true\ndeliveries: []\n");
+    expect(await readDeliveryRecord(companion)).toEqual(record);
+  });
+
+  test("a record without a ticket writes no ticket key", async () => {
+    await writeDeliveryRecord(companion, unlinkedRecord("x"));
+    const source = await fs.readFile(path.join(companion, DELIVERY_FILE), "utf8");
+    expect(source).not.toContain("ticket");
+    expect(await readDeliveryRecord(companion)).toEqual(unlinkedRecord("x"));
+  });
+
+  test("a ticket that is not a Jira key is a damaged record", async () => {
+    await fs.writeFile(
+      path.join(companion, DELIVERY_FILE),
+      "version: 1\nchange: x\nticket: abc123\ndeliveries: []\n",
+    );
+    await expect(readDeliveryRecord(companion)).rejects.toThrow("Jira key");
+  });
+
+  test("a ticket-only record settles as legacy and its warning names the ticket", () => {
+    expect(settleDelivery(ticketOnly).status).toBe("legacy");
+    expect(isPublishable(settleDelivery(ticketOnly).status)).toBe(true);
+    expect(legacyDeliveryWarning("2026-11-05-x", ticketOnly)).toContain(
+      "ticket ABC-123 records no delivery branch",
+    );
+    expect(legacyDeliveryWarning("2026-11-05-x", null)).toContain("has no delivery.yaml");
+  });
+
+  test("a skipped ticket record and an old empty record stay unlinked", () => {
+    expect(settleDelivery({ ...ticketOnly, skipped: true }).status).toBe("unlinked");
+    expect(settleDelivery(unlinkedRecord("x")).status).toBe("unlinked");
+  });
+
+  test("a ticket with a delivery settles by its delivery", () => {
+    const record = upsertDelivery(ticketOnly, REPO, { branch: "workset/ABC-123-x" });
+    expect(settleDelivery(record).status).toBe("waiting");
+  });
+
+  test("the computed branch carries the ticket", () => {
+    expect(defaultDeliveryBranch("acme-fix", "ABC-123")).toBe("workset/ABC-123-acme-fix");
+    expect(defaultDeliveryBranch("acme-fix", null)).toBe("workset/acme-fix");
+  });
+
+  test("Jira keys", () => {
+    expect(isJiraKey("ABC-123")).toBe(true);
+    expect(isJiraKey("A1B-9")).toBe(true);
+    for (const value of ["abc-123", "ABC123", "A-1", "ABC-", "ABC-12x"]) {
+      expect(isJiraKey(value)).toBe(false);
+    }
+  });
+
+  test("a branch name yields a candidate only for one distinct key", () => {
+    expect(ticketCandidateOf("feature/acme")).toBeNull();
+    expect(ticketCandidateOf("feature/ABC-123-retry")).toBe("ABC-123");
+    expect(ticketCandidateOf("ABC-123/ABC-123-retry")).toBe("ABC-123");
+    expect(ticketCandidateOf("ABC-1-ABC-2-merge")).toBeNull();
+    expect(ticketCandidateOf("workset/ABC-123-acme-fix")).toBe("ABC-123");
   });
 });

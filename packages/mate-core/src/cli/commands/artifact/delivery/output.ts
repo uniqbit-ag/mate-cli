@@ -72,6 +72,9 @@ export function sharedRefusalMessage(
   if (refusal.reason === "no-repository") {
     return "mate: the Working Repository has no origin remote to identify it; pass --repository <org/repo>.";
   }
+  if (refusal.reason === "tickets-off") {
+    return "mate: tickets are off for this companion; set `ticket: jira` on the openspec capability (mate setup --ticket jira) to record one.";
+  }
   if (refusal.reason === "protected-branch") {
     return `mate: ${refusal.branch} is a protected branch (${refusal.protection}); record it only as an explicit direct delivery with --direct.`;
   }

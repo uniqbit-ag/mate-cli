@@ -338,6 +338,90 @@ describe("runSetupCommandWithDeps", () => {
     );
   });
 
+  describe("--ticket", () => {
+    async function companionWith(openspec: Record<string, unknown> | null): Promise<string> {
+      const companionPath = await makeTempDir("mate-setup-cli-ticket-");
+      await new ConfigStore(
+        path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
+      ).save({
+        type: "companion",
+        allowedAgents: ["claude"],
+        packageManagers: ["bun"],
+        capabilities: openspec ? [{ name: "openspec", ...openspec }] : [],
+      });
+      return companionPath;
+    }
+
+    function execute() {
+      return mock(async () => ({ config: { allowedAgents: [], capabilities: [] } }));
+    }
+
+    async function setup(companionPath: string, argv: string[], executeMock = execute()) {
+      const selectorMock = mock(async () => {
+        throw new Error("selector should not run");
+      });
+      const outcome = await withProcessExitStub(() =>
+        withCwd(companionPath, () =>
+          runSetupCommandWithDeps(argv, {
+            inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
+            selectSetupCompatibilities: selectorMock,
+            executeSetup: executeMock as never,
+          }),
+        ),
+      );
+      expect(selectorMock).not.toHaveBeenCalled();
+      return { ...outcome, executeMock };
+    }
+
+    test("jira saves the setting and keeps the other openspec settings", async () => {
+      const companionPath = await companionWith({ protectedBranches: ["release/*"] });
+      const { executeMock } = await setup(companionPath, ["--ticket", "jira"]);
+      expect(executeMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          capabilities: [{ name: "openspec", protectedBranches: ["release/*"], ticket: "jira" }],
+        }),
+        expect.anything(),
+      );
+    });
+
+    test("none removes the saved setting", async () => {
+      const companionPath = await companionWith({ ticket: "jira" });
+      const { executeMock } = await setup(companionPath, ["--ticket", "none"]);
+      expect(executeMock).toHaveBeenCalledWith(
+        expect.objectContaining({ capabilities: [{ name: "openspec" }] }),
+        expect.anything(),
+      );
+    });
+
+    test("other flags keep a saved jira setting", async () => {
+      const companionPath = await companionWith({ ticket: "jira" });
+      const { executeMock } = await setup(companionPath, ["--git-mode", "auto"]);
+      expect(executeMock).toHaveBeenCalledWith(
+        expect.objectContaining({ capabilities: [{ name: "openspec", ticket: "jira" }] }),
+        expect.anything(),
+      );
+    });
+
+    test("without openspec setup refuses and saves nothing", async () => {
+      const companionPath = await companionWith(null);
+      const executeMock = mock(async () => {
+        throw new Error("setup should not run");
+      });
+      const { error } = await setup(companionPath, ["--ticket", "jira"], executeMock as never);
+      expect(String(error)).toContain("EXIT:1");
+      expect(executeMock).not.toHaveBeenCalled();
+    });
+
+    test("an unknown value is refused", async () => {
+      const companionPath = await companionWith({});
+      const executeMock = mock(async () => {
+        throw new Error("setup should not run");
+      });
+      const { error } = await setup(companionPath, ["--ticket", "linear"], executeMock as never);
+      expect(String(error)).toContain("EXIT:1");
+    });
+  });
+
   test("aborts when the compatibility selector is cancelled", async () => {
     const cwd = await makeTempDir("mate-setup-cli-cancel-");
     const executeMock = mock(async () => {

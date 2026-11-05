@@ -36,7 +36,7 @@ export function usage(): string {
     "   target: a dated archive anchor, or a change name matching exactly one archive",
     ` ${n} artifact pending [--json]`,
     ` ${n} artifact link <change>... [--repository <org/repo>] [--branch <b> [--direct]]`,
-    "   [--not-applicable <reason>] [--pr <url>] [--refresh]",
+    "   [--not-applicable <reason>] [--pr <url>] [--ticket <KEY>] [--refresh]",
     "   [--confirm-merged|--confirm-open|--confirm-dropped] [--json]",
     ` ${n} artifact archive <change> [--repository <org/repo>] [--branch <b> [--direct]|--not-applicable <reason>|--skip-branch] [--json]`,
     ` ${n} artifact apply-context <change> --json [--since <digest>]`,

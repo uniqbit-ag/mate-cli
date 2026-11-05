@@ -1,7 +1,7 @@
 /**
  * Forge adapters answer read-only questions about a repository and its Delivery Branch:
- * the default branch, whether the branch is protected, and which PR has it as head. GitHub (github.com) is the only adapter; every other host
- * falls back to asking the user. Every failure is returned, never thrown, and the token
+ * the default branch and which PR has it as head; branch protection is never asked. GitHub
+ * (github.com) is the only adapter; every other host falls back to asking the user. Every failure is returned, never thrown, and the token
  * is scrubbed from anything a failure carries.
  */
 

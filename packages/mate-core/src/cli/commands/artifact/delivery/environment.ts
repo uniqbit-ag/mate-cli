@@ -1,6 +1,7 @@
 import {
   workingRepoGit,
   configuredProtectedPatterns,
+  configuredTicketFormat,
   type WorkingRepoGit,
 } from "../../../../lib/delivery/branches";
 import type { DeliveryEnvironment, WorkingRepoInfo } from "../../../../lib/delivery/environment";
@@ -118,6 +119,7 @@ export async function resolveDeliveryEnvironment(
     companionPath: context.companionPath,
     workingRepo,
     protectedPatterns: configuredProtectedPatterns(capabilities),
+    ticket: configuredTicketFormat(capabilities),
     hostOf,
     checkoutOf,
     gitAutoMode,

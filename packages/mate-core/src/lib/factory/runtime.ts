@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { resolveDeliveryBranch, worktreeAddArgs } from "../delivery/resolve-branch";
 import { resolveWorksetBranch } from "../workset/record";
 
 import { type CommandResult, type CommandRunner, runCommand } from "./command";
@@ -321,9 +322,9 @@ export class WorksetRuntime {
   private async spawnNow(request: SpawnRequest, companion: string): Promise<WorksetInfo> {
     const worktree = this.worktree(request.id);
     const existing = this.exists(path.join(worktree, ".git"));
-    const branch = existing
+    const existingBranch = existing
       ? await readWorktreeBranch(worktree, (args) => this.git(args))
-      : deliveryBranch(request.id);
+      : null;
     if (!existing) {
       const resolution = await resolveWorksetBranch(companion, request.id, request.repository);
       if (resolution.id === null) throw new FactoryError(resolution.diagnostics.join("\n"));
@@ -346,31 +347,8 @@ export class WorksetRuntime {
       );
     }
 
-    if (!existing) {
-      const local = await this.git([
-        "-C",
-        repoDir,
-        "rev-parse",
-        "--verify",
-        "--quiet",
-        `refs/heads/${branch}`,
-      ]);
-      const remote = await this.git([
-        "-C",
-        repoDir,
-        "rev-parse",
-        "--verify",
-        "--quiet",
-        `refs/remotes/origin/${branch}`,
-      ]);
-      const add =
-        local.status === 0
-          ? ["worktree", "add", worktree, branch]
-          : remote.status === 0
-            ? ["worktree", "add", "--track", "-b", branch, worktree, `origin/${branch}`]
-            : ["worktree", "add", "--no-track", "-b", branch, worktree, "origin/HEAD"];
-      await this.must(this.git(["-C", repoDir, ...add]), `creating the worktree for ${request.id}`);
-    }
+    const branch =
+      existingBranch ?? (await this.createWorktree(request, companion, repoDir, worktree));
 
     const size = request.size ?? "build";
     let state = await this.containerState(request.id);
@@ -440,6 +418,31 @@ export class WorksetRuntime {
     }
     this.touch(request.id);
     return { id: request.id, repository: request.repository, branch, state: "running" };
+  }
+
+  /** Puts a new worktree on the resolved Delivery Branch; call after fetching `repoDir`. */
+  private async createWorktree(
+    request: SpawnRequest,
+    companion: string,
+    repoDir: string,
+    worktree: string,
+  ): Promise<string> {
+    const resolution = await resolveDeliveryBranch({
+      companionPath: companion,
+      repository: request.repository,
+      hasRef: async (ref) =>
+        (await this.git(["-C", repoDir, "rev-parse", "--verify", "--quiet", ref])).status === 0,
+      worksetId: request.id,
+    });
+    const { branch, source } = resolution;
+    if (branch === null || source === null) {
+      throw new FactoryError(resolution.diagnostics.join("\n"));
+    }
+    await this.must(
+      this.git(["-C", repoDir, ...worktreeAddArgs({ branch, source }, worktree)]),
+      `creating the worktree for ${request.id}`,
+    );
+    return branch;
   }
 
   private memoryOf(size: MemorySize): string | undefined {

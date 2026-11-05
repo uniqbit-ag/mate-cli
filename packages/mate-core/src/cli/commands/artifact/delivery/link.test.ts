@@ -23,6 +23,7 @@ function repoGit(overrides: Partial<WorkingRepoGit> = {}): WorkingRepoGit {
     remoteUrl: async () => "git@github.com:acme/acme-app.git",
     unpushedCommits: async () => [],
     branchExists: async () => false,
+    hasRef: async () => false,
     ...overrides,
   };
 }
@@ -103,14 +104,84 @@ describe("mate artifact link", () => {
       `id: acme-login\nrepositories: [${REPO}]\nchanges: [x]\n`,
     );
     const [read] = await run(["x"]);
-    expect(read.defaultBranch).toBe("workset/acme-login");
+    // The recorded branch stays the Workset's Delivery Branch.
+    expect(read.defaultBranch).toBe("workset/x");
     expect(read.record.deliveries[0].branch).toBe("workset/x");
-    expect(err.join()).toContain(
-      "Recorded branch workset/x differs from default workset/acme-login",
-    );
     expect(await readRaw("x")).toContain("workset/x");
     const [edited] = await run(["x", "--branch", "workset/acme-login"]);
     expect(edited.record.deliveries[0].branch).toBe("workset/acme-login");
+  });
+
+  describe("--ticket", () => {
+    const jira = { loadCapabilities: async () => [{ name: "openspec", ticket: "jira" }] };
+
+    test("records a ticket alone on a change without a record", async () => {
+      const [result] = await run(["x", "--ticket", "ABC-123"], jira);
+      expect(result).toMatchObject({ ticketFormat: "jira", settlement: { status: "legacy" } });
+      expect(await readRaw("x")).toBe("version: 1\nchange: x\nticket: ABC-123\ndeliveries: []\n");
+    });
+
+    test("records a ticket with a branch", async () => {
+      const [result] = await run(
+        ["x", "--branch", "workset/ABC-123-x", "--ticket", "ABC-123"],
+        jira,
+      );
+      expect(result.record).toMatchObject({
+        ticket: "ABC-123",
+        deliveries: [{ repository: REPO, branch: "workset/ABC-123-x" }],
+      });
+    });
+
+    test("an invalid key names the format and writes nothing", async () => {
+      await run(["x", "--ticket", "abc123"], jira);
+      expect(err.join()).toContain("Jira key such as ABC-123");
+      expect(process.exitCode).toBe(1);
+      await expect(readRaw("x")).rejects.toThrow();
+    });
+
+    test("is refused while tickets are off", async () => {
+      await run(["x", "--ticket", "ABC-123"]);
+      expect(err.join()).toContain("ticket: jira");
+      expect(process.exitCode).toBe(1);
+      await expect(readRaw("x")).rejects.toThrow();
+    });
+
+    test("an unknown setting counts as off and is warned about", async () => {
+      const [result] = await run(["x"], {
+        loadCapabilities: async () => [{ name: "openspec", ticket: "linear" }],
+      });
+      expect(result.ticketFormat).toBe("none");
+      expect(err.join()).toContain('Unknown ticket setting "linear"');
+    });
+
+    test("reading reports defaultBranch and ticketCandidate and writes nothing", async () => {
+      await run(["x", "--ticket", "ABC-123"], jira);
+      const [ticketed] = await run(["x"], jira);
+      expect(ticketed).toMatchObject({
+        defaultBranch: "workset/ABC-123-x",
+        ticketCandidate: null,
+      });
+      const [candidate] = await run(["a"], {
+        ...jira,
+        workingRepoGit: () => repoGit({ currentBranch: async () => "feature/ABC-9-retry" }),
+      });
+      expect(candidate.ticketCandidate).toBe("ABC-9");
+      await expect(readRaw("a")).rejects.toThrow();
+    });
+  });
+
+  test("regrouping reports differing recorded branches", async () => {
+    await run(["x", "--branch", "workset/x"]);
+    await run(["a", "--branch", "workset/acme-login"]);
+    await fs.mkdir(path.join(companion, "worksets"));
+    await fs.writeFile(
+      path.join(companion, "worksets/acme-login.yaml"),
+      `id: acme-login\nrepositories: [${REPO}]\nchanges: [x, a]\n`,
+    );
+    const [read] = await run(["x"]);
+    expect(read.defaultBranch).toBeNull();
+    expect(read.record.deliveries[0].branch).toBe("workset/x");
+    expect(err.join()).toContain("record different branches");
   });
 
   test("--fetch needs --refresh", async () => {

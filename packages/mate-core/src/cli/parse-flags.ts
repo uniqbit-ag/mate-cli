@@ -2,7 +2,7 @@ import {
   type GitModeSelection,
   listSetupCapabilityCompatibilities,
 } from "../lib/orchestrator/setup-compatibilities";
-import type { CapabilityConfig } from "../lib/orchestrator/types";
+import type { CapabilityConfig, TicketFormat } from "../lib/orchestrator/types";
 
 export type CliFlags = Record<string, string | string[] | boolean>;
 
@@ -117,6 +117,14 @@ export function parseCapabilities(flags: CliFlags): CapabilityConfig[] | undefin
     listSetupCapabilityCompatibilities().map((e) => [e.capability.name, e.capability]),
   );
   return names.map((name) => index.get(name) ?? { name });
+}
+
+/** `--ticket <none|jira>`; `{ invalid }` for any other value. */
+export function parseTicket(flags: CliFlags): TicketFormat | { invalid: string } | undefined {
+  const ticket = flags.ticket;
+  if (ticket === undefined) return undefined;
+  if (ticket === "none" || ticket === "jira") return ticket;
+  return { invalid: String(ticket) };
 }
 
 export function parseGitMode(flags: CliFlags): GitModeSelection | undefined {

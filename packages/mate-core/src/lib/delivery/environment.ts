@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import type { WorkingRepoGit } from "./branches";
+import type { TicketSetting, WorkingRepoGit } from "./branches";
 import type { ForgeRepo } from "./forge";
 
 export interface WorkingRepoInfo {
@@ -16,6 +16,8 @@ export interface DeliveryEnvironment {
   companionPath: string;
   workingRepo: WorkingRepoInfo | null;
   protectedPatterns: string[];
+  /** The companion's ticket setting; absent means `none`. */
+  ticket?: TicketSetting;
   /**
    * Host of a repository other than the Working Repository, from a linked checkout's
    * `origin` remote, else the Working Repository's host; null when neither is known.

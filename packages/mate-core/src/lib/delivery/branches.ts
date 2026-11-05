@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import type { CapabilityConfig } from "../orchestrator/types";
+import type { CapabilityConfig, TicketFormat } from "../orchestrator/types";
+
+export type { TicketFormat };
 
 const execFileAsync = promisify(execFile);
 
@@ -49,6 +51,23 @@ export function configuredProtectedPatterns(capabilities: readonly CapabilityCon
     : [];
 }
 
+export interface TicketSetting {
+  format: TicketFormat;
+  /** Set for a value Mate does not know, which counts as `none`. */
+  diagnostic: string | null;
+}
+
+/** The openspec capability's `ticket` setting; absent or unknown means `none`. */
+export function configuredTicketFormat(capabilities: readonly CapabilityConfig[]): TicketSetting {
+  const value = capabilities.find((capability) => capability.name === "openspec")?.ticket;
+  if (value === undefined || value === "none") return { format: "none", diagnostic: null };
+  if (value === "jira") return { format: "jira", diagnostic: null };
+  return {
+    format: "none",
+    diagnostic: `Unknown ticket setting ${JSON.stringify(value)} on the openspec capability; expected none or jira, so tickets are off.`,
+  };
+}
+
 /** Read-only local Git queries against a Working Repository. Nothing here touches the network. */
 export interface WorkingRepoGit {
   /** Checked-out branch, or null in a detached HEAD. */
@@ -61,6 +80,8 @@ export interface WorkingRepoGit {
   unpushedCommits(): Promise<string[]>;
   /** True when the branch exists locally or as `origin/<branch>`. */
   branchExists(branch: string): Promise<boolean>;
+  /** True when the ref (`refs/heads/<b>`, `refs/remotes/origin/<b>`) resolves. */
+  hasRef(ref: string): Promise<boolean>;
 }
 
 export function workingRepoGit(repoPath: string): WorkingRepoGit {
@@ -85,6 +106,9 @@ export function workingRepoGit(repoPath: string): WorkingRepoGit {
     return (await run("config", "--get", "init.defaultBranch")) || "main";
   };
 
+  const hasRef = async (ref: string): Promise<boolean> =>
+    (await run("rev-parse", "--verify", "--quiet", ref)) !== null;
+
   const currentBranch = async (): Promise<string | null> =>
     (await run("symbolic-ref", "--quiet", "--short", "HEAD")) || null;
 
@@ -99,10 +123,10 @@ export function workingRepoGit(repoPath: string): WorkingRepoGit {
       return log ? log.split("\n").filter(Boolean) : [];
     },
     async branchExists(branch: string) {
-      for (const ref of [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`]) {
-        if ((await run("rev-parse", "--verify", "--quiet", ref)) !== null) return true;
-      }
-      return false;
+      return (
+        (await hasRef(`refs/heads/${branch}`)) || (await hasRef(`refs/remotes/origin/${branch}`))
+      );
     },
+    hasRef,
   };
 }
