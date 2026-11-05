@@ -16,6 +16,8 @@ export interface ShellCompanion {
   path: string;
   note: string;
   unready: boolean;
+  /** Its folder is gone: deleting it only drops the registry entry. */
+  missing?: boolean;
   /** Linked Working Repositories by identity. */
   pairings: string[];
 }
@@ -64,6 +66,7 @@ export const getShell = createServerFn({ method: "GET" })
       path: companion.path,
       note: healthNote(companion),
       unready: companion.health !== "ready",
+      missing: companion.health === "missing",
       pairings: companion.pairings.map((pairing) => pairing.repositoryId),
     }));
     const payload = page.payload;

@@ -1,7 +1,10 @@
 import type { OutcomeAction } from "../../../lib/factory/outcomes/actions";
+import type { StoredReport } from "./reports";
+import type { SkillAgent, SkillPreview } from "./skill-files";
 import type { StudioModePolicy } from "./selection";
 import type { VaultConflict, VaultSaved } from "./vault";
 import type { StudioPage } from "./views/model";
+import type { MdNode } from "./views/vault/markdown-tree";
 import type { VaultEntry, VaultView, VaultViewRequest } from "./views/vault/view";
 
 /** The fields of a submitted factory form; an absent field reads as an empty string. */
@@ -45,6 +48,8 @@ export interface StudioServices {
     companionDigest: string,
     query: string,
   ): Promise<{ shown: VaultEntry[]; total: number; generation: number }>;
+  /** Unsaved editor text rendered as the file at `path` would be; reads and writes nothing. */
+  vaultPreview(companionDigest: string, path: string, content: string): Promise<MdNode[]>;
   /** Saves (or, without a token, creates) a markdown file; a stale token is a conflict, not an error. */
   vaultSave(
     companionDigest: string,
@@ -52,6 +57,21 @@ export interface StudioServices {
     content: string,
     token?: string,
   ): Promise<VaultSaved | VaultConflict>;
+  /** A registered companion's published reports, newest first; no paths or content. */
+  reports(companionDigest: string): Promise<StoredReport[]>;
+  /** One installed skill's files and one of them rendered (SKILL.md by default); read-only. */
+  skillPreview(
+    companionDigest: string,
+    agent: SkillAgent,
+    name: string,
+    file?: string,
+  ): Promise<SkillPreview>;
+  /**
+   * Deletes a registered companion's folder and unregisters it, or only unregisters a stale
+   * one whose folder is gone; not recoverable. Needs `writable`, and refuses the companion
+   * Studio was started for.
+   */
+  deleteCompanion(companionDigest: string): Promise<{ deletedFolder: boolean }>;
 }
 
 /** The request context Studio's application receives from core on every request. */

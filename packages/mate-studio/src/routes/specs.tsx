@@ -9,6 +9,7 @@ import { Specs } from "../views/specs/specs-view";
 export const Route = createFileRoute("/specs")({
   staticData: { view: "specs" },
   loaderDeps: ({ search }) => ({ companion: search.companion, studioMode: search.studioMode }),
+  ssr: true,
   loader: async ({ context, deps }) =>
     (await registeredCompanion(context.queryClient, deps))
       ? loadView(context.queryClient, companionViewQuery("specs", deps))
@@ -21,6 +22,7 @@ export const Route = createFileRoute("/specs")({
           <Specs
             payload={{ specs: data.specs ?? [], warnings: data.warnings }}
             actions={specOffers(data)}
+            companion={search.companion}
           />
         )}
       </CompanionView>

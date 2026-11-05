@@ -8,7 +8,7 @@ export interface StudioSkillInventory {
   agents: string[];
 }
 
-const SKILL_DIRS = {
+export const SKILL_DIRS = {
   claude: ".claude",
   opencode: ".opencode",
   agents: ".agents",

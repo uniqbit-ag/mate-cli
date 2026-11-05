@@ -8,7 +8,6 @@ import {
   STUDIO_MODE_PARAM,
   type StudioCompanionPayload,
   type StudioMode,
-  type StudioReportSummary,
   VIEW_PARAM,
 } from "@uniqbit/mate-core/studio";
 
@@ -26,7 +25,6 @@ export interface CompanionViewData {
   changes?: StudioCompanionPayload["changes"];
   /** Overview, Analysis. */
   shipped?: StudioCompanionPayload["shipped"];
-  reports?: StudioReportSummary[] | null;
   specs?: StudioCompanionPayload["specs"];
   /** Workflow. */
   skills?: StudioCompanionPayload["skills"];
@@ -90,6 +88,6 @@ export const getCompanionView = createServerFn({ method: "GET" })
       };
     }
     return studioMode === "analysis"
-      ? { ...base, specs: payload.specs, shipped: payload.shipped, reports: page.reports ?? null }
+      ? { ...base, shipped: payload.shipped }
       : { ...base, changes: payload.changes };
   });

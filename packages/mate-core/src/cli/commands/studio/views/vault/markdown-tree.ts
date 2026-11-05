@@ -1,4 +1,5 @@
 import { type Token, type Tokens, Lexer } from "marked";
+import { parse as parseYaml } from "yaml";
 
 import { highlightNodes } from "../../../report/highlight";
 
@@ -33,6 +34,9 @@ export type MdTag =
   | "li"
   | "input"
   | "div"
+  | "dl"
+  | "dt"
+  | "dd"
   | "table"
   | "thead"
   | "tbody"
@@ -108,12 +112,141 @@ function highlighted(code: string, language: string | undefined): MdNode[] {
   return highlightNodes(code, language).map(map);
 }
 
+const SECTION_PREFIX = /^(Requirement|Scenario):\s*/i;
+const STEP_KEYWORDS = new Set(["GIVEN", "WHEN", "THEN", "AND", "BUT"]);
+const NORMATIVE = /\b(SHALL NOT|SHALL|MUST NOT|MUST)\b/g;
+
+/** OpenSpec's `Requirement:` (level 3) and `Scenario:` (level 4) headings open a section. */
+function sectionKind(heading: Tokens.Heading): "requirement" | "scenario" | null {
+  const match = SECTION_PREFIX.exec(heading.text);
+  if (!match) return null;
+  const word = match[1]!.toLowerCase();
+  if (word === "requirement" && heading.depth === 3) return "requirement";
+  if (word === "scenario" && heading.depth >= 3) return "scenario";
+  return null;
+}
+
+/** A `- **WHEN** …` item as its keyword and the inline tokens after it. */
+function stepOf(item: Tokens.ListItem): { keyword: string; rest: Token[] } | null {
+  const first = item.tokens[0];
+  if (item.task || first?.type !== "text") return null;
+  const inline = (first as Tokens.Text).tokens ?? [];
+  const lead = inline[0];
+  if (lead?.type !== "strong") return null;
+  const keyword = (lead as Tokens.Strong).text.trim().replace(/:$/, "").toUpperCase();
+  if (!STEP_KEYWORDS.has(keyword)) return null;
+  const rest = inline.slice(1);
+  const next = rest[0];
+  if (next?.type === "text") {
+    const text = next as Tokens.Text;
+    const trimmed = text.text.replace(/^[\s:]+/, "");
+    rest[0] = { ...text, raw: trimmed, text: trimmed, tokens: undefined };
+  }
+  return { keyword, rest };
+}
+
+const headingTag = (heading: Tokens.Heading): MdTag =>
+  `h${Math.min(Math.max(heading.depth, 1), 6)}` as MdTag;
+
+/** SHALL and MUST in a requirement's own paragraphs, so the obligation reads at a glance. */
+function markNormative(node: MdNode): MdNode {
+  if (typeof node === "string" || node.t !== "p" || !node.c) return node;
+  return {
+    ...node,
+    c: node.c.flatMap((child) =>
+      typeof child === "string"
+        ? child
+            .split(NORMATIVE)
+            .filter((part) => part !== "")
+            .map((part) =>
+              /^(SHALL|MUST)( NOT)?$/.test(part)
+                ? el("strong", [part], { className: "md-shall" })
+                : part,
+            )
+        : [child],
+    ),
+  };
+}
+
 /** The same mapping the server-rendered vault used, producing data instead of markup. */
 class TreeMapper {
   constructor(private readonly path: string) {}
 
   blocks(tokens: Token[] | undefined): MdNode[] {
-    return (tokens ?? []).flatMap((token) => this.block(token));
+    const list = tokens ?? [];
+    const nodes: MdNode[] = [];
+    for (let index = 0; index < list.length; index += 1) {
+      const token = list[index]!;
+      const kind = token.type === "heading" ? sectionKind(token as Tokens.Heading) : null;
+      if (!kind) {
+        nodes.push(...this.block(token));
+        continue;
+      }
+      // An OpenSpec section runs to the next heading at its own depth or above.
+      const heading = token as Tokens.Heading;
+      let end = index + 1;
+      while (end < list.length) {
+        const next = list[end]!;
+        if (next.type === "heading" && (next as Tokens.Heading).depth <= heading.depth) break;
+        end += 1;
+      }
+      const body = list.slice(index + 1, end);
+      nodes.push(
+        kind === "scenario" ? this.scenario(heading, body) : this.requirement(heading, body),
+      );
+      index = end - 1;
+    }
+    return nodes;
+  }
+
+  /** `### Requirement: …`: the heading with its label, then its text, SHALL marked. */
+  private requirement(heading: Tokens.Heading, body: Token[]): MdElement {
+    return el(
+      "div",
+      [
+        el(
+          headingTag(heading),
+          [
+            el("span", ["Requirement"], { className: "md-section-label" }),
+            ...this.titleOf(heading),
+          ],
+          { className: "md-requirement-title" },
+        ),
+        ...this.blocks(body).map(markNormative),
+      ],
+      { className: "md-requirement" },
+    );
+  }
+
+  /** `#### Scenario: …` as one card; its `**WHEN**`-style list items become steps. */
+  private scenario(heading: Tokens.Heading, body: Token[]): MdElement {
+    return el(
+      "div",
+      [
+        el(
+          "p",
+          [el("span", ["Scenario"], { className: "md-section-label" }), ...this.titleOf(heading)],
+          { className: "md-scenario-title" },
+        ),
+        ...body.flatMap((token) =>
+          token.type === "list"
+            ? [this.steps(token as Tokens.List) ?? this.list(token as Tokens.List)]
+            : this.block(token),
+        ),
+      ],
+      { className: "md-scenario" },
+    );
+  }
+
+  /** A section heading's text without its `Requirement:` or `Scenario:` prefix. */
+  private titleOf(heading: Tokens.Heading): MdNode[] {
+    const tokens = heading.tokens ?? [];
+    const first = tokens[0];
+    if (first?.type !== "text") return this.inline(tokens, heading.text);
+    const text = (first as Tokens.Text).text.replace(SECTION_PREFIX, "");
+    return [text, ...tokens.slice(1).map((token) => this.span(token))].filter(
+      (node) => node !== "",
+    );
   }
 
   inline(tokens: Token[] | undefined, fallback = ""): MdNode[] {
@@ -128,8 +261,7 @@ class TreeMapper {
         return [];
       case "heading": {
         const heading = token as Tokens.Heading;
-        const depth = Math.min(Math.max(heading.depth, 1), 6);
-        return [el(`h${depth}` as MdTag, this.inline(heading.tokens, heading.text))];
+        return [el(headingTag(heading), this.inline(heading.tokens, heading.text))];
       }
       case "paragraph": {
         const paragraph = token as Tokens.Paragraph;
@@ -160,6 +292,26 @@ class TreeMapper {
       default:
         return [el("p", [token.raw])];
     }
+  }
+
+  /** A scenario's list as keyword steps, or `null` unless every item is a step. */
+  private steps(list: Tokens.List): MdElement | null {
+    const steps = list.items.map(stepOf);
+    if (!steps.every((step) => step !== null)) return null;
+    return el(
+      "ul",
+      steps.map(({ keyword, rest }) =>
+        el(
+          "li",
+          [
+            el("span", [keyword], { className: `md-step-key md-key-${keyword.toLowerCase()}` }),
+            el("span", this.inline(rest)),
+          ],
+          { className: "md-step" },
+        ),
+      ),
+      { className: "md-steps" },
+    );
   }
 
   private list(list: Tokens.List): MdElement {
@@ -263,5 +415,104 @@ class TreeMapper {
 
 /** A markdown file as data the browser renders; `path` is where its relative links start. */
 export function markdownTree(source: string, path: string): MdNode[] {
-  return new TreeMapper(path).blocks(new Lexer({ gfm: true }).lex(source));
+  const match = FRONTMATTER.exec(source);
+  const body = match ? source.slice(match[0].length) : source;
+  const nodes = new TreeMapper(path).blocks(new Lexer({ gfm: true }).lex(body));
+  return match ? [frontmatter(match[1] ?? match[2] ?? ""), ...nodes] : nodes;
+}
+
+/** A text file that is not markdown as one highlighted block; `language` may be an extension. */
+export function codeTree(source: string, language: string | undefined): MdNode[] {
+  return [el("pre", [el("code", highlighted(source, language))], { className: "md-fence" })];
+}
+
+/** `---` YAML, or the `<!-- mate:delta … -->` header Mate writes atop a change's spec delta. */
+const FRONTMATTER =
+  /^(?:---[ \t]*\r?\n([\s\S]*?)\r?\n---|<!--[ \t]*mate:delta[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*-->)[ \t]*(?:\r?\n|$)/;
+/** Nesting shown as fields; deeper values fall back to their JSON text. */
+const FIELD_DEPTH = 2;
+
+/** A file's leading YAML block as fields; text that is not a mapping is shown as written. */
+function frontmatter(yaml: string): MdElement {
+  let data: unknown;
+  try {
+    data = parseYaml(yaml);
+  } catch {
+    data = undefined;
+  }
+  const fields = isRecord(data)
+    ? fieldList(data, 0)
+    : el("pre", [el("code", [yaml])], { className: "md-fence" });
+  return el("div", [fields], { className: "md-frontmatter" });
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** Only scalar values, so the mapping fits on one chip. */
+const flat = (record: Record<string, unknown>): boolean =>
+  Object.values(record).every((entry) => entry === null || typeof entry !== "object");
+
+interface Scope {
+  repository: string;
+  area: string;
+}
+
+/** A `scopes` entry: exactly a repository and one of its Areas. */
+const isScope = (value: unknown): value is Scope =>
+  isRecord(value) &&
+  Object.keys(value).length === 2 &&
+  typeof value.repository === "string" &&
+  typeof value.area === "string";
+
+/** Scopes grouped by repository, in first-seen order, each Area a chip; `.` is its root. */
+function scopeGroups(scopes: Scope[]): MdNode[] {
+  const areasByRepository = new Map<string, string[]>();
+  for (const { repository, area } of scopes) {
+    areasByRepository.set(repository, [...(areasByRepository.get(repository) ?? []), area]);
+  }
+  return [...areasByRepository].map(([repository, areas]) =>
+    el(
+      "div",
+      [
+        el("span", [repository], { className: "md-scope-repo" }),
+        ...areas.map((area) =>
+          area === "."
+            ? el("span", ["root"], { className: "md-chip md-chip-root" })
+            : el("span", [area], { className: "md-chip" }),
+        ),
+      ],
+      { className: "md-scope" },
+    ),
+  );
+}
+
+function fieldList(data: Record<string, unknown>, depth: number): MdElement {
+  return el(
+    "dl",
+    Object.entries(data).flatMap(([name, value]) => [
+      el("dt", [name]),
+      el("dd", fieldValue(value, depth)),
+    ]),
+  );
+}
+
+function fieldValue(value: unknown, depth: number): MdNode[] {
+  if (value === null || value === undefined || value === "") {
+    return [el("span", ["empty"], { className: "md-field-empty" })];
+  }
+  if (value instanceof Date) return [value.toISOString().slice(0, 10)];
+  if (Array.isArray(value) && value.every((item) => !isRecord(item) && !Array.isArray(item))) {
+    return value.map((item) => el("span", [String(item)], { className: "md-chip" }));
+  }
+  if (Array.isArray(value) && value.length > 0 && value.every(isScope)) return scopeGroups(value);
+  // A list of small mappings reads as one chip per item.
+  if (Array.isArray(value) && value.every((item) => isRecord(item) && flat(item))) {
+    return value.map((item) =>
+      el("span", [Object.values(item).map(String).join(" · ")], { className: "md-chip" }),
+    );
+  }
+  if (isRecord(value) && depth < FIELD_DEPTH) return [fieldList(value, depth + 1)];
+  if (typeof value === "object") return [el("code", [JSON.stringify(value)])];
+  return [String(value)];
 }

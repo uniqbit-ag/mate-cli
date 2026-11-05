@@ -9,7 +9,7 @@ import { loadHeld } from "../lib/queries";
 import { shellQuery } from "../lib/studio-queries";
 import { canonicalHref, validateStudioSearch } from "../lib/search";
 import { viewAt } from "../shell/views";
-import stylesheet from "../styles/studio.css?url";
+import stylesheet from "../styles/app.css?url";
 import { TERMINAL_PREPAINT_SCRIPT } from "../stores/terminal-ui";
 import { StudioLayout } from "../shell/layout";
 
@@ -18,7 +18,7 @@ const FAVICON_URI = `data:image/svg+xml;base64,${btoa(BRAND_SVGS.favicon)}`;
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   validateSearch: validateStudioSearch,
   loaderDeps: ({ search }) => search,
-  // The shell and sidebar render with the document; views below render in the browser (D4).
+  // The shell and sidebar render with the document; each view route chooses its own rendering.
   ssr: true,
   // The address names the server's effective mode, so every link built from it carries that.
   beforeLoad: async ({ context, search, location }) => {
@@ -32,6 +32,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     if (href) throw redirect({ href, replace: true });
   },
   loader: ({ context, deps }) => loadHeld(context.queryClient, shellQuery(deps)),
+  // Waiting on the shell keeps the frame shown with the progress bar; views keep their placeholder.
+  pendingMs: Infinity,
   head: () => ({
     meta: [
       { charSet: "utf-8" },

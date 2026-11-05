@@ -42,6 +42,29 @@ const page = {
 };
 
 const services = servicesFor("standard");
+const acme = page.inventory.companions[0]!;
+const acmeDigest = companionDigest(acme.path);
+
+/** The same services with `acme` selected and an empty collected payload. */
+const selecting = (studio: StudioServices) =>
+  ({
+    ...studio,
+    page: async (url: URL) => ({
+      ...(await studio.page(url)),
+      companion: acme,
+      payload: {
+        companionPath: acme.path,
+        changes: [],
+        specs: [],
+        skills: [],
+        topology: null,
+        worksets: [],
+        linkedRepositories: [],
+        worksetProblems: [],
+        warnings: [],
+      },
+    }),
+  }) as unknown as StudioServices;
 
 async function built() {
   expect(existsSync(SERVER)).toBe(true);
@@ -69,16 +92,27 @@ describe("built server", () => {
   test("serves the document and its sidebar under Bun", async () => {
     const handler = await built();
     const response = await handler.fetch(
-      new Request("http://127.0.0.1/factory?studioMode=engineering"),
-      {
-        context: { studio: services },
-      },
+      new Request(`http://127.0.0.1/workflow?companion=${acmeDigest}&studioMode=engineering`),
+      { context: { studio: selecting(services) } },
     );
     expect(response.status).toBe(200);
     const html = await response.text();
     expect(html).toContain("<title>Mate Studio</title>");
-    // The sidebar is server-rendered with the document; views render in the browser.
-    expect(html).toContain("studio-sidebar");
+    // The top bar and sidebar are server-rendered with the document.
+    expect(html).toContain('id="studio-rail"');
+    expect(html).toContain('class="studio-top');
+  });
+
+  test("shows the companion list alone, without the sidebar or the switcher", async () => {
+    const handler = await built();
+    const response = await handler.fetch(new Request("http://127.0.0.1/?studioMode=engineering"), {
+      context: { studio: services },
+    });
+    const html = await response.text();
+    expect(html).toContain("Choose a Companion Repository");
+    expect(html).toContain("data-picker");
+    expect(html).not.toContain('id="studio-rail"');
+    expect(html).not.toContain('id="studio-companion"');
   });
 
   test("sends the route's data with the first response", async () => {
@@ -121,6 +155,34 @@ describe("built server", () => {
     }
   });
 
+  test("draws a read-only view with the document, without its placeholder", async () => {
+    const companion = page.inventory.companions[0]!;
+    const withChange = {
+      ...services,
+      page: async (url: URL) => ({
+        ...(await services.page(url)),
+        companion,
+        payload: {
+          companionPath: companion.path,
+          changes: [{ name: "acme-drawn-change", completedTasks: 1, totalTasks: 2, artifacts: [] }],
+          specs: [],
+          skills: [],
+          topology: null,
+          worksets: [],
+          linkedRepositories: [],
+          worksetProblems: [],
+          warnings: [],
+        },
+      }),
+    } as unknown as StudioServices;
+    const digest = companionDigest(companion.path);
+    const { response } = await follow(`/?companion=${digest}&studioMode=engineering`, withChange);
+    const html = await response.text();
+    const main = html.slice(html.indexOf('id="studio-main"'), html.indexOf("</main>"));
+    expect(main).toContain("acme-drawn-change");
+    expect(main).not.toContain("view-placeholder");
+  });
+
   test("sends the Factory view to the Overview without the factory broker", async () => {
     const handler = await built();
     const response = await handler.fetch(
@@ -161,9 +223,10 @@ describe("built server", () => {
       expect(location.searchParams.has("role")).toBe(false);
     }
     const handler = await built();
-    const served = await handler.fetch(new Request("http://127.0.0.1/?studioMode=analysis"), {
-      context: { studio: appliance },
-    });
+    const served = await handler.fetch(
+      new Request(`http://127.0.0.1/?companion=${acmeDigest}&studioMode=analysis`),
+      { context: { studio: selecting(appliance) } },
+    );
     expect(served.status).toBe(200);
     const html = await served.text();
     expect(html).toContain("Engineering is unavailable in the appliance.");

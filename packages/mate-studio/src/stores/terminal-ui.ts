@@ -71,8 +71,7 @@ export const useTerminalUi = create<TerminalUiState>((set, get) => ({
   register: (controller) => set({ controller }),
   reveal: () => {
     if (get().collapsed) get().setCollapsed(false);
-    const opener = document.getElementById("terminal-drawer-open");
-    if (opener && getComputedStyle(opener).display !== "none") set({ drawerOpen: true });
+    if (window.matchMedia?.("(max-width: 1200px)").matches) set({ drawerOpen: true });
   },
 }));
 

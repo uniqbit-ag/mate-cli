@@ -3,11 +3,12 @@ import { COMPANION_DIGEST_PATTERN, COMPANION_PARAM } from "@uniqbit/mate-core/st
 export const THEME_STORAGE_KEY = "mate-studio-theme";
 export const COMPANION_STORAGE_KEY = "mate-studio-companion";
 export const VAULT_TREE_STORAGE_KEY = "mate-studio-vault-tree";
+export const RAIL_STORAGE_KEY = "mate-studio-rail";
 
 /**
  * Runs in `<head>` before first paint. A server-rendered document arrives with
  * its markup already in place, so a remembered appearance applied after load
- * would paint the other one first and then repaint, and a remembered companion
+ * would paint the other one first and then repaint (so would a collapsed sidebar), and a remembered companion
  * restored after load would paint the picker before leaving it.
  *
  * The restore names the companion in the URL and reloads, because the URL is
@@ -23,6 +24,9 @@ export const STUDIO_PREPAINT_SCRIPT = `(function () {
     }
     if (localStorage.getItem(${JSON.stringify(VAULT_TREE_STORAGE_KEY)}) === "hidden") {
       document.documentElement.setAttribute("data-vault-tree", "hidden");
+    }
+    if (localStorage.getItem(${JSON.stringify(RAIL_STORAGE_KEY)}) === "min") {
+      document.documentElement.setAttribute("data-rail", "min");
     }
   } catch (error) {
     /* a blocked web store only costs the preference, never the page */

@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import {
   COMPANION_STORAGE_KEY,
+  RAIL_STORAGE_KEY,
   STUDIO_PREPAINT_SCRIPT,
   THEME_STORAGE_KEY,
   VAULT_TREE_STORAGE_KEY,
@@ -38,6 +39,12 @@ describe("the pre-paint script", () => {
       { pathname: "/vault", search: "?companion=0123456789" },
     );
     expect(attributes.get("data-vault-tree")).toBe("hidden");
+  });
+
+  it("collapses a remembered narrow sidebar before the page paints", () => {
+    const { attributes } = prepaint({ [RAIL_STORAGE_KEY]: "min" }, { pathname: "/", search: "" });
+    expect(attributes.get("data-rail")).toBe("min");
+    expect(prepaint({}, { pathname: "/", search: "" }).attributes.has("data-rail")).toBe(false);
   });
 
   it("names the remembered companion in the address of any view", () => {

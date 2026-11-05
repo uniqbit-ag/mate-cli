@@ -14,7 +14,7 @@ describe("CompanionError", () => {
     );
     expect(markup).toContain("/home/dev/.mate/companions/acme-companion");
     expect(markup).toContain("openspec list --json: exited with 1");
-    expect(markup).toContain('class="panel error"');
+    expect(markup).toContain("Could not read this companion");
   });
 
   it("renders a reason containing markup characters as text", () => {

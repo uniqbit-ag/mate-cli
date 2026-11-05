@@ -1,10 +1,12 @@
 import { hashKey, type QueryClient, queryOptions } from "@tanstack/react-query";
-import type { StudioEvent, VaultView } from "@uniqbit/mate-core/studio";
+import type { SkillAgent, StudioEvent, StudioMode, VaultView } from "@uniqbit/mate-core/studio";
 
 import { agentCredentialKey } from "./agent-credential";
 import type { StudioSearch } from "./search";
 import { getFactory } from "../server/factory";
-import { getShell } from "../server/shell";
+import { getReports } from "../server/reports";
+import { getShell, type ShellData } from "../server/shell";
+import { getSkillPreview } from "../server/skills";
 import { getVault, getVaultChildren, getVaultMatches } from "../server/vault";
 import { type CompanionView, getCompanionView } from "../server/views";
 
@@ -16,6 +18,7 @@ const keys = {
   companion: (companion: string | null) => [companion] as const,
   shell: (companion: string | null) => [companion, "shell"] as const,
   views: (companion: string | null) => [companion, "view"] as const,
+  skills: (companion: string) => [companion, "skills"] as const,
   factory: (companion: string) => [companion, "factory"] as const,
   vault: (companion: string) => [companion, "vault"] as const,
   vaultViews: (companion: string) => [companion, "vault", "view"] as const,
@@ -43,10 +46,36 @@ export const shellQuery = (search: StudioSearch) =>
     queryFn: () => getShell({ data: search }),
   });
 
+/**
+ * Holds the shell another enabled mode would read, built from the one shown: only the mode
+ * differs, so switching waits for no request. Held as stale, so the server's copy follows.
+ */
+export function holdShellForMode(
+  queryClient: QueryClient,
+  search: StudioSearch,
+  shell: ShellData,
+  studioMode: StudioMode,
+): void {
+  const { queryKey } = shellQuery({ ...search, studioMode });
+  if (queryClient.getQueryData(queryKey) !== undefined) return;
+  queryClient.setQueryData(queryKey, { ...shell, studioMode }, { updatedAt: 0 });
+}
+
 export const companionViewQuery = (view: CompanionView, search: StudioSearch) =>
   queryOptions({
     queryKey: [...keys.views(search.companion ?? null), view, search.studioMode ?? null],
     queryFn: () => getCompanionView({ data: { ...search, view } }),
+  });
+
+export const skillPreviewQuery = (
+  companion: string,
+  agent: SkillAgent,
+  name: string,
+  file?: string,
+) =>
+  queryOptions({
+    queryKey: [...keys.skills(companion), agent, name, file ?? null],
+    queryFn: () => getSkillPreview({ data: { companion, agent, name, file } }),
   });
 
 export const factoryQuery = (companion: string) =>
@@ -80,13 +109,7 @@ export const vaultMatchesQuery = (companion: string, query: string) =>
 export const reportsQuery = (companion: string) =>
   queryOptions({
     queryKey: keys.reports(companion),
-    queryFn: async (): Promise<ReportSummary[]> => {
-      const response = await fetch(`/api/reports?companion=${encodeURIComponent(companion)}`, {
-        headers: { accept: "application/json" },
-      });
-      if (!response.ok) throw new Error(`status ${response.status}`);
-      return ((await response.json()) as { reports: ReportSummary[] }).reports ?? [];
-    },
+    queryFn: () => getReports({ data: { companion } }),
   });
 
 async function stale(queryClient: QueryClient, ...queryKeys: (readonly unknown[])[]) {

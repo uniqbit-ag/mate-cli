@@ -54,6 +54,20 @@ export const getVaultMatches = createServerFn({ method: "GET" })
   }))
   .handler(({ data, context }) => context.studio.vaultMatches(data.companion, data.query));
 
+/** Unsaved editor text rendered as a saved file would be; nothing is read or written. */
+export const previewVaultFile = createServerFn({ method: "POST" })
+  .validator((input: { companion: string; path: string; content: string }) => {
+    const path = text(input.path);
+    if (!path) throw new Error("the preview names no file");
+    if (typeof input.content !== "string" || input.content.length > MAX_CONTENT) {
+      throw new Error("preview requires content within the size limit");
+    }
+    return { companion: companionOf(input), path, content: input.content };
+  })
+  .handler(({ data, context }) =>
+    context.studio.vaultPreview(data.companion, data.path, data.content),
+  );
+
 interface SaveInput {
   companion: string;
   path: string;

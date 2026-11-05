@@ -3,103 +3,125 @@ import { useLocation } from "@tanstack/react-router";
 import { REPORT_VIEW_PREFIX } from "@uniqbit/mate-core/studio";
 import { useEffect, useState } from "react";
 
-import { usePageUi } from "../../stores/page-ui";
+import { Icon } from "../../components/icon";
+import { EmptyNote, ListCard, PAGE_PAD, ROW } from "../../components/view-parts";
+import { cn } from "../../lib/cn";
 import { formatReportTime } from "../../lib/report-time";
 import { reportsQuery, type ReportSummary } from "../../lib/studio-queries";
+import { PanelHead, SidePanel } from "../../shell/panel";
 import { type Theme, useAppearance } from "../../stores/appearance";
+import { usePageUi } from "../../stores/page-ui";
 
 /** The report the address names, as `#report=<id>`. */
 const REPORT_ID = /(?:^|[#&])report=([0-9a-f]{32})/;
-
-/** The chosen report while listed, else the one the address names, else the newest. */
-function shownReport(
-  list: ReportSummary[],
-  chosen: string | null,
-  named: string | undefined,
-): string | null {
-  const listed = (id: string | null | undefined) => list.some((report) => report.id === id);
-  if (listed(chosen)) return chosen;
-  if (listed(named)) return named!;
-  return list[0]?.id ?? null;
-}
 
 function reportSrc(id: string, theme: Theme): string {
   const scheme = theme === "system" ? "" : `?scheme=${theme}`;
   return `${REPORT_VIEW_PREFIX}${id}${scheme}`;
 }
 
+function setAddress(id: string | null): void {
+  try {
+    const url = `${location.pathname}${location.search}${id ? `#report=${id}` : ""}`;
+    history.replaceState(history.state, "", url);
+  } catch {
+    /* the address is a convenience */
+  }
+}
+
+/** One report in the panel: a link to it on its own, and the report in a sandboxed frame. */
+export function ReportDetail({ report, src }: { report: ReportSummary; src: string }) {
+  return (
+    <>
+      <PanelHead title={report.title} kicker={<span>{formatReportTime(report.createdAt)}</span>}>
+        <a
+          id="reports-open"
+          className="inline-flex items-center gap-1.5 text-sm"
+          href={src}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Icon name="external" className="size-3.5" /> Open in new tab
+        </a>
+      </PanelHead>
+      <iframe
+        key={src}
+        id="reports-frame"
+        className="min-h-0 w-full flex-1 border-0 bg-page"
+        title="Hosted report"
+        sandbox="allow-scripts allow-modals"
+        referrerPolicy="no-referrer"
+        src={src}
+      />
+    </>
+  );
+}
+
 /**
- * Hosted reports: the list, and the chosen one in a sandboxed frame. A new report lists as it
- * is published; the frame reloads in the appearance chosen in Studio.
+ * Hosted reports, newest first; one opens in the panel in a sandboxed frame. A new report lists
+ * as it is published; the frame reloads in the appearance chosen in Studio.
  */
 export function Reports({ companion }: { companion: string }) {
   const reports = useQuery(reportsQuery(companion));
   const theme = useAppearance((state) => state.theme);
   const clearReports = usePageUi((state) => state.clearReports);
-  // The address may name a report (`#report=<id>`); otherwise the newest is shown.
+  // The address may name a report (`#report=<id>`), e.g. from the new-report notice.
   const named = REPORT_ID.exec(useLocation({ select: (location) => `#${location.hash}` }))?.[1];
-  const [chosen, setChosen] = useState<string | null>(null);
+  const [chosen, setChosen] = useState<string | null | undefined>(undefined);
   useEffect(clearReports, [clearReports]);
 
   const list = reports.data ?? [];
-  const shown = shownReport(list, chosen, named);
-  useEffect(() => {
-    if (!shown) return;
-    try {
-      history.replaceState(history.state, "", `#report=${shown}`);
-    } catch {
-      /* the address is a convenience */
-    }
-  }, [shown]);
+  const wanted = chosen === undefined ? (named ?? null) : chosen;
+  const open = list.find((report) => report.id === wanted) ?? null;
+  const select = (id: string | null) => {
+    setChosen(id);
+    setAddress(id);
+  };
+  const src = open ? reportSrc(open.id, theme) : null;
 
-  const src = shown ? reportSrc(shown, theme) : null;
   return (
-    <section className="view-section" data-reports-view aria-label="Hosted reports">
-      <p className="view-summary">Reports published by agent sessions Studio started.</p>
-      <div className="reports-layout">
-        <div className="reports-side">
-          <ul id="reports-list" className="reports-list" aria-label="Reports">
+    <section
+      className={cn(PAGE_PAD, "grid content-start gap-3 pb-10")}
+      data-reports-view
+      aria-label="Hosted reports"
+    >
+      {list.length === 0 ? (
+        <EmptyNote>
+          <span id="reports-empty">No hosted reports yet.</span>
+        </EmptyNote>
+      ) : (
+        <ListCard title="Reports" count={list.length} hint="Newest first">
+          <ul id="reports-list" className="m-0 list-none p-0" aria-label="Reports">
             {list.map((report) => (
               <li key={report.id}>
                 <button
                   type="button"
+                  className={cn(ROW, "grid grid-cols-[minmax(0,1fr)_auto]")}
                   data-report-id={report.id}
-                  aria-pressed={report.id === shown}
-                  onClick={() => setChosen(report.id)}
+                  aria-current={report.id === open?.id ? "true" : undefined}
+                  onClick={() => select(report.id)}
                 >
-                  <span data-report-title>{report.title}</span>
-                  <span className="report-time" data-report-time>
+                  <span className="truncate text-sm" data-report-title>
+                    {report.title}
+                  </span>
+                  <span className="font-mono text-xs text-muted" data-report-time>
                     {formatReportTime(report.createdAt)}
                   </span>
                 </button>
               </li>
             ))}
           </ul>
-          <p id="reports-empty" className="empty" hidden={list.length > 0}>
-            No hosted reports yet.
-          </p>
-        </div>
-        <div className="reports-main">
-          <div className="reports-bar">
-            {src ? (
-              <a id="reports-open" href={src} target="_blank" rel="noopener noreferrer">
-                Open in new tab
-              </a>
-            ) : null}
-          </div>
-          {src ? (
-            <iframe
-              key={src}
-              id="reports-frame"
-              className="reports-frame"
-              title="Hosted report"
-              sandbox="allow-scripts allow-modals"
-              referrerPolicy="no-referrer"
-              src={src}
-            />
-          ) : null}
-        </div>
-      </div>
+        </ListCard>
+      )}
+      <SidePanel
+        items={list.map((report) => report.id)}
+        current={open?.id ?? null}
+        onSelect={select}
+        wide
+        title={open ? `Report ${open.title}` : "Report"}
+      >
+        {open && src ? <ReportDetail report={open} src={src} /> : null}
+      </SidePanel>
     </section>
   );
 }

@@ -7,7 +7,7 @@ import type {
 } from "@uniqbit/mate-core/studio";
 
 import { renderMarkup } from "../../../test/render";
-import { Factory } from "./factory-view";
+import { Factory, OutcomeDetail } from "./factory-view";
 
 function outcome(overrides: Partial<StudioWorkset> = {}): StudioWorkset {
   return {
@@ -62,11 +62,22 @@ async function render(
     />
   );
   const board = await renderMarkup(view());
+  // The panel portals its content, which static markup omits; each Outcome's content is
+  // rendered on its own, wrapped so the helpers below find it as before.
   const dialogs = await Promise.all(
     data.worksets.map(async (workset) => {
-      const markup = await renderMarkup(view(workset.id));
-      const start = markup.indexOf("<dialog");
-      return start === -1 ? "" : markup.slice(start, markup.indexOf("</dialog>", start) + 9);
+      const detail = await renderMarkup(
+        <OutcomeDetail
+          payload={data}
+          companionDigest="0123456789"
+          writable={options.writable ?? true}
+          sessions={options.sessions ?? null}
+          runs={options.runs === undefined ? {} : options.runs}
+          now={NOW}
+          openId={workset.id}
+        />,
+      );
+      return `<dialog id="outcome-${workset.id}">${detail}</dialog>`;
     }),
   );
   return board + dialogs.join("");
@@ -186,9 +197,8 @@ describe("the Factory home", () => {
         },
       },
     );
+    // Close, its first focus and Previous/Next belong to the panel (panel.test.tsx).
     const dialog = dialogMarkup(markup, "acme-onboarding");
-    // First focus goes to Close when the dialog opens (an effect), so Enter cannot act.
-    expect(dialog).toMatch(/outcome-dialog-close"[^>]*aria-keyshortcuts="Escape"/);
     expect(dialog).toContain("Ready to merge");
     expect(dialog).toContain("The three-step signup is built on the delivery branch.");
     expect(dialog).toContain("Ready for you to merge");
@@ -624,7 +634,7 @@ describe("the live log and taking control", () => {
     expect(dialog).not.toContain("/take-control");
   });
 
-  it("steps between Outcome dialogs in board order and names what each attention expects", async () => {
+  it("names what each attention expects in the Outcome's panel", async () => {
     const markup = await render(
       payload({
         worksets: [
@@ -641,11 +651,8 @@ describe("the live log and taking control", () => {
       { runs: { "acme-a": { ...waiting }, "acme-b": running() } },
     );
     const first = dialogMarkup(markup, "acme-a");
-    expect(first).toContain("1 of 2");
-    expect(first).toMatch(/data-outcome-goto="outcome-acme-b"[^>]*aria-keyshortcuts="J"/);
-    expect(first).toMatch(/class="outcome-step"[^>]*disabled=""[^>]*aria-keyshortcuts="K"/);
     expect(first).toContain("The run is paused on this.");
-    expect(dialogMarkup(markup, "acme-b")).toContain("2 of 2");
+    expect(dialogMarkup(markup, "acme-b")).not.toContain("outcome-dialog-attention");
     expect(markup).toContain("data-outcome-filter");
   });
 

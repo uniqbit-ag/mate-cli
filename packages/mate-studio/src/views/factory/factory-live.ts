@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { inField } from "../../lib/in-field";
+
 const SEEN_KEY = "mate.factory.needsYou";
 
 /** Whether every word of `query` occurs in `text`, ignoring case. */
@@ -30,21 +32,19 @@ export function stepRow(
 
 /** Whether a key press belongs to a field or the terminal rather than to a shortcut. */
 function typing(target: EventTarget | null): boolean {
-  const element = target as Element | null;
-  return Boolean(
-    element?.closest?.("input, textarea, select, [contenteditable], .outcome-terminal"),
-  );
+  return inField(target) || Boolean((target as Element | null)?.closest?.(".outcome-terminal"));
 }
 
-/** In an open dialog: 1–9 pick a one-click answer, J/K the next or previous Outcome. */
+/** In an open Outcome panel: 1–9 pick a one-click answer, J/K the next or previous Outcome. */
 function dialogButton(dialog: Element, key: string): HTMLButtonElement | null {
   if (/^[1-9]$/.test(key)) {
     return dialog.querySelector<HTMLButtonElement>(`[data-option-key="${key}"]`);
   }
-  const step = ({ j: "J", k: "K" } as Record<string, string>)[key];
+  const step = ({ j: "Next", k: "Previous" } as Record<string, string>)[key];
   if (!step) return null;
-  return dialog.querySelector<HTMLButtonElement>(
-    `[data-outcome-goto][aria-keyshortcuts="${step}"]`,
+  // The panel's own Previous and Next walk the Outcomes.
+  return (dialog.closest("[data-slot=sheet-content]") ?? dialog).querySelector<HTMLButtonElement>(
+    `button[aria-label="${step}"]`,
   );
 }
 
@@ -57,7 +57,7 @@ function boardField(doc: Document, key: string): HTMLElement | null {
 
 /**
  * Board shortcuts: N starts a new outcome, / filters, J/K (arrows on a row) move between
- * rows, Enter opens one. In an open dialog J/K step to the next or previous Outcome, 1–9
+ * rows, Enter opens one. In an open Outcome panel J/K step to the next or previous Outcome, 1–9
  * pick a one-click answer and Ctrl/Cmd+Enter sends the form being typed in. Fields and the
  * terminal keep every other key.
  */
@@ -77,7 +77,10 @@ export function factoryKeyHandler(doc: Document) {
       return;
     }
     if (event.ctrlKey || event.metaKey || typing(target)) return;
-    const dialog = doc.querySelector("dialog.outcome-dialog[open]");
+    // Another modal (Agents, the palette) owns the keys while focus is in it.
+    const modal = target?.closest?.('[data-slot="sheet-content"], [data-slot="dialog-content"]');
+    if (modal && !modal.querySelector("[data-outcome-panel]")) return;
+    const dialog = doc.querySelector("[data-outcome-panel]");
     if (dialog) {
       const button = dialogButton(dialog, event.key);
       if (button) {
@@ -111,8 +114,10 @@ export function factoryKeyHandler(doc: Document) {
 export function useFactoryKeys(): void {
   useEffect(() => {
     const handler = factoryKeyHandler(document);
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
+    // Capture: the Outcome panel stops keys from bubbling past it. On window, so it runs before
+    // the palette's document listener, which leaves a "/" this handler took.
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
   }, []);
 }
 

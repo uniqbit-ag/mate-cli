@@ -1,59 +1,86 @@
-import { Fragment } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import {
   type SpecActionOffer,
   type StudioCompanionPayload,
   type StudioSpec,
   SUBJECT_PATTERN,
 } from "@uniqbit/mate-core/studio";
+import { Fragment, useState } from "react";
+
+import { Icon } from "../../components/icon";
+import { EmptyNote, ListCard, PAGE_PAD, ROW, StatusWord } from "../../components/view-parts";
+import { cn } from "../../lib/cn";
+import { vaultQuery } from "../../lib/studio-queries";
+import { PanelHead, PanelSection, SidePanel } from "../../shell/panel";
+import { MarkdownView } from "../vault/markdown-view";
 import { Warnings } from "../warnings";
 import { groupSpecsByArea } from "./spec-areas";
 
 const NO_ACTIONS: SpecActionOffer[] = [];
 
-function specStatus(spec: StudioSpec): { label: string; invalid: boolean } {
-  if (spec.valid === false) return { label: `${spec.issueCount ?? 0} issues`, invalid: true };
-  if (spec.valid === true) return { label: "valid", invalid: false };
-  return { label: "unvalidated", invalid: false };
+const specPath = (capability: string) => `openspec/specs/${capability}/spec.md`;
+
+function specStatus(spec: StudioSpec) {
+  if (spec.valid === false) {
+    return <StatusWord marker="issue">{`${spec.issueCount ?? 0} issues`}</StatusWord>;
+  }
+  if (spec.valid === true) return <StatusWord marker="done">valid</StatusWord>;
+  return <StatusWord marker="idle">unvalidated</StatusWord>;
+}
+
+const ROOT_AREA = ".";
+/** The repository-root Area reads as words; any other Area is its path. */
+const areaLabel = (area: string): string => (area === ROOT_AREA ? "Repository root" : area);
+
+function requirementsText(count: number | undefined): string {
+  if (count === undefined) return "requirements unknown";
+  return `${count} ${count === 1 ? "requirement" : "requirements"}`;
 }
 
 interface SpecsProps {
   payload: Pick<StudioCompanionPayload, "specs" | "warnings">;
   /** Skill actions offered on each spec row; none by default. */
   actions?: SpecActionOffer[];
+  /** The selected companion; the panel reads the spec file through the vault. */
+  companion?: string;
 }
 
-/** Its own view: an Area map is read on its own, not alongside the changes. */
-export function Specs({ payload, actions = NO_ACTIONS }: SpecsProps) {
+/** Capabilities by Area; a spec opens wide in the panel. */
+export function Specs({ payload, actions = NO_ACTIONS, companion }: SpecsProps) {
   return (
     <>
-      <SpecsByArea specs={payload.specs} actions={actions} />
       <Warnings warnings={payload.warnings} />
+      <SpecsByArea specs={payload.specs} actions={actions} companion={companion} />
     </>
   );
 }
 
+const ACTION_BUTTON =
+  "inline-flex h-7 items-center gap-1.5 rounded-[6px] border border-rule bg-surface px-2.5 text-xs text-text hover:border-accent hover:bg-accent-soft";
+
 function SpecActions({ capability, actions }: { capability: string; actions: SpecActionOffer[] }) {
-  if (!SUBJECT_PATTERN.test(capability)) return null;
+  if (!SUBJECT_PATTERN.test(capability) || actions.length === 0) return null;
   return (
-    <span className="spec-actions">
+    <span className="spec-actions flex flex-wrap items-center gap-1.5">
       {actions.map(({ action, runAgents, copyAgents }) => (
         <Fragment key={action.id}>
           {runAgents.length > 0 ? (
             <button
               type="button"
-              className="button spec-action"
+              className={cn(ACTION_BUTTON, "spec-action")}
               data-studio-action={action.id}
               data-studio-subject={capability}
               data-studio-agents={runAgents.join(" ")}
             >
+              <Icon name="play" className="size-3.5" />
               {action.label}
             </button>
           ) : null}
           <button
             type="button"
-            className="runway-step-copy spec-copy"
+            className={cn(ACTION_BUTTON, "spec-copy")}
             aria-label="Copy prompt"
-            title="Copy prompt"
             data-studio-copy-prompt={action.id}
             data-prompt-claude={
               copyAgents.includes("claude") ? action.prompts.claude(capability) : undefined
@@ -62,18 +89,8 @@ function SpecActions({ capability, actions }: { capability: string; actions: Spe
               copyAgents.includes("opencode") ? action.prompts.opencode(capability) : undefined
             }
           >
-            <svg
-              viewBox="0 0 16 16"
-              width="14"
-              height="14"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              aria-hidden="true"
-            >
-              <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
-              <path d="M10.5 3.5v-.5a1.5 1.5 0 0 0-1.5-1.5H3.5A1.5 1.5 0 0 0 2 3v5.5A1.5 1.5 0 0 0 3.5 10H4" />
-            </svg>
+            <Icon name="copy" className="size-3.5" />
+            Copy prompt
           </button>
         </Fragment>
       ))}
@@ -81,58 +98,132 @@ function SpecActions({ capability, actions }: { capability: string; actions: Spe
   );
 }
 
-function SpecsByArea({ specs, actions }: { specs: StudioSpec[]; actions: SpecActionOffer[] }) {
+function SpecsByArea({
+  specs,
+  actions,
+  companion,
+}: {
+  specs: StudioSpec[];
+  actions: SpecActionOffer[];
+  companion?: string;
+}) {
   const groups = groupSpecsByArea(specs);
+  const [open, setOpen] = useState<string | null>(null);
+  // A spec bound to several Areas is listed under each, but walked once.
+  const order = [
+    ...new Set(groups.flatMap(([, areaSpecs]) => areaSpecs.map((spec) => spec.capability))),
+  ];
+  const current = specs.find((spec) => spec.capability === open) ?? null;
 
   return (
-    <section className="view-section" aria-label="Specs by Area">
-      <p className="view-summary">
-        {specs.length} {specs.length === 1 ? "spec" : "specs"} · capabilities grouped by the Areas
-        they serve
-      </p>
+    <section className={cn(PAGE_PAD, "grid content-start gap-3 pb-10")} aria-label="Specs by Area">
       {groups.length === 0 ? (
-        <p className="empty">No specs in this companion.</p>
+        <EmptyNote>No specs in this companion.</EmptyNote>
       ) : (
-        <div className="specs-area-grid">
-          {groups.map(([area, areaSpecs]) => (
-            <section key={area} className="specs-area-card" aria-label={`Area ${area}`}>
-              <div className="specs-area-card-head">
-                <h4 className="specs-area-name">{area}</h4>
-                <span className="specs-area-count">{`${areaSpecs.length} specs`}</span>
-              </div>
-              <div className="specs-card-list">
-                {areaSpecs.map((spec) => {
-                  const status = specStatus(spec);
-                  return (
-                    <div key={spec.capability} className="spec-card-row">
-                      <div>
-                        <strong>{spec.capability}</strong>
-                        <div className="spec-card-meta">
-                          <span>
-                            {spec.requirementCount === undefined
-                              ? "requirements unknown"
-                              : `${spec.requirementCount} requirements`}
-                          </span>
-                        </div>
-                      </div>
-                      <span className="spec-card-end">
-                        <SpecActions capability={spec.capability} actions={actions} />
-                        <span
-                          className={
-                            status.invalid ? "spec-status spec-status-invalid" : "spec-status"
-                          }
-                        >
-                          {status.label}
-                        </span>
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
-        </div>
+        groups.map(([area, areaSpecs]) => (
+          <ListCard
+            key={area}
+            title={area === ROOT_AREA ? areaLabel(area) : <span className="font-mono">{area}</span>}
+            label={`Area ${area}`}
+            count={areaSpecs.length}
+          >
+            <ul className="m-0 list-none p-0">
+              {areaSpecs.map((spec) => (
+                <li key={spec.capability}>
+                  <button
+                    type="button"
+                    className={cn(
+                      ROW,
+                      "grid grid-cols-[minmax(0,1fr)_auto_120px] py-1.5 max-sm:grid-cols-[minmax(0,1fr)_auto]",
+                    )}
+                    aria-current={open === spec.capability ? "true" : undefined}
+                    data-spec={spec.capability}
+                    onClick={() => setOpen(spec.capability)}
+                  >
+                    <span className="truncate font-mono text-sm">{spec.capability}</span>
+                    {/* Valid is the norm; only a spec that asks for attention is marked. */}
+                    {spec.valid === true ? <span /> : specStatus(spec)}
+                    <span className="text-right text-xs text-muted tabular-nums max-sm:hidden">
+                      {requirementsText(spec.requirementCount)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </ListCard>
+        ))
       )}
+      <SidePanel
+        items={order}
+        current={current?.capability ?? null}
+        onSelect={setOpen}
+        wide
+        title={current ? `Spec ${current.capability}` : "Spec"}
+      >
+        {current ? <SpecDetail spec={current} actions={actions} companion={companion} /> : null}
+      </SidePanel>
     </section>
+  );
+}
+
+function SpecDetail({
+  spec,
+  actions,
+  companion,
+}: {
+  spec: StudioSpec;
+  actions: SpecActionOffer[];
+  companion?: string;
+}) {
+  const path = specPath(spec.capability);
+  const file = useQuery({
+    ...vaultQuery(companion ?? "", { path }),
+    enabled: Boolean(companion),
+  });
+  const markdown = file.data?.open?.markdown;
+  return (
+    <>
+      <PanelHead
+        mono
+        title={spec.capability}
+        kicker={
+          <>
+            {specStatus(spec)}
+            <span className="ml-auto">{spec.areas.map(areaLabel).join(", ")}</span>
+          </>
+        }
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <SpecActions capability={spec.capability} actions={actions} />
+          <Link
+            className="inline-flex items-center gap-1.5 text-sm"
+            to="/vault"
+            search={(previous) => ({ ...previous, path })}
+          >
+            <Icon name="external" className="size-3.5" /> Open in Vault
+          </Link>
+        </div>
+      </PanelHead>
+      <PanelSection
+        title="Spec"
+        aside={
+          spec.requirementCount === undefined ? undefined : requirementsText(spec.requirementCount)
+        }
+      >
+        {markdown ? (
+          <div className="prose-panel">
+            <MarkdownView nodes={markdown} />
+          </div>
+        ) : (
+          <p className="m-0 text-sm text-muted">
+            {file.isError
+              ? "The spec file could not be read."
+              : file.isPending && companion
+                ? "Loading…"
+                : "The spec file could not be read."}
+          </p>
+        )}
+      </PanelSection>
+    </>
   );
 }

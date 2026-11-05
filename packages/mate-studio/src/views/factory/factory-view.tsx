@@ -3,6 +3,9 @@ import { type FormEvent, useEffect, useRef, useState, type ReactNode } from "rea
 
 import { type FactoryAction, type FactoryPayload } from "../../server/factory";
 import { Warnings } from "../warnings";
+import { ListCard, PAGE_PAD, Pills } from "../../components/view-parts";
+import { cn } from "../../lib/cn";
+import { SidePanel } from "../../shell/panel";
 import { type GraphProgress, WorkflowGraphView } from "../workflow/delivery-path";
 import { FactoryCompanion } from "./factory-companion";
 import { AgentsDialog } from "./agents-dialog";
@@ -10,7 +13,6 @@ import { FactoryForm } from "./factory-form";
 import { useFactoryUi } from "../../stores/factory-ui";
 import { matchesFilter, useFactoryKeys, useNeedsYou, useNotificationOffer } from "./factory-live";
 import { ageText } from "./age";
-import { useModalDialog } from "./use-modal-dialog";
 import { useOutcomeLog } from "./use-outcome-log";
 import { OutcomeTerminal } from "../../terminal/outcome-terminal";
 import {
@@ -82,6 +84,9 @@ const TAKE_CONTROL_HINT =
   "Pauses automation after the current stage; you continue the factory's own conversation here.";
 
 const RECENT_COMPLETED = 5;
+
+/** Which list the board shows; `all` shows each. */
+type ListFilter = "all" | "attention" | "active" | "later" | "completed";
 
 /** "Decisions needed (3)" when the agent asked several questions together. */
 function attentionLabel(kind: AttentionKind, run: FactoryRunView | undefined): string {
@@ -871,45 +876,16 @@ function OutcomeList({
   children: ReactNode;
 }) {
   return (
-    <section className="outcome-list-section" data-section={section} aria-label={label}>
-      <h3>
-        {label} <span className="outcome-list-count mono">{count}</span>
-      </h3>
-      <ul className="outcome-list">{children}</ul>
-    </section>
+    <div className="outcome-list-section" data-section={section}>
+      <ListCard title={label} count={count} tone={section === "attention" ? "warn" : undefined}>
+        <ul className="outcome-list">{children}</ul>
+      </ListCard>
+    </div>
   );
 }
 
 const sameText = (a: string, b: string): boolean =>
   a.replace(/\.$/, "").toLowerCase() === b.replace(/\.$/, "").toLowerCase();
-
-/** The dialog's place in board order, for stepping to the previous and next Outcome. */
-interface DialogPlace {
-  index: number;
-  total: number;
-  prev?: string;
-  next?: string;
-}
-
-function StepButton({ to, label, keyName }: { to?: string; label: string; keyName: string }) {
-  const address = useOutcomeAddress();
-  return (
-    <button
-      type="button"
-      className="outcome-step"
-      data-outcome-goto={to ? dialogId(to) : undefined}
-      disabled={!to}
-      aria-keyshortcuts={keyName}
-      onClick={() => {
-        if (!to) return;
-        useFactoryUi.getState().setStepped(true);
-        address.step(to);
-      }}
-    >
-      {label} <kbd>{keyName}</kbd>
-    </button>
-  );
-}
 
 /** What the person is asked to do, with what it expects of them. */
 function AttentionSection({
@@ -983,20 +959,18 @@ function History({ run, now }: { run: FactoryRunView | undefined; now: number | 
 }
 
 /**
- * Everything about one Outcome. The main column leads with what needs the person, then the
- * log, status and the run's actions, and history; the rail shows where the Outcome is on the
- * Delivery Path, with the execution facts under it. In control the terminal takes the width.
+ * Everything about one Outcome, in the slide-over panel. It leads with what needs the person,
+ * then the log, status and the run's actions, and history; Details holds where the Outcome is
+ * on the Delivery Path and the execution facts. In control the terminal takes the width.
  */
-function OutcomeDialog({
+function OutcomePanel({
   item,
   kind,
   context,
-  place,
 }: {
   item: OutcomeItem;
   kind: AttentionKind | null;
   context: HomeContext;
-  place: DialogPlace;
 }) {
   const { workset, run } = item;
   const situation = situationOf(workset, run);
@@ -1009,21 +983,13 @@ function OutcomeDialog({
     activity,
     note: progressNote(item, activity, context.now),
   };
-  const address = useOutcomeAddress();
-  // The address follows the dialog's close.
-  const ref = useModalDialog(address.close, (dialog) => {
-    dialog.showModal();
-    // First focus: Enter on open must not act on the Outcome.
-    dialog.querySelector<HTMLElement>(".outcome-dialog-close")?.focus();
-  });
   return (
-    <dialog
-      ref={ref}
+    <div
       id={id}
       className="outcome-dialog"
+      data-outcome-panel=""
       data-workset={workset.id}
       data-layout={kind === "control" ? "control" : undefined}
-      aria-labelledby={`${id}-title`}
     >
       <header className="outcome-dialog-head">
         <div className="outcome-dialog-heading">
@@ -1036,38 +1002,24 @@ function OutcomeDialog({
             ) : null}
           </p>
         </div>
-        <nav className="outcome-dialog-steps" aria-label="Other outcomes">
-          <span className="outcome-dialog-place mono">
-            {place.index + 1} of {place.total}
-          </span>
-          <StepButton to={place.prev} label="Previous" keyName="K" />
-          <StepButton to={place.next} label="Next" keyName="J" />
-        </nav>
-        <form method="dialog">
-          {/* First focus: Enter on open must not act on the Outcome. */}
-          <button type="submit" className="outcome-dialog-close" aria-keyshortcuts="Escape">
-            Close <kbd>Esc</kbd>
-          </button>
-        </form>
       </header>
-      <div className="outcome-dialog-body">
-        <div className="outcome-dialog-main">
-          {kind ? <AttentionSection item={item} kind={kind} context={context} /> : null}
-          <TakeoverPending run={run} now={context.now} />
-          <OutcomeLog item={item} />
-          <OutcomeStatus item={item} situation={situation} />
-          <RunActions item={item} context={context} />
-          <TakeControl item={item} context={context} />
-          <History run={run} now={context.now} />
-          {workset.intent ? (
-            <section className="outcome-intent-section" aria-label="Request">
-              <h3>Request</h3>
-              <p className="outcome-intent">{workset.intent}</p>
-            </section>
-          ) : null}
-          {kind !== "review" ? <FeedbackField item={item} context={context} /> : null}
-        </div>
-        <aside className="outcome-dialog-rail" aria-label="Delivery Path">
+      <div className="outcome-dialog-main">
+        {kind ? <AttentionSection item={item} kind={kind} context={context} /> : null}
+        <TakeoverPending run={run} now={context.now} />
+        <OutcomeLog item={item} />
+        <OutcomeStatus item={item} situation={situation} />
+        <RunActions item={item} context={context} />
+        <TakeControl item={item} context={context} />
+        <History run={run} now={context.now} />
+        {workset.intent ? (
+          <section className="outcome-intent-section" aria-label="Request">
+            <h3>Request</h3>
+            <p className="outcome-intent">{workset.intent}</p>
+          </section>
+        ) : null}
+        {kind !== "review" ? <FeedbackField item={item} context={context} /> : null}
+        <details className="outcome-dialog-rail" aria-label="Details">
+          <summary>Details</summary>
           {/* In control the terminal gets the width; stage and changes stay in the facts. */}
           {kind === "control" ? null : (
             <WorkflowGraphView
@@ -1077,9 +1029,9 @@ function OutcomeDialog({
             />
           )}
           <Facts item={item} context={context} />
-        </aside>
+        </details>
       </div>
-    </dialog>
+    </div>
   );
 }
 
@@ -1184,17 +1136,23 @@ function BoardToolbar({
   worksets,
   writable,
   factoryMode,
+  onPass,
+  children,
 }: {
   count: number;
   worksets: number;
   writable: boolean;
   factoryMode: boolean;
+  /** Starts the pass through what needs the person; absent when nothing does. */
+  onPass?: () => void;
+  children?: ReactNode;
 }) {
   const filter = useFactoryUi((state) => state.filter);
   const setFilter = useFactoryUi((state) => state.setFilter);
   const notifications = useNotificationOffer();
   return (
     <div className="view-intro" data-factory-live="" data-needs-you={count}>
+      {children}
       {worksets > 0 ? (
         <input
           type="search"
@@ -1235,11 +1193,48 @@ function BoardToolbar({
         Notify me about decisions
       </button>
       {factoryMode && writable ? <OpenAgents label="Agents" /> : null}
+      {onPass ? (
+        <button type="button" className="factory-primary factory-pass" onClick={onPass}>
+          Clear what needs you <span className="mono">{count}</span>
+        </button>
+      ) : null}
     </div>
   );
 }
 
-/** Outcomes as lists of one line each; everything else opens in the Outcome's dialog. */
+/** The board's Outcomes and the context every row and panel reads. */
+function contextOf({
+  payload,
+  companionDigest,
+  writable,
+  sessions = null,
+  runs = null,
+  now,
+}: FactoryProps): { home: FactoryHome; context: HomeContext } {
+  return {
+    home: factoryHome(payload.worksets, runs),
+    context: {
+      companionDigest,
+      writable,
+      sessions,
+      runner: runs !== null,
+      now,
+      path: workflowPlan({ topology: payload.topology }).paths[0]!,
+    },
+  };
+}
+
+/** One Outcome's panel content; the Factory shows it in the slide-over panel. */
+export function OutcomeDetail(props: FactoryProps & { openId: string }) {
+  const { home, context } = contextOf(props);
+  const all = [...home.attention, ...home.active, ...home.later, ...home.completed];
+  const item = all.find((entry) => entry.workset.id === props.openId);
+  if (!item) return null;
+  const kind = home.attention.find((entry) => entry.workset.id === props.openId)?.kind ?? null;
+  return <OutcomePanel item={item} kind={kind} context={context} />;
+}
+
+/** Outcomes as lists of one line each; everything else opens in the Outcome's panel. */
 export function Factory({
   payload,
   companionDigest,
@@ -1250,35 +1245,64 @@ export function Factory({
   openId,
   factoryMode = false,
 }: FactoryProps) {
-  const home = factoryHome(payload.worksets, runs);
-  const context: HomeContext = {
-    companionDigest,
-    writable,
-    sessions,
-    runner: runs !== null,
-    now,
-    path: workflowPlan({ topology: payload.topology }).paths[0]!,
-  };
+  const { home, context } = contextOf({ payload, companionDigest, writable, sessions, runs, now });
   const { kinds, ordered, attention, running, later, completed, shownCount, query } =
     useBoard(home);
-  const openIndex = openId ? ordered.findIndex((item) => item.workset.id === openId) : -1;
   const idle = running.all.length === 0 && home.attention.length === 0;
   useFactoryKeys();
   useNeedsYou(home.attention.length);
-  const open = openIndex >= 0 ? { item: ordered[openIndex]!, index: openIndex } : null;
+  const [list, setList] = useState<ListFilter>("all");
+  const [pass, setPass] = useState(false);
+  const address = useOutcomeAddress();
+  const shows = (section: ListFilter) => list === "all" || list === section;
+  // A pass walks only what needs the person; otherwise the panel walks the board in order.
+  const walk = pass ? home.attention : ordered;
+  const open = openId ? (ordered.find((item) => item.workset.id === openId) ?? null) : null;
   const agentsOpen = useFactoryUi((state) => state.agentsOpen);
   const setAgentsOpen = useFactoryUi((state) => state.setAgentsOpen);
   return (
     <FactoryCompanion.Provider value={companionDigest}>
-      <section className="view-section factory-home" aria-label="Factory">
+      <section
+        className={cn(PAGE_PAD, "view-section factory-home grid content-start gap-4 pb-10")}
+        aria-label="Factory"
+      >
+        <OutcomeInput repositories={payload.linkedRepositories} context={context} />
         <BoardToolbar
           count={home.attention.length}
           worksets={payload.worksets.length}
           writable={writable}
           factoryMode={factoryMode}
-        />
-        <OutcomeInput repositories={payload.linkedRepositories} context={context} />
-        {attention.length > 0 ? (
+          onPass={
+            home.attention.length > 0
+              ? () => {
+                  setPass(true);
+                  useFactoryUi.getState().setStepped(false);
+                  address.open(home.attention[0]!.workset.id);
+                }
+              : undefined
+          }
+        >
+          {payload.worksets.length > 0 ? (
+            <Pills
+              label="Show outcomes"
+              value={list}
+              onChange={setList}
+              options={[
+                { value: "all", label: "All", count: payload.worksets.length },
+                {
+                  value: "attention",
+                  label: "Needs you",
+                  count: home.attention.length,
+                  tone: "warn",
+                },
+                { value: "active", label: "Running", count: running.all.length },
+                { value: "later", label: "Later", count: home.later.length },
+                { value: "completed", label: "Done", count: home.completed.length },
+              ]}
+            />
+          ) : null}
+        </BoardToolbar>
+        {shows("attention") && attention.length > 0 ? (
           <OutcomeList label="Needs you" section="attention" count={attention.length}>
             {attention.map((item) => (
               <OutcomeRow
@@ -1294,7 +1318,7 @@ export function Factory({
             ))}
           </OutcomeList>
         ) : null}
-        {running.shown.length > 0 ? (
+        {shows("active") && running.shown.length > 0 ? (
           <OutcomeList label="Running" section="active" count={running.shown.length}>
             {running.shown.map((item) => (
               <OutcomeRow key={item.workset.id} item={item} context={context} />
@@ -1313,7 +1337,7 @@ export function Factory({
         >
           No outcomes match the filter.
         </p>
-        {later.length > 0 ? (
+        {shows("later") && later.length > 0 ? (
           <OutcomeList label="Later" section="later" count={later.length}>
             {later.map((item) => (
               <OutcomeRow
@@ -1326,21 +1350,34 @@ export function Factory({
             ))}
           </OutcomeList>
         ) : null}
-        <Completed items={completed} context={context} expanded={Boolean(query)} />
-        {open ? (
-          <OutcomeDialog
-            key={open.item.workset.id}
-            item={open.item}
-            kind={kinds.get(open.item.workset.id) ?? null}
-            context={context}
-            place={{
-              index: open.index,
-              total: ordered.length,
-              prev: ordered[open.index - 1]?.workset.id,
-              next: ordered[open.index + 1]?.workset.id,
-            }}
-          />
+        {shows("completed") ? (
+          <Completed items={completed} context={context} expanded={Boolean(query)} />
         ) : null}
+        <SidePanel
+          items={walk.map((item) => item.workset.id)}
+          current={open?.workset.id ?? null}
+          onSelect={(id) => {
+            if (id === null) {
+              setPass(false);
+              address.close();
+              return;
+            }
+            useFactoryUi.getState().setStepped(true);
+            address.step(id);
+          }}
+          pass={pass ? "Needs you" : undefined}
+          wide
+          title={open ? open.workset.title : "Outcome"}
+        >
+          {open ? (
+            <OutcomePanel
+              key={open.workset.id}
+              item={open}
+              kind={kinds.get(open.workset.id) ?? null}
+              context={context}
+            />
+          ) : null}
+        </SidePanel>
         {payload.worksetProblems.length > 0 ? (
           <Warnings
             warnings={payload.worksetProblems.map((problem) => `${problem.path} ${problem.reason}`)}

@@ -1,14 +1,13 @@
 import { describe, expect, it } from "bun:test";
+import { type StudioCompanionPayload, type StudioShippedChange } from "@uniqbit/mate-core/studio";
 
-import { staticMarkup } from "../../../test/render";
-
-import {
-  type StudioCompanionPayload,
-  type StudioReportSummary,
-  type StudioShippedChange,
-} from "@uniqbit/mate-core/studio";
-import { AnalystOverview } from "./analyst-overview";
-import { recentlyChangedSpecs } from "./changed-specs";
+await import("../../../test/dom");
+const { act, render: mountDom } = await import("@testing-library/react");
+const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+const router = await import("@tanstack/react-router");
+const { staticMarkup } = await import("../../../test/render");
+const { AnalystOverview } = await import("./analyst-overview");
+const { recentlyChangedSpecs } = await import("./changed-specs");
 
 function shipped(anchor: string, specs: string[], hasProposal = true): StudioShippedChange {
   return { name: anchor.slice(11), anchor, archivedOn: anchor.slice(0, 10), specs, hasProposal };
@@ -42,12 +41,8 @@ function payload(overrides: Partial<StudioCompanionPayload> = {}): StudioCompani
   } as StudioCompanionPayload;
 }
 
-const reports: StudioReportSummary[] = [
-  { id: "a".repeat(32), title: "Acme quarterly review", createdAt: Date.UTC(2026, 1, 3, 9, 0) },
-];
-
-function render(data = payload(), listed: StudioReportSummary[] | null = reports): string {
-  return staticMarkup(<AnalystOverview payload={data} reports={listed} />);
+function render(data = payload()): string {
+  return staticMarkup(<AnalystOverview payload={data} />);
 }
 
 function hrefs(markup: string): URL[] {
@@ -57,29 +52,32 @@ function hrefs(markup: string): URL[] {
 }
 
 describe("AnalystOverview", () => {
-  it("presents the four parts", () => {
+  it("shows what shipped and the specs it changed, not the spec summary or reports", () => {
     const markup = render();
-    expect(markup).toContain("What the system does");
     expect(markup).toContain("Recently shipped");
     expect(markup).toContain("Recently changed specs");
-    expect(markup).toContain("Recent reports");
-    expect(markup).toContain("Acme quarterly review");
+    expect(markup).not.toContain("What the system does");
+    expect(markup).not.toContain("Recent reports");
   });
 
-  it("counts capabilities, requirements, and invalid specs, and capabilities per Area", () => {
-    const markup = render();
-    expect(markup).toContain("<dt>capabilities</dt><dd>2</dd>");
-    expect(markup).toContain("<dt>requirements</dt><dd>7</dd>");
-    expect(markup).toContain('data-alert="true"><dt>invalid specs</dt><dd>1</dd>');
-    expect(markup).toMatch(/acme<\/span><span class="analyst-count">2</);
-    expect(markup).toMatch(/docs<\/span><span class="analyst-count">1</);
-  });
-
-  it("lists shipped changes newest first with date and capabilities", () => {
+  it("lists shipped changes newest first under their day, with capabilities", () => {
     const markup = render();
     expect(markup.indexOf("acme-checkout")).toBeLessThan(markup.indexOf("acme-minimal"));
-    expect(markup).toContain("archived 2026-02-10");
+    expect(markup).toMatch(/<time dateTime="2026-02-10"[^>]*>2026-02-10<\/time>Tuesday/);
     expect(markup).toContain("acme-billing, acme-login");
+  });
+
+  it("puts changes archived on one day under one heading", () => {
+    const sameDay = [
+      shipped("2026-02-10-acme-one", []),
+      shipped("2026-02-10-acme-two", []),
+      shipped("2026-02-09-acme-three", []),
+    ];
+    const markup = render(payload({ shipped: sameDay }));
+    expect([...markup.matchAll(/<time dateTime="([^"]+)"/g)].map((match) => match[1])).toEqual([
+      "2026-02-10",
+      "2026-02-09",
+    ]);
   });
 
   it("names each changed spec once, at its newest shipped change", () => {
@@ -90,26 +88,20 @@ describe("AnalystOverview", () => {
   });
 
   it("caps each list", () => {
-    const many = Array.from({ length: 12 }, (_, index) =>
+    const many = Array.from({ length: 24 }, (_, index) =>
       shipped(`2026-01-${String(index + 10)}-acme-${index}`, [`acme-spec-${index}`]),
     );
-    const listedReports = Array.from({ length: 7 }, (_, index) => ({
-      id: String(index).repeat(32),
-      title: `Report ${index}`,
-      createdAt: index,
-    }));
-    const markup = render(payload({ shipped: many }), listedReports);
-    const rows = (id: string) =>
-      (new RegExp(`aria-labelledby="${id}"[\\s\\S]*?</section>`).exec(markup)?.[0] ?? "").split(
-        'class="analyst-row"',
+    const markup = render(payload({ shipped: many }));
+    const rows = (label: string) =>
+      (new RegExp(`aria-label="${label}"[\\s\\S]*?</section>`).exec(markup)?.[0] ?? "").split(
+        "<li>",
       ).length - 1;
-    expect(rows("analyst-shipped")).toBe(8);
-    expect(rows("analyst-changed-specs")).toBe(10);
-    expect(rows("analyst-reports")).toBe(5);
-    expect(markup).toContain("newest 8 of 12");
+    expect(rows("Recently shipped")).toBe(20);
+    expect(rows("Recently changed specs")).toBe(12);
+    expect(markup).toContain("newest 20");
   });
 
-  it("links into the vault, Specs, and Reports, keeping the mode", () => {
+  it("links into the vault and Specs, keeping the mode", () => {
     const links = hrefs(render());
     for (const link of links) expect(link.searchParams.get("studioMode")).toBe("analysis");
     // Each view has its own path now; the vault target is still named by `path` or `dir`.
@@ -118,13 +110,54 @@ describe("AnalystOverview", () => {
       link.searchParams.get("path") ?? link.searchParams.get("dir"),
     ]);
     expect(targets).toContainEqual(["specs", null]);
-    expect(targets).toContainEqual(["reports", null]);
-    expect(targets).toContainEqual([
-      "vault",
-      "openspec/changes/archive/2026-02-10-acme-checkout/proposal.md",
-    ]);
-    expect(targets).toContainEqual(["vault", "openspec/changes/archive/2026-01-05-acme-minimal"]);
     expect(targets).toContainEqual(["vault", "openspec/specs/acme-billing/spec.md"]);
+  });
+
+  it("opens a shipped change in the panel with its proposal and changed specs", async () => {
+    const root = router.createRootRoute();
+    const route = router.createRoute({
+      getParentRoute: () => root,
+      path: "/",
+      component: () => <AnalystOverview payload={payload()} />,
+    });
+    const instance = router.createRouter({
+      routeTree: root.addChildren([route]),
+      history: router.createMemoryHistory({ initialEntries: ["/?studioMode=analysis"] }),
+    });
+    await instance.load();
+    const page = mountDom(
+      <QueryClientProvider client={new QueryClient()}>
+        <router.RouterProvider router={instance} />
+      </QueryClientProvider>,
+    );
+    await act(async () => {});
+    const doc = page.container.ownerDocument;
+    const rows = [
+      ...doc.querySelectorAll<HTMLButtonElement>('[aria-label="Recently shipped"] button'),
+    ];
+    await act(async () => rows[0]!.click());
+    await act(async () => new Promise((done) => setTimeout(done, 20)));
+    const panel = doc.querySelector('[data-slot="sheet-content"]')!;
+    const targets = [...panel.querySelectorAll("a")].map((link) =>
+      new URL(link.getAttribute("href")!, "http://localhost").searchParams.get("path"),
+    );
+    expect(targets).toEqual([
+      "openspec/changes/archive/2026-02-10-acme-checkout/proposal.md",
+      "openspec/specs/acme-billing/spec.md",
+      "openspec/specs/acme-login/spec.md",
+    ]);
+    await act(async () =>
+      panel.querySelector<HTMLButtonElement>('button[aria-label="Next"]')!.click(),
+    );
+    await act(async () => new Promise((done) => setTimeout(done, 20)));
+    const minimal = doc.querySelector('[data-slot="sheet-content"]')!;
+    expect(minimal.textContent).toContain("This change has no proposal.");
+    expect(
+      new URL(minimal.querySelector("a")!.getAttribute("href")!, "http://x").searchParams.get(
+        "dir",
+      ),
+    ).toBe("openspec/changes/archive/2026-01-05-acme-minimal");
+    page.unmount();
   });
 
   it("shows no active change, task, workflow, or skill content", () => {
@@ -136,11 +169,8 @@ describe("AnalystOverview", () => {
   });
 
   it("gives each empty part a no-data message", () => {
-    const markup = render(payload({ specs: [], shipped: [] }), []);
-    expect(markup).toContain("No specs published in this companion.");
+    const markup = render(payload({ specs: [], shipped: [] }));
     expect(markup).toContain("No shipped changes yet.");
     expect(markup).toContain("No specs changed by shipped changes yet.");
-    expect(markup).toContain("No hosted reports yet.");
-    expect(render(payload(), null)).toContain("Reports could not be listed.");
   });
 });

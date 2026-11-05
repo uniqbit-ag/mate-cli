@@ -1,48 +1,49 @@
 import { describe, expect, it } from "bun:test";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 
 import { studioPaletteCss } from "./palette";
 
-/** The stylesheet as the page carries it: core's palette, then this application's rules. */
-/** The stylesheet as the file holds it, for checks that read its blocks line by line. */
-const RAW = `${studioPaletteCss()}\n${await Bun.file(`${import.meta.dir}/studio.css`).text()}`;
-// Whitespace is collapsed, so substring checks read the rules whatever the file's formatting.
-const STUDIO_STYLES = RAW.replace(/\s+/g, " ").replace(/\( /g, "(").replace(/ \)/g, ")");
+const SOURCE = readFileSync(path.join(import.meta.dir, "app.css"), "utf8");
+/** Whitespace collapsed, so checks read the rules whatever the file's formatting. */
+const FLAT = SOURCE.replace(/\s+/g, " ");
 
-describe("studio styles", () => {
-  it("defines the light palette on bare :root and both explicit theme overrides", () => {
-    expect(STUDIO_STYLES).toContain(":root {");
-    expect(STUDIO_STYLES).toContain("@media (prefers-color-scheme: light)");
-    expect(STUDIO_STYLES).toContain("@media (prefers-color-scheme: dark)");
-    expect(STUDIO_STYLES).toContain(':root[data-theme="light"]');
-    expect(STUDIO_STYLES).toContain(':root[data-theme="dark"]');
+const SRC = path.resolve(import.meta.dir, "..");
+const ASSETS = path.resolve(import.meta.dir, "../../dist/client/assets");
+
+/** Every TSX file under src, for the class names the views use. */
+function views(dir = SRC): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) return views(full);
+    return entry.name.endsWith(".tsx") && !entry.name.includes(".test.") ? [full] : [];
+  });
+}
+
+/** The declarations of the rule whose selector list starts with `selector`. */
+function rule(selector: string): string {
+  const start = FLAT.indexOf(`${selector} {`);
+  if (start === -1) return "";
+  return FLAT.slice(start, FLAT.indexOf("}", start));
+}
+
+describe("the stylesheet", () => {
+  it("builds on Tailwind with its default colour and shadow scales removed", () => {
+    expect(FLAT).toContain('@import "tailwindcss";');
+    expect(FLAT).toContain("--color-*: initial;");
+    expect(FLAT).toContain("--shadow-*: initial;");
   });
 
-  it("guards each media query so an explicit choice wins", () => {
-    expect(STUDIO_STYLES).toContain(':root:not([data-theme="dark"])');
-    expect(STUDIO_STYLES).toContain(':root:not([data-theme="light"])');
-  });
-
-  it("paints the page rather than inheriting the host colors", () => {
-    expect(STUDIO_STYLES).toContain("background: var(--bg)");
-    expect(STUDIO_STYLES).toContain("color: var(--text)");
-  });
-
-  it("uses one wider content cap for every page", () => {
-    expect(STUDIO_STYLES).toContain(".main > * { width: min(100%, 1180px);");
-    expect(STUDIO_STYLES).not.toContain(".workflow-view { width:");
-  });
-
-  it("keeps secondary header context unboxed and aligned to the header row", () => {
-    expect(STUDIO_STYLES).toContain(".page-header { display: flex; align-items: stretch;");
-    expect(STUDIO_STYLES).toContain(
-      ".page-context { display: grid; align-content: start; gap: 6px;",
-    );
-    expect(STUDIO_STYLES).toContain(
-      "padding: 0; border: 0; border-radius: 0; background: transparent;",
-    );
-  });
-
-  it("carries the token palette every view reads", () => {
+  it("binds every colour utility to a palette token", () => {
+    const theme = /@theme inline \{([^}]*)\}/.exec(FLAT)?.[1] ?? "";
+    const colours = [...theme.matchAll(/--color-([a-z-]+): ([^;]+);/g)];
+    expect(colours.length).toBeGreaterThan(20);
+    for (const [, name, value] of colours) {
+      expect({ name, value }).toEqual({
+        name,
+        value: /^var\(--[a-z-]+\)$|^transparent$|^currentColor$/.test(value!) ? value! : "a token",
+      });
+    }
     for (const token of [
       "--bg",
       "--panel",
@@ -50,191 +51,127 @@ describe("studio styles", () => {
       "--text",
       "--muted",
       "--accent",
-      "--done",
       "--warn",
       "--bad",
-      "--what",
       "--why",
-      "--prompt-bg",
-      "--mono",
     ]) {
-      expect(STUDIO_STYLES).toContain(`${token}:`);
+      expect(theme).toContain(`var(${token})`);
     }
   });
 
-  it("loads no external resource", () => {
-    expect(STUDIO_STYLES).not.toMatch(/@import|url\(/);
+  it("offers one shadow, the floating one, from the palette", () => {
+    expect(FLAT).toContain("--shadow-float: var(--drawer-shadow);");
+    const shadows = [...FLAT.matchAll(/box-shadow: ([^;]+);/g)].map((match) => match[1]!);
+    for (const value of shadows) {
+      // Insets mark a current item and borders; only floating layers cast the palette shadow.
+      expect(
+        value === "var(--drawer-shadow)" || value === "none" || value.startsWith("inset"),
+      ).toBe(true);
+    }
   });
 
-  it("keeps pre-explore skill choices free of the accent border", () => {
-    expect(STUDIO_STYLES).toContain(".workflow-option { display: grid; }");
-    expect(STUDIO_STYLES).not.toMatch(/\.workflow-option \{[^}]*border-left/);
+  it("declares no colour literal outside the terminal, which stays black in both appearances", () => {
+    const own = FLAT.replace(rule(".terminal-view, .outcome-terminal"), "");
+    expect(own).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/);
+    expect(rule(".terminal-view, .outcome-terminal")).toContain("background: #000;");
   });
 
-  it("scopes the terminal grid to a shell that carries the terminal", () => {
-    expect(STUDIO_STYLES).toContain(
-      ".shell[data-terminal] { grid-template-columns: calc(224px + var(--sidebar-inset)) minmax(0, 1fr) clamp(360px, var(--terminal-width, min(560px, 40vw)), 70vw); }",
-    );
-    expect(STUDIO_STYLES).toContain(
-      ":root[data-terminal-collapsed] .shell[data-terminal] { grid-template-columns: calc(224px + var(--sidebar-inset)) minmax(0, 1fr) calc(var(--terminal-strip, 44px) + var(--sidebar-inset)); }",
-    );
-    for (const line of STUDIO_STYLES.split("\n")) {
-      if (line.includes("grid-template-columns") && line.includes("--terminal")) {
-        expect(line).toContain(".shell[data-terminal]");
+  it("loads no resource from another host", () => {
+    expect(FLAT).not.toMatch(/url\(/);
+    expect(FLAT.match(/@import/g)).toHaveLength(1);
+  });
+
+  it("styles browser surfaces from the tokens: selection, caret, scrollbars, focus and numerals", () => {
+    expect(FLAT).toMatch(/::selection \{ background: color-mix\(in srgb, var\(--accent\)/);
+    expect(FLAT).toContain("caret-color: var(--accent);");
+    expect(FLAT).toContain("scrollbar-color: var(--border) transparent;");
+    expect(rule(":focus-visible")).toContain("outline: 2px solid var(--accent);");
+    expect(FLAT).toContain("font-variant-numeric: tabular-nums;");
+    expect(FLAT).toContain("text-underline-offset: 3px;");
+  });
+
+  it("keeps the palette the single source of the colour values", () => {
+    expect(studioPaletteCss()).toContain("--drawer-shadow:");
+    expect(FLAT).not.toMatch(/--(bg|panel|text|accent):/);
+  });
+});
+
+describe("the views' class names", () => {
+  const sources = views().map(
+    (file) => [path.relative(SRC, file), readFileSync(file, "utf8")] as const,
+  );
+
+  it("use no arbitrary colour literal", () => {
+    for (const [file, text] of sources) {
+      expect({ file, literal: /\[(#[0-9a-fA-F]{3,8}|rgba?\()/.exec(text)?.[0] ?? null }).toEqual({
+        file,
+        literal: null,
+      });
+    }
+  });
+
+  it("cast no shadow except the floating one", () => {
+    for (const [file, text] of sources) {
+      const shadows = [...text.matchAll(/(?<![\w-])shadow-([\w[\]_-]+)/g)].map(
+        (match) => match[1]!,
+      );
+      for (const shadow of shadows) {
+        expect({
+          file,
+          shadow,
+          allowed: shadow === "float" || shadow.startsWith("[inset"),
+        }).toEqual({
+          file,
+          shadow,
+          allowed: true,
+        });
       }
     }
   });
+});
 
-  it("keeps the terminal sidebar docked at full height", () => {
-    expect(STUDIO_STYLES).toMatch(
-      /\.terminal-sidebar \{[^}]*position: sticky;[^}]*top: 0;[^}]*height: 100vh;/,
+describe("the terminal frame", () => {
+  it("adds its column only to a frame that carries the terminal", () => {
+    expect(FLAT).toContain(
+      ".studio-frame[data-terminal] { grid-template-columns: var(--rail-w) minmax(0, 1fr) clamp( 360px, var(--terminal-width, min(560px, 40vw)), 70vw );",
     );
-    expect(STUDIO_STYLES).toContain(".terminal-view { flex: 1;");
-    expect(STUDIO_STYLES).toMatch(/\.terminal-sessions-footer \{[^}]*overflow-y: auto;/);
+    expect(FLAT).toContain(
+      ":root[data-terminal-collapsed] .studio-frame[data-terminal] { grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--terminal-strip, 44px);",
+    );
   });
 
-  it("detaches the rail and the side-by-side terminal as inset rounded panels", () => {
-    const block = (query: string) => {
-      const start = RAW.slice(RAW.indexOf(query));
-      return start.slice(0, start.indexOf("\n}\n"));
-    };
-    const wide = block("@media (min-width: 901px)");
-    expect(wide).toContain(
-      "margin: var(--sidebar-inset) 0 var(--sidebar-inset) var(--sidebar-inset);",
+  it("collapses only side by side and floats as a drawer below 1200px", () => {
+    const wide = FLAT.slice(FLAT.indexOf("@media (min-width: 1201px)"));
+    expect(wide.slice(0, wide.indexOf("@media (max-width: 1200px)"))).toContain(
+      "data-terminal-collapsed",
     );
-    expect(wide).toContain("height: calc(100vh - 2 * var(--sidebar-inset));");
-    expect(wide).toContain("border-radius: var(--sidebar-radius);");
-    const narrow = block("@media (max-width: 900px) {\n  .studio-sidebar");
-    expect(narrow).toContain("margin: var(--sidebar-inset) var(--sidebar-inset) 0;");
-    expect(narrow).toContain("border-radius: var(--sidebar-radius);");
-    const terminal = block("@media (min-width: 1201px)");
-    expect(terminal).toContain(
-      "margin: var(--sidebar-inset) var(--sidebar-inset) var(--sidebar-inset) 0;",
-    );
-    expect(terminal).toContain("border-radius: var(--sidebar-radius);");
-    expect(block("@media (max-width: 1200px)")).not.toContain("--sidebar-inset");
-  });
-
-  it("collapses only side by side and becomes a drawer below 1200px", () => {
-    const wide = STUDIO_STYLES.slice(STUDIO_STYLES.indexOf("@media (min-width: 1201px)"));
-    expect(wide.slice(0, wide.indexOf("\n}\n"))).toContain("data-terminal-collapsed");
-    const narrow = STUDIO_STYLES.slice(STUDIO_STYLES.indexOf("@media (max-width: 1200px)"));
-    const drawer = narrow.slice(0, narrow.indexOf("\n}\n"));
-    expect(drawer).toContain(".shell[data-terminal] .terminal-sidebar {");
+    const narrow = FLAT.slice(FLAT.indexOf("@media (max-width: 1200px)"));
+    const drawer = narrow.slice(0, narrow.indexOf("/* Navigation feedback"));
     expect(drawer).toContain("position: fixed;");
-    expect(drawer).toContain("transform: translateX(100%);");
+    expect(drawer).toContain("box-shadow: var(--drawer-shadow);");
     expect(drawer).toContain(".terminal-sidebar[data-drawer-open] { transform: none;");
-    expect(drawer).toContain(".terminal-drawer-open { display: block;");
     expect(drawer).not.toContain("grid-template-columns");
   });
 
-  /** Splits a selector list on its top-level commas, leaving `:is(a, b)` whole. */
-  const selectorList = (selectors: string): string[] => {
-    const parts = [""];
-    let depth = 0;
-    for (const char of selectors) {
-      if (char === "(") depth += 1;
-      if (char === ")") depth -= 1;
-      if (char === "," && depth === 0) parts.push("");
-      else parts[parts.length - 1] += char;
-    }
-    return parts.map((part) => part.trim());
-  };
+  it("gives the terminal the navigation sidebar's tint", () => {
+    expect(rule(".terminal-sidebar")).toContain("background: var(--bg-rail);");
+  });
+});
 
-  /** The declarations of every rule whose selector list contains `selector`. */
-  const ruleFor = (selector: string): string => {
-    const bodies = STUDIO_STYLES.replace(/\/\*.*?\*\//g, "")
-      .split("}")
-      .flatMap((rule) => {
-        const open = rule.lastIndexOf("{");
-        if (open === -1) return [];
-        const before = rule.slice(0, open);
-        // Inside an at-rule the selectors follow its own brace.
-        const selectors = before.slice(before.lastIndexOf("{") + 1);
-        return selectorList(selectors).includes(selector) ? [rule.slice(open + 1)] : [];
-      });
-    if (bodies.length === 0) throw new Error(`no rule for ${selector}`);
-    return bodies.join("\n");
-  };
+describe.if(existsSync(ASSETS))("the built stylesheet", () => {
+  const built = readdirSync(ASSETS)
+    .filter((name) => /^app-.*\.css$/.test(name))
+    .map((name) => readFileSync(path.join(ASSETS, name), "utf8"))
+    .join("\n");
 
-  it("frames cards and panes flat: surface, rule border, 8px corners, no shadow", () => {
-    for (const card of [".panel", ".specs-area-card", ".workflow-detail"]) {
-      const rule = ruleFor(card);
-      expect(rule).toContain("background: var(--panel)");
-      expect(rule).toContain("border: 1px solid var(--border)");
-      expect(rule).toContain("border-radius: 8px");
-    }
-    // Only the off-canvas terminal drawer, its opener and the Outcome dialog float over the page.
-    // `box-shadow: none` removes one, as for wterm's default card look.
-    const shadows = RAW.split("\n").filter(
-      (line) => line.includes("box-shadow") && !line.includes("box-shadow: none"),
-    );
-    expect(shadows).toHaveLength(3);
-    for (const line of shadows) expect(line).toContain("box-shadow: var(--drawer-shadow)");
+  it("carries no default palette colour and no shadow scale", () => {
+    expect(built.length).toBeGreaterThan(0);
+    expect(built).not.toMatch(/--color-(red|blue|gray|neutral|slate|zinc|green|amber)-\d/);
+    expect(built).not.toMatch(/--shadow-(2xs|xs|sm|md|lg|xl|2xl):/);
   });
 
-  it("gives every status a marker shaped like the report's tone markers", () => {
-    expect(ruleFor('.status-chip[data-status="complete"]::before')).toContain("border-radius: 50%");
-    expect(ruleFor(".chip-done::before")).toContain("border-radius: 50%");
-    expect(ruleFor(".spec-status::before")).toContain("border-radius: 50%");
-    expect(
-      ruleFor('.status-chip:is([data-status="active"], [data-status="in-progress"])::before'),
-    ).toContain("transform: rotate(45deg)");
-    expect(ruleFor(".chip-invalid::before")).toContain("border-radius: 0");
-    expect(ruleFor(".spec-status-invalid::before")).toContain("border-radius: 0");
-    expect(ruleFor('.picker-card[data-unready="true"] .picker-card-name::before')).toContain(
-      "clip-path: polygon(50% 0, 100% 100%, 0 100%)",
-    );
-  });
-
-  it("colours complete and active statuses differently", () => {
-    expect(ruleFor('.status-chip[data-status="complete"]')).toContain("color: var(--done)");
-    expect(
-      ruleFor('.status-chip:is([data-status="active"], [data-status="in-progress"])'),
-    ).toContain("color: var(--info)");
-    expect(ruleFor(".chip-done")).toContain("color: var(--done)");
-    expect(ruleFor(".chip-invalid")).toContain("color: var(--bad)");
-  });
-
-  it("keeps a visible border and focus outline on buttons and selects", () => {
-    expect(ruleFor("button")).toContain("border: 1px solid var(--border)");
-    expect(ruleFor("button:focus-visible")).toContain("outline: 2px solid var(--accent)");
-    expect(ruleFor("select:focus-visible")).toContain("outline: 2px solid var(--accent)");
-  });
-
-  it("sets headings and tiles in the report's type scale", () => {
-    expect(ruleFor("h1")).toContain("font-size: 1.6rem; font-weight: 650");
-    const label = ruleFor(".section-header h3");
-    expect(label).toContain("color: var(--muted)");
-    expect(label).toContain("text-transform: uppercase");
-    expect(STUDIO_STYLES).not.toContain(".page-eyebrow");
-    for (const tile of [".sidebar-metric", ".specs-summary-item"]) {
-      expect(ruleFor(tile)).toContain("border-top: 1px solid var(--border)");
-      expect(ruleFor(`${tile} strong`)).toContain("font-variant-numeric: tabular-nums");
-    }
-  });
-
-  it("keeps the rail compact with the stats stacked as one column", () => {
-    expect(ruleFor(".shell")).toContain(
-      "grid-template-columns: calc(224px + var(--sidebar-inset)) minmax(0, 1fr)",
-    );
-    expect(ruleFor(".sidebar-metrics")).not.toContain("repeat(3");
-    const metric = ruleFor(".sidebar-metric");
-    expect(metric).toContain("display: flex");
-    expect(metric).toContain("justify-content: space-between");
-  });
-
-  it("sets the Outcome log's writers apart and gives a taken-over terminal the dialog", () => {
-    expect(ruleFor('.outcome-log [data-kind="failed"]')).toContain("color: var(--bad)");
-    expect(ruleFor('.outcome-log [data-kind="factory"]')).toContain("color: var(--what)");
-    expect(ruleFor('.outcome-log [data-kind="tool"]')).toContain("color: var(--muted)");
-    expect(ruleFor(".outcome-terminal")).toContain("height: max(440px,");
-    expect(STUDIO_STYLES).toContain(
-      '.outcome-dialog[data-layout="control"] .outcome-dialog-body { grid-template-columns: minmax(0, 1fr); }',
-    );
-    // A grouped round's choices carry their state in the radio, not in a preset.
-    expect(ruleFor(".factory-choice:has(input:checked)")).toContain(
-      "background: var(--accent-soft)",
-    );
+  it("loads no resource from another host", () => {
+    expect(built).not.toMatch(/url\((["']?)https?:/);
+    expect(built).not.toMatch(/@import/);
   });
 });

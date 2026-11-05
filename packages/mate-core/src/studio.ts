@@ -97,6 +97,8 @@ export type {
 export type { VaultConflict, VaultSaved } from "./cli/commands/studio/vault";
 export type { StudioInventory, StudioInventoryCompanion } from "./cli/commands/studio/inventory";
 export type { StudioSkillInventory } from "./cli/commands/studio/mate-inventory";
+export type { SkillAgent, SkillFileEntry, SkillPreview } from "./cli/commands/studio/skill-files";
+export type { StoredReport } from "./cli/commands/studio/reports";
 export {
   findAction,
   SUBJECT_PATTERN,

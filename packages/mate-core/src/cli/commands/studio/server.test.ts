@@ -15,6 +15,7 @@ import {
   type StudioServerDeps,
 } from "./server";
 import type { StudioPage } from "./views/model";
+import { createReportStore } from "./reports";
 import { createVaultManager, type VaultManager } from "./vault";
 
 const ACME = "/companions/acme";
@@ -359,6 +360,54 @@ describe("createStudioFetch", () => {
       });
     });
 
+    test("a view's page read keeps the events stream's tree updates", async () => {
+      const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-keep-")));
+      try {
+        await fs.writeFile(path.join(root, "README.md"), "# acme\n");
+        const listeners = new Map<string, (event: string, filename: string | null) => void>();
+        const handler = createStudioFetch({
+          collectStudioInventory: async () => ({
+            companions: [{ path: root, health: "ready", pairings: [] }],
+          }),
+          vault: createVaultManager({
+            watch: (directory, listener) => {
+              listeners.set(
+                directory,
+                listener as (event: string, filename: string | null) => void,
+              );
+              return { close: () => listeners.delete(directory) };
+            },
+          }),
+        });
+        const digest = companionDigest(root);
+        const response = (await handler(
+          new Request(`http://localhost/api/events?companion=${digest}`),
+        ))!;
+        const reader = response.body!.getReader();
+        const generations: number[] = [];
+        const next = async () => {
+          const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1_000));
+          const chunk = await Promise.race([reader.read(), timeout]);
+          if (!chunk || chunk.done) return null;
+          for (const line of new TextDecoder().decode(chunk.value).split("\n")) {
+            if (line.startsWith("data:")) generations.push(JSON.parse(line.slice(5)).generation);
+          }
+          return generations.at(-1) ?? null;
+        };
+        while ((await next()) === null && generations.length === 0);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        await handler.services.page(new URL(`http://studio.local/?companion=${digest}&view=specs`));
+        await fs.writeFile(path.join(root, "added.md"), "# added\n");
+        listeners.get(root)?.("rename", "added.md");
+        expect(await next()).toBeGreaterThan(0);
+        await reader.cancel();
+        await handler.close();
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+
     test("holds the vault's read routes to the access token", async () => {
       const access = createStudioAccess({
         invocation: "serve",
@@ -423,6 +472,76 @@ describe("createStudioFetch", () => {
       expect(await fs.readFile(path.join(root, "note.md"), "utf8")).toBe("two");
       await expect(handler.services.vaultSave(digest, "../escape.md", "x")).rejects.toThrow();
       await expect(handler.services.vaultSave("0".repeat(16), "note.md", "x")).rejects.toThrow(
+        "no registered companion",
+      );
+      await handler.close();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("lists a registered companion's reports and refuses an unregistered one", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-reports-"));
+    try {
+      const store = createReportStore({ root });
+      const handler = createStudioFetch(deps({ reports: store }));
+      const digest = companionDigest(ACME);
+      expect(await handler.services.reports(digest)).toEqual([]);
+      await store.publish(digest, { title: "Acme release", html: "<p>acme</p>" });
+      const listed = await handler.services.reports(digest);
+      expect(listed.map((report) => report.title)).toEqual(["Acme release"]);
+      await expect(handler.services.reports("0".repeat(16))).rejects.toThrow(
+        "no registered companion",
+      );
+      await handler.close();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses to delete the companion Studio was started for, through a symlink too", async () => {
+    const base = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-pin-")));
+    try {
+      const root = path.join(base, "acme");
+      await fs.mkdir(root);
+      await fs.symlink(root, path.join(base, "acme-link"));
+      const handler = createStudioFetch(
+        {
+          collectStudioInventory: async () => ({
+            companions: [{ path: root, health: "ready", pairings: [] }],
+          }),
+          vault: createVaultManager({ watch: () => ({ close() {} }) }),
+        },
+        { writable: true, launchCompanion: path.join(base, "acme-link") },
+      );
+      await expect(handler.services.deleteCompanion(companionDigest(root))).rejects.toThrow(
+        "Studio was started for this companion",
+      );
+      expect((await fs.stat(root)).isDirectory()).toBe(true);
+      await handler.close();
+    } finally {
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
+  test("previews unsaved text as the file would render, without touching it", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-server-"));
+    try {
+      await fs.writeFile(path.join(root, "note.md"), "one");
+      const digest = companionDigest(root);
+      const handler = createStudioFetch(
+        {
+          collectStudioInventory: async () => ({
+            companions: [{ path: root, health: "ready", pairings: [] }],
+          }),
+          vault: createVaultManager({ watch: () => ({ close() {} }) }),
+        },
+        { writable: true },
+      );
+      const preview = await handler.services.vaultPreview(digest, "note.md", "## Launch plan");
+      expect(preview).toEqual([{ t: "h2", c: ["Launch plan"] }]);
+      expect(await fs.readFile(path.join(root, "note.md"), "utf8")).toBe("one");
+      await expect(handler.services.vaultPreview("0".repeat(16), "note.md", "x")).rejects.toThrow(
         "no registered companion",
       );
       await handler.close();
