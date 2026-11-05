@@ -25,11 +25,12 @@ export type CompanionRuntimeContext = {
 };
 
 /**
- * Any `MATE_*` variable present means a Mate launch configured this process,
- * so the environment is authoritative and the projection is not read.
+ * Any non-empty `MATE_*` variable means a Mate launch configured this process,
+ * so the environment is authoritative and the projection is not read. A
+ * background launch sets every name, empty when unset.
  */
 export function hasLaunchEnvironment(env: Record<string, string | undefined>): boolean {
-  return Object.values(MATE_ENV).some((name) => env[name] !== undefined);
+  return Object.values(MATE_ENV).some((name) => env[name] !== undefined && env[name] !== "");
 }
 
 function fromEnvironment(env: Record<string, string | undefined>): CompanionRuntimeContext {

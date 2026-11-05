@@ -217,6 +217,13 @@ function linkedWorktrees(commonDir: string): string[] {
   return worktreeRecords(commonDir).map((record) => record.path);
 }
 
+/** The main worktree of a linked worktree's clone; any other Checkout is its own. */
+export function mainCheckoutOf(checkoutPath: string): string {
+  const layout = readGitLayout(checkoutPath);
+  const main = layout?.kind === "linked" ? mainWorktree(layout.commonDir) : null;
+  return main ?? realPath(checkoutPath);
+}
+
 /**
  * The clone's other live Checkouts: its main worktree and each linked worktree
  * that still points back or is locked. A locked one may be unreachable.

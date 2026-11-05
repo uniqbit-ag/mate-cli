@@ -37,6 +37,9 @@ jobs:
             factory:
               - "apps/mate-factory/**"
               - ".github/workflows/ci.yml"
+            vscode:
+              - "apps/mate-vscode/**"
+              - ".github/workflows/ci.yml"
             docs:
               - "apps/docs/**"
               - "packages/mate-core/src/cli/usage.ts"
@@ -70,6 +73,10 @@ jobs:
         env:
           MATE_CONTAINER_RUNTIME: docker
         run: bun run --filter @uniqbit/mate-factory test
+
+      - name: Test mate-vscode
+        if: steps.changes.outputs.vscode == 'true'
+        run: bun run --filter @uniqbit/mate-vscode test
 
       # Includes the command-reference check.
       - name: Check docs

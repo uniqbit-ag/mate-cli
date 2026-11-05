@@ -175,6 +175,7 @@ describe("Mate OpenCode server plugin", () => {
           "permission.evaluate",
           "session.compaction",
           "session.context",
+          "session.prompt",
           "shell.create.before",
           "tool.execute.before",
         ]);

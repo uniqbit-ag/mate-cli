@@ -228,6 +228,37 @@ moving it by hand, is shown as not recognized, with `git worktree repair`.
 `servingClaudeWrap` and, when it applies, `servingWrapWarning`. The section does
 not change the exit status.
 
+## Editor Extension
+
+| Command                                                                      | Purpose                                             |
+| ---------------------------------------------------------------------------- | --------------------------------------------------- |
+| `mate vscode setup [--editor code\|cursor] [--vsix <path>] [--if-installed]` | Install the Mate extension into VS Code and Cursor. |
+
+`mate vscode setup` downloads `@uniqbit/mate-vscode` at the version of your
+Mate CLI and installs it into every editor whose CLI (`code`, `cursor`) it
+finds. `--editor` installs into one editor only; `--vsix` installs a local
+VSIX file instead of downloading. `--if-installed` installs only into editors
+that already have the extension, and does nothing when none has it. It needs no
+linked repository. `mate update` runs it with `--if-installed`, so an installed
+extension follows the CLI to the new version.
+
+The extension adds a Mate sidebar for the Git repository open in the window:
+
+- **Sessions**: the Claude and OpenCode sessions started from the sidebar, for
+  the repository and its worktrees, grouped by Workset and branch. Sessions
+  started in a terminal are not listed.
+  New sessions run in the background (`mate claude -- --bg`,
+  `mate opencode -- --bg`): closing a terminal detaches it, _Attach_ reconnects
+  one, _Stop_ ends the agent's work and keeps the conversation for _Resume_.
+- **Worktrees**: the repository's Git worktrees; Workset branches are marked.
+  Opening one opens a new window.
+- **Open changes**: the active changes of the linked Companion Repository with
+  their task progress.
+- **Ready to publish**: the archived changes `mate artifact pending` reports,
+  marked when they still wait for their merge.
+
+The sidebar reloads when it becomes visible and on **Refresh**.
+
 ## Comment Guidance
 
 Shared agent guidance prefers sparse, concise comments explaining non-obvious
@@ -391,6 +422,42 @@ among them, load as well in a folder Claude Code trusts. Claude loads plugins
 before the `SessionStart` hook runs, so a Capability enabled since the last
 preparation loads from the session after it. `mate doctor` lists the folders and
 whether plain sessions load each one.
+
+The sessions the [VS Code extension](#editor-extension) starts are recorded in
+the machine-local session list `~/.mate/sessions.json`; no other session is.
+The extension marks its launches with `MATE_SESSION_ORIGIN=editor`, and Mate's
+hooks keep only marked or already listed sessions current: for Claude the
+session-prepare hook records it, a `SessionEnd` hook marks it ended, and a
+`Notification` hook notes when it waits for your input; for OpenCode the Mate
+plugin records whether it is working, idle, or waiting for your permission. For
+any other session these hooks write nothing and read the list at most once.
+`mate artifact link <change>` and `mate working worktree --enter` run inside a
+listed session note the change on it. Recording never delays or fails a
+session. Adding a session drops the ones that ended, or whose directory is gone,
+over 30 days ago. A repository wrapped before this version gets the `SessionEnd`
+and `Notification` hooks at its next preparation.
+
+`mate claude -- --bg` starts the session in Claude Code's background service,
+which runs every background session with the environment of whichever process
+started the service. So Mate passes such a launch's context in its `--settings`
+file instead of the process environment, and each background session gets its
+own repository's context. A `--settings` of your own, a file or inline JSON,
+is merged into that file. A `MATE_*` environment that reached a session in
+another repository (for example a background session started from inside a Mate
+session) is ignored there; that session is treated like a plain `claude`.
+
+`mate opencode -- --bg` (OpenCode 2.x) runs the OpenCode terminal as a client of
+the repository's Mate OpenCode server, so closing the terminal leaves the turn
+running; the same command with `--session <id>` attaches again. The server is
+one `opencode serve` per Working Repository, its linked worktrees included,
+listening on `127.0.0.1` with the repository's Mate context. Mate starts it on
+the first such launch and protects it with a random password it keeps in
+`~/.mate/opencode-servers/` (readable only by you, and covered by the secret
+guardrails). When the companion's capabilities change, the next launch restarts
+the server once none of its sessions is busy. The server stops itself after 60
+minutes without a running turn; its conversations are kept, and the next
+`--bg` launch starts it again. Plain `opencode` and `mate opencode` without
+`--bg` are unchanged.
 
 Mate's managed Claude settings turn off Claude Code features that compete with
 Mate's own workflow: they deny the `EnterPlanMode`, `DesignSync`, and

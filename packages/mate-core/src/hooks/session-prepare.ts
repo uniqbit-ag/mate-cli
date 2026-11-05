@@ -5,7 +5,6 @@ import { errorMessage } from "../runtime/error-message";
 import { unmanagedClaudeDelivery } from "../runtime/claude-delivery-plan";
 import { hasLaunchEnvironment } from "../runtime/env";
 import { FRAMEWORK_NAME } from "../runtime/framework";
-import { PROJECTED_FLAG } from "../runtime/projected-flag";
 import { projectionCheckout, resolveProjection } from "../runtime/projection";
 import { runtimeDirectoryPath, runtimeMateBin } from "../runtime/runtime-directory";
 import {
@@ -24,6 +23,13 @@ import {
   type HookEnv,
   type HookOutcome,
 } from "./hook-io";
+import {
+  isWrapCopy,
+  registerClaudeSession,
+  registersHere,
+  sessionRegisterDeps,
+  type SessionRegisterDeps,
+} from "./session-register";
 
 export interface SessionPrepareHookDeps {
   /** The runtime-directory launcher; `null` until a `mate` run wrote it. */
@@ -33,6 +39,8 @@ export interface SessionPrepareHookDeps {
   timeoutMs: number;
   /** The main thread's instruction read, after the prepare. */
   instructions?: InstructionHookDeps;
+  /** Session registry writes; defaults to the real registry. */
+  registry?: SessionRegisterDeps;
 }
 
 export const sessionPrepareHookDeps: SessionPrepareHookDeps = {
@@ -149,15 +157,6 @@ async function prepare(
 }
 
 /**
- * Legacy rule: wraps before `--projected` registered this copy bare, and only
- * this hook re-wraps them. So a bare copy counts as the wrap's unless
- * `CLAUDE_PLUGIN_ROOT`, set for plugin hooks only, marks it as the plugin's.
- */
-function isWrapCopy({ argv, env }: HookCall): boolean {
-  return argv.includes(PROJECTED_FLAG) || !env.CLAUDE_PLUGIN_ROOT;
-}
-
-/**
  * The prepare, the main thread's Companion Instructions, then the Git sync, in
  * one hook: Claude Code runs an event's hooks in parallel, and the prepare and
  * a fast-forward both rewrite the files the instructions are read from. Only
@@ -169,9 +168,18 @@ export async function runSessionStartHook(
 ): Promise<HookOutcome> {
   const { env, cwd, input } = call;
   if (!input || typeof input !== "object" || Array.isArray(input)) return hookOutcome(null);
-  if (!isWrapCopy(call)) return hookOutcome(null);
+  const registry = deps.registry ?? sessionRegisterDeps;
+  const wrapCopy = isWrapCopy(call);
   const folder = hookFolder(input, env, cwd);
-  const prepared = await guardedPrepare(env, folder, deps);
+  // Registration never throws; it runs beside the prepare, off its critical path.
+  const registering = registersHere(wrapCopy, folder, registry)
+    ? registerClaudeSession(env, cwd, input, registry)
+    : Promise.resolve();
+  if (!wrapCopy) {
+    await registering;
+    return hookOutcome(null);
+  }
+  const [prepared] = await Promise.all([guardedPrepare(env, folder, deps), registering]);
   const { hookSpecificOutput, systemMessage } =
     instructionHookPayload(
       { env, cwd, input, projected: true, directory: folder },

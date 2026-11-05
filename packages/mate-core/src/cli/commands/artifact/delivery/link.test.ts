@@ -96,6 +96,21 @@ describe("mate artifact link", () => {
     await expect(readRaw("x")).rejects.toThrow();
   });
 
+  test("one linked change is recorded on the agent session it runs in; a batch is not", async () => {
+    const attributed: unknown[] = [];
+    const attribute = async (
+      attribution: { change: string },
+      env?: Record<string, string | undefined>,
+    ) => {
+      attributed.push([attribution.change, env?.CLAUDE_CODE_SESSION_ID]);
+      return null;
+    };
+    const sessionEnv = { CLAUDE_CODE_SESSION_ID: "0b7c-acme" };
+    await run(["x"], { attribute, sessionEnv });
+    await run(["a", "b"], { attribute, sessionEnv });
+    expect(attributed).toEqual([["x", "0b7c-acme"]]);
+  });
+
   test("regrouping preserves recorded delivery until an explicit branch edit", async () => {
     await run(["x", "--branch", "workset/x"]);
     await fs.mkdir(path.join(companion, "worksets"));

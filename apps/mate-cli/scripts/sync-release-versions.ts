@@ -1,6 +1,7 @@
 /**
- * Release hook: keep `@uniqbit/mate-core`, `@uniqbit/mate` and the Claude
- * manifest of the Companion Mentions mod at one synchronized version.
+ * Release hook: keep `@uniqbit/mate-core`, `@uniqbit/mate`, `@uniqbit/mate-vscode`
+ * and the Claude manifest of the Companion Mentions mod at one synchronized
+ * version. The editor extension is versioned only, never pinned as a dependency.
  *
  * Runs from apps/mate-cli as release-it's `after:bump` hook. release-it bumps
  * only the CLI package.json; this script propagates the new version to the
@@ -19,6 +20,7 @@ const workspaceRoot = process.argv[2]
   : path.resolve(import.meta.dirname, "..", "..", "..");
 const cliRoot = path.join(workspaceRoot, "apps", "mate-cli");
 const coreRoot = path.join(workspaceRoot, "packages", "mate-core");
+const vscodeRoot = path.join(workspaceRoot, "apps", "mate-vscode");
 /** `claude plugin validate --strict` needs a version, and a cached copy is named by it. */
 const modManifestPath = path.join(
   coreRoot,
@@ -47,13 +49,16 @@ async function writePackageJson(packageRoot: string, data: PackageJson): Promise
 
 const cli = await readPackageJson(cliRoot);
 const core = await readPackageJson(coreRoot);
+const vscodeExtension = await readPackageJson(vscodeRoot);
 const version = cli.version;
 
 core.version = version;
+vscodeExtension.version = version;
 
 cli.dependencies = { ...cli.dependencies, "@uniqbit/mate-core": version };
 
 await writePackageJson(coreRoot, core);
+await writePackageJson(vscodeRoot, vscodeExtension);
 await writePackageJson(cliRoot, cli);
 
 const modManifest = JSON.parse(await fs.readFile(modManifestPath, "utf8")) as Record<
@@ -74,6 +79,7 @@ const add = spawnSync(
   [
     "add",
     path.join(coreRoot, "package.json"),
+    path.join(vscodeRoot, "package.json"),
     path.join(cliRoot, "package.json"),
     modManifestPath,
     path.join(workspaceRoot, "bun.lock"),

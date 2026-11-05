@@ -1,4 +1,5 @@
 /** Stdin and stdout of a Claude hook shim. */
+import { guardLaunchEnvironment } from "../runtime/launch-env-guard";
 
 export type HookEnv = Record<string, string | undefined>;
 
@@ -59,6 +60,8 @@ export async function runHook(
 ): Promise<number> {
   let outcome: HookOutcome;
   try {
+    // A background session can inherit another launch's environment from Claude's daemon.
+    guardLaunchEnvironment(process.env, process.cwd());
     outcome = await build(await readHookInput());
   } catch (error) {
     outcome = onError(error);

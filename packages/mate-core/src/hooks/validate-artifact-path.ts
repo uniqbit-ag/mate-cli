@@ -17,6 +17,7 @@ import { checkCommitAttribution } from "../runtime/commit-attribution-guard";
 import { gitEnvironment } from "../runtime/companion-git";
 import { companionForkRefusal } from "../runtime/companion-sync";
 import { readCompanionRuntimeContext } from "../runtime/env";
+import { guardLaunchEnvironment } from "../runtime/launch-env-guard";
 import { companionLinkPath } from "../runtime/repo-local";
 import { checkSecretAccess, type SecretToolCall } from "../runtime/secret-guard";
 import { stripHeredocBodies } from "../runtime/shell-heredoc";
@@ -372,6 +373,8 @@ export async function run(): Promise<number> {
   } catch {
     payload = {};
   }
+  // A background session can inherit another launch's environment from Claude's daemon.
+  guardLaunchEnvironment(process.env, process.cwd());
   const outcome = await evaluate(
     payload,
     process.env,

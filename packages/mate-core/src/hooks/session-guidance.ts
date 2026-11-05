@@ -1,4 +1,5 @@
 // Deliver the companion guidance to a Claude session Mate did not launch.
+import { guardLaunchEnvironment } from "../runtime/launch-env-guard";
 import { buildProjectedGuidance } from "../runtime/projected-guidance";
 import { hookFolder, hookOutcome, runHook, type HookEnv, type HookOutcome } from "./hook-io";
 
@@ -26,6 +27,8 @@ export function buildSessionGuidance(env: HookEnv, cwd: string = process.cwd()):
 
 /** Plugin-shim entry; emits nothing when it fails, as when no companion resolves. */
 export function run(): Promise<number> {
+  // A background session can inherit another launch's environment from Claude's daemon.
+  guardLaunchEnvironment(process.env, process.cwd());
   return runHook(
     (input) => buildSessionGuidance(process.env, hookFolder(input, process.env, process.cwd())),
     () => hookOutcome(null),

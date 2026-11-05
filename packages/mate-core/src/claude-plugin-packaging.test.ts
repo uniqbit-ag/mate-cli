@@ -62,7 +62,7 @@ afterAll(async () => {
   );
 });
 
-/** An empty override unsets the variable, since `hasLaunchEnvironment` counts "" as present. */
+/** An empty override unsets the variable. */
 function shimEnvironment(env: Record<string, string>): Record<string, string | undefined> {
   const merged: Record<string, string | undefined> = { ...process.env, ...env };
   for (const [name, value] of Object.entries(env)) if (value === "") delete merged[name];
@@ -130,7 +130,9 @@ describe("packed Claude plugin", () => {
       await fs.readFile(path.join(pluginRoot, "hooks", "hooks.json"), "utf8"),
     ) as { hooks: Record<string, { hooks: { command: string }[] }[]> };
     expect(Object.keys(wiring.hooks).sort()).toEqual([
+      "Notification",
       "PreToolUse",
+      "SessionEnd",
       "SessionStart",
       "SubagentStart",
     ]);
@@ -143,6 +145,10 @@ describe("packed Claude plugin", () => {
     expect(commands("SubagentStart")).toEqual([
       'node "${CLAUDE_PLUGIN_ROOT}/hooks/companion-instructions.mjs"',
     ]);
+    expect(commands("SessionEnd")).toEqual(['node "${CLAUDE_PLUGIN_ROOT}/hooks/session-end.mjs"']);
+    expect(commands("Notification")).toEqual([
+      'node "${CLAUDE_PLUGIN_ROOT}/hooks/session-attention.mjs"',
+    ]);
 
     for (const shim of [
       "validate-artifact-path.mjs",
@@ -150,6 +156,8 @@ describe("packed Claude plugin", () => {
       "session-guidance.mjs",
       "session-prepare.mjs",
       "companion-instructions.mjs",
+      "session-end.mjs",
+      "session-attention.mjs",
     ]) {
       const stat = await fs.stat(path.join(pluginRoot, "hooks", shim));
       expect(stat.isFile()).toBe(true);
@@ -172,6 +180,7 @@ describe("packed Claude plugin", () => {
       "validate-artifact-path.mjs",
       { tool_name: "Write", tool_input: { file_path: path.join(repo, "design.md") } },
       { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
+      repo,
     );
     expect(blocked.exitCode).toBe(2);
     expect(blocked.stderr).toContain(ARTIFACT_REFUSAL_HEADLINE);
@@ -180,6 +189,7 @@ describe("packed Claude plugin", () => {
       "validate-artifact-path.mjs",
       { tool_name: "Write", tool_input: { file_path: path.join(companion, "design.md") } },
       { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
+      repo,
     );
     expect(allowed.exitCode).toBe(0);
   });
@@ -273,15 +283,18 @@ describe("packed Claude plugin", () => {
     expect(result.stdout).toBe("");
   });
 
-  test("session-banner shim emits the managed-session banner", () => {
+  test("session-banner shim emits the managed-session banner", async () => {
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), "mate-shim-banner-"));
+    tempRoots.push(repo);
     const result = runShim(
       "session-banner.mjs",
       {},
       {
-        MATE_REPO_PATH: "/work/acme",
+        MATE_REPO_PATH: repo,
         MATE_ARTIFACT_PATH: "/companions/acme-companion",
         MATE_VERSION: "9.9.9",
       },
+      repo,
     );
     expect(result.exitCode).toBe(0);
     const payload = JSON.parse(result.stdout) as { systemMessage: string };

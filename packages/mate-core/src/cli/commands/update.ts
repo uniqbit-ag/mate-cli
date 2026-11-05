@@ -31,6 +31,18 @@ function writeNpmOnlyRecoveryMessage(): void {
   );
 }
 
+/**
+ * Runs a command of the just-installed Mate through this process's entrypoint,
+ * which now resolves to the new version; skipped for any other entrypoint.
+ */
+function runNewEntrypoint(command: string[]): InstallResult {
+  const entrypoint = process.argv[1];
+  if (!entrypoint || !/(?:^|[\\/])(?:cli\.ts|cli\.mjs|cli-bootstrap\.cjs)$/.test(entrypoint)) {
+    return { status: 0, error: undefined } as InstallResult;
+  }
+  return updateCommandDeps.spawnPostInstall(process.execPath, [entrypoint, ...command]);
+}
+
 export const updateCommandDeps = {
   fetchLatestVersion,
   getCurrentVersion,
@@ -55,14 +67,11 @@ export const updateCommandDeps = {
     });
   },
   /** Re-runs install from dev (`cli.ts`) or prod (`cli.mjs`/bootstrap) entrypoints so config reconciles during `mate update`. */
-  runPostInstall: (skipConfirm: boolean): InstallResult => {
-    const entrypoint = process.argv[1];
-    if (!entrypoint || !/(?:^|[\\/])(?:cli\.ts|cli\.mjs|cli-bootstrap\.cjs)$/.test(entrypoint)) {
-      return { status: 0, error: undefined } as InstallResult;
-    }
-    const args = [entrypoint, "install", ...(skipConfirm ? ["--yes"] : [])];
-    return updateCommandDeps.spawnPostInstall(process.execPath, args);
-  },
+  runPostInstall: (skipConfirm: boolean): InstallResult =>
+    runNewEntrypoint(["install", ...(skipConfirm ? ["--yes"] : [])]),
+  /** Brings an installed VS Code or Cursor extension to the new version; a no-op without one. */
+  updateEditorExtension: (): InstallResult =>
+    runNewEntrypoint(["vscode", "setup", "--if-installed"]),
   spawnPostInstall: (executable: string, args: string[]): InstallResult =>
     spawnSync(executable, args, { stdio: "inherit" }) as InstallResult,
 };
@@ -71,6 +80,8 @@ export const updateCommandDeps = {
  * @command mate update
  * @description Checks the public npm registry for a newer mate-cli release and
  * self-upgrades only when Mate is running from the npm global installation.
+ * Then re-runs `mate install` and updates the Mate extension in each editor
+ * (VS Code, Cursor) that has it installed.
  * @flags
  * - `--check` — only report whether an update is available (exit code 1 if so);
  *   does not install anything.
@@ -188,6 +199,13 @@ async function runUpdate(
 
   console.log(`\nUpgraded to ${latest}.`);
   console.log("Post-update installation complete.");
+  // The CLI is upgraded either way; a failed extension update only warns.
+  const extension = updateCommandDeps.updateEditorExtension();
+  if (extension.status !== 0 || extension.error) {
+    process.stderr.write(
+      `${FRAMEWORK_NAME}: the Mate editor extension was not updated; run \`${FRAMEWORK_NAME} vscode setup\`.\n`,
+    );
+  }
   /** Managed launches run standalone; only a long-lived service keeps the replaced plugin loaded. */
   console.log(
     "Restart any running OpenCode service to load the new plugin: `opencode service restart`.",
