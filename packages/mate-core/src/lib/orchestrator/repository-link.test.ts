@@ -15,6 +15,7 @@ import { resolveFrameworkContext } from "./framework-context";
 import { GlobalConfigStore } from "./global-config-store";
 import { RepoLocalRegistryStore, writeRepoLocalFrameworkConfig } from "./repo-local-store";
 import {
+  backfillCompanionRegistration,
   companionRegistryPath,
   CompanionResolver,
   companionRootedStore,
@@ -1252,5 +1253,59 @@ describe("findRepoLocalLinkedRepository", () => {
     await fs.writeFile(repoLocalRegistryPath(repoPath), "companions: []\n", "utf8");
 
     expect(await findRepoLocalLinkedRepository(repoPath)).toBeNull();
+  });
+});
+
+describe("backfillCompanionRegistration from a linked worktree", () => {
+  async function git(cwd: string, args: string[]): Promise<void> {
+    await execFileAsync(
+      "git",
+      ["-c", "user.name=acme", "-c", "user.email=acme@example.com", ...args],
+      { cwd },
+    );
+  }
+
+  async function cloneWithWorktree(): Promise<{
+    companionPath: string;
+    main: string;
+    worktree: string;
+  }> {
+    const root = await makeTempDir("backfill-worktree-");
+    const companionPath = path.join(root, "acme-companion");
+    const main = path.join(root, "acme");
+    const worktree = path.join(root, "acme.worktrees", "foo");
+    await fs.mkdir(companionPath, { recursive: true });
+    await initGitRepo(main);
+    await git(main, ["commit", "-q", "--allow-empty", "-m", "init"]);
+    await git(main, ["worktree", "add", "-q", "-b", "workset/foo", worktree]);
+    return { companionPath, main, worktree };
+  }
+
+  async function writeRegistry(companionPath: string, entryPath: string): Promise<string> {
+    const registryPath = companionRegistryPath(companionPath);
+    await fs.mkdir(path.dirname(registryPath), { recursive: true });
+    await fs.writeFile(registryPath, `repos:\n  - id: acme\n    path: ${entryPath}\n`, "utf8");
+    return registryPath;
+  }
+
+  test("leaves an entry naming the main checkout untouched", async () => {
+    const { companionPath, main, worktree } = await cloneWithWorktree();
+    const registryPath = await writeRegistry(companionPath, main);
+    const before = await fs.readFile(registryPath, "utf8");
+
+    await backfillCompanionRegistration(companionPath, { id: "acme", path: worktree });
+
+    expect(await fs.readFile(registryPath, "utf8")).toBe(before);
+  });
+
+  test("points an entry naming a removed worktree at the main checkout", async () => {
+    const { companionPath, main, worktree } = await cloneWithWorktree();
+    await writeRegistry(companionPath, path.join(path.dirname(worktree), "old"));
+
+    await backfillCompanionRegistration(companionPath, { id: "acme", path: worktree });
+
+    const { repos } = await readCompanionRegistry(companionPath);
+    expect(repos).toHaveLength(1);
+    expect(await fs.realpath(repos[0]!.path)).toBe(await fs.realpath(main));
   });
 });

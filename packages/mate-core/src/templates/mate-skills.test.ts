@@ -1246,25 +1246,32 @@ describe("bundled Delivery Path stage skills", () => {
     expect(source).toContain(
       "**Tickets** exist only when `ticketFormat` is `jira`; otherwise never ask for, offer, or mention one.",
     );
-    expect(source).toContain("before creating the branch or running the worktree command");
+    expect(source).toContain("options 1 and 2 accept an optional Jira key in the same answer");
+    expect(source).toContain("Never ask a separate ticket question.");
+    expect(source).toContain("**On a fresh ticket branch** (only with `ticketFormat` `jira`)");
+    expect(source).toContain("`git rev-list --count origin/HEAD..HEAD` is `0`");
+    expect(source).toContain(
+      "except option 3 when the current branch is not protected and `ticketCandidate` is set",
+    );
+    expect(source).toContain('--enter --json`, adding `--ticket "<KEY>"`');
+    expect(source).toContain("When `inheritedFrom` is not empty");
+    expect(source).toContain("`1 ABC-123` names the new branch after the ticket");
+    expect(source).not.toContain("record.ticket");
     expect(source).not.toContain("ask once whether this change is delivered through it");
   });
 
-  test("propose, revise, and archive ask for a ticket only with jira", async () => {
+  test("propose, revise, archive, and publish never ask for or record a ticket", async () => {
     const flat = (source: string) => source.replace(/\s+/g, " ");
     for (const root of [skillsRoot, claudeSkillsRoot]) {
       const propose = flat(await readSkillFrom(root, "mate-propose-change"));
-      expect(propose).toContain(
-        "Only when it is `jira`, ask once per run for an optional Jira ticket",
-      );
-      expect(propose).toContain("An empty answer records nothing");
-      expect(propose).toContain("With `none`, never ask.");
+      expect(propose).toContain("Never ask for a ticket; apply asks when it creates the branch.");
+      expect(propose).not.toContain("--ticket");
       const revise = flat(await readReference(root, "mate-propose-change", "mate-revise.md"));
-      expect(revise).toContain("reports `ticketFormat` `jira` and no `record.ticket`");
+      expect(revise).toContain("Never ask for a ticket.");
       const archive = flat(await readSkillFrom(root, "mate-archive-change"));
-      expect(archive).toContain("holds exactly one Jira key");
+      expect(archive).not.toContain("--ticket");
       const publish = flat(await readSkillFrom(root, "mate-publish-artifact"));
-      expect(publish).toContain("whose `delivery.record.ticket` is set");
+      expect(publish).not.toContain("ticket");
     }
   });
 

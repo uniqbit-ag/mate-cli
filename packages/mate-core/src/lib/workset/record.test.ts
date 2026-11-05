@@ -392,4 +392,41 @@ describe("outcomes", () => {
       "gives no title",
     );
   });
+
+  test("a ticket is normalised and written after the intent", async () => {
+    const record = await createOutcome(
+      companion,
+      { text: "Acme export", ticket: " abc-123 " },
+      ["acme/web"],
+      fixed,
+    );
+    expect(record.ticket).toBe("ABC-123");
+    const source = fs.readFileSync(path.join(companion, "worksets", "acme-export.yaml"), "utf8");
+    expect(source).toContain("intent: Acme export\nticket: ABC-123\nrepositories:");
+    const { worksets } = await readWorksets(companion);
+    expect(worksets[0]?.ticket).toBe("ABC-123");
+  });
+
+  test("an empty ticket records none", async () => {
+    const record = await createOutcome(companion, { text: "Acme export", ticket: "  " }, [
+      "acme/web",
+    ]);
+    expect(record.ticket).toBeUndefined();
+    const source = fs.readFileSync(path.join(companion, "worksets", "acme-export.yaml"), "utf8");
+    expect(source).not.toContain("ticket");
+  });
+
+  test("an invalid ticket is refused and nothing is written", async () => {
+    await expect(
+      createOutcome(companion, { text: "Acme export", ticket: "abc123" }, ["acme/web"]),
+    ).rejects.toThrow("ABC-123");
+    expect(fs.existsSync(path.join(companion, "worksets"))).toBe(false);
+  });
+
+  test("a record with an invalid ticket is a reported problem", async () => {
+    write("acme-login", "id: acme-login\nrepositories: [acme/web]\nticket: abc123\n");
+    const { worksets, problems } = await readWorksets(companion);
+    expect(worksets).toEqual([]);
+    expect(problems[0]?.reason).toContain("Jira key such as ABC-123");
+  });
 });

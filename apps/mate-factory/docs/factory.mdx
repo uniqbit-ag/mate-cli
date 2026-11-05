@@ -7,7 +7,7 @@ description: "Running the Mate factory: the appliance plus Sysbox Workset contai
 
 The factory image is the [appliance](/docs/reference/deployment) plus a host for
 **Workset containers**. Each Workset gets its own Sysbox container with its own
-worktree on the Delivery Branch `change/<workset>` and its own Docker daemon, so
+worktree on its resolved Delivery Branch (normally `workset/<workset>`) and its own Docker daemon, so
 an agent inside it can build and run containers. It is a separate image,
 `mate-factory`, published beside `mate-appliance` at the same versions:
 
@@ -140,7 +140,12 @@ factory starts offline like the appliance.
   build or improve?** and press **Start** (or Ctrl/Cmd+Enter). The factory
   takes it from there: its title comes from the first sentence, the whole text
   is the intent, and the repository is asked for only when several are linked.
-  **Save for later** keeps it unstarted under **Later**.
+  **Save for later** keeps it unstarted under **Later**. When the companion's
+  openspec capability sets `ticket: jira`, the input (and **Start as a new
+  outcome** after publish) has an optional **Ticket** field: a Jira key such as
+  `ABC-123`, stored on the Workset record, that names its Delivery Branch
+  `workset/ABC-123-<workset>` from the first spawn. Changes store no ticket, and
+  an existing branch is never renamed. With tickets off the field is absent.
 - **The home.** Below the input, Outcomes are listed in **Needs you**,
   **Running**, **Later** and **Done**, one row each and each Outcome once: its
   title, where it is, the milestones reached (such as `4/7`) and how long ago it last changed. A queued

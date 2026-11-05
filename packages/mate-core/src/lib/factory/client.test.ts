@@ -27,14 +27,14 @@ describe("the factory client", () => {
     const socket = path.join(dir, "broker.sock");
     const runtime = {
       list: async () => [
-        { id: "acme-login", repository: "acme/app", branch: "change/acme-login", state: "paused" },
+        { id: "acme-login", repository: "acme/app", branch: "workset/acme-login", state: "paused" },
       ],
     } as unknown as WorksetRuntime;
     stop = serveBroker(socket, brokerHandler(runtime, new CredentialStore(null, null))).stop;
 
     const client = factoryClient(socket)!;
     expect(await client.list()).toEqual([
-      { id: "acme-login", repository: "acme/app", branch: "change/acme-login", state: "paused" },
+      { id: "acme-login", repository: "acme/app", branch: "workset/acme-login", state: "paused" },
     ]);
     await expect(
       client.exec({ id: "acme-login", command: ["claude"], agent: true }),

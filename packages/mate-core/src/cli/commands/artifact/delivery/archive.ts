@@ -59,8 +59,8 @@ function renderHuman(result: ArchiveResult): string[] {
  *   to the Working Repository.
  * - `--branch <branch>` / `--direct` — record the delivery branch first, as `artifact link`.
  * - `--not-applicable <reason>` — record that no branch delivers this change.
- * - `--skip-branch` — archive with an unlinked record marked `skipped` when the user skips the
- *   question, so publication asks again even when the record holds a ticket.
+ * - `--skip-branch` — archive with an unlinked record when the user skips the question, so
+ *   publication asks again.
  * - `--fetch` — fetch the default and delivery branches before the merge check even when the
  *   companion's Git mode is not `auto`.
  * - `--json` — emit an {@link ArchiveResult}.

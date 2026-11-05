@@ -70,6 +70,10 @@ function git(existing: string[] = [], current = "change/x"): WorkingRepoGit {
     unpushedCommits: async () => [],
     branchExists: async (branch) => existing.includes(branch),
     hasRef: async (ref) => existing.some((branch) => ref === `refs/heads/${branch}`),
+    listRefs: async (prefixes) =>
+      existing
+        .map((branch) => `refs/heads/${branch}`)
+        .filter((ref) => prefixes.some((prefix) => ref.startsWith(prefix))),
   };
 }
 
@@ -633,39 +637,92 @@ describe("tickets", () => {
     expect(await written("x")).toBeNull();
   });
 
-  test("a ticket is recorded before any branch and settles as legacy", async () => {
+  test("a ticket records the branch it names and stores no ticket", async () => {
     const [result] = results(
       await run({ changes: ["x"], edit: { ticket: "ABC-123" } }, {}, jira()),
     );
     expect(await written("x")).toEqual({
       version: 1,
       change: "x",
-      ticket: "ABC-123",
-      deliveries: [],
-    });
-    expect(result.settlement.status).toBe("legacy");
-  });
-
-  test("a ticket is recorded with a branch", async () => {
-    await run(
-      {
-        changes: ["x"],
-        edit: { ticket: "ABC-123", delivery: { branch: "workset/ABC-123-x", direct: false } },
-      },
-      {},
-      jira(),
-    );
-    expect(await written("x")).toMatchObject({
-      ticket: "ABC-123",
       deliveries: [{ repository: APP, branch: "workset/ABC-123-x" }],
     });
+    expect(result.defaultBranch).toBe("workset/ABC-123-x");
+    expect(result.settlement.status).toBe("waiting");
   });
 
-  test("defaultBranch carries a recorded ticket, also with tickets off", async () => {
-    await writeDeliveryRecord(changeDir("x"), { ...unlinkedRecord("x"), ticket: "ABC-123" });
+  test("a ticket names its own branch over an unrecorded plain one and says so", async () => {
+    const [result] = results(
+      await run(
+        { changes: ["x"], edit: { ticket: "ABC-123" } },
+        {},
+        jira({ branches: ["workset/x"] }),
+      ),
+    );
+    expect((await written("x"))?.deliveries).toEqual([
+      { repository: APP, branch: "workset/ABC-123-x" },
+    ]);
+    expect(result.diagnostics.join()).toContain("Existing workset/x is not used");
+  });
+
+  test("a ticket branch made without a record is found again without the ticket", async () => {
+    const [result] = results(
+      await run({ changes: ["x"] }, {}, jira({ branches: ["workset/ABC-123-x"] })),
+    );
+    expect(result.defaultBranch).toBe("workset/ABC-123-x");
+  });
+
+  test("a ticket does not replace a direct or not-applicable delivery", async () => {
+    for (const delivery of [
+      { branch: "main", direct: true },
+      { notApplicable: "docs only" },
+    ] as const) {
+      await writeDeliveryRecord(changeDir("x"), upsertDelivery(unlinkedRecord("x"), APP, delivery));
+      const outcome = await run({ changes: ["x"], edit: { ticket: "ABC-123" } }, {}, jira());
+      expect(outcome).toMatchObject({
+        refusal: { reason: "settled-delivery", change: "x", repository: APP },
+      });
+      expect((await written("x"))?.deliveries).toMatchObject([delivery]);
+    }
+  });
+
+  test("a ticket keeps a recorded branch", async () => {
+    await link("x", "feature/acme");
+    await run({ changes: ["x"], edit: { ticket: "ABC-123" } }, {}, jira());
+    expect((await written("x"))?.deliveries).toMatchObject([{ branch: "feature/acme" }]);
+  });
+
+  test("a ticket is refused when no branch resolves", async () => {
+    await workset("acme-one", ["x"]);
+    await workset("acme-two", ["x"]);
+    const outcome = await run({ changes: ["x"], edit: { ticket: "ABC-123" } }, {}, jira());
+    expect(outcome).toMatchObject({ refusal: { reason: "no-resolved-branch", change: "x" } });
+    expect(await written("x")).toBeNull();
+  });
+
+  test("a ticket naming a protected branch is refused", async () => {
+    const outcome = await run(
+      { changes: ["x"], edit: { ticket: "ABC-123" } },
+      { [APP]: { protectedBranches: { "workset/ABC-123-x": "pattern" } } },
+      jira(),
+    );
+    expect(outcome).toMatchObject({
+      refusal: { reason: "protected-branch", branch: "workset/ABC-123-x" },
+    });
+    expect(await written("x")).toBeNull();
+  });
+
+  test("a canary ticket in a record names no default branch", async () => {
+    await fs.writeFile(
+      path.join(changeDir("x"), "delivery.yaml"),
+      "version: 1\nchange: x\nticket: ABC-123\ndeliveries: []\n",
+    );
     for (const env of [environment(), jira()]) {
       const [result] = results(await run({ changes: ["x"] }, {}, env));
-      expect(result.defaultBranch).toBe("workset/ABC-123-x");
+      expect(result.defaultBranch).toBe("workset/x");
+      expect(result.settlement.status).toBe("unlinked");
+      expect(result.diagnostics.join()).toContain(
+        "holds only ticket ABC-123, which Mate no longer reads",
+      );
     }
   });
 
@@ -678,23 +735,10 @@ describe("tickets", () => {
     expect(await written("x")).toBeNull();
   });
 
-  test("ticketCandidate prefers the recorded branch and is null once a ticket is recorded", async () => {
-    await link("x", "feature/XYZ-9-acme");
+  test("ticketCandidate prefers the recorded branch and matches lowercase keys", async () => {
+    await link("x", "feature/xyz-9-acme");
     const current = "feature/ABC-123-retry";
     const [recorded] = results(await run({ changes: ["x"] }, {}, jira({ current })));
     expect(recorded.ticketCandidate).toBe("XYZ-9");
-    await run({ changes: ["x"], edit: { ticket: "XYZ-9" } }, {}, jira());
-    const [ticketed] = results(await run({ changes: ["x"] }, {}, jira({ current })));
-    expect(ticketed.ticketCandidate).toBeNull();
-  });
-
-  test("markSkipped marks only a record without deliveries", async () => {
-    await writeDeliveryRecord(changeDir("x"), { ...unlinkedRecord("x"), ticket: "ABC-123" });
-    const [result] = results(await run({ changes: ["x"], markSkipped: true }));
-    expect(result.settlement.status).toBe("unlinked");
-    expect((await written("x"))?.skipped).toBe(true);
-    await link("a", "workset/a");
-    await run({ changes: ["a"], markSkipped: true });
-    expect((await written("a"))?.skipped).toBeUndefined();
   });
 });

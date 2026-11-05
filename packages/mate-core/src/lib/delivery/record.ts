@@ -60,24 +60,25 @@ export interface Delivery {
 export interface DeliveryRecord {
   version: 1;
   change: string;
-  /** The change's Jira ticket; names its computed Delivery Branch. */
-  ticket?: string;
-  /** Set by `archive --skip-branch`, so a ticket-only record stays held back. */
-  skipped?: true;
   deliveries: Delivery[];
 }
 
-const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
-const JIRA_KEYS = /(?<![A-Za-z0-9])[A-Z][A-Z0-9]+-\d+(?!\d)/g;
+const JIRA_KEY = /^[A-Za-z][A-Za-z0-9]+-\d+$/;
+const JIRA_KEYS = /(?<![A-Za-z0-9])[A-Za-z][A-Za-z0-9]+-\d+(?!\d)/g;
 
-/** A Jira issue key such as `ABC-123`. */
+/** A Jira issue key such as `ABC-123`, in any case. */
 export function isJiraKey(value: string): boolean {
   return JIRA_KEY.test(value);
 }
 
-/** The single distinct Jira key in a branch name; null for none or several. */
+/** A Jira key in its canonical upper-case form. */
+export function normalizeJiraKey(value: string): string {
+  return value.toUpperCase();
+}
+
+/** The single distinct Jira key in a branch name, upper-cased; null for none or several. */
 export function ticketCandidateOf(branch: string): string | null {
-  const keys = new Set(branch.match(JIRA_KEYS) ?? []);
+  const keys = new Set((branch.match(JIRA_KEYS) ?? []).map(normalizeJiraKey));
   return keys.size === 1 ? [...keys][0]! : null;
 }
 
@@ -125,15 +126,12 @@ export function isPublishable(status: DeliveryStatus): boolean {
   return status === "merged" || status === "not-applicable" || status === "legacy";
 }
 
-/** The warning a `legacy` archive publishes with; a ticket-only record names its ticket. */
-export function legacyDeliveryWarning(anchorName: string, record?: DeliveryRecord | null): string {
-  if (record?.ticket) {
-    return `${anchorName}: ticket ${record.ticket} records no delivery branch, so its merge was not checked; publishing it as a legacy archive.`;
-  }
+/** The warning a `legacy` archive publishes with. */
+export function legacyDeliveryWarning(anchorName: string): string {
   return `${anchorName} has no delivery.yaml, so its merge was not checked; publishing it as a legacy archive.`;
 }
 
-/** `workset/<workset-id>`, or `workset/<TICKET>-<workset-id>` with a ticket. */
+/** `workset/<workset-id>`, or `workset/<TICKET>-<workset-id>` when a ticket is given. */
 export function defaultDeliveryBranch(worksetId: string, ticket?: string | null): string {
   return ticket ? `workset/${ticket}-${worksetId}` : `workset/${worksetId}`;
 }
@@ -205,10 +203,6 @@ export function settleDelivery(
   const missing = scoped.filter((repository) => !findDelivery(record, repository));
   const unscoped = unscopedDeliveries(record, scoped);
   if (record.deliveries.length === 0) {
-    // A ticket-only record was archived past Mate; it publishes like a legacy archive.
-    if (record.ticket && !record.skipped) {
-      return { status: "legacy", unsettled: [], missing: [], unscoped };
-    }
     return { status: "unlinked", unsettled: missing, missing, unscoped };
   }
   const branches = record.deliveries.filter((entry) => entry.notApplicable === undefined);
@@ -323,27 +317,35 @@ export async function readDeliveryRecord(changeDir: string): Promise<DeliveryRec
   const document = parsed as Record<string, unknown>;
   const deliveries = document.deliveries ?? [];
   if (!Array.isArray(deliveries)) throw malformed(file, "deliveries must be a list");
-  const ticket = optionalString(document.ticket, file, "ticket");
-  if (ticket !== undefined && !isJiraKey(ticket)) {
-    throw malformed(file, "ticket must be a Jira key such as ABC-123");
-  }
+  // Canary records may carry `ticket` or `skipped`; both are ignored and dropped on write.
   return {
     version: 1,
     change:
       optionalString(document.change, file, "change") ?? changeNameOf(path.basename(changeDir)),
-    ...(ticket !== undefined ? { ticket } : {}),
-    ...(document.skipped === true ? { skipped: true as const } : {}),
     deliveries: deliveries.map((entry) => parseDelivery(entry, file)),
   };
 }
 
-/** Keys in file order: `version, change, ticket, skipped, deliveries`. */
+/**
+ * The `ticket` a canary record carried, which is no longer read; null when there is none or
+ * the file cannot be read. Only explains why such a record settles as `unlinked`.
+ */
+export async function canaryTicketOf(changeDir: string): Promise<string | null> {
+  try {
+    const document = parse(await fs.readFile(path.join(changeDir, DELIVERY_FILE), "utf8")) as {
+      ticket?: unknown;
+    } | null;
+    return typeof document?.ticket === "string" ? document.ticket : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Keys in file order: `version, change, deliveries`. */
 function orderedRecord(record: DeliveryRecord): DeliveryRecord {
   return {
     version: record.version,
     change: record.change,
-    ...(record.ticket ? { ticket: record.ticket } : {}),
-    ...(record.skipped ? { skipped: true as const } : {}),
     deliveries: record.deliveries,
   };
 }

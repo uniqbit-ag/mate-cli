@@ -126,6 +126,72 @@ describe("mate working worktree", () => {
     expect(called).toBe(false);
   });
 
+  describe("a stale companion registry entry", () => {
+    function stale(companion: string): WorkspaceInventoryV1 {
+      return {
+        schemaVersion: 1,
+        companions: [],
+        pairings: [
+          {
+            companionPath: companion,
+            repository: { id: "web", path: path.join(root, "src", "web.worktrees", "old") },
+            health: "missing-repository",
+            ambiguous: false,
+          },
+        ],
+      };
+    }
+
+    function linkLocally(...companions: string[]): void {
+      const config = path.join(root, "src", "web", ".mate", "config");
+      fs.mkdirSync(config, { recursive: true });
+      const pointers = companions.map((c) => `  - path: ${c}\n    repositoryId: web\n`).join("");
+      fs.writeFileSync(path.join(config, "registry.yaml"), `companions:\n${pointers}`);
+    }
+
+    test("resolves the companion through the repo-local link", async () => {
+      const companion = companionAt("acme-companion");
+      linkLocally(companion);
+      const seen: string[] = [];
+      await runWorkingWorktreeCommand(
+        ["acme-login"],
+        deps({
+          collectInventory: async () => stale(companion),
+          create: async (used) => (seen.push(used), created),
+        }),
+      );
+      expect(process.exitCode).toBe(0);
+      expect(seen).toEqual([companion]);
+    });
+
+    test("a repo-local link to two companions names both and creates nothing", async () => {
+      const first = companionAt("acme-one");
+      const second = companionAt("acme-two");
+      linkLocally(first, second);
+      let called = false;
+      await runWorkingWorktreeCommand(
+        ["acme-login"],
+        deps({
+          collectInventory: async () => stale(first),
+          create: async () => ((called = true), created),
+        }),
+      );
+      expect(process.exitCode).toBe(1);
+      expect(err.join("\n")).toContain(`${first}, ${second}`);
+      expect(called).toBe(false);
+    });
+
+    test("no repo-local link asks for --companion", async () => {
+      fs.mkdirSync(path.join(root, "src", "web"), { recursive: true });
+      await runWorkingWorktreeCommand(
+        ["acme-login"],
+        deps({ collectInventory: async () => stale(companionAt("acme-companion")) }),
+      );
+      expect(process.exitCode).toBe(1);
+      expect(err.join("\n")).toContain("is not linked to a companion; pass --companion <path>");
+    });
+  });
+
   test("--companion overrides the pairings", async () => {
     const explicit = companionAt("acme-explicit");
     const seen: string[] = [];
@@ -459,6 +525,58 @@ describe("mate working worktree", () => {
       expect(out.join("")).toContain(
         "mate: enter: call EnterWorktree with /src/web.worktrees/acme-fix\n",
       );
+    });
+  });
+
+  describe("--ticket", () => {
+    test("passes the normalised key to the worktree", async () => {
+      const seen: Array<string | undefined> = [];
+      await runWorkingWorktreeCommand(
+        ["--change", "acme-fix", "--ticket", "abc-123", "--json"],
+        deps({
+          ticketFormat: async () => "jira",
+          createForChange: async (_companion, _change, options) => {
+            seen.push(options.ticket);
+            return created;
+          },
+        }),
+      );
+      expect(process.exitCode).toBe(0);
+      expect(seen).toEqual(["ABC-123"]);
+    });
+
+    test("is refused while tickets are off and creates nothing", async () => {
+      let called = false;
+      await runWorkingWorktreeCommand(
+        ["acme-login", "--ticket", "ABC-123"],
+        deps({
+          ticketFormat: async () => "none",
+          create: async () => ((called = true), created),
+        }),
+      );
+      expect(process.exitCode).toBe(1);
+      expect(err.join("\n")).toContain("ticket: jira");
+      expect(called).toBe(false);
+    });
+
+    test("an invalid key names the format and creates nothing", async () => {
+      let called = false;
+      await runWorkingWorktreeCommand(
+        ["acme-login", "--ticket", "abc123"],
+        deps({
+          ticketFormat: async () => "jira",
+          create: async () => ((called = true), created),
+        }),
+      );
+      expect(process.exitCode).toBe(1);
+      expect(err.join("\n")).toContain("Jira key such as ABC-123");
+      expect(called).toBe(false);
+    });
+
+    test("is refused with prune", async () => {
+      await runWorkingWorktreeCommand(["prune", "--ticket", "ABC-123"], deps());
+      expect(process.exitCode).toBe(1);
+      expect(err.join("\n")).toContain("usage: mate working worktree");
     });
   });
 });

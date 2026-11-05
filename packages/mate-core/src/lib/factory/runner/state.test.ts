@@ -99,8 +99,8 @@ describe("run state", () => {
   });
 
   test("memory is kept apart from the state", async () => {
-    await store.writeMemory("acme-login", { pushedBranch: "change/acme-login" });
-    expect(await store.readMemory("acme-login")).toEqual({ pushedBranch: "change/acme-login" });
+    await store.writeMemory("acme-login", { pushedBranch: "workset/acme-login" });
+    expect(await store.readMemory("acme-login")).toEqual({ pushedBranch: "workset/acme-login" });
     expect([...(await store.all()).keys()]).toEqual([]);
   });
 });

@@ -1,16 +1,19 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import { parse } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
+import { gitEnvironment } from "../../runtime/companion-git";
 import {
   ancestorDirectories,
   repoLocalDirName,
   repoLocalRegistryPath,
   type RepoLocalRegistryFile,
 } from "../../runtime/repo-local";
-import { pathIsDirectory } from "../fs-utils";
+import { pathIsDirectory, realOrResolved } from "../fs-utils";
 import { CompanionRegistryStore } from "./companion-registry-store";
 import type { GlobalConfigStore } from "./global-config-store";
 import { firstFailure } from "./projection-types";
@@ -22,6 +25,8 @@ import {
 } from "./repo-local-store";
 import { project } from "./working-repo-projection";
 import { type CompanionSource, ConfigError, type LinkedRepository } from "./types";
+
+const execFileAsync = promisify(execFile);
 
 /**
  * The Repository Link: the companion's `registry.yaml` is the source of
@@ -166,16 +171,40 @@ export async function backfillCompanionRegistration(
 ): Promise<void> {
   try {
     const { repos } = await readCompanionRegistry(companionPath).catch(() => ({ repos: [] }));
+    const registered = { ...repository, path: await mainCheckoutOf(repository.path) };
     const existing = repos.find((repo) => repo.id === repository.id);
-    if (existing?.path === repository.path) return;
+    const existingPath = existing ? await realOrResolved(existing.path) : null;
+    if (existingPath === (await realOrResolved(registered.path))) return;
 
-    await companionRootedStore(companionPath).registerRepository(repository);
+    await companionRootedStore(companionPath).registerRepository(registered);
   } catch (error) {
     console.error(
       `${FRAMEWORK_NAME}: warning: failed to backfill companion registry for ${repository.id}: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
+  }
+}
+
+/**
+ * A linked worktree's main checkout when that folder exists, else `checkout`: a
+ * launch from a worktree must not move the entry there, or removing the worktree
+ * leaves it naming a missing folder.
+ */
+async function mainCheckoutOf(checkout: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"],
+      { cwd: checkout, env: gitEnvironment() },
+    );
+    const [top, commonDir] = stdout.trim().split("\n");
+    if (!top || !commonDir || path.basename(commonDir) !== ".git") return checkout;
+    const main = path.dirname(commonDir);
+    if ((await realOrResolved(main)) === (await realOrResolved(top))) return checkout;
+    return (await pathIsDirectory(main)) ? main : checkout;
+  } catch {
+    return checkout;
   }
 }
 
@@ -406,6 +435,37 @@ export async function findRepoLocalLinkedRepository(cwd: string): Promise<Linked
   } catch {
     return null;
   }
+}
+
+/**
+ * The checkout holding `cwd`, with the repository id of its repo-local link, when
+ * that link points at `companionPath`; null otherwise. Never writes.
+ */
+export async function findRepoLocalLinkTo(
+  cwd: string,
+  companionPath: string,
+): Promise<LinkedRepository | null> {
+  const found = await findRepoLocalRegistryFile(cwd);
+  if (!found) return null;
+  try {
+    const parsed = parse(await fs.readFile(found.registryPath, "utf8")) as {
+      companions?: unknown;
+    } | null;
+    const pointers = Array.isArray(parsed?.companions)
+      ? (parsed.companions as Partial<RepoLocalCompanionPointer>[])
+      : [];
+    const companion = await realOrResolved(companionPath);
+    for (const pointer of pointers) {
+      if (typeof pointer?.path !== "string" || typeof pointer.repositoryId !== "string") continue;
+      // oxlint-disable-next-line no-await-in-loop -- the first pointer to the companion wins
+      if ((await realOrResolved(pointer.path)) === companion) {
+        return { id: pointer.repositoryId, path: found.repoRoot };
+      }
+    }
+  } catch {
+    // An unreadable registry links nothing.
+  }
+  return null;
 }
 
 /** Walks up from `cwd` looking for the nearest ancestor holding a repo-local registry file. */

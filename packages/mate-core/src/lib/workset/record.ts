@@ -6,6 +6,7 @@ import { parse, stringify } from "yaml";
 
 import { errorMessage } from "../../runtime/error-message";
 import { changeNameOf, locateChange, parseAnchor } from "../change-layout";
+import { isJiraKey, normalizeJiraKey } from "../delivery/record";
 import { scopedRepositories } from "../openspec-scopes";
 
 /**
@@ -24,6 +25,8 @@ export interface WorksetRecord {
   id: string;
   title: string;
   intent: string;
+  /** Jira key that names the Workset's new Delivery Branch when no caller gives one. */
+  ticket?: string;
   repositories: string[];
   changes: string[];
   /** Meaningful only while `changes` is empty. */
@@ -52,6 +55,7 @@ const KNOWN_FIELDS = [
   "id",
   "title",
   "intent",
+  "ticket",
   "repositories",
   "changes",
   "stage",
@@ -114,12 +118,17 @@ export function toWorksetRecord(fileId: string, document: unknown): WorksetRecor
   if (queuedAt !== undefined && Number.isNaN(Date.parse(queuedAt))) {
     return "queuedAt must be a timestamp";
   }
+  const ticket = raw.ticket ?? undefined;
+  if (ticket !== undefined && (typeof ticket !== "string" || !isJiraKey(ticket))) {
+    return "ticket must be a Jira key such as ABC-123";
+  }
   const known = new Set(KNOWN_FIELDS);
   const extra = Object.fromEntries(Object.entries(raw).filter(([key]) => !known.has(key)));
   return {
     id: fileId,
     title: typeof raw.title === "string" ? raw.title : fileId,
     intent: typeof raw.intent === "string" ? raw.intent : "",
+    ...(ticket !== undefined ? { ticket: normalizeJiraKey(ticket) } : {}),
     repositories,
     changes,
     stage: stage as PreProposeStage,
@@ -254,6 +263,7 @@ function documentOf(record: WorksetRecord): Record<string, unknown> {
     id: record.id,
     title: record.title,
     intent: record.intent,
+    ...(record.ticket ? { ticket: record.ticket } : {}),
     repositories: record.repositories,
     changes: record.changes,
     stage: record.stage,
@@ -277,6 +287,8 @@ export interface NewWorkset {
   repository: string;
   /** Starts the Workset at once; otherwise it is Later. */
   start?: boolean;
+  /** A Jira key, already validated and normalised. */
+  ticket?: string;
 }
 
 /** Writes a new record at stage Clarify intent; an existing identifier is refused and nothing is written. */
@@ -298,6 +310,7 @@ export async function createWorkset(
     id: input.id,
     title: input.title.trim() || input.id,
     intent: input.intent.trim(),
+    ...(input.ticket ? { ticket: input.ticket } : {}),
     repositories: [input.repository],
     changes: [],
     stage: "clarify-intent",
@@ -367,6 +380,8 @@ export interface NewOutcome {
   repository?: string;
   /** Starts it at once; otherwise it is Later. */
   start?: boolean;
+  /** Optional Jira key naming the Workset's Delivery Branch; empty means none. */
+  ticket?: string;
 }
 
 /** Creates a Workset from an outcome text; identifier and title are derived, the repository defaults to the only linked one. */
@@ -389,6 +404,10 @@ export async function createOutcome(
   if (!linkedRepositories.includes(repository)) {
     throw new WorksetError(`${repository} is not linked to this companion`);
   }
+  const ticket = input.ticket?.trim() || undefined;
+  if (ticket !== undefined && !isJiraKey(ticket)) {
+    throw new WorksetError(`ticket ${JSON.stringify(ticket)} is not a Jira key such as ABC-123`);
+  }
   const { worksets, problems } = await readWorksets(companionPath);
   const taken = new Set([
     ...worksets.map((workset) => workset.id),
@@ -405,6 +424,7 @@ export async function createOutcome(
       intent: input.text,
       repository,
       ...(input.start ? { start: true } : {}),
+      ...(ticket ? { ticket: normalizeJiraKey(ticket) } : {}),
     },
     now,
   );
