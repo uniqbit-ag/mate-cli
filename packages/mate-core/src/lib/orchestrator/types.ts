@@ -74,6 +74,8 @@ export interface CapabilityConfig {
   protectedBranches?: string[];
   /** openspec only: how changes record tickets; absent means `none`. */
   ticket?: string;
+  /** openspec only: Delivery Branch template with `{workset}` and optional `{ticket}`. */
+  branchTemplate?: string;
 }
 
 export type FrameworkType = "working" | "companion" | "hub";

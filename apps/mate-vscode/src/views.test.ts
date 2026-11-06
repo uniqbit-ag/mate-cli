@@ -9,6 +9,21 @@ import { toPendingItems } from "./pending";
 import { parseWorktrees } from "./worktrees";
 
 describe("parseWorktrees", () => {
+  test("marks branches an open change records, whatever their name", () => {
+    const porcelain = [
+      "worktree /work/acme.worktrees/team",
+      "branch refs/heads/feature/ABC-123-acme",
+      "",
+      "worktree /work/acme.worktrees/other",
+      "branch refs/heads/feature/acme-other",
+      "",
+    ].join("\n");
+    expect(parseWorktrees(porcelain, new Set(["feature/ABC-123-acme"]))).toEqual([
+      { path: "/work/acme.worktrees/team", branch: "feature/ABC-123-acme", workset: true },
+      { path: "/work/acme.worktrees/other", branch: "feature/acme-other", workset: false },
+    ]);
+  });
+
   test("lists worktrees, marks Workset branches, skips bare entries", () => {
     const porcelain = [
       "worktree /work/acme",

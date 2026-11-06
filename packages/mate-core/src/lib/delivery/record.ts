@@ -5,6 +5,11 @@ import { parse, stringify } from "yaml";
 import { errorMessage } from "../../runtime/error-message";
 import { changeNameOf } from "../change-layout";
 import { scopedRepositories } from "../openspec-scopes";
+import {
+  applyBranchTemplate,
+  DEFAULT_BRANCH_TEMPLATE,
+  type BranchTemplate,
+} from "./branch-template";
 
 /** The Delivery Record's file name at a change root; it moves with the change into its archive. */
 export const DELIVERY_FILE = "delivery.yaml";
@@ -131,9 +136,16 @@ export function legacyDeliveryWarning(anchorName: string): string {
   return `${anchorName} has no delivery.yaml, so its merge was not checked; publishing it as a legacy archive.`;
 }
 
-/** `workset/<workset-id>`, or `workset/<TICKET>-<workset-id>` when a ticket is given. */
-export function defaultDeliveryBranch(worksetId: string, ticket?: string | null): string {
-  return ticket ? `workset/${ticket}-${worksetId}` : `workset/${worksetId}`;
+/**
+ * The template's branch for a Workset; with the default template `workset/<workset-id>`, or
+ * `workset/<TICKET>-<workset-id>` when a ticket is given.
+ */
+export function defaultDeliveryBranch(
+  worksetId: string,
+  ticket?: string | null,
+  template: BranchTemplate = DEFAULT_BRANCH_TEMPLATE,
+): string {
+  return applyBranchTemplate(template, worksetId, ticket);
 }
 
 export function legacyDeliveryBranch(change: string): string {

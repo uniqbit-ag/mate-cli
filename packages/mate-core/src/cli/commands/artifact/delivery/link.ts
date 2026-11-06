@@ -83,7 +83,8 @@ function renderHuman(result: LinkResult): string[] {
  * - `--not-applicable <reason>` — no branch delivers this change in the repository.
  * - `--pr <url>` — record the PR URL; with `--refresh`, picks that PR among several.
  * - `--ticket <KEY>` — record the Delivery Branch resolved with this Jira key (`ABC-123`, any
- *   case): a new branch is named `workset/<TICKET>-<workset-id>`, while a recorded, inherited,
+ *   case): a new branch is named by the `branchTemplate` (default
+ *   `workset/<TICKET>-<workset-id>`), while a recorded, inherited,
  *   or existing branch is kept. The key is not stored. Excludes `--branch` and
  *   `--not-applicable`; refused unless the openspec capability sets `ticket: jira`.
  * - `--refresh` — ask the forge (with `MATE_GIT_TOKEN`), then a local checkout, for the merge

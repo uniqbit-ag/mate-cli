@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 
 import { readCompanionConfig } from "../orchestrator/config-store";
 import type { CapabilityConfig, TicketFormat } from "../orchestrator/types";
+import { parseBranchTemplate, type BranchTemplateSetting } from "./branch-template";
 import { listRefsWith } from "./resolve-branch";
 
 export type { TicketFormat };
@@ -78,6 +79,22 @@ export const TICKETS_OFF =
 export async function companionTicketFormat(companionPath: string): Promise<TicketFormat> {
   const config = await readCompanionConfig(companionPath);
   return configuredTicketFormat(config.capabilities ?? []).format;
+}
+
+/** The openspec capability's `branchTemplate`; absent or invalid means the default. */
+export function configuredBranchTemplate(
+  capabilities: readonly CapabilityConfig[],
+): BranchTemplateSetting {
+  const openspec = capabilities.find((capability) => capability.name === "openspec");
+  return parseBranchTemplate(openspec?.branchTemplate);
+}
+
+/** The Delivery Branch template in a companion's `framework.yaml`, with its diagnostic. */
+export async function companionBranchTemplate(
+  companionPath: string,
+): Promise<BranchTemplateSetting> {
+  const config = await readCompanionConfig(companionPath);
+  return configuredBranchTemplate(config.capabilities ?? []);
 }
 
 /** Read-only local Git queries against a Working Repository. Nothing here touches the network. */

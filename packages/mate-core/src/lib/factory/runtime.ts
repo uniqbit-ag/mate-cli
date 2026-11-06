@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { companionBranchTemplate } from "../delivery/branches";
 import {
   listRefsWith,
   newBranchBase,
@@ -27,7 +28,8 @@ import {
 
 /**
  * The Workset runtime: one unprivileged Sysbox container per Workset, with its
- * own worktree on `workset/<workset>`, driven through the inner Docker daemon.
+ * own worktree on its Delivery Branch (default `workset/<workset>`), driven through
+ * the inner Docker daemon.
  *
  * Runs inside the factory broker, which alone holds the inner socket. Callers
  * name a Workset, a repository and a command; image, mounts, runtime and
@@ -438,6 +440,8 @@ export class WorksetRuntime {
       companionPath: companion,
       repository: request.repository,
       hasRef,
+      // An invalid template counts as the default; link reports it.
+      template: (await companionBranchTemplate(companion)).template,
       listRefs: listRefsWith(async (args) => {
         const listed = await this.git(["-C", repoDir, ...args]);
         return listed.status === 0 ? listed.stdout : null;

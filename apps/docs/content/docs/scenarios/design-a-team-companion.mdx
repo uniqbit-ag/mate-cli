@@ -89,6 +89,28 @@ behaves for the team, copy it under a name of your own instead of editing it.
 </Step>
 <Step>
 
+### Name your branches
+
+Mate names a change's delivery branch `workset/<workset-id>`, or
+`workset/<TICKET>-<workset-id>` with a Jira key. If your team has its own
+convention, set a branch template on the openspec capability in
+`.mate/config/framework.yaml`:
+
+```yaml
+capabilities:
+  - name: openspec
+    ticket: jira
+    branchTemplate: feature/{ticket}-{workset}
+```
+
+`{workset}` must appear once and `{ticket}` is optional; the template needs a
+fixed prefix ending in `/`. This example names `feature/ABC-123-acme-retry`, or
+`feature/acme-retry` without a ticket. Existing branches keep working after the
+switch. See [Your First Change](/docs/scenarios/first-change) for the details.
+
+</Step>
+<Step>
+
 ### Tighten the secret guardrails
 
 The [secret guardrails](/docs/concepts/secret-guardrails) are on by default.

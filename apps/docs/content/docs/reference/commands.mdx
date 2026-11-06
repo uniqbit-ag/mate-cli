@@ -92,10 +92,12 @@ parallel. For each Working Repository of the Workset, it creates a Git worktree
 next to the main checkout linked to the companion, at
 `<checkout>.worktrees/<workset-id>`; for a checkout at `~/src/web` that is
 `~/src/web.worktrees/acme-login`. The worktree is on the Workset's Delivery
-Branch, resolved as `mate artifact link` resolves `defaultBranch` (normally
-`workset/<workset-id>`): the local branch, else a new branch tracking
-`origin/<branch>`, else a new branch from `origin/HEAD`. `--ticket <KEY>` names
-the branch `workset/<TICKET>-<workset-id>`; it never renames a recorded or
+Branch, resolved as `mate artifact link` resolves `defaultBranch` (by default
+`workset/<workset-id>`; a team sets its own with the openspec capability's
+`branchTemplate`, see [Your First Change](/docs/scenarios/first-change)): the local branch, else a new
+branch tracking `origin/<branch>`, else a new branch from `origin/HEAD`.
+`--ticket <KEY>` puts the key into the branch name (by default
+`workset/<TICKET>-<workset-id>`); it never renames a recorded or
 inherited branch, and is refused unless the openspec capability sets
 `ticket: jira`. Later runs without `--ticket` find that branch again. A branch
 inherited from a `dependsOn` change reuses the worktree it is checked out in,
@@ -795,8 +797,9 @@ that file, for active and archived changes. Options:
 - `--pr <url>` records the PR; with `--refresh` it picks that PR when several
   share the branch.
 - `--ticket <KEY>` records the Delivery Branch resolved with a Jira key
-  (`ABC-123`, any case): the branch is named `workset/<TICKET>-<workset-id>`,
-  while a recorded or inherited branch is kept with a diagnostic. The key itself
+  (`ABC-123`, any case): the branch is named by the branch template with the key
+  (by default `workset/<TICKET>-<workset-id>`), while a recorded or inherited
+  branch is kept with a diagnostic. The key itself
   is not stored; the branch name carries it. To change the ticket of a recorded
   `workset/<TICKET>-<workset-id>` before it is pushed, rename the branch
   (`git branch -m`) and relink its changes with `--branch`; the diagnostic names
@@ -827,12 +830,16 @@ that file, for active and archived changes. Options:
   the local checkout decides, without a fetch: a merge commit on the default
   branch, or its commits found there as after a squash merge, means the branch
   is not inherited, with a diagnostic. Without a checkout a diagnostic asks for a
-  `--refresh` instead. Then, with `--ticket`, it is
-  `workset/<TICKET>-<workset-id>`, even when an unrecorded
-  `workset/<workset-id>` exists (a diagnostic names it). Without a ticket it is
-  an existing `workset/<workset-id>`, else the single existing
-  `workset/<TICKET>-<workset-id>` for any ticket, so a branch created with a
-  ticket is found again without it, else `workset/<workset-id>`. It is `null`
+  `--refresh` instead. The rest follows the openspec capability's
+  `branchTemplate`, by default `workset/{ticket}-{workset}`. With `--ticket`, it
+  is the template with the key, such as `workset/<TICKET>-<workset-id>`, even
+  when an unrecorded branch without a ticket exists (a diagnostic names it).
+  Without a ticket it is an existing branch the template names without one
+  (`workset/<workset-id>`), else the single existing one with any ticket, so a
+  branch created with a ticket is found again without it. With a template other
+  than the default, an existing branch under the default template comes next,
+  with a diagnostic, so branches made before the switch keep resolving. Else it
+  is the template without a ticket. It is `null`
   when the changes record different branches or several ticket branches exist,
   and ambiguous membership, identity collisions, or invalid records also
   suppress it; the diagnostics, also on stderr, say why. Dependencies on

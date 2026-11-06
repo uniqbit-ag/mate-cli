@@ -1242,7 +1242,7 @@ describe("bundled Delivery Path stage skills", () => {
     );
     expect(source).toContain("**Use the current branch** (only when it is not protected)");
     expect(source).toContain("**Work directly here** (protected branch only)");
-    expect(source).toContain("On another Workset's `workset/<id>` branch, name that Workset.");
+    expect(source).toContain("On another Workset's Delivery Branch, name that Workset.");
     expect(source).toContain(
       "**Tickets** exist only when `ticketFormat` is `jira`; otherwise never ask for, offer, or mention one.",
     );
@@ -1275,7 +1275,7 @@ describe("bundled Delivery Path stage skills", () => {
       "When the name holds no Jira key, say in one line that no ticket is tracked",
     );
     expect(source).toContain(
-      "`defaultBranch`, which is the change's resolved delivery branch (e.g. `workset/<id>`)",
+      "`defaultBranch`, which is the change's resolved delivery branch (e.g. `workset/<id>` under the default branch template)",
     );
     expect(source).toContain("never the repository's default branch");
     expect(source).toContain(

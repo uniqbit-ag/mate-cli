@@ -41,6 +41,11 @@ describe("worksets", () => {
       ["acme-solo", undefined, ["acme-solo"]],
     ]);
   });
+
+  test("a team-template branch is labelled in full", () => {
+    const [workset] = worksetsOf([change("acme-queue", "feature/ABC-123-acme")]);
+    expect(workset!.label).toBe("feature/ABC-123-acme");
+  });
 });
 
 describe("session groups", () => {

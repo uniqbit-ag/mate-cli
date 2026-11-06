@@ -284,6 +284,115 @@ describe("ticket branches found by name", () => {
   });
 });
 
+describe("a team branch template", () => {
+  const listed =
+    (...refs: string[]): ListRefs =>
+    async (prefixes) =>
+      refs.filter((ref) => prefixes.some((prefix) => ref.startsWith(prefix)));
+  const find = (template: string, refs: string[], ticket?: string) =>
+    resolveDeliveryBranch({
+      companionPath: companion,
+      repository: WEB,
+      hasRef: existing(...refs.map((ref) => ref.replace(/^refs\/(heads|remotes)\//, ""))),
+      listRefs: listed(...refs),
+      worksetId: "acme-fix",
+      template,
+      ...(ticket ? { ticket } : {}),
+    });
+
+  test("names a new branch with and without a ticket", async () => {
+    expect(await find("feature/{ticket}-{workset}", [], "ABC-123")).toMatchObject({
+      branch: "feature/ABC-123-acme-fix",
+      source: "new",
+      diagnostics: [],
+    });
+    expect((await find("feature/{ticket}/{workset}", [])).branch).toBe("feature/acme-fix");
+    expect((await find("feature/{workset}", [], "ABC-123")).branch).toBe("feature/acme-fix");
+  });
+
+  test("finds a ticket branch again without the ticket", async () => {
+    expect(
+      await find("feature/{ticket}/{workset}", ["refs/heads/feature/ABC-123/acme-fix"]),
+    ).toMatchObject({ branch: "feature/ABC-123/acme-fix", source: "local", diagnostics: [] });
+  });
+
+  test("falls back to a branch made under the default template", async () => {
+    const plain = await find("feature/{ticket}-{workset}", ["refs/heads/workset/acme-fix"]);
+    expect(plain.branch).toBe("workset/acme-fix");
+    expect(plain.diagnostics.join()).toContain("follows the default template");
+    const ticketed = await find("feature/{ticket}-{workset}", [
+      "refs/remotes/origin/workset/ABC-7-acme-fix",
+    ]);
+    expect(ticketed).toMatchObject({ branch: "workset/ABC-7-acme-fix", source: "remote" });
+  });
+
+  test("a branch under the template wins over one under the default", async () => {
+    const resolution = await find("feature/{ticket}-{workset}", [
+      "refs/heads/workset/acme-fix",
+      "refs/heads/feature/ABC-1-acme-fix",
+    ]);
+    expect(resolution).toMatchObject({ branch: "feature/ABC-1-acme-fix", diagnostics: [] });
+  });
+
+  test("a recorded branch is kept after the template changes", async () => {
+    await record("acme-fix", { branch: "workset/acme-fix" });
+    expect((await find("feature/{ticket}-{workset}", [])).branch).toBe("workset/acme-fix");
+  });
+
+  test("an explicit ticket finds its branch under the default template", async () => {
+    const resolution = await find(
+      "feature/{ticket}-{workset}",
+      ["refs/heads/workset/ABC-1-acme-fix"],
+      "ABC-1",
+    );
+    expect(resolution).toMatchObject({ branch: "workset/ABC-1-acme-fix", source: "local" });
+    expect(resolution.diagnostics).toHaveLength(1);
+    expect(resolution.diagnostics[0]).toContain("follows the default template");
+  });
+
+  test("an explicit ticket reports a plain branch under the default template", async () => {
+    const resolution = await find(
+      "feature/{ticket}-{workset}",
+      ["refs/heads/workset/acme-fix"],
+      "ABC-1",
+    );
+    expect(resolution.branch).toBe("feature/ABC-1-acme-fix");
+    expect(resolution.diagnostics.join()).toContain("Existing workset/acme-fix is not used");
+  });
+
+  test("a ticket the template has no place for is reported", async () => {
+    const resolution = await find("feature/{workset}", [], "ABC-123");
+    expect(resolution.branch).toBe("feature/acme-fix");
+    expect(resolution.diagnostics.join()).toContain("has no {ticket}");
+  });
+
+  test("a recorded default-template branch gets the rename hint", async () => {
+    await record("acme-fix", { branch: "workset/ABC-1-acme-fix" });
+    const resolution = await find("feature/{ticket}-{workset}", [], "XYZ-2");
+    expect(resolution.branch).toBe("workset/ABC-1-acme-fix");
+    expect(resolution.diagnostics.join()).toContain(
+      "git branch -m workset/ABC-1-acme-fix feature/XYZ-2-acme-fix",
+    );
+  });
+
+  test("a template without {ticket} lists no refs", async () => {
+    let listedCount = 0;
+    await resolveDeliveryBranch({
+      companionPath: companion,
+      repository: WEB,
+      hasRef: existing(),
+      listRefs: async () => {
+        listedCount += 1;
+        return [];
+      },
+      worksetId: "acme-fix",
+      template: "feature/{workset}",
+    });
+    // Only the default template's fallback lists refs.
+    expect(listedCount).toBe(1);
+  });
+});
+
 describe("mergeProbeWith", () => {
   const HEAD = "a".repeat(40);
   const gitWith = (state: {

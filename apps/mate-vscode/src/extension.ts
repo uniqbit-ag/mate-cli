@@ -311,21 +311,29 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const worktrees = new Section(
     "mate.worktrees",
-    forRepository(async (repo) => ({
-      items: (await listWorktrees(repo)).map((worktree) => ({
-        label: path.basename(worktree.path),
-        description: [worktree.branch ?? "detached", worktree.workset ? "Workset" : ""]
-          .filter(Boolean)
-          .join(" · "),
-        tooltip: worktree.path,
-        icon: worktree.workset ? ICONS.worksetWorktree : ICONS.worktree,
-        command: {
-          command: "vscode.openFolder",
-          title: "Open in new window",
-          arguments: [vscode.Uri.file(worktree.path), { forceNewWindow: true }],
-        },
-      })),
-    })),
+    forRepository(async (repo) => {
+      // The view only adds recorded branches' Workset marks; its failure must not hide worktrees.
+      const worksets = await repositoryView(repo).then(
+        (view) => view.worksets,
+        () => [],
+      );
+      const branches = new Set(worksets.flatMap((workset) => workset.branch ?? []));
+      return {
+        items: (await listWorktrees(repo, branches)).map((worktree) => ({
+          label: path.basename(worktree.path),
+          description: [worktree.branch ?? "detached", worktree.workset ? "Workset" : ""]
+            .filter(Boolean)
+            .join(" · "),
+          tooltip: worktree.path,
+          icon: worktree.workset ? ICONS.worksetWorktree : ICONS.worktree,
+          command: {
+            command: "vscode.openFolder",
+            title: "Open in new window",
+            arguments: [vscode.Uri.file(worktree.path), { forceNewWindow: true }],
+          },
+        })),
+      };
+    }),
   );
 
   const openChanges = new Section(
