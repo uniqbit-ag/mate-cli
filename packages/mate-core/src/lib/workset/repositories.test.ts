@@ -4,7 +4,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { linkedRepositoryIdentities, repositorySources } from "./repositories";
+import {
+  linkedRepositoryCatalog,
+  linkedRepositoryIdentities,
+  repositorySources,
+} from "./repositories";
 
 let root: string;
 let companion: string;
@@ -65,5 +69,14 @@ describe("repository sources", () => {
           "https://git.acme.test/acme/web.git, https://git.acme.test/acme/api.git",
       }),
     ).toEqual(["acme/api", "acme/web"]);
+  });
+
+  test("the catalog maps each linked registry ID to its identity", async () => {
+    link([workingRepo("web", "https://git.acme.test/acme/web.git")]);
+    const catalog = await linkedRepositoryCatalog(companion, {
+      MATE_FACTORY_REPOSITORIES: "https://git.acme.test/acme/api.git",
+    });
+    expect(catalog.identities).toEqual(["acme/api", "acme/web"]);
+    expect([...catalog.aliases.entries()]).toEqual([["repo-0", "acme/web"]]);
   });
 });

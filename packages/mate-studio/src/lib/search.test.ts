@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { canonicalHref, validateStudioSearch } from "./search";
+import { canonicalHref, validateSpecsSearch, validateStudioSearch } from "./search";
 
 describe("validateStudioSearch", () => {
   it("reads the canonical mode", () => {
@@ -86,5 +86,24 @@ describe("canonicalHref", () => {
         "/?studioMode=analysis",
       );
     }
+  });
+});
+
+describe("validateSpecsSearch", () => {
+  it("keeps search and filters as text", () => {
+    expect(validateSpecsSearch({ q: "login", repo: "acme/shop", area: "packages/web" })).toEqual({
+      q: "login",
+      repo: "acme/shop",
+      area: "packages/web",
+    });
+  });
+
+  it("reads values the router parsed as numbers or booleans as typed", () => {
+    expect(validateSpecsSearch({ q: 2026 })).toEqual({ q: "2026" });
+    expect(validateSpecsSearch({ q: true })).toEqual({ q: "true" });
+  });
+
+  it("drops blank and structured values", () => {
+    expect(validateSpecsSearch({ q: "  ", repo: { a: 1 }, area: ["web"] })).toEqual({});
   });
 });

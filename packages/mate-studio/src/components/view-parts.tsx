@@ -79,6 +79,7 @@ export function ListCard({
   children,
   className,
   label,
+  level = 2,
 }: {
   title: ReactNode;
   count?: number;
@@ -88,7 +89,10 @@ export function ListCard({
   className?: string;
   /** The accessible name when the title is not plain text. */
   label?: string;
+  /** The title's heading level; 3 when the card sits under a section heading. */
+  level?: 2 | 3;
 }) {
+  const Heading = level === 3 ? "h3" : "h2";
   return (
     <section
       className={cn("list-card overflow-hidden rounded-card border border-rule", className)}
@@ -100,7 +104,7 @@ export function ListCard({
           tone ? TONE_TEXT[tone] : null,
         )}
       >
-        <h2 className="m-0 text-[inherit] font-[inherit]">{title}</h2>
+        <Heading className="m-0 text-[inherit] font-[inherit]">{title}</Heading>
         {count !== undefined ? (
           <Count value={count} tone={tone === "warn" ? "warn" : undefined} />
         ) : null}

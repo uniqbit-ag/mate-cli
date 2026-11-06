@@ -25,7 +25,14 @@ const payload = {
       artifacts: [{ id: "tasks" }],
     },
   ],
-  specs: [{ capability: "acme-login", areas: ["acme"], requirementCount: 3, valid: true }],
+  specs: [
+    {
+      capability: "acme-login",
+      scopes: [{ repository: "acme/shop", area: "acme" }],
+      requirementCount: 3,
+      valid: true,
+    },
+  ],
   shipped: [
     {
       name: "acme-checkout",
