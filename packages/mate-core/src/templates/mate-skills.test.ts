@@ -505,6 +505,9 @@ describe("bundled Mate pre-explore skills", () => {
         "ruff format",
         "Format only the files you changed",
         "never an `npx`-downloaded version",
+        "mktemp -d",
+        "delete only the path",
+        "Where `mktemp` is unavailable",
       ]) {
         expect(source).toContain(marker);
       }
