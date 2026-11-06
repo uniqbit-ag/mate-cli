@@ -25,6 +25,7 @@ export class Section implements vscode.TreeDataProvider<SectionItem>, vscode.Dis
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.changed.event;
   readonly view: vscode.TreeView<SectionItem>;
+  private running: Promise<void> | undefined;
 
   constructor(
     id: string,
@@ -59,8 +60,22 @@ export class Section implements vscode.TreeDataProvider<SectionItem>, vscode.Dis
     return tree;
   }
 
-  async getChildren(element?: SectionItem): Promise<SectionItem[]> {
-    if (element) return element.children ?? [];
+  /** The running root load; settles on success and failure. Undefined when idle. */
+  get loading(): Promise<void> | undefined {
+    return this.running;
+  }
+
+  getChildren(element?: SectionItem): Promise<SectionItem[]> {
+    if (element) return Promise.resolve(element.children ?? []);
+    const items = this.loadItems();
+    const settled = items.then(() => {
+      if (this.running === settled) this.running = undefined;
+    });
+    this.running = settled;
+    return items;
+  }
+
+  private async loadItems(): Promise<SectionItem[]> {
     try {
       const result = await this.load();
       if ("message" in result) {
