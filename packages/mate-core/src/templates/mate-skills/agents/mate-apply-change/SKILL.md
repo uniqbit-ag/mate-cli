@@ -72,8 +72,12 @@ protected branch unless it is recorded as a direct delivery. Mate never asks the
 so a branch only the forge protects looks unprotected; hence the menu below.
 
 - **A branch is already recorded** and it is the current branch → continue. When the
-  current branch differs, warn, name both branches, and ask before implementing
-  whether to switch to the recorded branch or record the current one.
+  current branch differs and `git worktree list --porcelain` shows the recorded branch
+  checked out in a linked worktree, run
+  `mate working worktree --change "<change-name>" --enter --json`, which reuses it, and
+  follow `enter` as in option 2 below. Otherwise, when the current branch differs, warn,
+  name both branches, and ask before implementing whether to switch to the recorded
+  branch or record the current one.
 - **On `defaultBranch`** → record it without asking:
   `mate artifact link "<change-name>" --branch "<defaultBranch>" --json`.
 - **Detached HEAD** → ask for the branch name, then record it.

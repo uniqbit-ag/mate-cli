@@ -39,14 +39,23 @@ const GUIDANCE_JSON = JSON.stringify({
 /** Every launch variable cleared, so only a Projection Root can resolve a companion. */
 const NO_LAUNCH = Object.fromEntries(Object.values(MATE_ENV).map((name) => [name, undefined]));
 
-/** Records every hook and transform the plugin registers. */
+/** Records every hook and transform the plugin registers; hooks of one name run in order. */
 function fakeApi(directory: string) {
   const hooks = new Map<string, Hook>();
   const tools: Array<{ name: string }> = [];
   const recorder =
     (domain: string) =>
     async (name: string, callback: Hook): Promise<void> => {
-      hooks.set(`${domain}.${name}`, callback);
+      const key = `${domain}.${name}`;
+      const earlier = hooks.get(key);
+      if (!earlier) {
+        hooks.set(key, callback);
+        return;
+      }
+      hooks.set(key, async (event) => {
+        await earlier(event);
+        await callback(event);
+      });
     };
   const api = {
     location: { directory },
@@ -179,7 +188,11 @@ describe("Mate OpenCode server plugin", () => {
           "shell.create.before",
           "tool.execute.before",
         ]);
-        expect(tools.map((tool) => tool.name)).toEqual(["companion_paths", "mate_enter_worktree"]);
+        expect(tools.map((tool) => tool.name)).toEqual([
+          "companion_paths",
+          "mate_enter_worktree",
+          "mate_exit_worktree",
+        ]);
 
         const event = { system: [{ type: "text", text: "base prompt" }] };
         await hooks.get("session.context")!(event);
