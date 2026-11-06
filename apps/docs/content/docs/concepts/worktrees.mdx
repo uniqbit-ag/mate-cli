@@ -78,6 +78,15 @@ uses `EnterWorktree` with approval; OpenCode uses `mate_enter_worktree`. If the
 move is unsupported or declined, open a new session in the reported checkout
 and invoke the apply skill there before editing.
 
+In OpenCode, a new session started with `/new` or `/clear` in the main checkout
+follows the worktree a session last entered, and is told where it was moved.
+Sessions an editor starts in a directory it chose stay there.
+`mate_exit_worktree` moves a session back to the main checkout and stops new
+sessions from following; the worktree stays. Following also stops when the
+worktree is removed or the OpenCode server restarts. When you resume a change
+from the main checkout, the apply skill moves the session into the change's
+existing worktree.
+
 For a fresh terminal session, change to the reported directory first:
 
 ```sh

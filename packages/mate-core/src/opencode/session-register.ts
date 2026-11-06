@@ -53,7 +53,7 @@ export const openCodeRegisterDeps: OpenCodeRegisterDeps = {
   now: () => new Date(),
 };
 
-interface SessionEvent {
+export interface SessionEvent {
   type?: string;
   location?: { directory?: string };
   data?: {
@@ -85,7 +85,7 @@ function activityAfter(event: SessionEvent): SessionActivity | undefined {
   }
 }
 
-function eventDirectory(event: SessionEvent): string | undefined {
+export function eventDirectory(event: SessionEvent): string | undefined {
   return event.location?.directory ?? event.data?.location?.directory;
 }
 
