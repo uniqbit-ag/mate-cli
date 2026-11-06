@@ -776,7 +776,9 @@ or where `--all` stops, and it never deletes a branch or uses `--force`. With
 `--json`, the result that finished the Workset carries
 `worktrees: { removed, kept, warnings }`; without it, one line per removed or
 kept worktree follows the result. To get a removed worktree back, run
-`git worktree add <path> <branch>`.
+`git worktree add <path> <branch>`. The publish skill first leaves a
+worktree that a Claude Code session entered with `EnterWorktree`, so cleanup
+never removes that worktree while the session is still in it.
 
 `mate artifact pending --json` also reports each archive's delivery: `merged`
 and `not-applicable` archives are publishable; `waiting`, `unlinked`, and
