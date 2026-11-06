@@ -2,8 +2,10 @@ import { hashKey, type QueryClient, queryOptions } from "@tanstack/react-query";
 import type { SkillAgent, StudioEvent, StudioMode, VaultView } from "@uniqbit/mate-core/studio";
 
 import { agentCredentialKey } from "./agent-credential";
+import { unpackGraph } from "./graph-wire";
 import type { StudioSearch } from "./search";
 import { getFactory } from "../server/factory";
+import { getGraph } from "../server/graph";
 import { getReports } from "../server/reports";
 import { getShell, type ShellData } from "../server/shell";
 import { getSkillPreview } from "../server/skills";
@@ -23,6 +25,7 @@ const keys = {
   vault: (companion: string) => [companion, "vault"] as const,
   vaultViews: (companion: string) => [companion, "vault", "view"] as const,
   reports: (companion: string) => [companion, "reports"] as const,
+  graph: (companion: string) => [companion, "graph"] as const,
 };
 
 /** Per file and per filter, so unbounded; dropped a while after their last use. */
@@ -110,6 +113,13 @@ export const reportsQuery = (companion: string) =>
   queryOptions({
     queryKey: keys.reports(companion),
     queryFn: () => getReports({ data: { companion } }),
+  });
+
+/** Never loaded ahead: Core builds the graph only when the Graph view asks for it. */
+export const graphQuery = (companion: string) =>
+  queryOptions({
+    queryKey: keys.graph(companion),
+    queryFn: async () => unpackGraph(await getGraph({ data: { companion } })),
   });
 
 async function stale(queryClient: QueryClient, ...queryKeys: (readonly unknown[])[]) {

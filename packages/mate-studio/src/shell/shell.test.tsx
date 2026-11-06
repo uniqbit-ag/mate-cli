@@ -258,6 +258,7 @@ describe("the sidebar", () => {
       "/specs",
       "/vault",
       "/reports",
+      "/graph",
     ]);
     expect(markup).toContain('data-studio-nav-section="Engineering"');
     expect(markup).toContain('data-studio-nav-section="Library"');
@@ -274,12 +275,13 @@ describe("the sidebar", () => {
       "/specs",
       "/vault",
       "/reports",
+      "/graph",
     ]);
   });
 
   it("gives Analysis its Overview and the published views, and no Workflow, Skills or Factory", () => {
     const markup = sidebar(shell({ studioMode: "analysis", factoryMode: true }));
-    expect(viewLinks(markup)).toEqual(["/", "/specs", "/vault", "/reports"]);
+    expect(viewLinks(markup)).toEqual(["/", "/specs", "/vault", "/reports", "/graph"]);
     expect(markup).toContain('data-studio-nav-section="Analysis"');
     expect(markup).toContain('data-studio-nav-section="Published"');
   });

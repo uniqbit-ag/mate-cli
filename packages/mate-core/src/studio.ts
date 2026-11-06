@@ -22,6 +22,20 @@ export type {
   StudioWorkset,
 } from "./cli/commands/studio/payload";
 export type { FactoryRunView } from "./lib/factory/outcomes/runs";
+export {
+  archivedArtifactPath,
+  canonicalSpecPath,
+  capabilityNodeId,
+  GRAPH_ARTIFACTS,
+  GRAPH_EDGE_KINDS,
+  GRAPH_EDGE_STRIDE,
+  ROOT_AREA_LABEL,
+  type StudioGraphArchive,
+  type StudioGraphEdgeKind,
+  type StudioGraphNode,
+  type StudioGraphNodeKind,
+  type StudioSpecGraph,
+} from "./cli/commands/studio/graph-model";
 
 export {
   CHANGE_PLACEHOLDER,
@@ -35,6 +49,7 @@ export {
   LEGACY_ROLE_PARAM,
   MODE_VIEWS,
   modePolicy,
+  NODE_PARAM,
   openFile,
   openFolder,
   parse as parseSelection,

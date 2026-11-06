@@ -8,6 +8,8 @@ export interface StudioSnapshot {
 
 export interface StudioSnapshotCache {
   read(companionPath: string, refresh: boolean): Promise<StudioSnapshot>;
+  /** When the held snapshot was collected; null before the first collection. */
+  collectedAt?(companionPath: string): number | null;
 }
 
 export interface StudioSnapshotCacheDeps {
@@ -58,6 +60,9 @@ export function createStudioSnapshotCache(deps: StudioSnapshotCacheDeps = {}): S
         if (pending) return pending;
       }
       return collect(companionPath);
+    },
+    collectedAt(companionPath: string): number | null {
+      return snapshots.get(companionPath)?.collectedAt ?? null;
     },
   };
 }

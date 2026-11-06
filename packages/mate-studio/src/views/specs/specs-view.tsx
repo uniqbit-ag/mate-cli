@@ -6,7 +6,7 @@ import {
   type StudioSpec,
   SUBJECT_PATTERN,
 } from "@uniqbit/mate-core/studio";
-import { Fragment, useState } from "react";
+import { Fragment, type ReactNode, useState } from "react";
 
 import { Icon } from "../../components/icon";
 import { EmptyNote, ListCard, PAGE_PAD, ROW, StatusWord } from "../../components/view-parts";
@@ -166,14 +166,21 @@ function SpecsByArea({
   );
 }
 
-function SpecDetail({
+/** A spec's panel body: head, Vault link and the rendered spec; the Graph panel reuses it. */
+export function SpecDetail({
   spec,
-  actions,
+  actions = NO_ACTIONS,
   companion,
+  withStatus = true,
+  children,
 }: {
   spec: StudioSpec;
-  actions: SpecActionOffer[];
+  actions?: SpecActionOffer[];
   companion?: string;
+  /** False where validity was never collected, e.g. in the Graph. */
+  withStatus?: boolean;
+  /** Sections shown between the head and the spec, e.g. the Graph's History. */
+  children?: ReactNode;
 }) {
   const path = specPath(spec.capability);
   const file = useQuery({
@@ -188,7 +195,7 @@ function SpecDetail({
         title={spec.capability}
         kicker={
           <>
-            {specStatus(spec)}
+            {withStatus ? specStatus(spec) : null}
             <span className="ml-auto">{spec.areas.map(areaLabel).join(", ")}</span>
           </>
         }
@@ -198,12 +205,17 @@ function SpecDetail({
           <Link
             className="inline-flex items-center gap-1.5 text-sm"
             to="/vault"
-            search={(previous) => ({ ...previous, path })}
+            search={(previous) => ({
+              companion: previous.companion,
+              studioMode: previous.studioMode,
+              path,
+            })}
           >
             <Icon name="external" className="size-3.5" /> Open in Vault
           </Link>
         </div>
       </PanelHead>
+      {children}
       <PanelSection
         title="Spec"
         aside={

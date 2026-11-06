@@ -1,4 +1,5 @@
 import type { OutcomeAction } from "../../../lib/factory/outcomes/actions";
+import type { StudioSpecGraph } from "./graph";
 import type { StoredReport } from "./reports";
 import type { SkillAgent, SkillPreview } from "./skill-files";
 import type { StudioModePolicy } from "./selection";
@@ -57,6 +58,8 @@ export interface StudioServices {
     content: string,
     token?: string,
   ): Promise<VaultSaved | VaultConflict>;
+  /** The spec graph of the companion's canonical specs and archives; read-only, held until refresh. */
+  graph(companionDigest: string): Promise<StudioSpecGraph>;
   /** A registered companion's published reports, newest first; no paths or content. */
   reports(companionDigest: string): Promise<StoredReport[]>;
   /** One installed skill's files and one of them rendered (SKILL.md by default); read-only. */
