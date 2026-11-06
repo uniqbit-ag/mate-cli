@@ -1,5 +1,145 @@
 # Changelog
 
+## [0.20.0](https://github.com/uniqbit-ag/mate-cli/compare/0.18.5...0.20.0) (2026-11-06)
+
+## [1.0.0-canary.5](https://github.com/uniqbit-ag/mate-cli/compare/0.18.5...0.20.0) (2026-11-05)
+
+## [1.0.0-canary.4](https://github.com/uniqbit-ag/mate-cli/compare/0.18.5...0.20.0) (2026-11-05)
+
+### ⚠ BREAKING CHANGES
+
+- share the Repository Link across worktrees
+
+### Features
+
+- **apply:** offer to use or create a named delivery branch ([55a452d](https://github.com/uniqbit-ag/mate-cli/commit/55a452dadbffe940629387eb4bda51275d7c4a47))
+- **delivery:** keep the ticket only in the branch name ([376220f](https://github.com/uniqbit-ag/mate-cli/commit/376220fa569220f6a2ee1109ca5e12db375063f3))
+- share the Repository Link across worktrees ([4fcaee6](https://github.com/uniqbit-ag/mate-cli/commit/4fcaee6d09b494534316f844afeaa3aa1d7fb79a))
+- **studio:** control-room redesign, instant views, non-blocking watch ([681aaf7](https://github.com/uniqbit-ag/mate-cli/commit/681aaf71c00c1a7e051b46316077b3365a18efef))
+- **update:** update an installed Mate editor extension with mate update ([63dd6dd](https://github.com/uniqbit-ag/mate-cli/commit/63dd6dd5e0b787adb75775d46ce52eb08a6064a1))
+- **vscode:** add Mate VS Code extension, session registry, and mate vscode setup ([40552b3](https://github.com/uniqbit-ag/mate-cli/commit/40552b34bdf9e4df876ffab0e98019476b7c4942))
+- **vscode:** background sessions with session state and registry hooks ([8fad0e3](https://github.com/uniqbit-ag/mate-cli/commit/8fad0e351ee56872e3d2f094e2a011f8c2351f9c))
+- **vscode:** gate sidebar on managed workspace and clarify groups ([593d5ac](https://github.com/uniqbit-ag/mate-cli/commit/593d5ac5684622efed452e45d422219694713ff2))
+
+### Bug Fixes
+
+- keep mate working worktree working after a linked worktree is removed ([67e1e44](https://github.com/uniqbit-ag/mate-cli/commit/67e1e4476f2203b706316d723ba0c3bd5d261f01))
+- **tokensave:** do not route calls to the worktree the MCP server already serves ([56e0b7f](https://github.com/uniqbit-ag/mate-cli/commit/56e0b7f29deb02db50f3ed8c4784c363da0b5ca8))
+
+## [1.0.0-canary.3](https://github.com/uniqbit-ag/mate-cli/compare/0.18.5...0.20.0) (2026-11-05)
+
+### Bug Fixes
+
+- resolve host OpenTUI runtime in installed OpenCode plugin ([374cafb](https://github.com/uniqbit-ag/mate-cli/commit/374cafb1a99604f851982b5351f3cd0390251774))
+
+## [1.0.0-canary.2](https://github.com/uniqbit-ag/mate-cli/compare/0.18.5...0.20.0) (2026-11-05)
+
+### Bug Fixes
+
+- **studio:** unhash Start manifest chunk so mate-core packs reproducibly ([1b10680](https://github.com/uniqbit-ag/mate-cli/commit/1b10680a2d349035d87180bc69655d762885aff6))
+
+## [1.0.0-canary.1](https://github.com/uniqbit-ag/mate-cli/compare/0.18.5...0.20.0) (2026-11-05)
+
+### ⚠ BREAKING CHANGES
+
+- **companion:** name the workspace document after the repository
+- **companion:** open workspace file and merge worktree detection settings
+- detect merge state from local Git; drop gh auth token fallback
+- **studio:** replace Studio roles with Engineering/Analysis modes
+- add Companion Mentions plugin; ignore case in secret matching
+
+### Features
+
+- add Companion Mentions plugin; ignore case in secret matching ([062c8bd](https://github.com/uniqbit-ag/mate-cli/commit/062c8bd9e6b38e9564c2ae18fff4cbc1af16e1a6))
+- add mate working worktree for parallel local Worksets ([105d7a9](https://github.com/uniqbit-ag/mate-cli/commit/105d7a9e5f1b182ffe4da62cd6734cb0306d5e0a))
+- **claude:** deny SendFeedback to stop Claude feedback drafts in Mate sessions ([8916ebf](https://github.com/uniqbit-ag/mate-cli/commit/8916ebf03126230f179cc1dec6e59d628483baa0))
+- **cli:** show phase progress in slow commands and plain tui banner ([facacf5](https://github.com/uniqbit-ag/mate-cli/commit/facacf57f65b90f44334eebebf459c2f1f1ac948))
+- **companion:** name the workspace document after the repository ([f0e66dc](https://github.com/uniqbit-ag/mate-cli/commit/f0e66dcce5c2edcaa2d32e51657496ba34952b62))
+- **companion:** open workspace file and merge worktree detection settings ([5a0b9a7](https://github.com/uniqbit-ag/mate-cli/commit/5a0b9a765dfe813dd049815e7b4061e652089b6c))
+- **delivery:** record Jira tickets and resolve the Delivery Branch in one place ([67bb6b0](https://github.com/uniqbit-ag/mate-cli/commit/67bb6b04bc3d01fae4d2d4305d4e829b6bb2f4cd))
+- detect merge state from local Git; drop gh auth token fallback ([0882840](https://github.com/uniqbit-ag/mate-cli/commit/08828409d6ca6244f467dcaa926c75925b187cf7))
+- **install:** let each member opt into the tools a companion recommends ([d6a9b65](https://github.com/uniqbit-ag/mate-cli/commit/d6a9b654e0f8114fd1b52cd7d2c26fe350feeb90))
+- let a second Mate leave the runtime directory alone ([8142a25](https://github.com/uniqbit-ag/mate-cli/commit/8142a255a6fbf05804c782ff24dbcb42ba7f43ac))
+- load Companion Mentions in plain claude sessions ([bef4d05](https://github.com/uniqbit-ag/mate-cli/commit/bef4d05a937b809285fdca59acffa994f7346e79))
+- move Studio to mate-studio app, extend factory runner and outcomes ([f1f8940](https://github.com/uniqbit-ag/mate-cli/commit/f1f8940b520fd8d6ca18d042ec50552a73c926ce))
+- Next steps handoffs, stricter slicing test, compact apply ([5b504ed](https://github.com/uniqbit-ag/mate-cli/commit/5b504ed4619258ef7b1f323d595b733d4bde917c))
+- **openspec:** tag tasks only with companion-installed skills ([1a2b618](https://github.com/uniqbit-ag/mate-cli/commit/1a2b6186d2009f9150d52f64ba82a8165541deb8))
+- **publish:** retry transient remote failures and defer instead of failing ([c91229d](https://github.com/uniqbit-ag/mate-cli/commit/c91229d8abe1643d1c59a6c2b4b86a6929420fab))
+- search the companion from any @ query; load a worktree's own plugin copy ([6fb81af](https://github.com/uniqbit-ag/mate-cli/commit/6fb81af867a78ebbe9793cd90cf2a0339d50efd0))
+- **skills:** format skill handoffs for the current agent runtime ([ed49511](https://github.com/uniqbit-ag/mate-cli/commit/ed49511ba43c1265c728693bca30f645e8093fdd))
+- **skills:** handoffs never offer optional commands ([fb460b5](https://github.com/uniqbit-ag/mate-cli/commit/fb460b5200559d50460613992962e7eb912b0f51))
+- **skills:** keep Mate skill copies out of companion Git ([c8b605b](https://github.com/uniqbit-ag/mate-cli/commit/c8b605bbc99745cea6a5fda53d63649c6a08a132))
+- software factory — factory image app, AFK runner, studio factory board, workset terminal and delivery branch ([a8dcd12](https://github.com/uniqbit-ag/mate-cli/commit/a8dcd12ba30749b8f5718c698b29e1e948bbd3f7))
+- **studio:** hold view data, load views ahead and show navigation progress ([c890715](https://github.com/uniqbit-ag/mate-cli/commit/c8907152a88584e528cc80c8f975636e0a2ab753))
+- **studio:** replace Studio roles with Engineering/Analysis modes ([f41b192](https://github.com/uniqbit-ag/mate-cli/commit/f41b192d2f29d78f5fbd8d0bcce3c3cf28bf49d1))
+- **studio:** role switch, detached sidebar, and Business Analyst overview ([5d59e6b](https://github.com/uniqbit-ag/mate-cli/commit/5d59e6b439fa3051570cb037c88db2d46b55d742))
+- **tokensave:** route code-graph calls to the session's worktree ([4ae5f23](https://github.com/uniqbit-ag/mate-cli/commit/4ae5f239273785db8ec3b85549247a602e24bd95))
+- **tui:** render Ink screens as plain lines with a static log ([9b47236](https://github.com/uniqbit-ag/mate-cli/commit/9b472362b8c472db9a57bfaa6a2d5651389027b9))
+- **worktree:** create worktrees for a change and offer them in apply ([666b63c](https://github.com/uniqbit-ag/mate-cli/commit/666b63c74e27d52adf3f642cabaa07d8ea7b6118))
+- **worktree:** enter the change's worktree from the running session ([34540f5](https://github.com/uniqbit-ag/mate-cli/commit/34540f5f6ed189b77b97e57942010725a8441fd7))
+- **worktree:** publish prunes the worktrees of a Workset it completes ([174db5f](https://github.com/uniqbit-ag/mate-cli/commit/174db5fc9ca79db6c634aa34aacd5ddc62debe30))
+
+### Bug Fixes
+
+- **bootstrap:** find a freshly installed Bun under ~/.bun/bin and explain setup without a TTY ([dea6703](https://github.com/uniqbit-ag/mate-cli/commit/dea6703da0e43bdc0fd98775f5f55102f9fdf820))
+- close review findings in glob braces, secret folders and Mate lookups ([3ed5881](https://github.com/uniqbit-ag/mate-cli/commit/3ed588111bf7bd52c0bd8ed0745f8119726c3bcd))
+- **graphify:** remove stale CLI hooks and stop counting Mate's wrapper as Graphify ([e43800d](https://github.com/uniqbit-ag/mate-cli/commit/e43800d6f7d43a57a9b76e612c52d8ab25e4e4d0))
+- harden tokensave worktree routing and workset worktree setup ([7f28412](https://github.com/uniqbit-ag/mate-cli/commit/7f2841253212421da758f6b670a9141b311fb4ec))
+- keep the openspec exclude line while another checkout's pointer is unreadable ([e09fb38](https://github.com/uniqbit-ag/mate-cli/commit/e09fb38074928dc489c058a5607184dd6baf8615))
+- **mate-core:** pin the JSX runtime in every .tsx module ([b810b0c](https://github.com/uniqbit-ag/mate-cli/commit/b810b0c1e95900123bc8606edabc2041769c08aa))
+- **mate-core:** skip prepack when packing in the Claude plugin packaging test ([cdaa0b8](https://github.com/uniqbit-ag/mate-cli/commit/cdaa0b8e15ba1f3fd43c794e0b59ef88a272634e))
+- **opencode:** declare OpenTUI as an optional host-provided peer ([b8e9b48](https://github.com/uniqbit-ag/mate-cli/commit/b8e9b48b8dd684ec66a1514168cd3705f489776e))
+- **opencode:** keep TUI staleness lines live when loaded from node_modules ([2980f13](https://github.com/uniqbit-ag/mate-cli/commit/2980f1323bc26604c97038af4c44ca4b280c050a))
+- refuse search globs past the brace limit ([2f02569](https://github.com/uniqbit-ag/mate-cli/commit/2f02569a3e0e3f385558848e6e029e0d985fcf74))
+- **setup:** install uv only for Graphify ([cff52c7](https://github.com/uniqbit-ag/mate-cli/commit/cff52c79d2e7ce009e2f87f29ceae3f3da62681d))
+- **setup:** leave a recommended tool uninstalled once the member declined it ([08340fd](https://github.com/uniqbit-ag/mate-cli/commit/08340fdea6e7b87a2a8f0c7807057486f82ced92))
+- **tokensave:** detect agent integration under CLAUDE_CONFIG_DIR and XDG_CONFIG_HOME ([84a2ec9](https://github.com/uniqbit-ag/mate-cli/commit/84a2ec91897ee3159b2e74f4f456c2425e614e1f))
+- write worktree exclude lines to the shared Git folder ([55dc153](https://github.com/uniqbit-ag/mate-cli/commit/55dc153e1d26818384967f14f967e8d3f80958e8))
+
+### Reverts
+
+- Revert "feat: let a second Mate leave the runtime directory alone" ([ab64fca](https://github.com/uniqbit-ag/mate-cli/commit/ab64fca6c14a1cd72dd9f1eb02686129549ad766))
+
+## [1.0.0-canary.0](https://github.com/uniqbit-ag/mate-cli/compare/0.18.5...0.20.0) (2026-10-29)
+
+### ⚠ BREAKING CHANGES
+
+- deliver changes through recorded branches and bundle OpenSpec
+- add secret guardrails for agents, artifacts, and code indexes
+
+### Features
+
+- add local appliance test setup for mate-container ([b47a31c](https://github.com/uniqbit-ag/mate-cli/commit/b47a31ce81b190968caf9a9be5bab4a45266351f))
+- add secret guardrails for agents, artifacts, and code indexes ([13c86c6](https://github.com/uniqbit-ag/mate-cli/commit/13c86c6dfc6c0b12dcc1dea12d216a5bda33b98f))
+- adopt mate brand kit across docs, CLI, and TUI surfaces ([68de60e](https://github.com/uniqbit-ag/mate-cli/commit/68de60ec90ab1cb89c7842ac9f18c702ffd9df96))
+- align report renderer and show-me skill with mate brand kit ([263e9dd](https://github.com/uniqbit-ag/mate-cli/commit/263e9dd7635c41aab70dfe93f829e13896c60079))
+- block model Co-Authored-By trailers in agent commits ([8947a66](https://github.com/uniqbit-ag/mate-cli/commit/8947a66ab00701838c531d7fb2fd35b312ca422f))
+- deliver changes through recorded branches and bundle OpenSpec ([4531d10](https://github.com/uniqbit-ag/mate-cli/commit/4531d101db4d4ad0a23f6cf6dec6369e518a687b))
+- deliver companion instructions to Claude sessions and subagents ([ac966ba](https://github.com/uniqbit-ag/mate-cli/commit/ac966bad19650c687d82e6ee7c7b4c6c2df71eaf))
+- disable plan mode, DesignSync and the Artifact tool in Mate-managed Claude sessions ([d9a1a9e](https://github.com/uniqbit-ag/mate-cli/commit/d9a1a9eb7b549f9732a5ac68ef10435251918448))
+- let Capabilities ship Claude plugin directories ([2e59586](https://github.com/uniqbit-ag/mate-cli/commit/2e5958601c778e5014d321c734911a862193c747))
+- link companion Claude commands into wrapped repositories ([a4adfe2](https://github.com/uniqbit-ag/mate-cli/commit/a4adfe21bf9e87c35aaaad3000f210ca8a702b53))
+- move delta spec metadata into a `mate:delta` comment ([89ea037](https://github.com/uniqbit-ag/mate-cli/commit/89ea0378beb1933ad0b5add28e6af3d640a8f70d))
+- open every Linked Companion in `mate companion open` ([680bc33](https://github.com/uniqbit-ag/mate-cli/commit/680bc33a92ac4335299e4727eaf93838b70b37a2))
+- publish Capability Claude plugins to plain claude sessions via wrap ([cfeb860](https://github.com/uniqbit-ag/mate-cli/commit/cfeb860285e043ecc1cd0cc64ebb6769a4225f06))
+- regenerate OpenSpec output only on companion setup and update ([b0c128f](https://github.com/uniqbit-ag/mate-cli/commit/b0c128f039b1d6b135357bc1cbe122b62876a305))
+- render vault markdown with read/edit modes and in-place navigation ([dd91c34](https://github.com/uniqbit-ag/mate-cli/commit/dd91c345235d3716defd8d37aaf2f7cbb6a9313c))
+- share brand palette between Studio and reports with scheme override ([1bf58eb](https://github.com/uniqbit-ag/mate-cli/commit/1bf58ebcef6a1455ea9f1620bbd33920ad9ea8d4))
+- show-me draws behaviour changes as a resulting flowchart first ([072c512](https://github.com/uniqbit-ag/mate-cli/commit/072c512ddc01d396132fc1c5f033588a8c9c5a69))
+
+### Bug Fixes
+
+- deliver companion instructions through one hook channel for Claude ([a410fb2](https://github.com/uniqbit-ag/mate-cli/commit/a410fb257f3d77c9b966be3e02a8a02474362c62))
+- drop unmatched Claude Write secret deny rules ([63e2f4c](https://github.com/uniqbit-ag/mate-cli/commit/63e2f4c4fb7eb29c7d13489979fe1c81457ce0ce))
+- keep a section whole when the companion block sits inside it ([d6da0e7](https://github.com/uniqbit-ag/mate-cli/commit/d6da0e7648282029ced62bf742670cf9714a2adf))
+- keep Capabilities from loading or shadowing Mate's own Claude plugin ([f44219c](https://github.com/uniqbit-ag/mate-cli/commit/f44219c5a09cacee840602a07de07f1d7fddf002))
+- keep mate-simplify-code refactors behaviour-safe ([b6777d6](https://github.com/uniqbit-ag/mate-cli/commit/b6777d6fac04fb5b5b1d4fda86a1d65e64ed8d84))
+- repair docs build and studio e2e assertions ([c7c1b17](https://github.com/uniqbit-ag/mate-cli/commit/c7c1b170861356818870b21e87b004d0c30df781))
+- resolve artifact guard targets against repo root and skip heredoc bodies ([167dca9](https://github.com/uniqbit-ag/mate-cli/commit/167dca96f844d7ed07773ca28be836e0cc740ea6))
+- stop `mate plugin install` from declaring flags as packages ([374b58a](https://github.com/uniqbit-ag/mate-cli/commit/374b58a10c6d05ba0381261624974689665ef286))
+- surface npm install errors instead of silencing them ([5ae0009](https://github.com/uniqbit-ag/mate-cli/commit/5ae0009249701e6f2477dbe26023435089dbc620))
+- tighten companion instruction trimming, scanning and writes ([30ff0c6](https://github.com/uniqbit-ag/mate-cli/commit/30ff0c6dbb7896468e0fb9b25168b3229a920324))
+
 ## [0.18.5](https://github.com/uniqbit-ag/mate-cli/compare/0.18.4...0.18.5) (2026-10-14)
 
 ### Bug Fixes
