@@ -94,6 +94,7 @@ export type {
   MdNode,
   MdTag,
 } from "./cli/commands/studio/views/vault/markdown-tree";
+export { guideTree } from "./cli/commands/studio/views/vault/markdown-tree";
 export type { VaultConflict, VaultSaved } from "./cli/commands/studio/vault";
 export type { StudioInventory, StudioInventoryCompanion } from "./cli/commands/studio/inventory";
 export type { StudioSkillInventory } from "./cli/commands/studio/mate-inventory";

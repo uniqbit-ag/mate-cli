@@ -9,9 +9,14 @@ import {
   type WorksetRecord,
 } from "../workset/record";
 import {
+  branchTemplatePrefix,
+  DEFAULT_BRANCH_TEMPLATE,
+  matchBranchTemplate,
+  type BranchTemplate,
+} from "./branch-template";
+import {
   defaultDeliveryBranch,
   findDelivery,
-  isJiraKey,
   readDeliveryRecord,
   type DeliveryRecord,
 } from "./record";
@@ -32,19 +37,21 @@ export interface DeliveryBranchRequest {
   /** Null when no checkout is known: the computed name, with `source` null. */
   hasRef: HasRef | null;
   /**
-   * Finds an existing `workset/<TICKET>-<id>` when no ticket is given; without it only
-   * `workset/<id>` is probed.
+   * Finds an existing branch the template names with any ticket when none is given; without it
+   * only the name without a ticket is probed.
    */
   listRefs?: ListRefs | null;
+  /** The companion's Delivery Branch template; defaults to `workset/{ticket}-{workset}`. */
+  template?: BranchTemplate;
   /**
    * Checks a dependency never checked for a merge before its branch is inherited; without it
    * such a branch is inherited with a diagnostic asking for a refresh.
    */
   mergeProbe?: MergeProbe | null;
   /**
-   * Names the branch `workset/<TICKET>-<id>`, even over an existing `workset/<id>`; never
-   * renames a recorded or inherited one. Defaults to the explicit Workset record's ticket,
-   * which yields to any existing `workset/<id>` or `workset/<TICKET>-<id>`.
+   * Names the branch with the template and this ticket, even over an existing branch without
+   * one; never renames a recorded or inherited one. Defaults to the explicit Workset record's
+   * ticket, which yields to any existing branch the template names for the Workset.
    */
   ticket?: string | null;
 }
@@ -92,27 +99,62 @@ async function sourceOf(branch: string, hasRef: HasRef): Promise<BranchSource> {
   return "new";
 }
 
-const WORKSET_REF = /^refs\/(?:heads|remotes\/origin)\/workset\//;
+const BRANCH_REF = /^refs\/(?:heads|remotes\/origin)\//;
 
-/** The key of `workset/<TICKET>-<id>`, else null. */
-function ticketKeyOf(branch: string, worksetId: string): string | null {
-  const prefix = "workset/";
-  const suffix = `-${worksetId}`;
-  if (!branch.startsWith(prefix) || !branch.endsWith(suffix)) return null;
-  const key = branch.slice(prefix.length, -suffix.length);
-  return isJiraKey(key) ? key : null;
+/** The ticket key the template put into `branch` for the Workset, else null. */
+function ticketKeyOf(branch: string, worksetId: string, template: BranchTemplate): string | null {
+  return matchBranchTemplate(template, branch, worksetId)?.ticket ?? null;
 }
 
-/** Existing `workset/<TICKET>-<id>` branches, local or on `origin`, for any ticket. */
-async function ticketedBranches(worksetId: string, listRefs: ListRefs): Promise<string[]> {
-  const refs = await listRefs(["refs/heads/workset/", "refs/remotes/origin/workset/"]);
+/** Existing branches the template names for the Workset with any ticket, local or on `origin`. */
+async function ticketedBranches(
+  worksetId: string,
+  listRefs: ListRefs,
+  template: BranchTemplate,
+): Promise<string[]> {
+  if (!template.includes("{ticket}")) return [];
+  const prefix = branchTemplatePrefix(template);
+  const refs = await listRefs([`refs/heads/${prefix}`, `refs/remotes/origin/${prefix}`]);
   return distinct(
     refs.map((ref) => {
-      if (!WORKSET_REF.test(ref)) return undefined;
-      const branch = `workset/${ref.replace(WORKSET_REF, "")}`;
-      return ticketKeyOf(branch, worksetId) ? branch : undefined;
+      if (!BRANCH_REF.test(ref)) return undefined;
+      const branch = ref.replace(BRANCH_REF, "");
+      return ticketKeyOf(branch, worksetId, template) ? branch : undefined;
     }),
   ).toSorted();
+}
+
+type Existing = { branch: string; source: BranchSource } | "ambiguous" | null;
+
+/**
+ * An existing branch the template names for the Workset: the one without a ticket, else the
+ * single one with any ticket; `ambiguous` for several, reported in `diagnostics`. `probed` is a
+ * branch already known not to exist.
+ */
+async function existingBranch(
+  worksetId: string,
+  template: BranchTemplate,
+  hasRef: HasRef,
+  listRefs: ListRefs | null | undefined,
+  diagnostics: string[],
+  probed?: string,
+): Promise<Existing> {
+  const plain = defaultDeliveryBranch(worksetId, null, template);
+  if (plain !== probed) {
+    const source = await sourceOf(plain, hasRef);
+    if (source !== "new") return { branch: plain, source };
+  }
+  if (!listRefs) return null;
+  // The ticket lives only in the branch name, so a branch created with one is found by name.
+  const ticketed = await ticketedBranches(worksetId, listRefs, template);
+  if (ticketed.length > 1) {
+    diagnostics.push(
+      `Workset ${worksetId} has several ticket branches (${ticketed.join(", ")}); select a branch explicitly.`,
+    );
+    return "ambiguous";
+  }
+  if (ticketed.length === 0) return null;
+  return { branch: ticketed[0]!, source: await sourceOf(ticketed[0]!, hasRef) };
 }
 
 /** A local checkout's merge check, without fetch or forge; see {@link mergeProbeWith}. */
@@ -203,13 +245,21 @@ async function branchOf(
   worksetId: string,
 ): Promise<DeliveryBranchResolution> {
   const { companionPath, repository, hasRef, listRefs } = request;
+  const template = request.template ?? DEFAULT_BRANCH_TEMPLATE;
   const workset = await findWorkset(companionPath, worksetId);
   const ticket = request.ticket ?? workset?.ticket ?? null;
-  // The branch the ticket names; `workset/<id>` without one.
-  const named = defaultDeliveryBranch(worksetId, ticket);
+  // The template's branch with the ticket; without it when there is none.
+  const named = defaultDeliveryBranch(worksetId, ticket, template);
+  // The same under the default template, for branches made before the team switched templates.
+  const defaultNamed = defaultDeliveryBranch(worksetId, ticket);
   const found = await members(companionPath, worksetId, workset);
   const records = found.flatMap((member) => (member.record ? [member.record] : []));
   const diagnostics: string[] = [];
+  if (request.ticket && !template.includes("{ticket}")) {
+    diagnostics.push(
+      `Ticket ${request.ticket} is not in the branch name: branchTemplate ${template} has no {ticket}.`,
+    );
+  }
   const unresolved = (): DeliveryBranchResolution => ({
     branch: null,
     source: null,
@@ -220,7 +270,7 @@ async function branchOf(
     branch: string,
     { source, inheritedFrom = [] }: { source?: BranchSource; inheritedFrom?: string[] } = {},
   ): Promise<DeliveryBranchResolution> => {
-    if (ticket && branch !== named) {
+    if (ticket && branch !== named && branch !== defaultNamed) {
       diagnostics.push(
         `Ticket ${ticket} does not name the branch: ${branch} already delivers Workset ${worksetId}.`,
       );
@@ -248,7 +298,9 @@ async function branchOf(
     }
     if (recorded.length === 1) {
       const branch = recorded[0]!;
-      const key = ticketKeyOf(branch, worksetId);
+      const key =
+        ticketKeyOf(branch, worksetId, template) ??
+        ticketKeyOf(branch, worksetId, DEFAULT_BRANCH_TEMPLATE);
       // Only the branch name carries a ticket, so a wrong one is fixed by renaming the branch.
       if (request.ticket && key && key.toUpperCase() !== request.ticket.toUpperCase()) {
         const changes = found.map((member) => member.change).join(" ");
@@ -283,34 +335,54 @@ async function branchOf(
     }
   }
 
-  const plain = defaultDeliveryBranch(worksetId);
+  const plain = defaultDeliveryBranch(worksetId, null, template);
+  const followsDefault = (branch: string, source: BranchSource) => {
+    diagnostics.push(
+      `${branch} follows the default template ${DEFAULT_BRANCH_TEMPLATE}, not branchTemplate ${template}; it is used because it already exists.`,
+    );
+    return resolved(branch, { source });
+  };
   if (!hasRef) return resolved(named);
   if (ticket) {
     const source = await sourceOf(named, hasRef);
     if (source !== "new") return resolved(named, { source });
+    if (defaultNamed !== named) {
+      const defaultSource = await sourceOf(defaultNamed, hasRef);
+      if (defaultSource !== "new") return followsDefault(defaultNamed, defaultSource);
+    }
     // An explicit ticket asks for its own branch; a stale plain one must not take its place.
     if (request.ticket) {
-      if ((await sourceOf(plain, hasRef)) !== "new") {
-        diagnostics.push(
-          `Existing ${plain} is not used: ticket ${ticket} names ${named}; record ${plain} with --branch to keep it.`,
-        );
+      const stale = distinct([plain, defaultDeliveryBranch(worksetId)]).filter(
+        (branch) => branch !== named,
+      );
+      for (const branch of stale) {
+        // oxlint-disable-next-line no-await-in-loop -- at most two probes, reported in order
+        if ((await sourceOf(branch, hasRef)) !== "new") {
+          diagnostics.push(
+            `Existing ${branch} is not used: ticket ${ticket} names ${named}; record ${branch} with --branch to keep it.`,
+          );
+        }
       }
       return resolved(named, { source });
     }
     // A Workset record's ticket only names a branch none of whose forms exists yet.
   }
-  const plainSource = await sourceOf(plain, hasRef);
-  if (plainSource !== "new") return resolved(plain, { source: plainSource });
-  if (!listRefs) return resolved(named, { source: "new" });
-  // The ticket lives only in the branch name, so a branch created with one is found by name.
-  const ticketed = await ticketedBranches(worksetId, listRefs);
-  if (ticketed.length > 1) {
-    diagnostics.push(
-      `Workset ${worksetId} has several ticket branches (${ticketed.join(", ")}); select a branch explicitly.`,
+  const existing = await existingBranch(worksetId, template, hasRef, listRefs, diagnostics);
+  if (existing === "ambiguous") return unresolved();
+  if (existing) return resolved(existing.branch, { source: existing.source });
+  // A branch made before the team switched templates keeps resolving.
+  if (template !== DEFAULT_BRANCH_TEMPLATE) {
+    const fallback = await existingBranch(
+      worksetId,
+      DEFAULT_BRANCH_TEMPLATE,
+      hasRef,
+      listRefs,
+      diagnostics,
+      plain,
     );
-    return unresolved();
+    if (fallback === "ambiguous") return unresolved();
+    if (fallback) return followsDefault(fallback.branch, fallback.source);
   }
-  if (ticketed.length === 1) return resolved(ticketed[0]!);
   return resolved(named, { source: "new" });
 }
 
@@ -325,9 +397,11 @@ export function listRefsWith(git: (args: string[]) => Promise<string | null>): L
 /**
  * The Delivery Branch link, worktree, and factory spawning share, for a change or a Workset in
  * `repository`: the Workset identity check, then the branch its changes record when they agree,
- * a branch inherited from a `dependsOn` change, then with a ticket `workset/<TICKET>-<id>`
- * (a record's ticket yields to any existing Workset branch); without one an existing
- * `workset/<id>`, else the single existing `workset/<TICKET>-<id>`, else `workset/<id>`. Direct
+ * a branch inherited from a `dependsOn` change, then with a ticket the template's name with it
+ * (a record's ticket yields to any existing Workset branch); without one an existing branch the
+ * template names without a ticket, else the single one with any ticket, else for a non-default
+ * template the same under the default, else the name without a ticket. The default template
+ * gives `workset/<id>` and `workset/<TICKET>-<id>`. Direct
  * deliveries are not a Workset's branch. Existence is read through `hasRef`, local branch
  * first, so callers fetch before resolving. A damaged record throws, as
  * when it is read on its own.

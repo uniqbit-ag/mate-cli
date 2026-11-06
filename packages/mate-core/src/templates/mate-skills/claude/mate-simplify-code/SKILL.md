@@ -87,8 +87,11 @@ Rules:
 - If a `format` script cannot be narrowed, do not run it: it rewrites files outside the scope, and reverting those with `git checkout` would also discard any uncommitted work in them. Match the surrounding style by hand and report it.
 - If several formatters are configured, the `format` script decides. If there is no script and the signals conflict, ask which is canonical instead of picking one.
 - Format only the files you changed. A repo-wide format pass is a separate change with its own diff.
-- Before running any formatter, save a copy of each file you are about to format to a temporary directory (`$TMPDIR`) — never inside the repository, where a backup can be committed. Git cannot tell a formatter's hunks apart from uncommitted work already in the file; the copy can.
+- Before running any formatter, save a copy of each file you are about to format, under its repository-relative path, into a folder only this run uses. Git cannot tell a formatter's hunks apart from uncommitted work already in the file; the copy can. Never put the copies inside the repository, where they can be committed.
+- Run `mktemp -d` once per run and reuse the literal path it prints — shell variables do not survive between tool calls. A new folder per run keeps parallel sessions apart.
+- Where `mktemp` is unavailable (native Windows shells), create the folder in PowerShell and reuse the path it prints: `(New-Item -ItemType Directory -Path (Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid()))).FullName`.
 - If the formatter rewrites far more than the lines you touched, its config disagrees with the committed code. Stop, restore the copies you saved — never `git checkout` the file, which would also discard uncommitted work — match the surrounding style by hand, and report it. Do not fold that drift into a simplification change.
+- After checking the formatter's diff, or after restoring the copies, delete only the backup folder this run created.
 
 ### 3. Prefer Clarity Over Cleverness
 
@@ -501,6 +504,7 @@ function UserBadge({ user }: Props) {
 - Unexporting a symbol whose only importer is a test, then editing the test to match
 - Trusting "the compiler would catch it" in a project the type checker does not cover
 - Dropping `async` or `return await` as a "simplification" — it changes how errors and stack traces surface
+- Backing up to a fixed `$TMPDIR` folder, or deleting a temporary folder this run did not create
 
 ## Verification
 

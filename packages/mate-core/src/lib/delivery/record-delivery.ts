@@ -47,8 +47,9 @@ export interface DeliveryEdit {
   /** The user's answer, recorded after any refresh with source `user`. */
   confirm?: MergeState;
   /**
-   * Records the Delivery Branch resolved with this Jira key, which names a new branch
-   * `workset/<TICKET>-<id>`; the key itself is not stored. Refused while tickets are off.
+   * Records the Delivery Branch resolved with this Jira key, which names a new branch by the
+   * template (default `workset/<TICKET>-<id>`); the key itself is not stored. Refused while
+   * tickets are off.
    */
   ticket?: string;
 }
@@ -282,9 +283,15 @@ export async function recordDelivery(
       listRefs: refs?.listRefs ?? null,
       mergeProbe,
       change,
+      template: environment.branchTemplate?.template,
       ...(edit.ticket !== undefined ? { ticket: edit.ticket } : {}),
     });
-    const diagnostics = resolution.diagnostics;
+    // Reported once, on the first change, as it concerns the companion, not a change.
+    const templateDiagnostic =
+      resolved.length === 0 ? environment.branchTemplate?.diagnostic : null;
+    const diagnostics = templateDiagnostic
+      ? [templateDiagnostic, ...resolution.diagnostics]
+      : resolution.diagnostics;
     const defaultBranch = resolution.branch;
     const recordedBranch = repository ? findDelivery(record, repository)?.branch : undefined;
     if (recordedBranch && defaultBranch && recordedBranch !== defaultBranch) {

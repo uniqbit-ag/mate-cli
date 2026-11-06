@@ -11,6 +11,11 @@ on a branch, and published only once it is merged.
 
 ## Goal
 
+For editor setup and isolated implementation, read [VS Code & Cursor](/docs/getting-started/vscode)
+and [Worktrees](/docs/concepts/worktrees). Studio also bundles these guides:
+select a Companion Repository, choose **Engineering**, then **Getting Started**.
+They remain readable offline; opening them executes no setup commands.
+
 Know which stage comes next, which skill or command drives it, and what Mate
 waits for before your specs reach your teammates.
 
@@ -163,7 +168,8 @@ passing validation is not a review.
 `/mate-apply-change for <change-name>` first records the **delivery branch**:
 the Working Repository branch your change is merged through. Its default is
 `workset/<workset-id>`, or `workset/<TICKET>-<workset-id>` when you give a ticket
-as the branch is created. A Workset groups changes delivered in one merge per
+as the branch is created; a team can change that naming with a branch template
+(below). A Workset groups changes delivered in one merge per
 repository. A standalone change has an implicit single-change Workset whose id
 is its change name; no Workset record is written. A slice whose `dependsOn`
 change records a branch that is not merged yet continues on that branch, so the
@@ -215,7 +221,28 @@ There is no separate ticket question. Mate stores the ticket
 nowhere else; the branch name carries it. Started on a fresh, unprotected branch
 whose name holds one key, such as `feature/ABC-123-retry` or `feature/abc-123-retry`
 with no commits beyond `origin/HEAD`, apply records that branch without asking and
-says so. Propose and archive never ask for a ticket. Then it implements the tasks. Open your PR whenever you
+says so. Propose and archive never ask for a ticket.
+
+A team with its own branch convention sets a **branch template** once, on the
+same capability:
+
+```yaml
+# .mate/config/framework.yaml
+capabilities:
+  - name: openspec
+    branchTemplate: feature/{ticket}-{workset}
+```
+
+`{workset}` is the Workset id and must appear once; `{ticket}` is optional.
+Without a ticket, `{ticket}` and one separator next to it (`-`, `_`, or `/`) are
+dropped, so the example names `feature/ABC-123-acme-retry` with a ticket and
+`feature/acme-retry` without one. The template needs a fixed prefix ending in
+`/`, such as `feature/`. An invalid template counts as the default
+`workset/{ticket}-{workset}`, and `mate artifact link` reports why. Recorded
+branches are never renamed, and unrecorded branches made under the default
+template are still found after the switch.
+
+Then apply implements the tasks. Open your PR whenever you
 like; Mate does not open, merge, or push anything.
 
 For a long task list you can ask for **compact apply**:

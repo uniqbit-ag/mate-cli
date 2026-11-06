@@ -5,8 +5,15 @@ export interface Worktree {
   workset: boolean;
 }
 
-/** Parses `git worktree list --porcelain`; bare entries are skipped. */
-export function parseWorktrees(porcelain: string): Worktree[] {
+/**
+ * Parses `git worktree list --porcelain`; bare entries are skipped. A worktree is a Workset's
+ * when its branch is one of `worksetBranches`, the open changes' Delivery Branches, or follows
+ * the default template, as a branch not yet recorded does.
+ */
+export function parseWorktrees(
+  porcelain: string,
+  worksetBranches: ReadonlySet<string> = new Set(),
+): Worktree[] {
   const worktrees: Worktree[] = [];
   for (const block of porcelain.split(/\n\s*\n/)) {
     const lines = block.split("\n").map((line) => line.trim());
@@ -17,7 +24,8 @@ export function parseWorktrees(porcelain: string): Worktree[] {
     worktrees.push({
       path: pathLine.slice("worktree ".length),
       ...(branch ? { branch } : {}),
-      workset: branch?.startsWith("workset/") ?? false,
+      workset:
+        branch !== undefined && (worksetBranches.has(branch) || branch.startsWith("workset/")),
     });
   }
   return worktrees;

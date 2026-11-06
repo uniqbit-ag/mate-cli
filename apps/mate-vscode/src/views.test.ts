@@ -3,12 +3,27 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { countTasks, readOpenChanges } from "./changes";
+import { countTasks, readOpenChanges, readyToArchive } from "./changes";
 import { MateNotFoundError, prepareWorkspace, runMateJson, shellQuote } from "./mate";
 import { toPendingItems } from "./pending";
 import { parseWorktrees } from "./worktrees";
 
 describe("parseWorktrees", () => {
+  test("marks branches an open change records, whatever their name", () => {
+    const porcelain = [
+      "worktree /work/acme.worktrees/team",
+      "branch refs/heads/feature/ABC-123-acme",
+      "",
+      "worktree /work/acme.worktrees/other",
+      "branch refs/heads/feature/acme-other",
+      "",
+    ].join("\n");
+    expect(parseWorktrees(porcelain, new Set(["feature/ABC-123-acme"]))).toEqual([
+      { path: "/work/acme.worktrees/team", branch: "feature/ABC-123-acme", workset: true },
+      { path: "/work/acme.worktrees/other", branch: "feature/acme-other", workset: false },
+    ]);
+  });
+
   test("lists worktrees, marks Workset branches, skips bare entries", () => {
     const porcelain = [
       "worktree /work/acme",
@@ -46,6 +61,12 @@ describe("open changes", () => {
       done: 2,
       total: 3,
     });
+  });
+
+  test("is ready to archive only when every task of at least one is checked", () => {
+    expect(readyToArchive({ done: 5, total: 5 })).toBe(true);
+    expect(readyToArchive({ done: 2, total: 7 })).toBe(false);
+    expect(readyToArchive({ done: 0, total: 0 })).toBe(false);
   });
 
   test("lists active changes with progress and skips archive", async () => {

@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { parseBranchTemplate } from "./branch-template";
 import type { ProtectionReason, TicketFormat, WorkingRepoGit } from "./branches";
 import type { DeliveryEnvironment } from "./environment";
 import type { ForgeAdapter, PullClassification } from "./forge";
@@ -818,5 +819,30 @@ describe("recordDelivery in an Umbrella Repository", () => {
       refusal: { reason: "umbrella-repository", umbrella: "/acme", scoped: [APP, LIB] },
     });
     expect(await written("x")).toBeNull();
+  });
+});
+
+describe("branch template", () => {
+  const team = (template: string): DeliveryEnvironment => ({
+    ...environment({ ticket: "jira" }),
+    branchTemplate: parseBranchTemplate(template),
+  });
+
+  test("a ticket records the team template's branch", async () => {
+    const outcome = await run(
+      { changes: ["x"], edit: { ticket: "ABC-123" } },
+      {},
+      team("feature/{ticket}-{workset}"),
+    );
+    expect((await written("x"))?.deliveries).toEqual([
+      { repository: APP, branch: "feature/ABC-123-x" },
+    ]);
+    expect(results(outcome)[0].diagnostics).toEqual([]);
+  });
+
+  test("an invalid template applies the default and is reported", async () => {
+    const [result] = results(await run({ changes: ["x"] }, {}, team("feature/{user}-{workset}")));
+    expect(result.defaultBranch).toBe("workset/x");
+    expect(result.diagnostics.join()).toContain("unknown placeholder {user}");
   });
 });

@@ -12,7 +12,8 @@ import type { WrapRuntime } from "../../runtime/runtime-document-manifest";
 import { readWrapState, WRAP_RUNTIMES } from "../../runtime/wrap-state";
 import { cleanupWorkingRepository } from "../../tools/setup/working-repo-cleanup";
 import { locateChange } from "../change-layout";
-import { workingRepoGit } from "../delivery/branches";
+import type { BranchTemplate } from "../delivery/branch-template";
+import { companionBranchTemplate, workingRepoGit } from "../delivery/branches";
 import { mergeGit } from "../delivery/merge-git";
 import { type DeliveryRecord, readDeliveryRecord } from "../delivery/record";
 import {
@@ -451,9 +452,20 @@ async function planWorktrees(
 ): Promise<{ plans: Plan[]; mirror?: Mirror; diagnostics: string[]; warnings: string[] }> {
   const warnings: string[] = [];
   const index = await linkedIndex(companionPath, git, cwd);
+  const template = await companionBranchTemplate(companionPath);
+  if (template.diagnostic) warnings.push(template.diagnostic);
   const checked = await Promise.all(
     target.repositories.map((repository) =>
-      planRepository(companionPath, target.id, repository, git, index, warnings, ticket),
+      planRepository(
+        companionPath,
+        target.id,
+        repository,
+        git,
+        index,
+        warnings,
+        template.template,
+        ticket,
+      ),
     ),
   );
   const plans = checked.filter((entry): entry is Plan => !Array.isArray(entry));
@@ -530,6 +542,7 @@ async function planRepository(
   git: GitRunner,
   index: LinkedIndex,
   warnings: string[],
+  template: BranchTemplate,
   ticket?: string,
 ): Promise<Plan | string[]> {
   const { linked, missing } = linkedCheckout(index, repository);
@@ -555,6 +568,7 @@ async function planRepository(
     companionPath,
     repository,
     hasRef,
+    template,
     listRefs: listRefsWith(async (args) => {
       const listed = await git(linked.path, args);
       return listed.code === 0 ? listed.stdout : null;
@@ -706,7 +720,10 @@ async function missingEnvFiles(
 
 export interface CreateWorktreesOptions {
   install: boolean;
-  /** Names a new Delivery Branch `workset/<TICKET>-<id>`; an existing or recorded one wins. */
+  /**
+   * Names a new Delivery Branch by the template (default `workset/<TICKET>-<id>`); an existing
+   * or recorded one wins.
+   */
   ticket?: string;
   /** Pass the installer's output through; false discards it, as `--json` needs. */
   streamInstall: boolean;

@@ -11,6 +11,10 @@ const providers = new Map<string, { getChildren(): Promise<SectionItem[]> }>();
 const handlers = new Map<string, (...args: unknown[]) => unknown>();
 const commands: unknown[][] = [];
 const contexts = new Map<string, unknown>();
+/** Quick pick titles shown, and the label the next pick answers with (undefined dismisses). */
+const picks: string[] = [];
+let pickLabel: string | undefined;
+const terminals: { cwd: string; sent: string[] }[] = [];
 const workspace = {
   workspaceFolders: [] as { uri: { fsPath: string; scheme: string } }[],
   workspaceFile: undefined as { fsPath: string; scheme: string } | undefined,
@@ -55,6 +59,19 @@ mock.module("vscode", () => ({
     onDidOpenTerminal: () => ({ dispose() {} }),
     onDidCloseTerminal: () => ({ dispose() {} }),
     showErrorMessage: mock(async (_message: string) => undefined),
+    showInformationMessage: async () => undefined,
+    showQuickPick: async (
+      items: { label: string }[],
+      options: { placeHolder: string },
+    ): Promise<{ label: string } | undefined> => {
+      picks.push(options.placeHolder);
+      return items.find((item) => item.label === pickLabel);
+    },
+    createTerminal: (options: { cwd: string }) => {
+      const terminal = { cwd: options.cwd, sent: [] as string[] };
+      terminals.push(terminal);
+      return { show() {}, sendText: (text: string) => terminal.sent.push(text) };
+    },
     createTreeView: (
       id: string,
       options: { treeDataProvider: { getChildren(): Promise<SectionItem[]> } },
@@ -204,6 +221,9 @@ describe("workspace gate wiring", () => {
     handlers.clear();
     commands.length = 0;
     contexts.clear();
+    picks.length = 0;
+    pickLabel = undefined;
+    terminals.length = 0;
     mock.restore();
   });
 
@@ -230,6 +250,7 @@ describe("workspace gate wiring", () => {
       "mate.sessions",
       "mate.worktrees",
       "mate.openChanges",
+      "mate.readyToArchive",
       "mate.readyToPublish",
     ]) {
       expect(await providers.get(id)!.getChildren()).toEqual([]);
@@ -252,7 +273,81 @@ describe("workspace gate wiring", () => {
     expect(list).toHaveBeenCalledTimes(1);
   });
 
-  test("contributes one native welcome view instead of four repeated gates", async () => {
+  /** A repository with its managed workspace open, so every section loads. */
+  async function openRepository() {
+    root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "acme-editor-")));
+    const repo = path.join(root, "acme");
+    await fs.mkdir(repo);
+    await promisify(execFile)("git", ["init", "--quiet", repo]);
+    const file = path.join(repo, ".mate/acme.mate.code-workspace");
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, "{}");
+    workspace.workspaceFolders = [{ uri: { fsPath: repo, scheme: "file" } }];
+    workspace.workspaceFile = { fsPath: file, scheme: "file" };
+    const { spyOn } = await import("bun:test");
+    spyOn(mate, "listSessions").mockImplementation(async () => []);
+    spyOn(mate, "pendingArtifacts").mockImplementation(async () => ({ pending: [] }));
+    activate({ subscriptions } as never);
+    await handlers.get("mate.refresh")!();
+    expect(contexts.get("mate.workspaceReady")).toBe(true);
+    return repo;
+  }
+
+  test("moves changes with every task checked from Open changes to Ready to archive", async () => {
+    const repo = await openRepository();
+    const changes = path.join(repo, ".mate/companion/openspec/changes");
+    const write = async (name: string, tasks?: string, branch?: string) => {
+      await fs.mkdir(path.join(changes, name), { recursive: true });
+      if (tasks !== undefined) await fs.writeFile(path.join(changes, name, "tasks.md"), tasks);
+      if (branch) {
+        await fs.writeFile(
+          path.join(changes, name, "delivery.yaml"),
+          `deliveries:\n  - branch: ${branch}\n`,
+        );
+      }
+    };
+    await write("acme-queue", "- [x] a\n- [x] b\n", "workset/acme");
+    await write("acme-retry", "- [x] a\n- [ ] b\n", "workset/acme");
+    await write("acme-done", "- [x] a\n", "workset/acme-done");
+    await write("acme-draft");
+
+    const open = await providers.get("mate.openChanges")!.getChildren();
+    expect(open.map((item) => [item.label, item.description])).toEqual([
+      ["acme", "1/2 tasks"],
+      ["acme-draft", "0/0 tasks"],
+    ]);
+    const ready = await providers.get("mate.readyToArchive")!.getChildren();
+    expect(ready.map((item) => [item.label, item.description])).toEqual([
+      ["acme-done", "1/1 · acme-done"],
+      ["acme-queue", "2/2 · acme"],
+    ]);
+    expect(ready[0]!.command?.arguments).toEqual([
+      { fsPath: path.join(changes, "acme-done/tasks.md"), scheme: "file" },
+    ]);
+  });
+
+  test("starts a session in a Worktrees item's worktree without asking for the directory", async () => {
+    const repo = await openRepository();
+    const add = (await import("bun:test")).spyOn(mate, "addSession");
+    add.mockImplementation(async () => ({}) as never);
+    const [item] = await providers.get("mate.worktrees")!.getChildren();
+    expect(item!.contextValue).toBe("worktree");
+
+    pickLabel = undefined;
+    await handlers.get("mate.newSession")!(item);
+    expect(add).not.toHaveBeenCalled();
+
+    picks.length = 0;
+    pickLabel = "OpenCode";
+    await handlers.get("mate.newSession")!(item);
+    expect(picks).toEqual(["Agent Runtime"]);
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(add.mock.calls[0]![0]).toMatchObject({ runtime: "opencode", cwd: repo });
+    expect(terminals.at(-1)!.cwd).toBe(repo);
+    expect(terminals.at(-1)!.sent[0]).toStartWith("mate opencode -- --bg --session ses_");
+  });
+
+  test("contributes one native welcome view instead of five repeated gates", async () => {
     const manifest = await Bun.file(path.join(import.meta.dir, "../package.json")).json();
     const views = manifest.contributes.views.mate;
     expect(
@@ -261,8 +356,16 @@ describe("workspace gate wiring", () => {
         .map((view: { id: string }) => view.id),
     ).toEqual(["mate.workspace"]);
     expect(
-      views.filter((view: { when: string }) => view.when === "mate.workspaceReady"),
-    ).toHaveLength(4);
+      views
+        .filter((view: { when: string }) => view.when === "mate.workspaceReady")
+        .map((view: { id: string }) => view.id),
+    ).toEqual([
+      "mate.sessions",
+      "mate.worktrees",
+      "mate.openChanges",
+      "mate.readyToArchive",
+      "mate.readyToPublish",
+    ]);
     expect(
       manifest.contributes.viewsWelcome.filter((view: { contents: string }) =>
         view.contents.includes("command:mate.openWorkspace"),

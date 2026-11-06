@@ -1,0 +1,149 @@
+---
+title: Worktrees
+description: Work on independent changes in parallel without switching your current checkout.
+---
+
+A Git worktree is another checkout of the same repository. Use one for an
+independent change, a review, or a second agent session while your current
+checkout stays untouched. It is not another clone.
+
+## What is isolated
+
+Each checkout has its own working files, Git index, and uncommitted changes.
+The checkouts share Git objects, history, and refs: fetching, creating branches,
+or moving a branch affects the same repository. Git normally permits a branch
+to be checked out in only one worktree at a time.
+
+Keep these concepts separate:
+
+| Concept                  | Meaning                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| Branch                   | A named Git ref pointing at a commit.                                          |
+| Worktree                 | A directory where a branch is checked out.                                     |
+| Workset                  | Changes delivered together, with one Delivery Branch per Working Repository.   |
+| Delivery Branch          | The branch recorded for delivering a change; it need not use the default name. |
+| Managed editor workspace | A document grouping repository and companion folders, not a Git checkout.      |
+
+All checkouts use the same linked Companion Repository. Plans, specs, tasks,
+and other agent artifacts stay there, not inside each worktree. Parallel
+sessions can therefore edit the same artifacts; worktree isolation does not
+isolate companion changes.
+
+## Create a checkout for a planned change
+
+Prerequisites: Git, Mate, a Repository Link, and an existing reviewed change.
+The examples use the change `acme-fix`. Run terminal commands from the linked
+Working Repository:
+
+```sh
+mate working worktree --change acme-fix
+```
+
+Mate resolves the change's Workset, checks its repositories, fetches `origin`,
+and creates or reuses the checkout. For a repository at `~/src/acme`, the
+default path is `~/src/acme.worktrees/acme-fix`. Read the reported path rather
+than assuming it: an inherited Delivery Branch can reuse another worktree.
+
+Mate resolves the Delivery Branch from recorded and existing branches before
+computing a default, normally `workset/acme-fix`. It uses the local branch,
+then a branch tracking its remote counterpart, otherwise a new branch from
+`origin/HEAD`. It refuses a foreign target directory or a branch checked out
+elsewhere. Repeating the command reuses the matching checkout.
+
+You can also create checkouts for an existing Workset:
+
+```sh
+mate working worktree acme-fix
+```
+
+Do not combine a Workset argument with `--change`.
+
+The children of an [Umbrella Repository](/docs/concepts/umbrella-repository)
+share one mirrored worktree, `<umbrella>.worktrees/<workset-id>`, which holds a
+worktree per child.
+
+## Enter and start a session
+
+Creating a worktree alone does not move your shell or record delivery. Inside
+an agent conversation, the apply skill offers a worktree when choosing where
+to implement. Ask the agent to apply the reviewed change with
+`mate-apply-change acme-fix`, using your runtime's skill invocation syntax.
+This is an agent skill, not a terminal command.
+
+The skill runs the equivalent of this terminal command:
+
+```sh
+mate working worktree --change acme-fix --enter --json
+```
+
+`--enter` records the current Working Repository's Delivery Branch and reports
+a move tool or a handoff. The CLI itself never moves a session. Claude Code
+uses `EnterWorktree` with approval; OpenCode uses `mate_enter_worktree`. If the
+move is unsupported or declined, open a new session in the reported checkout
+and invoke the apply skill there before editing.
+
+For a fresh terminal session, change to the reported directory first:
+
+```sh
+cd ~/src/acme.worktrees/acme-fix
+mate opencode
+```
+
+Use `mate claude` instead for Claude Code. Confirm that the session identifies
+this checkout as its Working Repository. To open the checkout in another
+editor window, see [VS Code & Cursor](/docs/getting-started/vscode#work-in-another-checkout).
+
+## Dependencies and environment
+
+Mate links and wraps new worktrees for the main checkout's wrapped runtimes.
+It installs dependencies using the first matching lockfile: Bun, pnpm, Yarn,
+or npm. Reused worktrees also run the install step; `--no-install` skips it.
+An install failure leaves the checkout available so you can fix the cause and
+retry; it does not roll back your files.
+
+If the main checkout has a TokenSave index and the CLI is available, Mate
+initializes or syncs the worktree's index, even with `--no-install`. An index
+failure is a warning, not removal of the checkout.
+
+Mate never reads, copies, or links environment secrets. It reports paths of
+ignored `.env` files missing from the worktree. Provide required values
+yourself through your normal secure setup; consult tracked example files for
+variable names. Do not ask an agent to copy secrets between checkouts.
+
+## Adopt a worktree created elsewhere
+
+A worktree made with Git or another tool still belongs to the same clone.
+Run `mate opencode` or `mate wrap` inside it to adopt and prepare it. Mate
+writes that checkout's own local link and projection while keeping one clone
+entry in the Companion Repository. Copying another checkout's `.mate/` is
+unnecessary; Mate ignores a copied link that names another checkout.
+
+A first plain Claude session can borrow the main checkout's projection and
+adopt through its prepare hook. Plain OpenCode does not borrow it: use
+`mate opencode` or `mate wrap` once first.
+
+## Clean up safely
+
+After the Workset is Done, leave its checkout and stop using it before
+requesting cleanup. From another linked checkout:
+
+```sh
+mate working worktree prune
+```
+
+This removes eligible worktrees of Done Worksets, including externally made
+ones whose checked-out branch matches a recorded Delivery Branch. It keeps
+the main checkout, locked worktrees, dirty or untracked files, commits on no
+remote, and the checkout containing the command's current directory. A failed
+unwrap or Git removal is reported and the checkout is kept.
+
+Pruning is not merging. It never deletes the branch. Review the reported
+removed and kept paths; do not force-delete a kept checkout to bypass a warning.
+
+## When something blocks you
+
+- **Branch already checked out:** use that checkout or choose a different Delivery Branch; do not try to check out the same branch twice.
+- **Foreign target directory:** inspect it and choose a safe location before retrying; Mate will not overwrite it.
+- **Missing companion or runtime guidance:** run `mate doctor` inside the checkout, then prepare it with `mate wrap`.
+- **Missing dependencies or configuration:** fix the reported install problem and provision environment values manually before starting work.
+- **Prune keeps a checkout:** resolve its reported reason and rerun from outside that checkout after the Workset is Done.

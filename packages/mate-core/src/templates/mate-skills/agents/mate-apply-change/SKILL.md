@@ -1,6 +1,6 @@
 ---
 name: mate-apply-change
-description: Implement a change on a recorded delivery branch, offering workset/<workset-id> instead of a protected branch. Builds on the OpenSpec apply workflow. Use when the user wants to implement, apply, or continue implementing a reviewed change.
+description: Implement a change on a recorded delivery branch, offering the Workset's Delivery Branch (default workset/<workset-id>) instead of a protected branch. Builds on the OpenSpec apply workflow. Use when the user wants to implement, apply, or continue implementing a reviewed change.
 allowed-tools: Bash(mate:*), Bash(openspec:*), Bash(git:*)
 license: MIT
 compatibility: Requires the mate CLI and the openspec capability enabled.
@@ -25,7 +25,7 @@ git symbolic-ref --quiet --short refs/remotes/origin/HEAD   # repository's defau
 ```
 
 The repository's default branch (`origin/HEAD`, e.g. `main`) is not the link result's
-`defaultBranch`, which is the change's resolved delivery branch (e.g. `workset/<id>`).
+`defaultBranch`, which is the change's resolved delivery branch (e.g. `workset/<id>` under the default branch template).
 
 Read the change's existing record without changing it:
 
@@ -85,7 +85,7 @@ so a branch only the forge protects looks unprotected; hence the menu below.
 - **On any other branch**, protected or not → do not implement there yet. First name
   every local commit that is not on the remote (`git log --oneline HEAD --not --remotes`)
   and leave them where they are; never move, reset, or rebase them. On another
-  Workset's `workset/<id>` branch, name that Workset. Then offer one menu; option 1 is
+  Workset's Delivery Branch, name that Workset. Then offer one menu; option 1 is
   recommended, except option 3 when the current branch is not protected and
   `ticketCandidate` is set:
   1. **Create or switch to `defaultBranch`**: check local and `origin`
