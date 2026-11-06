@@ -46,12 +46,28 @@ function parseVscodeSetupArgs(argv: string[]): VscodeSetupArgs | { error: string
   return args;
 }
 
+/** One `--list-extensions --show-versions` entry; `version` is absent when the line has none. */
+export interface InstalledExtension {
+  id: string;
+  version?: string;
+}
+
+/** Splits `publisher.name@1.2.3` on the last `@`. */
+function parseExtensionLine(line: string): InstalledExtension {
+  const at = line.lastIndexOf("@");
+  return at > 0 ? { id: line.slice(0, at), version: line.slice(at + 1) } : { id: line };
+}
+
+function findMate(extensions: InstalledExtension[] | null): InstalledExtension | undefined {
+  return extensions?.find(({ id }) => id.toLowerCase() === EXTENSION_ID);
+}
+
 export interface VscodeSetupDeps {
   resolveEditor: (cli: Editor) => string | null;
   /** Runs `<binary> --install-extension <vsix> --force`; returns the exit status and output. */
   install: (binary: string, vsix: string) => { ok: boolean; output: string };
-  /** `<binary> --list-extensions`; null when it cannot be listed. */
-  installedExtensions: (binary: string) => string[] | null;
+  /** `<binary> --list-extensions --show-versions`; null when it cannot be listed. */
+  installedExtensions: (binary: string) => InstalledExtension[] | null;
   vsix: VsixResolverDeps;
   version: string;
 }
@@ -66,8 +82,16 @@ export const vscodeSetupDeps: VscodeSetupDeps = {
     return { ok: result.status === 0, output: output.trim() };
   },
   installedExtensions: (binary) => {
-    const result = spawnSync(binary, ["--list-extensions"], { encoding: "utf8", timeout: 30_000 });
-    return result.status === 0 ? result.stdout.split("\n").map((line) => line.trim()) : null;
+    const result = spawnSync(binary, ["--list-extensions", "--show-versions"], {
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+    if (result.status !== 0) return null;
+    return result.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map(parseExtensionLine);
   },
   vsix: vsixResolverDeps,
   version: coreVersion,
@@ -99,9 +123,7 @@ export async function runVscodeSetupCommand(
     (entry): entry is { editor: Editor; binary: string } => entry.binary !== null,
   );
   if (parsed.ifInstalled) {
-    const editors = found.filter(({ binary }) =>
-      deps.installedExtensions(binary)?.some((id) => id.toLowerCase() === EXTENSION_ID),
-    );
+    const editors = found.filter(({ binary }) => findMate(deps.installedExtensions(binary)));
     if (editors.length === 0) return;
     return installInto(editors, parsed.vsix, deps);
   }
@@ -132,18 +154,44 @@ async function installInto(
     throw error;
   }
 
-  let installed = 0;
+  const installed: Array<{ name: string; version: string }> = [];
+  // A failure before any success announces the next success, so all failing prints no "Continuing".
+  let continuePending = false;
   for (const { editor, binary } of editors) {
+    const name = EDITOR_NAMES[editor];
     const result = deps.install(binary, vsix);
     if (result.ok) {
-      installed += 1;
-      console.log(`  ${EDITOR_NAMES[editor]}: installed`);
+      const version = findMate(deps.installedExtensions(binary))?.version ?? deps.version;
+      if (continuePending) {
+        console.log(`  Continuing with ${name}.`);
+        continuePending = false;
+      }
+      installed.push({ name, version });
+      console.log(`  ${name}: installed v${version}`);
     } else {
-      console.log(`  ${EDITOR_NAMES[editor]}: failed${result.output ? ` — ${result.output}` : ""}`);
+      console.log(`  ${name}: failed${result.output ? ` — ${result.output}` : ""}`);
+      if (installed.length > 0) {
+        console.log(`  Continuing with ${joinNames(installed.map((entry) => entry.name))}.`);
+      } else {
+        continuePending = true;
+      }
     }
   }
-  if (installed === 0) return fail("the extension could not be installed into any editor");
+  if (installed.length === 0) return fail("the extension could not be installed into any editor");
+  console.log(closingLine(installed));
   console.log("Reload open editor windows to load the Mate sidebar.");
+}
+
+function joinNames(names: string[]): string {
+  return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
+function closingLine(installed: Array<{ name: string; version: string }>): string {
+  const versions = new Set(installed.map((entry) => entry.version));
+  if (versions.size === 1) {
+    return `Mate extension v${installed[0]!.version} installed in ${joinNames(installed.map((entry) => entry.name))}.`;
+  }
+  return `Mate extension installed in ${joinNames(installed.map((entry) => `${entry.name} (v${entry.version})`))}.`;
 }
 
 export async function runVscodeCommand(subcommand: string | undefined, rest: string[]) {
