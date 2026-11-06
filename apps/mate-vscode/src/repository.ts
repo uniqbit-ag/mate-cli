@@ -16,9 +16,12 @@ export async function resolveRepository(folder: string | undefined): Promise<str
   }
 }
 
-export async function listWorktrees(repoRoot: string): Promise<Worktree[]> {
+export async function listWorktrees(
+  repoRoot: string,
+  worksetBranches?: ReadonlySet<string>,
+): Promise<Worktree[]> {
   const { stdout } = await run("git", ["worktree", "list", "--porcelain"], { cwd: repoRoot });
-  return parseWorktrees(stdout);
+  return parseWorktrees(stdout, worksetBranches);
 }
 
 /** `org/repository` from a Git remote URL (SSH or HTTPS), keeping nested groups. */

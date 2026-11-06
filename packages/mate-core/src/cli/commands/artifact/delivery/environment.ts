@@ -1,5 +1,6 @@
 import {
   workingRepoGit,
+  configuredBranchTemplate,
   configuredProtectedPatterns,
   configuredTicketFormat,
   type WorkingRepoGit,
@@ -120,6 +121,7 @@ export async function resolveDeliveryEnvironment(
     workingRepo,
     protectedPatterns: configuredProtectedPatterns(capabilities),
     ticket: configuredTicketFormat(capabilities),
+    branchTemplate: configuredBranchTemplate(capabilities),
     hostOf,
     checkoutOf,
     gitAutoMode,

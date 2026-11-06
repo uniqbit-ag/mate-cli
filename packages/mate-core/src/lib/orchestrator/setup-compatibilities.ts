@@ -48,7 +48,7 @@ const TICKET_COMPATIBILITIES: TicketCompatibility[] = [
     id: "jira",
     label: "Jira",
     description:
-      "Propose, apply, and archive ask for an optional Jira key (ABC-123), which names the Delivery Branch workset/<KEY>-<workset-id>.",
+      "Propose, apply, and archive ask for an optional Jira key (ABC-123), which goes into the Delivery Branch template (default workset/<KEY>-<workset-id>).",
   },
 ];
 
