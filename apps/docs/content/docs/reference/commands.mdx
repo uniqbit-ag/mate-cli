@@ -108,6 +108,17 @@ a branch already checked out elsewhere, or a foreign directory at the target
 path stops the command without changes. Run it again and it reuses the
 worktree.
 
+A repository whose linked checkout is a child of an
+[Umbrella Repository](/docs/concepts/umbrella-repository) gets its
+worktree in the umbrella's _mirrored worktree_ instead,
+`<umbrella>.worktrees/<workset-id>/<child>`; for children `api` and `web` of
+`~/src/acme` that is `~/src/acme.worktrees/acme-login/api` and `…/web`. Only the
+Workset's repositories get a worktree there. The folder must be absent, already
+this umbrella's mirrored worktree, or hold nothing but OS metadata such as
+`.DS_Store` and the Workset's own child worktrees, as an interrupted run leaves
+it; any other folder stops the command without changes. A Workset may mix umbrella children with repositories linked on
+their own, but not span two umbrellas.
+
 `mate working worktree --change <change>` does the same for the Workset a
 change belongs to, resolved as `mate artifact link` resolves it: the Workset
 record that lists the change, else the change's own single-change Workset,
@@ -125,7 +136,10 @@ in OpenCode it is the Mate plugin's `mate_enter_worktree` tool. Any other
 runtime, or a current repository that got no worktree, gets a hand-off: start a
 new session in the worktree. A failed creation records nothing. When recording
 the branch fails, the worktrees stay, the reason is a warning, and the command
-hands off.
+hands off. In an Umbrella Repository it records the branch for every child that
+got a worktree, then always hands off to the mirrored worktree, which is not a
+Git worktree a runtime can move into; a child whose recording fails is a
+warning. When no umbrella child got a worktree, it hands off without a path.
 
 On a protected branch, `mate-apply-change` offers the worktree as an option. It
 runs `--change <change> --enter`, moves the session into the worktree, and
@@ -152,6 +166,13 @@ read, copied, or linked: the command names the ignored `.env` and `.env.*`
 files of the main checkout that the worktree lacks, by path only, so you can
 provide them yourself. Example files such as `.env.example` are not named.
 
+In an umbrella's mirrored worktree, the folder gets the link and the wrap
+instead of its children: a repo-local link under the umbrella's repository ID,
+never the companion's registry, and a wrap for the runtimes the umbrella is
+wrapped for. The child worktrees get no `.mate/` folder, so `git status` stays
+clean in them and in the umbrella's children. Install, env files, and the
+TokenSave index still run per child worktree.
+
 The companion is the one the current checkout is paired with. When it is paired
 with several, pass `--companion <path>`. `--json` prints one object with each
 repository's path, branch, `created` or `reused`, the wrapped runtimes and the
@@ -160,7 +181,12 @@ TokenSave `index` step with its outcome and, when skipped or failed, its
 `reason`, and the missing env paths. With `--enter` it adds an `enter` field: `runtime`
 (`claude`, `opencode`, or `unknown`), `action`, either `tool` with the `tool`
 to call or `handoff` with a `reason`, and the current repository's worktree
-`path` when it has one.
+`path` when it has one. When an umbrella child is involved, the object also has
+`umbrella`: the umbrella's `path`, the mirrored `worktree`, `created` or
+`reused`, the child `repositories` it holds, and its `wrap` outcome; otherwise
+the field is absent. Outside a Git checkout, as in an umbrella folder, the
+companion is the one paired with the folder, else the one the nearest
+repo-local link names.
 
 `mate working worktree prune` removes the worktrees of Done Worksets. A
 worktree belongs to a Workset when it has a Delivery Branch recorded for one of
@@ -174,6 +200,15 @@ path; when that fails, it keeps the worktree and names the reason. A locked
 worktree is kept as is. A worktree Git refuses to remove is kept and wrapped
 again. It never
 deletes the branch. It takes `--companion <path>` and `--json` as well.
+
+After the child worktrees of an umbrella's mirrored worktree are handled, prune
+removes the mirrored folder only when nothing but Mate's own files and OS
+metadata such as `.DS_Store` are left:
+it unwraps the folder, then removes it and an empty `<umbrella>.worktrees`
+without deleting recursively. A folder that still holds a child worktree or any
+other file stays, wrapped, and is named with the reason, as is a folder whose
+unwrap fails. `--json` lists them under `umbrellas.removed` and `umbrellas.kept`;
+the field is absent when no mirrored worktree is involved.
 
 A `mate claude` or `mate opencode` session that moves into such a worktree
 keeps its launch environment, which names the main checkout. Mate then reads
@@ -793,7 +828,11 @@ that file, for active and archived changes. Options:
 - `--branch <branch>` records the delivery branch for the Working Repository
   (or `--repository <org/repo>`, the full path on its host, so a nested group
   is `<group/subgroup/repo>`). The Working Repository's own identity is the
-  full path of its `origin` remote. A protected branch — the default branch or a
+  full path of its `origin` remote. In an
+  [Umbrella Repository](/docs/concepts/umbrella-repository), which
+  has no `origin`, the default is the change's only scoped repository among its
+  children; with several or none, an edit exits non-zero, names them, and asks
+  for `--repository`. A protected branch — the default branch or a
   pattern in the openspec capability's `protectedBranches`; Mate does not ask
   GitHub — is refused unless `--direct` records an explicit direct
   delivery. `--direct` works on any branch: no PR is looked up for it, and only

@@ -63,13 +63,20 @@ export const MateOpenCodePlugin = Plugin.define({
     await registerCompanionHooks(api, context, env);
     await registerTokensaveRouting(api);
     await registerCompanion(api, context, env);
-    await registerEnterWorktree(api, context);
+    const worktreeCleanup = await registerEnterWorktree(api, context);
     const sessionsCleanup = await registerOpenCodeSessions(api).catch(() => undefined);
     if (sessionsCleanup) server?.onStop(() => sessionsCleanup());
     /** Last: the guardrails above are live while the local phase holds `setup`. */
-    const prepareCleanup = await registerPrepare(api, context.companionPath, env);
+    const prepareCleanup = await registerPrepare(api, context.companionPath, env).catch(
+      (error: unknown) => {
+        /** A failed setup returns no cleanup: end the subscription that would move sessions. */
+        worktreeCleanup();
+        throw error;
+      },
+    );
     return async () => {
       server?.dispose();
+      worktreeCleanup();
       /** A Mate OpenCode server's sessions outlive a location; its idle stop ends them. */
       await sessionsCleanup?.({ keepSessions: Boolean(server) });
       await prepareCleanup?.();

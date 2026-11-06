@@ -10,7 +10,8 @@ import { MATE_ENV } from "../../runtime/env-names";
 import { readProjectionFile } from "../../runtime/projection";
 import { refreshRuntimeDirectory } from "../runtime-directory-refresh";
 import { runtimeDocumentDeps } from "../orchestrator/projection-runtime-documents";
-import { writeRepoLocalRegistryEntry } from "../orchestrator/repository-link";
+import { findRepoLocalLinkTo, writeRepoLocalRegistryEntry } from "../orchestrator/repository-link";
+import { umbrellaChildrenOf } from "../orchestrator/umbrella-checkouts";
 import { runWrapPass } from "../orchestrator/wrap-pass";
 import { readWorksets } from "./record";
 import {
@@ -20,6 +21,7 @@ import {
   type GitRunOptions,
   type InstallRunner,
   pruneWorksetWorktrees,
+  type WorktreeDeps,
 } from "./worktree";
 
 let root: string;
@@ -38,10 +40,14 @@ afterEach(() => {
 });
 
 /**
- * A main checkout at `<root>/src/<name>` cloned from a local bare origin, whose `origin`
- * reads as `https://git.acme.test/acme/<name>.git` and fetches from the bare one.
+ * A main checkout at `main` (default `<root>/src/<name>`) cloned from a local bare origin,
+ * whose `origin` reads as `https://git.acme.test/acme/<name>.git` and fetches from the bare one.
  */
-function checkout(name: string, files: Record<string, string> = {}): string {
+function checkout(
+  name: string,
+  files: Record<string, string> = {},
+  main = path.join(root, "src", name),
+): string {
   fs.mkdirSync(path.join(root, "sources"), { recursive: true });
   const source = initRepo(path.join(root, "sources", name));
   for (const [file, content] of Object.entries(files)) {
@@ -54,7 +60,6 @@ function checkout(name: string, files: Record<string, string> = {}): string {
   }
   const bare = path.join(root, "origins", `${name}.git`);
   git(root, "clone", "-q", "--bare", source, bare);
-  const main = path.join(root, "src", name);
   fs.mkdirSync(path.dirname(main), { recursive: true });
   git(root, "clone", "-q", bare, main);
   const url = `https://git.acme.test/acme/${name}.git`;
@@ -1050,5 +1055,401 @@ describe("worktree tokensave index", () => {
       "acme/web: tokensave index step failed: tokensave init exited 1: acme",
     );
     expect(fs.existsSync(path.join(target(), ".git"))).toBe(true);
+  });
+});
+
+describe("Umbrella Repository worktrees", () => {
+  const umbrella = () => path.join(root, "src", "acme");
+  const mirror = (id = "acme-fix") => path.join(root, "src", "acme.worktrees", id);
+
+  /** The umbrella `<root>/src/acme`, no Git checkout, holding a checkout per name, linked alone. */
+  function umbrellaOf(...names: string[]): string[] {
+    const children = names.map((name) => checkout(name, {}, path.join(umbrella(), name)));
+    link(umbrella());
+    return children;
+  }
+
+  /** Stubs that wrap nothing and record what would be wrapped. */
+  function wrapStubs(wrappedFor: Record<string, string[]>) {
+    const wrapped: [string, string, string[]][] = [];
+    return {
+      wrapped,
+      deps: {
+        readWrapState: async (checkoutPath: string) => ({
+          runtimes: new Set(wrappedFor[checkoutPath] ?? []),
+        }),
+        wrap: async (_companion: string, repository: { id: string; path: string }, runtimes) => {
+          wrapped.push([repository.id, repository.path, [...runtimes]]);
+          return null;
+        },
+      } as Partial<WorktreeDeps>,
+    };
+  }
+
+  test("children get worktrees in one mirrored folder, linked under the umbrella's id", async () => {
+    const [api, web] = umbrellaOf("api", "web");
+    workset("acme-fix", "acme/api", "acme/web");
+    const registry = fs.readFileSync(path.join(companion, ".mate", "config", "registry.yaml"));
+    const result = await createWorksetWorktrees(companion, "acme-fix", options);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(result.repositories).toMatchObject([
+      {
+        repository: "acme/api",
+        path: path.join(mirror(), "api"),
+        checkout: api,
+        action: "created",
+      },
+      {
+        repository: "acme/web",
+        path: path.join(mirror(), "web"),
+        checkout: web,
+        action: "created",
+      },
+    ]);
+    expect(result.repositories[0]!.wrap).toEqual({
+      runtimes: [],
+      outcome: "skipped",
+      reason: "served by the mirrored worktree",
+    });
+    expect(result.umbrella).toMatchObject({
+      path: umbrella(),
+      worktree: mirror(),
+      action: "created",
+      repositories: ["acme/api", "acme/web"],
+    });
+    const link = fs.readFileSync(path.join(mirror(), ".mate", "config", "registry.yaml"), "utf8");
+    expect(link).toContain("id: acme");
+    expect(link).toContain(`path: ${mirror()}`);
+    expect(fs.existsSync(path.join(mirror(), "api", ".mate"))).toBe(false);
+    expect(git(path.join(mirror(), "api"), "status", "--short")).toBe("");
+    expect(git(api!, "status", "--short")).toBe("");
+    expect(fs.readFileSync(path.join(companion, ".mate", "config", "registry.yaml"))).toEqual(
+      registry,
+    );
+  });
+
+  test("a Workset naming one of two children gets only its worktree", async () => {
+    umbrellaOf("api", "web");
+    workset("acme-fix", "acme/api");
+    const result = await createWorksetWorktrees(companion, "acme-fix", options);
+    expect(result.ok).toBe(true);
+    expect(fs.existsSync(path.join(mirror(), "api", ".git"))).toBe(true);
+    expect(fs.existsSync(path.join(mirror(), "web"))).toBe(false);
+  });
+
+  test("a mixed Workset puts the umbrella child in the mirror and the other beside its checkout", async () => {
+    umbrellaOf("api");
+    const tools = checkout("tools");
+    link(umbrella(), tools);
+    workset("acme-fix", "acme/api", "acme/tools");
+    const result = await createWorksetWorktrees(companion, "acme-fix", options);
+    expect(result.ok).toBe(true);
+    expect(result.repositories.map((entry) => entry.path)).toEqual([
+      path.join(mirror(), "api"),
+      path.join(root, "src", "tools.worktrees", "acme-fix"),
+    ]);
+    expect(result.umbrella?.worktree).toBe(mirror());
+  });
+
+  test("a rerun reuses the mirrored folder and its worktrees", async () => {
+    umbrellaOf("api", "web");
+    workset("acme-fix", "acme/api", "acme/web");
+    await createWorksetWorktrees(companion, "acme-fix", options);
+    const second = await createWorksetWorktrees(companion, "acme-fix", options);
+    expect(second.ok).toBe(true);
+    expect(second.repositories.map((entry) => entry.action)).toEqual(["reused", "reused"]);
+    expect(second.umbrella?.action).toBe("reused");
+  });
+
+  test("a run interrupted before linking the mirror is completed by the next", async () => {
+    umbrellaOf("api", "web");
+    workset("acme-fix", "acme/api", "acme/web");
+    await createWorksetWorktrees(companion, "acme-fix", options);
+    fs.rmSync(path.join(mirror(), ".mate"), { recursive: true });
+    const second = await createWorksetWorktrees(companion, "acme-fix", options);
+    expect(second.diagnostics).toEqual([]);
+    expect(second.ok).toBe(true);
+    expect(second.repositories.map((entry) => entry.action)).toEqual(["reused", "reused"]);
+    expect(second.umbrella?.action).toBe("created");
+    expect(await findRepoLocalLinkTo(mirror(), companion)).toEqual({ id: "acme", path: mirror() });
+  });
+
+  test("OS metadata alone does not make the mirror's path foreign", async () => {
+    umbrellaOf("api");
+    workset("acme-fix", "acme/api");
+    fs.mkdirSync(mirror(), { recursive: true });
+    fs.writeFileSync(path.join(mirror(), ".DS_Store"), "");
+    const result = await createWorksetWorktrees(companion, "acme-fix", options);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  test("a mirror folder linked to another companion is refused", async () => {
+    umbrellaOf("api");
+    workset("acme-fix", "acme/api");
+    const config = path.join(mirror(), ".mate", "config");
+    fs.mkdirSync(config, { recursive: true });
+    fs.writeFileSync(
+      path.join(config, "registry.yaml"),
+      `companions:\n  - path: ${path.join(root, "acme-other")}\n    repositoryId: acme\n`,
+    );
+    const result = await createWorksetWorktrees(companion, "acme-fix", options);
+    expect(result.diagnostics).toEqual([
+      `${mirror()} exists and is not the mirrored worktree of ${umbrella()}`,
+    ]);
+    expect(fs.existsSync(path.join(mirror(), "api"))).toBe(false);
+  });
+
+  test("an umbrella child that is a worktree of a checkout elsewhere stays the umbrella's", async () => {
+    umbrellaOf("api");
+    const elsewhere = checkout("web");
+    git(elsewhere, "worktree", "add", "-q", "-b", "acme-hand", path.join(umbrella(), "web"));
+    workset("acme-fix", "acme/api", "acme/web");
+    const result = await createWorksetWorktrees(companion, "acme-fix", options);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.repositories.map((entry) => entry.path)).toEqual([
+      path.join(mirror(), "api"),
+      path.join(mirror(), "web"),
+    ]);
+    expect(result.umbrella?.path).toBe(umbrella());
+  });
+
+  test("each umbrella child's origin is read once per run", async () => {
+    umbrellaOf("api", "web");
+    workset("acme-fix", "acme/api", "acme/web");
+    const reads: string[] = [];
+    const counting: GitRunner = async (cwd, args) => {
+      if (args.join(" ") === "config --get remote.origin.url") reads.push(cwd);
+      return realGit(cwd, args);
+    };
+    const result = await createWorksetWorktrees(companion, "acme-fix", options, { git: counting });
+    expect(result.ok).toBe(true);
+    expect(reads.toSorted()).toEqual([path.join(umbrella(), "api"), path.join(umbrella(), "web")]);
+  });
+
+  test("a hand-made worktree inside the umbrella does not take the umbrella's link", async () => {
+    const [api] = umbrellaOf("api");
+    await writeRepoLocalRegistryEntry(
+      umbrella(),
+      companion,
+      { id: "acme", path: umbrella() },
+      "existing",
+    );
+    const hotfix = path.join(umbrella(), "api-hotfix");
+    git(api!, "worktree", "add", "-q", "-b", "acme-hotfix", hotfix);
+    expect(await findRepoLocalLinkTo(path.join(api!), companion)).toEqual({
+      id: "acme",
+      path: umbrella(),
+    });
+    expect(await findRepoLocalLinkTo(hotfix, companion)).toBeNull();
+  });
+
+  test("a foreign folder at the mirror's path is refused and nothing is created", async () => {
+    umbrellaOf("api");
+    workset("acme-fix", "acme/api");
+    fs.mkdirSync(mirror(), { recursive: true });
+    fs.writeFileSync(path.join(mirror(), "notes.md"), "acme\n");
+    const result = await createWorksetWorktrees(companion, "acme-fix", options);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toEqual([
+      `${mirror()} exists and is not the mirrored worktree of ${umbrella()}`,
+    ]);
+    expect(fs.existsSync(path.join(mirror(), "api"))).toBe(false);
+  });
+
+  test("the mirror is wrapped for exactly the umbrella's runtimes; the children are not", async () => {
+    umbrellaOf("api", "web");
+    workset("acme-fix", "acme/api", "acme/web");
+    const { wrapped, deps } = wrapStubs({ [umbrella()]: ["claude"] });
+    const result = await createWorksetWorktrees(companion, "acme-fix", options, deps);
+    expect(result.umbrella?.wrap).toEqual({ runtimes: ["claude"], outcome: "ok" });
+    expect(wrapped).toEqual([["acme", mirror(), ["claude"]]]);
+  });
+
+  test("a failed mirror wrap is reported and keeps the worktrees", async () => {
+    umbrellaOf("api");
+    workset("acme-fix", "acme/api");
+    const result = await createWorksetWorktrees(companion, "acme-fix", options, {
+      ...wrapStubs({ [umbrella()]: ["claude"] }).deps,
+      wrap: async () => "acme refused",
+    });
+    expect(result.ok).toBe(false);
+    expect(result.umbrella?.error).toBe("wrapping the worktree failed: acme refused");
+    expect(fs.existsSync(path.join(mirror(), "api", ".git"))).toBe(true);
+  });
+
+  test("a session in the mirrored folder resolves the companion and the children inside it", async () => {
+    umbrellaOf("api", "web");
+    workset("acme-fix", "acme/api", "acme/web");
+    await createWorksetWorktrees(companion, "acme-fix", options);
+    expect(await findRepoLocalLinkTo(mirror(), companion)).toEqual({
+      id: "acme",
+      path: mirror(),
+    });
+    expect((await umbrellaChildrenOf(mirror())).map((entry) => entry.path)).toEqual([
+      path.join(mirror(), "api"),
+      path.join(mirror(), "web"),
+    ]);
+    // As a child of the umbrella finds the umbrella's link.
+    fs.mkdirSync(path.join(mirror(), "api", "src"));
+    expect(await findRepoLocalLinkTo(path.join(mirror(), "api", "src"), companion)).toEqual({
+      id: "acme",
+      path: mirror(),
+    });
+  });
+
+  test("from the mirror, another Workset still mirrors the real umbrella", async () => {
+    umbrellaOf("api");
+    workset("acme-fix", "acme/api");
+    workset("acme-two", "acme/api");
+    await createWorksetWorktrees(companion, "acme-fix", options);
+    // The umbrella's registry entry is gone; only the mirror's own link names it.
+    fs.writeFileSync(path.join(companion, ".mate", "config", "registry.yaml"), "repos: []\n");
+    const result = await createWorksetWorktrees(companion, "acme-two", options, {
+      cwd: () => mirror(),
+    });
+    expect(result.diagnostics).toEqual([]);
+    expect(result.repositories.map((entry) => entry.path)).toEqual([
+      path.join(mirror("acme-two"), "api"),
+    ]);
+    expect(result.umbrella?.path).toBe(umbrella());
+  });
+
+  describe("prune", () => {
+    /** A Done Workset of one change delivered on `workset/acme-fix` in each named child. */
+    async function prepared(...names: string[]): Promise<void> {
+      umbrellaOf(...names);
+      const repositories = names.map((name) => `acme/${name}`);
+      listing("acme-fix", repositories, ["acme-fix"]);
+      change("acme-fix", ...repositories);
+      record(
+        "acme-fix",
+        `deliveries:\n${repositories
+          .map((repository) => `  - repository: ${repository}\n    branch: workset/acme-fix\n`)
+          .join("")}`,
+      );
+      const created = await createWorksetWorktrees(companion, "acme-fix", options);
+      expect(created.ok).toBe(true);
+    }
+
+    const done = async () => (await readWorksets(companion)).worksets;
+
+    test("removes the children, then the unwrapped mirror and its empty parent", async () => {
+      await prepared("api", "web");
+      const result = await pruneWorksetWorktrees(companion, await done());
+      expect(result.removed.map((entry) => entry.path)).toEqual([
+        path.join(mirror(), "api"),
+        path.join(mirror(), "web"),
+      ]);
+      expect(result.umbrellas).toEqual({
+        removed: [{ workset: "acme-fix", umbrella: umbrella(), path: mirror() }],
+        kept: [],
+      });
+      expect(fs.existsSync(mirror())).toBe(false);
+      expect(fs.existsSync(path.dirname(mirror()))).toBe(false);
+      expect(fs.existsSync(umbrella())).toBe(true);
+    });
+
+    test("a kept child keeps the mirror, still linked", async () => {
+      await prepared("api", "web");
+      fs.writeFileSync(path.join(mirror(), "api", "draft.txt"), "wip\n");
+      const result = await pruneWorksetWorktrees(companion, await done());
+      expect(result.kept.map((entry) => entry.path)).toEqual([path.join(mirror(), "api")]);
+      expect(result.umbrellas?.kept).toEqual([
+        {
+          workset: "acme-fix",
+          umbrella: umbrella(),
+          path: mirror(),
+          reason: "still holds api",
+        },
+      ]);
+      expect(fs.existsSync(path.join(mirror(), ".mate", "config", "registry.yaml"))).toBe(true);
+    });
+
+    test("a stray file keeps the mirror and the file", async () => {
+      await prepared("api");
+      fs.writeFileSync(path.join(mirror(), "notes.md"), "acme\n");
+      const result = await pruneWorksetWorktrees(companion, await done());
+      expect(result.removed.map((entry) => entry.path)).toEqual([path.join(mirror(), "api")]);
+      expect(result.umbrellas?.kept[0]?.reason).toBe("still holds notes.md");
+      expect(fs.readFileSync(path.join(mirror(), "notes.md"), "utf8")).toBe("acme\n");
+    });
+
+    test("OS metadata does not keep the mirror", async () => {
+      await prepared("api");
+      fs.writeFileSync(path.join(mirror(), ".DS_Store"), "");
+      const result = await pruneWorksetWorktrees(companion, await done());
+      expect(result.umbrellas?.removed.map((entry) => entry.path)).toEqual([mirror()]);
+      expect(fs.existsSync(mirror())).toBe(false);
+    });
+
+    test("a mirror that stays after unwrapping is linked again, so a later prune finds it", async () => {
+      await prepared("api");
+      const unwrap = async (folder: string) => {
+        fs.rmSync(path.join(folder, ".mate"), { recursive: true, force: true });
+        fs.writeFileSync(path.join(folder, "acme-left.txt"), "");
+      };
+      const first = await pruneWorksetWorktrees(companion, await done(), { unwrap });
+      expect(first.umbrellas?.kept[0]?.reason).toBe("unwrapping left acme-left.txt");
+      expect(await findRepoLocalLinkTo(mirror(), companion)).toEqual({
+        id: "acme",
+        path: mirror(),
+      });
+      const second = await pruneWorksetWorktrees(companion, await done());
+      expect(second.umbrellas?.kept[0]?.reason).toBe("still holds acme-left.txt");
+    });
+
+    test("a failed unwrap keeps the mirror and names the reason", async () => {
+      await prepared("api");
+      let unwrapped: string[] = [];
+      const result = await pruneWorksetWorktrees(companion, await done(), {
+        unwrap: async (folder) => {
+          unwrapped = [...unwrapped, folder];
+          throw new Error("acme locked");
+        },
+      });
+      // A child worktree carries no wrap, so only the mirror is unwrapped.
+      expect(unwrapped).toEqual([mirror()]);
+      expect(result.removed.map((entry) => entry.path)).toEqual([path.join(mirror(), "api")]);
+      expect(result.umbrellas?.kept[0]?.reason).toBe("removing its wrap failed: acme locked");
+      expect(fs.existsSync(mirror())).toBe(true);
+    });
+
+    test("a child's worktree outside the mirror is unwrapped before removal", async () => {
+      const [api] = umbrellaOf("api");
+      listing("acme-fix", ["acme/api"], ["acme-fix"]);
+      change("acme-fix", "acme/api");
+      record("acme-fix", "deliveries:\n  - repository: acme/api\n    branch: workset/acme-fix\n");
+      const hand = path.join(root, "acme-hand");
+      git(api!, "worktree", "add", "-q", "-b", "workset/acme-fix", hand);
+      const unwrapped: string[] = [];
+      const result = await pruneWorksetWorktrees(companion, await done(), {
+        unwrap: async (folder) => {
+          unwrapped.push(folder);
+        },
+      });
+      expect(unwrapped).toEqual([hand]);
+      expect(result.removed.map((entry) => entry.path)).toEqual([hand]);
+      expect(fs.existsSync(hand)).toBe(false);
+    });
+  });
+
+  test("an umbrella linked through a symlink is one umbrella, mirrored beside the real folder", async () => {
+    umbrellaOf("api", "web");
+    const alias = path.join(root, "src", "acme-alias");
+    fs.symlinkSync(umbrella(), alias);
+    link(alias);
+    workset("acme-fix", "acme/api", "acme/web");
+    workset("acme-two", "acme/api", "acme/web");
+    const first = await createWorksetWorktrees(companion, "acme-fix", options);
+    expect(first.diagnostics).toEqual([]);
+    expect(first.umbrella).toMatchObject({ path: umbrella(), worktree: mirror() });
+    // From the mirror, its own link and the registry's alias name the same umbrella.
+    const second = await createWorksetWorktrees(companion, "acme-two", options, {
+      cwd: () => mirror(),
+    });
+    expect(second.diagnostics).toEqual([]);
+    expect(second.umbrella?.worktree).toBe(mirror("acme-two"));
   });
 });

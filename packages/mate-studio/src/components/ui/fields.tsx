@@ -25,6 +25,11 @@ function Input({ className, ...props }: ComponentProps<"input">) {
   return <InputPrimitive data-slot="input" className={cn(FIELD, "h-9", className)} {...props} />;
 }
 
+/** A native select, framed like {@link Input}. */
+function Select({ className, ...props }: ComponentProps<"select">) {
+  return <select data-slot="select" className={cn(FIELD, "h-9 pr-8", className)} {...props} />;
+}
+
 function Textarea({ className, ...props }: ComponentProps<"textarea">) {
   return (
     <textarea
@@ -49,4 +54,4 @@ function Separator({ className, orientation = "horizontal", ...props }: Separato
   );
 }
 
-export { Input, Kbd, Separator, Textarea };
+export { Input, Kbd, Select, Separator, Textarea };

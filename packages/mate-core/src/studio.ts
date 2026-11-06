@@ -19,6 +19,7 @@ export type {
   StudioCompanionPayload,
   StudioShippedChange,
   StudioSpec,
+  StudioSpecScope,
   StudioWorkset,
 } from "./cli/commands/studio/payload";
 export type { FactoryRunView } from "./lib/factory/outcomes/runs";

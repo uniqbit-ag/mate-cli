@@ -77,7 +77,8 @@ function renderHuman(result: LinkResult): string[] {
  * from the forge or a local checkout (`--refresh`), or the user's answer (`--confirm-*`,
  * source `user`).
  * @flags
- * - `--repository <org/repo>` — the delivery to edit; defaults to the Working Repository.
+ * - `--repository <org/repo>` — the delivery to edit; defaults to the Working Repository, or in
+ *   an Umbrella Repository to the change's only scoped child.
  * - `--branch <branch>` — record the delivery branch; a protected branch needs `--direct`.
  * - `--direct` — with `--branch`, record a direct delivery, settled only by the user's answer; required for a protected branch.
  * - `--not-applicable <reason>` — no branch delivers this change in the repository.

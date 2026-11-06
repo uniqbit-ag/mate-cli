@@ -174,13 +174,16 @@ function CapabilityPanel({
   node,
 }: PanelProps & { node: number }) {
   const capability = capabilityOf(wire.nodes[node]);
-  const areas = linked(wire, index, node, "binds", true).map((area) => area.area ?? area.label);
+  const scopes = linked(wire, index, node, "binds", true).map(({ repository, area }) => ({
+    repository,
+    area,
+  }));
   const history = wire.history[node].map((archive) => wire.archives[archive]);
   const mentions = linked(wire, index, node, "mentions", true);
   const mentionedBy = linked(wire, index, node, "mentions", false);
   const coChanged = linked(wire, index, node, "co-change");
   return (
-    <SpecDetail spec={{ capability, areas }} companion={search.companion} withStatus={false}>
+    <SpecDetail spec={{ capability, scopes }} companion={search.companion} withStatus={false}>
       <PanelSection title="History" aside={`${history.length} archived`}>
         <ArchiveList
           archives={history}

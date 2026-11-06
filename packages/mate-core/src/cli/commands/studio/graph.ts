@@ -8,9 +8,8 @@ import {
   parseAnchor,
   SPECS_RELATIVE_DIR,
 } from "../../../lib/change-layout";
-import { readFrontmatter } from "../../../lib/frontmatter";
-import { BOM, parseScopes, type ScopePair } from "../../../lib/openspec-scopes";
-import { INLINE_AREA } from "./areas";
+import { BOM, type ScopePair } from "../../../lib/openspec-scopes";
+import { specScopes } from "./areas";
 import {
   areaNodeId,
   capabilityNodeId,
@@ -50,42 +49,12 @@ const MARKDOWN_SPEC_LINK = /\]\(<?([^)\s>]*?spec\.md)(?:#[^)\s>]*)?>?(?:\s+"[^"]
 const BACKTICKED = /`([A-Za-z0-9][A-Za-z0-9._/-]*)`/g;
 const SPECS_SUFFIX = /(?:^|\/)specs\/(.+)\/spec\.md$/;
 
-/** The frontmatter `repository`, else the one repository `scopes` names; null when neither. */
-function bindingRepository(
-  frontmatter: Record<string, unknown> | null,
-  scoped: readonly ScopePair[],
-): string | null {
-  const named = typeof frontmatter?.repository === "string" ? frontmatter.repository.trim() : "";
-  if (named) return named;
-  const scopedRepositories = new Set(scoped.map((pair) => pair.repository.trim()));
-  return scopedRepositories.size === 1 ? [...scopedRepositories][0] : null;
-}
-
-/**
- * Repository/Area pairs one spec binds, read as the Specs view reads Areas: frontmatter
- * `repository` with `areas`, `scopes` pairs, and inline `**Area:**` markers, which bind to the
- * frontmatter repository, else to the one repository `scopes` names.
- */
+/** Repository/Area pairs one spec binds, read as the Specs view reads them; BOM-tolerant. */
 function scopeOf(source: string): ScopePair[] {
   const content = source.startsWith(BOM) ? source.slice(BOM.length) : source;
-  const frontmatter = readFrontmatter(content);
-  const scoped = parseScopes(content);
-  const repository = bindingRepository(frontmatter, scoped);
-  const areas = Array.isArray(frontmatter?.areas)
-    ? frontmatter.areas.filter((area): area is string => typeof area === "string")
-    : [];
-  const inline = [...content.matchAll(INLINE_AREA)].map((match) => match[1]);
-  const pairs = [
-    ...scoped,
-    ...(repository ? [...areas, ...inline].map((area) => ({ repository, area })) : []),
-  ];
-  const seen = new Map<string, ScopePair>();
-  for (const pair of pairs) {
-    const trimmed = { repository: pair.repository.trim(), area: pair.area.trim() };
-    if (!trimmed.repository || !trimmed.area) continue;
-    seen.set(areaNodeId(trimmed.repository, trimmed.area), trimmed);
-  }
-  return [...seen.values()];
+  return specScopes(content).flatMap(({ repository, area }) =>
+    repository && area ? [{ repository, area }] : [],
+  );
 }
 
 /** The capability a relative markdown link from `capability`'s spec names; null when none. */

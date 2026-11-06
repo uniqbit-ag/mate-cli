@@ -79,13 +79,13 @@ function deps(overrides: Partial<CompanionPayloadDeps> = {}): CompanionPayloadDe
         apply: { requires: ["tasks"], tracks: "tasks.md" },
       },
     }),
-    readSpecAreas: async () => ["acme"],
+    readSpecScopes: async () => [{ repository: "acme/shop", area: "acme" }],
     readUncommittedPaths: async () => [],
     discoverArchives: async () => [],
     canonicalSpecsFor: async () => [],
     hasArchivedProposal: async () => true,
     readWorksets: async () => ({ worksets: [], problems: [] }),
-    linkedRepositoryIdentities: async () => [],
+    linkedRepositoryCatalog: async () => ({ identities: [], aliases: new Map() }),
     ticketFormat: async () => "none",
     ...overrides,
   };
@@ -155,7 +155,7 @@ describe("assembleCompanionPayload", () => {
       {
         capability: "acme-checkout",
         requirementCount: 4,
-        areas: ["acme"],
+        scopes: [{ repository: "acme/shop", area: "acme" }],
         valid: true,
         issueCount: 0,
       },
@@ -192,7 +192,7 @@ describe("assembleCompanionPayload", () => {
     await assembleCompanionPayload(
       "/companions/acme",
       deps({
-        readSpecAreas: async (specsRoot) => {
+        readSpecScopes: async (specsRoot) => {
           roots.push(specsRoot);
           return [];
         },
@@ -200,6 +200,48 @@ describe("assembleCompanionPayload", () => {
     );
 
     expect(roots).toEqual(["/companions/acme/openspec/specs"]);
+  });
+
+  test("reads spec scopes with the linked registry IDs", async () => {
+    const seen: ReadonlyMap<string, string>[] = [];
+    const payload = await assembleCompanionPayload(
+      "/companions/acme",
+      deps({
+        readSpecScopes: async (_root, _spec, _read, aliases = new Map()) => {
+          seen.push(aliases);
+          return [{ repository: "acme-org/acme", area: "docs" }];
+        },
+        linkedRepositoryCatalog: async () => ({
+          identities: ["acme-org/acme"],
+          aliases: new Map([["acme", "acme-org/acme"]]),
+        }),
+      }),
+    );
+
+    if ("error" in payload) throw new Error(payload.error.reason);
+    expect(seen.map((aliases) => [...aliases])).toEqual([[["acme", "acme-org/acme"]]]);
+    expect(payload.linkedRepositories).toEqual(["acme-org/acme"]);
+  });
+
+  test("reads spec scopes without registry IDs when linked repositories cannot be read", async () => {
+    const seen: ReadonlyMap<string, string>[] = [];
+    const payload = await assembleCompanionPayload(
+      "/companions/acme",
+      deps({
+        readSpecScopes: async (_root, _spec, _read, aliases = new Map()) => {
+          seen.push(aliases);
+          return [{ repository: "acme", area: "docs" }];
+        },
+        linkedRepositoryCatalog: async () => {
+          throw new Error("registry unreadable");
+        },
+      }),
+    );
+
+    if ("error" in payload) throw new Error(payload.error.reason);
+    expect(seen.map((aliases) => aliases.size)).toEqual([0]);
+    expect(payload.specs[0]?.scopes).toEqual([{ repository: "acme", area: "docs" }]);
+    expect(payload.warnings).toEqual(["linked repositories: registry unreadable"]);
   });
 
   test("returns an error payload naming the companion when changes cannot be collected", async () => {
@@ -445,7 +487,7 @@ describe("Worksets in the payload", () => {
         archiveAnchors: async () => ["2026-10-01-acme-shipped", "2026-10-02-acme-unmerged"],
         discoverArchives: async () => [archive("2026-10-01-acme-shipped")],
         archiveMergeSettled: async (_companion, anchor) => anchor === "2026-10-01-acme-shipped",
-        linkedRepositoryIdentities: async () => ["acme/web"],
+        linkedRepositoryCatalog: async () => ({ identities: ["acme/web"], aliases: new Map() }),
         ticketFormat: async () => "jira",
       }),
     );

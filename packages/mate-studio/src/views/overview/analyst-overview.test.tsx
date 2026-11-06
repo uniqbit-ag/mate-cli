@@ -26,8 +26,21 @@ function payload(overrides: Partial<StudioCompanionPayload> = {}): StudioCompani
       },
     ],
     specs: [
-      { capability: "acme-login", areas: ["acme"], requirementCount: 3, valid: true },
-      { capability: "acme-billing", areas: ["acme", "docs"], requirementCount: 4, valid: false },
+      {
+        capability: "acme-login",
+        scopes: [{ repository: "acme/shop", area: "acme" }],
+        requirementCount: 3,
+        valid: true,
+      },
+      {
+        capability: "acme-billing",
+        scopes: [
+          { repository: "acme/shop", area: "acme" },
+          { repository: "acme/shop", area: "docs" },
+        ],
+        requirementCount: 4,
+        valid: false,
+      },
     ],
     shipped: [
       shipped("2026-02-10-acme-checkout", ["acme-billing", "acme-login"]),
