@@ -5,6 +5,7 @@ import {
   type WorkingRepoGit,
 } from "./branches";
 import { changeNameOf, locateChange, type ChangeLocation } from "../change-layout";
+import { scopedRepositories } from "../openspec-scopes";
 import { companionRelative, type DeliveryEnvironment } from "./environment";
 import {
   canaryTicketOf,
@@ -78,6 +79,8 @@ export interface DeliveryRequest {
 export type DeliveryRefusal =
   | { reason: "unknown-change"; change: string }
   | { reason: "no-repository" }
+  /** An edit in an Umbrella Repository whose changes are scoped to not exactly one child. */
+  | { reason: "umbrella-repository"; umbrella: string; scoped: string[]; children: string[] }
   | { reason: "tickets-off" }
   | { reason: "no-resolved-branch"; change: string; diagnostics: string[] }
   /** `--ticket` on a repository whose delivery is direct or not applicable. */
@@ -117,7 +120,7 @@ export interface NeedsBranch {
   diagnostics: string[];
   change: string;
   record: DeliveryRecord;
-  /** First existing safe default or legacy branch in the Working Repository. */
+  /** First existing safe default or legacy branch in the session's checkout of the repository. */
   suggestedBranch: string | null;
 }
 
@@ -141,6 +144,35 @@ async function checkoutGit(
   if (working?.slug && sameRepository(working.slug, repository)) return working.git;
   const checkout = await environment.checkoutOf?.(repository);
   return checkout ? workingRepoGit(checkout) : null;
+}
+
+/** The Umbrella Repository's children the changes are scoped to, in scope order. */
+async function scopedChildren(
+  located: readonly { dir: string }[],
+  children: readonly string[],
+): Promise<string[]> {
+  const scoped: string[] = [];
+  for (const { dir } of located) {
+    // oxlint-disable-next-line no-await-in-loop -- a few small files, in order
+    for (const repository of await scopedRepositories(dir)) {
+      const child = children.find((entry) => sameRepository(entry, repository));
+      if (child && !scoped.includes(child)) scoped.push(child);
+    }
+  }
+  return scoped;
+}
+
+/**
+ * The Git whose branches the session works on: the Working Repository's, or in an Umbrella
+ * Repository, which is no checkout, the delivery's child checkout.
+ */
+async function sessionGitOf(
+  environment: DeliveryEnvironment,
+  repository: string | null,
+): Promise<WorkingRepoGit | null> {
+  const working = environment.workingRepo;
+  if (!working?.umbrellaChildren) return working?.git ?? null;
+  return repository ? checkoutGit(environment, repository) : null;
 }
 
 /** Ref lookups in the repository's local checkout; null when none is known. */
@@ -189,7 +221,6 @@ export async function recordDelivery(
     located.push({ ...location, change });
   }
 
-  const repository = request.repository ?? environment.workingRepo?.slug ?? null;
   const ticketFormat = environment.ticket?.format ?? "none";
   if (edit.ticket !== undefined && ticketFormat === "none") {
     return { refusal: { reason: "tickets-off" } };
@@ -199,6 +230,19 @@ export async function recordDelivery(
     edit.pr !== undefined ||
     edit.confirm !== undefined ||
     edit.ticket !== undefined;
+  const working = environment.workingRepo;
+  let repository = request.repository ?? working?.slug ?? null;
+  // In an Umbrella Repository the changes' only scoped child stands in for the Working Repository.
+  if (!repository && working?.umbrellaChildren) {
+    const children = working.umbrellaChildren;
+    const scoped = await scopedChildren(located, children);
+    if (scoped.length === 1) repository = scoped[0]!;
+    else if (edits) {
+      return {
+        refusal: { reason: "umbrella-repository", umbrella: working.path, scoped, children },
+      };
+    }
+  }
   if (edits && !repository) return { refusal: { reason: "no-repository" } };
   const refuseProtected = async (
     repo: string,
@@ -226,7 +270,8 @@ export async function recordDelivery(
   const refs = repository ? await refsIn(environment, repository) : null;
   const local = repository ? await access(repository).local?.() : null;
   const mergeProbe = local ? mergeProbeWith(local.git, local.defaultBranch) : null;
-  const currentBranch = (await environment.workingRepo?.git.currentBranch()) ?? null;
+  const sessionGit = await sessionGitOf(environment, repository);
+  const currentBranch = (await sessionGit?.currentBranch()) ?? null;
 
   for (const { change, dir, archived } of located) {
     let record = await readOrUnlinkedRecord(dir, change);
@@ -277,7 +322,7 @@ export async function recordDelivery(
     if (request.requireDelivery && record.deliveries.length === 0) {
       let suggestedBranch: string | null = null;
       for (const candidate of [defaultBranch, legacyDeliveryBranch(changeNameOf(change))]) {
-        if (candidate && (await environment.workingRepo?.git.branchExists(candidate))) {
+        if (candidate && (await sessionGit?.branchExists(candidate))) {
           suggestedBranch = candidate;
           break;
         }

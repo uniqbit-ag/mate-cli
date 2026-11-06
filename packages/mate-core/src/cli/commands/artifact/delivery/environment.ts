@@ -13,6 +13,12 @@ import {
   type LaunchContext,
 } from "../../../../lib/orchestrator/framework-context";
 import type { CapabilityConfig, LinkedRepository } from "../../../../lib/orchestrator/types";
+import {
+  linkedCheckoutsOf,
+  umbrellaChildrenOf,
+  type EntryCheckout,
+  type OriginReader,
+} from "../../../../lib/orchestrator/umbrella-checkouts";
 import { WorkingRepoRequiredError } from "../../../../lib/orchestrator/types";
 import { ensureUnambiguousCompanion } from "../../shared/companion-selection";
 
@@ -22,6 +28,8 @@ export interface DeliveryEnvironmentDeps {
   loadCapabilities?: (context: LaunchContext) => Promise<CapabilityConfig[]>;
   workingRepoGit?: (repoPath: string) => WorkingRepoGit;
   loadLinkedRepositories?: (context: LaunchContext) => Promise<LinkedRepository[]>;
+  /** Reads an Umbrella Repository child's `origin`; raw config by default, as worktree planning reads it. */
+  readChildOrigin?: OriginReader;
   /** True when the companion's Git mode is `auto`. */
   loadGitAutoMode?: (context: LaunchContext) => Promise<boolean>;
 }
@@ -34,6 +42,11 @@ async function defaultLoadLinkedRepositories(context: LaunchContext): Promise<Li
 interface LinkedCheckout {
   remote: ForgeRepo;
   path: string;
+}
+
+/** The checkouts whose `origin` names a forge repository. */
+function withRemotes(checkouts: readonly EntryCheckout[]): LinkedCheckout[] {
+  return checkouts.flatMap(({ path, remote }) => (remote ? [{ remote, path }] : []));
 }
 
 async function defaultLoadGitAutoMode(context: LaunchContext): Promise<boolean> {
@@ -73,16 +86,24 @@ export async function resolveDeliveryEnvironment(
 
   const openGit = deps.workingRepoGit ?? workingRepoGit;
   const repoPath = context.repository?.path ?? process.env.MATE_REPO_PATH;
+  const readOrigin = (checkout: string) => openGit(checkout).remoteUrl();
   let workingRepo: WorkingRepoInfo | null = null;
+  // An Umbrella Repository has no `origin` of its own; its children name the repositories.
+  const ownChildren = repoPath
+    ? withRemotes(await umbrellaChildrenOf(repoPath, deps.readChildOrigin))
+    : [];
   if (repoPath) {
     const git = openGit(repoPath);
-    const remote = await git.remoteUrl();
+    const remote = ownChildren.length > 0 ? null : await git.remoteUrl();
     const forgeRepo = remote ? parseRemote(remote) : null;
     workingRepo = {
       path: repoPath,
       slug: forgeRepo ? repositoryPath(forgeRepo) : null,
       forgeRepo,
       git,
+      ...(ownChildren.length > 0
+        ? { umbrellaChildren: ownChildren.map((child) => repositoryPath(child.remote)) }
+        : {}),
     };
   }
 
@@ -94,14 +115,13 @@ export async function resolveDeliveryEnvironment(
       const repositories = await (deps.loadLinkedRepositories ?? defaultLoadLinkedRepositories)(
         context,
       ).catch(() => []);
-      const others = repositories.filter((repository) => repository.path !== repoPath);
-      const remotes = await Promise.all(
-        others.map((repository) => openGit(repository.path).remoteUrl()),
+      // The Working Repository's own entry is skipped; an umbrella's children are in `ownChildren`.
+      const checkouts = await Promise.all(
+        repositories
+          .filter((repository) => repository.path !== repoPath)
+          .map((repository) => linkedCheckoutsOf(repository, readOrigin, deps.readChildOrigin)),
       );
-      return others.flatMap((repository, index) => {
-        const remote = remotes[index] ? parseRemote(remotes[index]) : null;
-        return remote ? [{ remote, path: repository.path }] : [];
-      });
+      return [...ownChildren, ...withRemotes(checkouts.flat())];
     })());
   const linkedMatch = async (repository: string) =>
     (await linked()).find(({ remote }) => sameRepository(repositoryPath(remote), repository));

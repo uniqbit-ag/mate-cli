@@ -1260,6 +1260,26 @@ describe("bundled Delivery Path stage skills", () => {
     expect(source).not.toContain("ask once whether this change is delivered through it");
   });
 
+  test("apply in an Umbrella Repository settles the branch per scoped child", async () => {
+    const flat = (source: string) => source.replace(/\s+/g, " ");
+    for (const root of [skillsRoot, claudeSkillsRoot]) {
+      const source = flat(await readSkillFrom(root, "mate-apply-change"));
+      expect(source).toContain(
+        "When the Working Repository has no `.git` of its own and its direct child folders are Git checkouts, it is an Umbrella Repository",
+      );
+      expect(source).toContain("`git -C <child> symbolic-ref --quiet --short HEAD`");
+      expect(source).toContain(
+        'its record with `mate artifact link "<change-name>" --repository "<org/repo>" --json`, whose recorded branch and `defaultBranch` are that child\'s',
+      );
+      expect(source).toContain(
+        '**Every scoped child is on the recorded branch or `defaultBranch`** → ask nothing; record it per child: `mate artifact link "<change-name>" --repository "<org/repo>" --branch "<branch>" --json`',
+      );
+      expect(source).toContain("1. **Create a worktree** (recommended)");
+      expect(source).toContain("returns `enter.action` `handoff` with the mirrored worktree");
+      expect(source).toContain('recording each with `--repository "<org/repo>"`');
+    }
+  });
+
   test("apply names or creates another branch, recording it before creating it", async () => {
     const flat = (source: string) => source.replace(/\s+/g, " ");
     const source = flat(await readSkill("mate-apply-change"));

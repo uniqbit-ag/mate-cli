@@ -73,6 +73,13 @@ export function sharedRefusalMessage(
   if (refusal.reason === "no-repository") {
     return "mate: the Working Repository has no origin remote to identify it; pass --repository <org/repo>.";
   }
+  if (refusal.reason === "umbrella-repository") {
+    const named =
+      refusal.scoped.length > 0
+        ? `the change is scoped to its children ${refusal.scoped.join(", ")}`
+        : `the change is scoped to none of its children (${refusal.children.join(", ")})`;
+    return `mate: the Working Repository ${refusal.umbrella} is an Umbrella Repository and ${named}; pass --repository <org/repo>.`;
+  }
   if (refusal.reason === "tickets-off") {
     return `mate: ${TICKETS_OFF}`;
   }

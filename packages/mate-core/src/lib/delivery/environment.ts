@@ -9,6 +9,8 @@ export interface WorkingRepoInfo {
   slug: string | null;
   forgeRepo: ForgeRepo | null;
   git: WorkingRepoGit;
+  /** Set when the Working Repository is an Umbrella Repository: its children's repository paths. */
+  umbrellaChildren?: string[];
 }
 
 /** The companion, the Working Repository with its remote identity, and protected-branch patterns. */

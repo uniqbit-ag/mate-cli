@@ -33,6 +33,28 @@ Read the change's existing record without changing it:
 mate artifact link "<change-name>" --json
 ```
 
+**Umbrella Repository.** When the Working Repository has no `.git` of its own and its
+direct child folders are Git checkouts, it is an Umbrella Repository: settle the branch
+per scoped child, then continue at Step 3. A scoped child is a child whose
+`git -C <child> config --get remote.origin.url` names one of the change's scoped
+repositories. Read each scoped child's branch with
+`git -C <child> symbolic-ref --quiet --short HEAD`, and its record with
+`mate artifact link "<change-name>" --repository "<org/repo>" --json`, whose recorded
+branch and `defaultBranch` are that child's.
+
+- **Every scoped child is on the recorded branch or `defaultBranch`** → ask nothing;
+  record it per child:
+  `mate artifact link "<change-name>" --repository "<org/repo>" --branch "<branch>" --json`.
+- **Otherwise** → name each child's branch and its unpushed commits, then offer one menu
+  for all of them, with the same protected-branch and ticket rules as Step 2:
+  1. **Create a worktree** (recommended): run
+     `mate working worktree --change "<change-name>" --enter --json`. It records every
+     child's branch and returns `enter.action` `handoff` with the mirrored worktree in
+     `enter.path`. Report `enter.reason`, write no code, and stop; `## Next steps`: open a
+     new session in `enter.path` and run `/mate-apply-change <change-name>` there.
+  2. **Switch each child to `defaultBranch`** with `git -C <child>`, as Step 2's option 1
+     does, recording each with `--repository "<org/repo>"`.
+
 ## Step 2: Settle the delivery branch
 
 Read `defaultBranch`, `inheritedFrom`, `diagnostics`, `ticketFormat`, and

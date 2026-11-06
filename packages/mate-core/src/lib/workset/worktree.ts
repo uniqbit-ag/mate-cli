@@ -6,6 +6,8 @@ import { FRAMEWORK_NAME } from "../../framework";
 import { gitEnvironment, withoutAskPass } from "../../runtime/companion-git";
 import { withCompanionLock } from "../../runtime/companion-lock";
 import { errorMessage } from "../../runtime/error-message";
+import { readGitLayout } from "../../runtime/git-layout";
+import { repoLocalRegistryPath } from "../../runtime/repo-local";
 import type { WrapRuntime } from "../../runtime/runtime-document-manifest";
 import { readWrapState, WRAP_RUNTIMES } from "../../runtime/wrap-state";
 import { cleanupWorkingRepository } from "../../tools/setup/working-repo-cleanup";
@@ -21,6 +23,7 @@ import {
   worktreeAddArgs,
   type BranchSource,
 } from "../delivery/resolve-branch";
+import { repositoryPath } from "../delivery/forge";
 import { scopedRepositories } from "../openspec-scopes";
 import { attendedLockOptions } from "../orchestrator/companion-git-sync";
 import {
@@ -28,9 +31,10 @@ import {
   readCompanionRegistry,
   writeRepoLocalRegistryEntry,
 } from "../orchestrator/repository-link";
+import { projectionEntries } from "../orchestrator/projection-entries";
 import type { LinkedRepository } from "../orchestrator/types";
+import { linkedCheckoutsOf, type EntryCheckout } from "../orchestrator/umbrella-checkouts";
 import { runWrapPass } from "../orchestrator/wrap-pass";
-import { identityOf } from "./repositories";
 import { indexWorktree, type IndexOutcome, type TokensaveRunner } from "./worktree-index";
 import { findWorkset, readWorksets, resolveWorksetBranch, resolveWorksetOf } from "./record";
 
@@ -107,10 +111,26 @@ export interface WorktreeRepositoryResult {
   error?: string;
 }
 
+/** An Umbrella Repository's mirrored worktree, linked and wrapped like the umbrella. */
+export interface UmbrellaWorktreeResult {
+  /** The Umbrella Repository. */
+  path: string;
+  /** The mirrored worktree folder holding the children's worktrees. */
+  worktree: string;
+  action: "created" | "reused";
+  /** The children whose worktree the folder holds, as `org/repository`. */
+  repositories: string[];
+  wrap: WrapOutcome;
+  /** Set when linking or wrapping the folder failed; its worktrees stay. */
+  error?: string;
+}
+
 export interface WorktreeResult {
   workset: string;
   ok: boolean;
   repositories: WorktreeRepositoryResult[];
+  /** Present only when a repository is an Umbrella Repository's child. */
+  umbrella?: UmbrellaWorktreeResult;
   diagnostics: string[];
   warnings: string[];
 }
@@ -127,9 +147,21 @@ export interface PruneTarget {
   changes: readonly string[];
 }
 
+/** An Umbrella Repository's mirrored worktree of a Workset. */
+export interface PruneMirrorEntry {
+  workset: string;
+  umbrella: string;
+  path: string;
+}
+
 export interface PruneResult {
   removed: PruneEntry[];
   kept: (PruneEntry & { reason: string })[];
+  /** Present only when a pruned Workset has a mirrored umbrella worktree. */
+  umbrellas?: {
+    removed: PruneMirrorEntry[];
+    kept: (PruneMirrorEntry & { reason: string })[];
+  };
   warnings: string[];
 }
 
@@ -271,23 +303,42 @@ async function listWorktrees(git: GitRunner, repo: string): Promise<WorktreeEntr
   );
 }
 
+/** A linked checkout; `umbrella` is set for an Umbrella Repository's child, whose id is the umbrella's. */
+type LinkedCheckout = LinkedRepository & { umbrella?: string };
+
 interface LinkedLookup {
-  linked: LinkedRepository | null;
+  linked: LinkedCheckout | null;
   /** Registered paths that no longer exist. */
   missing: string[];
 }
 
+/** Every checkout linked to the companion, in lookup order, with its `org/repository`. */
+interface LinkedIndex {
+  checkouts: { linked: LinkedCheckout; identity: string | null }[];
+  /** Registered paths that no longer exist. */
+  missing: string[];
+}
+
+/** The first checkout in the index whose `origin` is the repository. */
+function linkedCheckout(index: LinkedIndex, repository: string): LinkedLookup {
+  // The first match in registry order decides, umbrella children in name order.
+  const match = index.checkouts.find(
+    ({ identity }) => identity?.toLowerCase() === repository.toLowerCase(),
+  );
+  return { linked: match?.linked ?? null, missing: index.missing };
+}
+
 /**
- * The first checkout linked to the companion whose `origin` is the repository: an
- * existing registered one, else the checkout holding `cwd` when its repo-local link
- * names the companion, so an entry left naming a removed folder does not hide it.
+ * The existing registered checkouts, an Umbrella Repository's children included, then
+ * the one the repo-local link holding `cwd` names, so an entry left naming a removed
+ * folder does not hide it. Read once per run: expanding an umbrella reads every child's
+ * `origin`.
  */
-async function linkedCheckout(
+async function linkedIndex(
   companionPath: string,
-  repository: string,
   git: GitRunner,
   cwd: string,
-): Promise<LinkedLookup> {
+): Promise<LinkedIndex> {
   let repos: LinkedRepository[] = [];
   try {
     repos = (await readCompanionRegistry(companionPath)).repos;
@@ -296,22 +347,48 @@ async function linkedCheckout(
   }
   const present = await Promise.all(repos.map((repo) => exists(repo.path)));
   const current = await findRepoLocalLinkTo(cwd, companionPath);
-  const candidates = [...repos.filter((_, index) => present[index]), ...(current ? [current] : [])];
-  const identities = await Promise.all(
-    candidates.map(async (repo) => {
-      // Raw config, not `remote get-url`, so `insteadOf` rewrites do not change the identity.
-      const remote = await git(repo.path, ["config", "--get", "remote.origin.url"]);
-      return remote.code === 0 ? identityOf(remote.stdout.trim()) : null;
-    }),
-  );
-  // The first match in registry order decides.
-  const index = identities.findIndex(
-    (identity) => identity?.toLowerCase() === repository.toLowerCase(),
+  const entries = [...repos.filter((_, index) => present[index]), ...(current ? [current] : [])];
+  const readOrigin = async (checkout: string) => {
+    // Raw config, not `remote get-url`, so `insteadOf` rewrites do not change the identity.
+    const remote = await git(checkout, ["config", "--get", "remote.origin.url"]);
+    return remote.code === 0 ? remote.stdout.trim() || null : null;
+  };
+  const expanded = await Promise.all(
+    entries.map(async (entry) =>
+      Promise.all(
+        (await linkedCheckoutsOf(entry, readOrigin, readOrigin)).map(async (checkout) => ({
+          linked: { ...entry, ...(await mainChild(checkout)) },
+          identity: checkout.remote ? repositoryPath(checkout.remote) : null,
+        })),
+      ),
+    ),
   );
   return {
-    linked: index === -1 ? null : candidates[index]!,
+    checkouts: expanded.flat(),
     missing: repos.filter((_, at) => !present[at]).map((repo) => repo.path),
   };
+}
+
+/**
+ * The checkout and umbrella an entry's checkout stands for. A child of a mirrored worktree
+ * `<umbrella>.worktrees/<id>/<name>`, a worktree of `<umbrella>/<name>`, stands for that
+ * main checkout, so the real umbrella stays the one mirrored.
+ */
+async function mainChild(checkout: EntryCheckout): Promise<{ path: string; umbrella?: string }> {
+  const { path: child } = checkout;
+  if (!checkout.umbrella) return { path: child };
+  // Canonical, so an umbrella reached by a registry path and by Git's paths is one.
+  const umbrella = await canonical(checkout.umbrella);
+  const layout = readGitLayout(child);
+  if (layout?.kind === "linked" && path.basename(layout.commonDir) === ".git") {
+    const main = path.dirname(layout.commonDir);
+    const real = await canonical(path.dirname(main));
+    const mirrored =
+      path.basename(main) === path.basename(child) &&
+      (await canonical(worktreePathFor(real, path.basename(umbrella)))) === umbrella;
+    if (mirrored) return { path: main, umbrella: real };
+  }
+  return { path: child, umbrella };
 }
 
 interface Plan {
@@ -325,6 +402,8 @@ interface Plan {
   /** Start point when `source` is `new`. */
   base?: string;
   reuse: boolean;
+  /** Set for an Umbrella Repository's child: the umbrella, whose mirrored worktree holds `target`. */
+  umbrella?: string;
 }
 
 /** A resolved Workset: its id and the repositories that get a worktree. */
@@ -369,18 +448,78 @@ async function planWorktrees(
   git: GitRunner,
   cwd: string,
   ticket?: string,
-): Promise<{ plans: Plan[]; diagnostics: string[]; warnings: string[] }> {
+): Promise<{ plans: Plan[]; mirror?: Mirror; diagnostics: string[]; warnings: string[] }> {
   const warnings: string[] = [];
+  const index = await linkedIndex(companionPath, git, cwd);
   const checked = await Promise.all(
     target.repositories.map((repository) =>
-      planRepository(companionPath, target.id, repository, git, cwd, warnings, ticket),
+      planRepository(companionPath, target.id, repository, git, index, warnings, ticket),
     ),
   );
-  return {
-    plans: checked.filter((entry): entry is Plan => !Array.isArray(entry)),
-    diagnostics: checked.flatMap((entry) => (Array.isArray(entry) ? entry : [])),
-    warnings,
-  };
+  const plans = checked.filter((entry): entry is Plan => !Array.isArray(entry));
+  const diagnostics = checked.flatMap((entry) => (Array.isArray(entry) ? entry : []));
+  const mirror = await planMirror(companionPath, target.id, plans);
+  if (Array.isArray(mirror)) return { plans, diagnostics: [...diagnostics, ...mirror], warnings };
+  return { plans, ...(mirror ? { mirror } : {}), diagnostics, warnings };
+}
+
+/** The mirrored worktree a Workset's umbrella children get. */
+interface Mirror {
+  umbrella: string;
+  /** The umbrella's Repository Link id, which the folder's link repeats. */
+  repositoryId: string;
+  folder: string;
+  /** The folder already is this umbrella's mirrored worktree. */
+  reuse: boolean;
+}
+
+/**
+ * The mirrored worktree of the plans' Umbrella Repository, or the diagnostics that stop
+ * the run: the folder must be this umbrella's mirrored worktree, or hold nothing but OS
+ * metadata, Mate's material, and its children's reused worktrees, as a run interrupted
+ * before linking leaves it.
+ */
+async function planMirror(
+  companionPath: string,
+  worksetId: string,
+  plans: readonly Plan[],
+): Promise<Mirror | string[] | undefined> {
+  const children = plans.filter((plan) => plan.umbrella);
+  const umbrellas = [...new Set(children.map((plan) => plan.umbrella!))];
+  if (umbrellas.length === 0) return undefined;
+  if (umbrellas.length > 1) {
+    return [
+      `the Workset spans the Umbrella Repositories ${umbrellas.join(", ")}; a mirrored worktree serves one`,
+    ];
+  }
+  const umbrella = umbrellas[0]!;
+  const repositoryId = children[0]!.repositoryId;
+  const folder = await canonical(worktreePathFor(umbrella, worksetId));
+  if (await isMirrorOf(folder, companionPath, repositoryId)) {
+    return { umbrella, repositoryId, folder, reuse: true };
+  }
+  // A link of its own names another companion or id: someone else's folder.
+  if (await exists(repoLocalRegistryPath(folder))) {
+    return [`${folder} exists and is not the mirrored worktree of ${umbrella}`];
+  }
+  const listed = await fs.readdir(folder).catch(() => []);
+  const material = mirrorMaterial();
+  const reused = new Set(
+    children.filter((plan) => plan.reuse).map((plan) => path.basename(plan.target)),
+  );
+  const foreign = listed.filter((name) => !material.has(name) && !reused.has(name));
+  if (foreign.length === 0) return { umbrella, repositoryId, folder, reuse: false };
+  return [`${folder} exists and is not the mirrored worktree of ${umbrella}`];
+}
+
+/** `folder` carries its own repo-local link to the companion under the umbrella's id. */
+async function isMirrorOf(
+  folder: string,
+  companionPath: string,
+  repositoryId: string,
+): Promise<boolean> {
+  const link = await findRepoLocalLinkTo(folder, companionPath);
+  return link !== null && link.id === repositoryId && (await canonical(link.path)) === folder;
 }
 
 /** One repository's plan, or the diagnostics that stop the run. */
@@ -389,11 +528,11 @@ async function planRepository(
   worksetId: string,
   repository: string,
   git: GitRunner,
-  cwd: string,
+  index: LinkedIndex,
   warnings: string[],
   ticket?: string,
 ): Promise<Plan | string[]> {
-  const { linked, missing } = await linkedCheckout(companionPath, repository, git, cwd);
+  const { linked, missing } = linkedCheckout(index, repository);
   if (!linked) {
     // An identity problem outranks the missing link.
     const identity = await resolveWorksetBranch(companionPath, worksetId, repository);
@@ -436,7 +575,11 @@ async function planRepository(
   const entries = await listWorktrees(git, linked.path);
   const main = entries?.[0];
   if (!main) return [`${repository}: cannot list the worktrees of ${linked.path}`];
-  const target = await canonical(worktreePathFor(main.path, worksetId));
+  const target = await canonical(
+    linked.umbrella
+      ? path.join(worktreePathFor(linked.umbrella, worksetId), path.basename(linked.path))
+      : worktreePathFor(main.path, worksetId),
+  );
   const atTarget = entries.find((entry) => entry.path === target);
   // A stale entry is never reused: wrapping it would only refill a folder without a checkout.
   const stale = entries.find(
@@ -447,7 +590,14 @@ async function planRepository(
       `${repository}: ${stale.path} is a stale worktree entry (${stale.stale}); remove any folder left there, run \`git worktree prune\` in ${main.path}, then retry`,
     ];
   }
-  const plan = { repository, repositoryId: linked.id, checkout: main.path, branch, source };
+  const plan = {
+    repository,
+    repositoryId: linked.id,
+    checkout: main.path,
+    branch,
+    source,
+    ...(linked.umbrella ? { umbrella: linked.umbrella } : {}),
+  };
   const elsewhere = entries.find((entry) => entry.branch === branch && entry.path !== target);
   const inherited = resolution.inheritedFrom.join(", ");
   // An inherited branch is the dependency's worktree; one branch has one worktree.
@@ -605,7 +755,7 @@ async function createTargetWorktrees(
   const worksetId = target.id;
   const git = deps.git ?? runGit;
   const cwd = (deps.cwd ?? process.cwd)();
-  const { plans, diagnostics, warnings } = await planWorktrees(
+  const { plans, mirror, diagnostics, warnings } = await planWorktrees(
     companionPath,
     target,
     git,
@@ -634,6 +784,14 @@ async function createTargetWorktrees(
       }),
     );
   }
+  // After its children exist, so the folder is linked only once it holds a worktree.
+  const held = plans.flatMap((plan, at) =>
+    plan.umbrella && repositories[at]!.install.reason !== NOT_CREATED ? [plan.repository] : [],
+  );
+  const umbrella =
+    mirror && held.length > 0
+      ? await realizeMirror(companionPath, mirror, held, deps, warnings)
+      : undefined;
   await Promise.all(indexing);
   for (const result of repositories) {
     if (result.index.outcome === "failed") {
@@ -642,11 +800,75 @@ async function createTargetWorktrees(
   }
   return {
     workset: worksetId,
-    ok: repositories.every((entry) => !entry.error),
+    ok: repositories.every((entry) => !entry.error) && !umbrella?.error,
     repositories,
+    ...(umbrella ? { umbrella } : {}),
     diagnostics,
     warnings,
   };
+}
+
+/**
+ * Links the mirrored worktree folder under the umbrella's id, without the companion
+ * registry, and wraps it for the umbrella's runtimes. Its children get neither: the
+ * folder's projection serves them, as the umbrella's serves its own.
+ */
+async function realizeMirror(
+  companionPath: string,
+  mirror: Mirror,
+  repositories: string[],
+  deps: WorktreeDeps,
+  warnings: string[],
+): Promise<UmbrellaWorktreeResult> {
+  const { wrap, error, warning } = await linkAndWrap(
+    companionPath,
+    { id: mirror.repositoryId, path: mirror.folder },
+    mirror.umbrella,
+    mirror.reuse,
+    deps,
+  );
+  if (warning) warnings.push(`${mirror.folder}: ${warning}`);
+  return {
+    path: mirror.umbrella,
+    worktree: mirror.folder,
+    action: mirror.reuse ? "reused" : "created",
+    repositories,
+    wrap,
+    ...(error ? { error } : {}),
+  };
+}
+
+/**
+ * Links `repository.path` to the companion and wraps it like `wrappedFrom`. A reused
+ * folder still wrapped from before stays usable, so a failed refresh only warns.
+ */
+async function linkAndWrap(
+  companionPath: string,
+  repository: LinkedRepository,
+  wrappedFrom: string,
+  reuse: boolean,
+  deps: WorktreeDeps,
+): Promise<{ wrap: WrapOutcome; error?: string; warning?: string }> {
+  try {
+    await (deps.writeLink ?? writeRepoLocalRegistryEntry)(
+      repository.path,
+      companionPath,
+      repository,
+      "existing",
+    );
+  } catch (error) {
+    return {
+      wrap: { runtimes: [], outcome: "skipped", reason: "worktree not linked" },
+      error: `linking the worktree failed: ${errorMessage(error)}`,
+    };
+  }
+  const wrap = await wrapWorktree(companionPath, wrappedFrom, repository, deps);
+  if (wrap.outcome !== "failed") return { wrap };
+  const message = `wrapping the worktree failed: ${wrap.reason}`;
+  if (reuse && (await stillWrapped(repository.path, wrap.runtimes, deps))) {
+    return { wrap, warning: `${message}; its earlier wrap stays` };
+  }
+  return { wrap, error: message };
 }
 
 async function realize(
@@ -680,28 +902,20 @@ async function realize(
       };
     }
   }
-  // The main checkout's id: a session moved here keeps its `MATE_REPOSITORY_ID`.
-  const repository = { id: plan.repositoryId, path: plan.target };
-  try {
-    await (deps.writeLink ?? writeRepoLocalRegistryEntry)(
-      plan.target,
+  if (plan.umbrella) {
+    result.wrap.reason = "served by the mirrored worktree";
+  } else {
+    // The main checkout's id: a session moved here keeps its `MATE_REPOSITORY_ID`.
+    const linked = await linkAndWrap(
       companionPath,
-      repository,
-      "existing",
+      { id: plan.repositoryId, path: plan.target },
+      plan.checkout,
+      plan.reuse,
+      deps,
     );
-    result.wrap = await wrapWorktree(companionPath, plan.checkout, repository, deps);
-    if (result.wrap.outcome === "failed") {
-      const message = `wrapping the worktree failed: ${result.wrap.reason}`;
-      // A reused worktree still wrapped from before stays usable; only refreshing it failed.
-      if (plan.reuse && (await stillWrapped(plan.target, result.wrap.runtimes, deps))) {
-        warnings.push(`${plan.repository}: ${message}; its earlier wrap stays`);
-      } else {
-        result.error = message;
-      }
-    }
-  } catch (error) {
-    result.error = `linking the worktree failed: ${errorMessage(error)}`;
-    result.wrap.reason = "worktree not linked";
+    result.wrap = linked.wrap;
+    if (linked.error) result.error = linked.error;
+    if (linked.warning) warnings.push(`${plan.repository}: ${linked.warning}`);
   }
   const command = await installCommand(plan.target);
   result.install.command = command ? command.join(" ") : null;
@@ -785,27 +999,24 @@ async function recordedBranches(
   return byRepository;
 }
 
+/** Returns the Umbrella Repository whose child the repository is, so its mirror is pruned after. */
 async function pruneRepository(
   companionPath: string,
   worksetId: string,
   repository: string,
   branches: ReadonlySet<string>,
+  index: LinkedIndex,
   git: GitRunner,
   deps: WorktreeDeps,
   result: PruneResult,
-): Promise<void> {
-  const { linked } = await linkedCheckout(
-    companionPath,
-    repository,
-    git,
-    (deps.cwd ?? process.cwd)(),
-  );
-  if (!linked) return;
+): Promise<LinkedCheckout | undefined> {
+  const { linked } = linkedCheckout(index, repository);
+  if (!linked) return undefined;
   const entries = await listWorktrees(git, linked.path);
   const main = entries?.[0];
   if (!main) {
     result.warnings.push(`${repository}: cannot list the worktrees of ${linked.path}`);
-    return;
+    return linked.umbrella ? linked : undefined;
   }
   // The first entry is the main checkout; a detached HEAD has no branch and never matches.
   const candidates = entries
@@ -821,6 +1032,7 @@ async function pruneRepository(
       result,
     );
   }
+  return linked.umbrella ? linked : undefined;
 }
 
 interface PruneCandidate {
@@ -828,7 +1040,7 @@ interface PruneCandidate {
   repository: string;
   /** The main checkout's path. */
   main: string;
-  linked: LinkedRepository;
+  linked: LinkedCheckout;
   listed: WorktreeEntry;
 }
 
@@ -848,12 +1060,18 @@ async function pruneWorktree(
     result.kept.push({ ...entry, reason });
     return;
   }
-  // Unwrap first: machine-local state keyed by its path (Claude local-scope MCP) must not outlive it.
-  try {
-    await (deps.unwrap ?? cleanupWorkingRepository)(target, [companionPath]);
-  } catch (error) {
-    result.kept.push({ ...entry, reason: `removing its wrap failed: ${errorMessage(error)}` });
-    return;
+  // A worktree in the mirrored folder carries no wrap; the folder is unwrapped after.
+  const inMirror =
+    linked.umbrella !== undefined &&
+    path.dirname(target) === (await canonical(worktreePathFor(linked.umbrella, worksetId)));
+  if (!inMirror) {
+    // Unwrap first: machine-local state keyed by its path (Claude local-scope MCP) must not outlive it.
+    try {
+      await (deps.unwrap ?? cleanupWorkingRepository)(target, [companionPath]);
+    } catch (error) {
+      result.kept.push({ ...entry, reason: `removing its wrap failed: ${errorMessage(error)}` });
+      return;
+    }
   }
   const removed = await git(main, ["worktree", "remove", target]);
   if (removed.code === 0) {
@@ -861,6 +1079,18 @@ async function pruneWorktree(
     return;
   }
   const refused = removed.stderr.trim() || "git refused";
+  if (inMirror) {
+    result.kept.push({ ...entry, reason: refused });
+    return;
+  }
+  // The umbrella's id is no link for a child's own worktree, so Mate cannot re-wrap it.
+  if (linked.umbrella) {
+    result.kept.push({
+      ...entry,
+      reason: `${refused}; its wrap was removed, run \`${FRAMEWORK_NAME} wrap\` there`,
+    });
+    return;
+  }
   // Kept, so it gets its guardrails back.
   const rewrap = await wrapWorktree(companionPath, main, { id: linked.id, path: target }, deps);
   result.kept.push({
@@ -886,13 +1116,117 @@ export async function pruneWorksetWorktrees(
 ): Promise<PruneResult> {
   const git = deps.git ?? runGit;
   const result: PruneResult = { removed: [], kept: [], warnings: [] };
+  let index: LinkedIndex | undefined;
   for (const workset of done) {
     // oxlint-disable-next-line no-await-in-loop -- Worksets one at a time
     const branches = await recordedBranches(companionPath, workset.changes, result.warnings);
+    if (branches.size === 0) continue;
+    // oxlint-disable-next-line no-await-in-loop -- read once, on first need
+    index ??= await linkedIndex(companionPath, git, (deps.cwd ?? process.cwd)());
+    // Umbrella path to its Repository Link id.
+    const umbrellas = new Map<string, string>();
     for (const [repository, names] of branches) {
       // oxlint-disable-next-line no-await-in-loop -- Git operations on shared checkouts, one at a time
-      await pruneRepository(companionPath, workset.id, repository, names, git, deps, result);
+      const child = await pruneRepository(
+        companionPath,
+        workset.id,
+        repository,
+        names,
+        index,
+        git,
+        deps,
+        result,
+      );
+      if (child?.umbrella) umbrellas.set(child.umbrella, child.id);
+    }
+    for (const [umbrella, repositoryId] of umbrellas) {
+      // oxlint-disable-next-line no-await-in-loop -- after its children, one at a time
+      await pruneMirror(
+        companionPath,
+        { worksetId: workset.id, umbrella, repositoryId },
+        deps,
+        result,
+      );
     }
   }
   return result;
+}
+
+/** Files the OS writes into any folder it shows, e.g. Finder's; never anyone's work. */
+const OS_METADATA = new Set([".DS_Store", "Thumbs.db", "desktop.ini"]);
+
+/**
+ * Top-level names a wrap, a link, or the OS may write; everything else in a mirrored
+ * worktree is someone's work.
+ */
+function mirrorMaterial(): Set<string> {
+  return new Set([
+    ...projectionEntries()
+      .map((entry) => entry.path.split(/[\\/]/)[0]!)
+      .filter((name) => name !== ".git" && name !== "~"),
+    ...OS_METADATA,
+  ]);
+}
+
+/**
+ * Best effort: unwraps and removes the Workset's mirrored worktree, then an empty
+ * `<umbrella>.worktrees`, only when nothing but Mate's material is left. Never recursive,
+ * never forced; a folder that stays is named with the reason.
+ */
+async function pruneMirror(
+  companionPath: string,
+  mirror: { worksetId: string; umbrella: string; repositoryId: string },
+  deps: WorktreeDeps,
+  result: PruneResult,
+): Promise<void> {
+  const { worksetId, umbrella, repositoryId } = mirror;
+  const folder = await canonical(worktreePathFor(umbrella, worksetId));
+  // Only this companion's mirrored worktree, never a folder it does not own.
+  if (!(await isMirrorOf(folder, companionPath, repositoryId))) return;
+  const umbrellas = (result.umbrellas ??= { removed: [], kept: [] });
+  const entry = { workset: worksetId, umbrella, path: folder };
+  const keep = (reason: string): void => void umbrellas.kept.push({ ...entry, reason });
+  if (await holds(folder, (deps.cwd ?? process.cwd)())) return keep("in use (current directory)");
+  const material = mirrorMaterial();
+  const listed = await fs.readdir(folder).catch(() => null);
+  if (listed === null) return keep("cannot list its entries");
+  const others = listed.filter((name) => !material.has(name)).toSorted();
+  if (others.length > 0) return keep(`still holds ${others.join(", ")}`);
+  try {
+    await (deps.unwrap ?? cleanupWorkingRepository)(folder, [companionPath]);
+  } catch (error) {
+    return keep(`removing its wrap failed: ${errorMessage(error)}`);
+  }
+  // A failure shows below as what unwrapping left.
+  await Promise.all(
+    listed
+      .filter((name) => OS_METADATA.has(name))
+      .map((name) => fs.rm(path.join(folder, name), { force: true }).catch(() => undefined)),
+  );
+  try {
+    await fs.rmdir(folder);
+  } catch (error) {
+    const left = await fs.readdir(folder).catch(() => []);
+    const refused =
+      left.length > 0
+        ? `unwrapping left ${left.toSorted().join(", ")}`
+        : `removing it failed: ${errorMessage(error)}`;
+    // Kept, so it gets its link and guardrails back, and a later prune finds it again.
+    const restored = await linkAndWrap(
+      companionPath,
+      { id: repositoryId, path: folder },
+      umbrella,
+      false,
+      deps,
+    );
+    const failure = restored.error ?? restored.warning;
+    return keep(
+      failure
+        ? `${refused}; restoring it failed, run \`${FRAMEWORK_NAME} wrap\` there: ${failure}`
+        : refused,
+    );
+  }
+  umbrellas.removed.push(entry);
+  // The parent stays while another Workset's mirror is in it.
+  await fs.rmdir(path.dirname(folder)).catch(() => undefined);
 }
