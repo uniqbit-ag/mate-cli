@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 
 import { guideTree, markdownTree } from "./markdown-tree";
 
-const routes = { "/docs/acme": "/getting-started/worktrees" };
+const routes = {
+  "/docs/acme": "/getting-started/worktrees",
+  "/docs/other": "https://example.com/docs/other/",
+};
 const tree = (source: string) => guideTree(source, "acme.mdx", routes);
 
 describe("bundled guide Markdown", () => {
@@ -20,6 +23,9 @@ describe("bundled guide Markdown", () => {
     expect(nodes).toContain('"guide":"/getting-started/worktrees#setup"');
     expect(nodes).toContain('"guide":"#setup"');
     expect(nodes).toContain('"href":"https://example.com"');
+    expect(JSON.stringify(tree("[other](/docs/other#intro)"))).toContain(
+      '"href":"https://example.com/docs/other/#intro"',
+    );
     expect(nodes).not.toContain('"note"');
     expect(JSON.stringify(markdownTree("[note](acme.md)", "index.md"))).toContain(
       '"note":"acme.md"',
