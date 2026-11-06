@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
+import { cp, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
@@ -89,6 +91,88 @@ async function follow(address: string, studio: StudioServices) {
 }
 
 describe("built server", () => {
+  test("serves both guides from a relocated bundle without the docs checkout or network", async () => {
+    const folder = await mkdtemp(path.join(tmpdir(), "acme-studio-offline-"));
+    try {
+      await cp(path.dirname(SERVER), folder, { recursive: true });
+      const { default: handler } = await import(path.join(folder, "server.js"));
+      for (const topic of ["worktrees", "vscode"]) {
+        const response = await handler.fetch(
+          new Request(
+            `http://127.0.0.1/getting-started/${topic}?companion=${acmeDigest}&studioMode=engineering`,
+          ),
+          { context: { studio: selecting(services) } },
+        );
+        expect(response.status).toBe(200);
+        const html = await response.text();
+        expect(html).toContain(
+          topic === "worktrees" ? "What is isolated" : "Install the extension",
+        );
+      }
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+  test("renders bundled developer guides with the initial response and native links", async () => {
+    const selected = { ...selecting(services), factoryMode: false };
+    for (const [topic, expected] of [
+      ["", "Your first isolated change"],
+      ["/worktrees", "What is isolated"],
+      ["/vscode", "Install the extension"],
+    ]) {
+      const { response } = await follow(
+        `/getting-started${topic}?companion=${acmeDigest}&studioMode=engineering`,
+        selected,
+      );
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      const main = html.slice(html.indexOf('id="studio-main"'), html.indexOf("</main>"));
+      expect(main).toContain(expected!);
+      expect(main).toContain("mate");
+      expect(main).toContain('aria-current="page"');
+      expect(
+        main.slice(main.indexOf("<nav"), main.indexOf("</nav>")).match(/aria-current="page"/g),
+      ).toHaveLength(1);
+      expect(main).not.toContain("iframe");
+      expect(main).not.toContain("md-frontmatter");
+      expect(html).not.toContain('href="/factory');
+      expect(main).toContain(`/getting-started/worktrees?companion=${acmeDigest}`);
+    }
+  });
+
+  test("keeps the companion picker and Analysis fallback for guide routes", async () => {
+    const { response } = await follow(
+      "/getting-started/worktrees?studioMode=engineering",
+      services,
+    );
+    expect(await response.text()).toContain("Choose a Companion Repository");
+    const analysis = await follow(
+      `/getting-started/vscode?companion=${acmeDigest}&studioMode=analysis`,
+      selecting(services),
+    );
+    expect(analysis.location.pathname).toBe("/");
+    expect(await analysis.response.text()).not.toContain('aria-label="Getting Started topics"');
+  });
+
+  test("keeps heading targets when canonicalizing a direct guide URL", async () => {
+    const result = await follow(
+      `/getting-started/worktrees?companion=${acmeDigest}#clean-up-safely`,
+      selecting(services),
+    );
+    expect(result.location.searchParams.get("studioMode")).toBe("engineering");
+    expect(result.location.hash).toBe("#clean-up-safely");
+  });
+
+  test("unknown guide slugs show a local way back, never arbitrary content", async () => {
+    const { response } = await follow(
+      `/getting-started/acme-unknown?companion=${acmeDigest}&studioMode=engineering`,
+      selecting(services),
+    );
+    const html = await response.text();
+    expect(html).toContain("Guide not found");
+    expect(html).toContain("Return to Start here");
+  });
+
   test("serves the document and its sidebar under Bun", async () => {
     const handler = await built();
     const response = await handler.fetch(

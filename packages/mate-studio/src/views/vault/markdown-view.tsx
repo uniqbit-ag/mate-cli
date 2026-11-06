@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { MdElement, MdNode } from "@uniqbit/mate-core/studio";
 import { createElement, type ReactNode } from "react";
+import type { StudioSearch } from "../../lib/search";
 
 const TAGS = new Set<string>([
   "h1",
@@ -34,10 +35,21 @@ const TAGS = new Set<string>([
   "br",
 ]);
 
-function element(node: MdElement, key: number): ReactNode {
-  const children = node.c?.map(render);
+function element(node: MdElement, key: number, guideSearch?: StudioSearch): ReactNode {
+  const children = node.c?.map((child, index) => render(child, index, guideSearch));
   const { a } = node;
   if (node.t === "a") {
+    if (guideSearch && a?.guide) {
+      const [path, hash] = a.guide.split("#");
+      if (path && !/^\/getting-started(?:\/(?:worktrees|vscode))?$/.test(path)) {
+        return <span key={key}>{children}</span>;
+      }
+      return (
+        <Link key={key} to={path || "."} hash={hash} search={guideSearch}>
+          {children}
+        </Link>
+      );
+    }
     if (a?.note) {
       return (
         <Link
@@ -67,11 +79,26 @@ function element(node: MdElement, key: number): ReactNode {
   }
   // A tag outside the fixed set is shown as its text, never created.
   if (!TAGS.has(node.t)) return <span key={key}>{children}</span>;
+  if (guideSearch && a?.id && children)
+    children.push(
+      <Link
+        key="anchor"
+        to="."
+        hash={a.id}
+        search={guideSearch}
+        className="guide-anchor"
+        aria-label={`Link to ${a.id}`}
+      >
+        #
+      </Link>,
+    );
   return createElement(
     node.t,
     {
       key,
       className: a?.className,
+      id: guideSearch ? a?.id : undefined,
+      tabIndex: guideSearch && a?.id ? -1 : undefined,
       start: a?.start,
       style: a?.align ? { textAlign: a.align } : undefined,
     },
@@ -79,11 +106,21 @@ function element(node: MdElement, key: number): ReactNode {
   );
 }
 
-function render(node: MdNode, key: number): ReactNode {
-  return typeof node === "string" ? node : element(node, key);
+function render(node: MdNode, key: number, guideSearch?: StudioSearch): ReactNode {
+  return typeof node === "string" ? node : element(node, key, guideSearch);
 }
 
 /** A file the server rendered to data; React escapes every value it shows. */
-export function MarkdownView({ nodes }: { nodes: MdNode[] }) {
-  return <div className="markdown-body">{nodes.map(render)}</div>;
+export function MarkdownView({
+  nodes,
+  guideSearch,
+}: {
+  nodes: MdNode[];
+  guideSearch?: StudioSearch;
+}) {
+  return (
+    <div className="markdown-body">
+      {nodes.map((node, index) => render(node, index, guideSearch))}
+    </div>
+  );
 }

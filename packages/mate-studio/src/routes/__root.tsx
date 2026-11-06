@@ -29,7 +29,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       viewAt(location.pathname),
       shell.studioMode,
     );
-    if (href) throw redirect({ href, replace: true });
+    if (href) {
+      const hash =
+        viewAt(location.pathname) === "getting-started" && location.hash
+          ? `#${location.hash.replace(/^#/, "")}`
+          : "";
+      throw redirect({ href: `${href}${hash}`, replace: true });
+    }
   },
   loader: ({ context, deps }) => loadHeld(context.queryClient, shellQuery(deps)),
   // Waiting on the shell keeps the frame shown with the progress bar; views keep their placeholder.

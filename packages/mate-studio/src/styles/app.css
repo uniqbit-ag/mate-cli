@@ -1107,6 +1107,26 @@
   .markdown-body {
     overflow-wrap: anywhere;
   }
+  .guide-reader .markdown-body {
+    font-size: 0.9375rem;
+    line-height: 1.7;
+  }
+  .guide-reader .markdown-body pre,
+  .guide-reader .md-table {
+    max-width: 100%;
+  }
+  .guide-reader .markdown-body [id] {
+    scroll-margin-top: 24px;
+  }
+  .guide-reader .guide-anchor {
+    margin-left: 0.5em;
+    color: var(--muted);
+    text-decoration: none;
+  }
+  .guide-reader .guide-anchor:hover,
+  .guide-reader .guide-anchor:focus-visible {
+    color: var(--accent);
+  }
   .markdown-body > :first-child {
     margin-top: 0;
   }

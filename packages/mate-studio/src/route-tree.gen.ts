@@ -11,11 +11,14 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as FactoryRouteImport } from './routes/factory'
+import { Route as GettingStartedRouteImport } from './routes/getting-started'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as SpecsRouteImport } from './routes/specs'
 import { Route as VaultRouteImport } from './routes/vault'
 import { Route as WorkflowRouteImport } from './routes/workflow'
+import { Route as GettingStartedIndexRouteImport } from './routes/getting-started.index'
+import { Route as GettingStartedTopicRouteImport } from './routes/getting-started.$topic'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -25,6 +28,11 @@ const IndexRoute = IndexRouteImport.update({
 const FactoryRoute = FactoryRouteImport.update({
   id: '/factory',
   path: '/factory',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GettingStartedRoute = GettingStartedRouteImport.update({
+  id: '/getting-started',
+  path: '/getting-started',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReportsRoute = ReportsRouteImport.update({
@@ -52,15 +60,28 @@ const WorkflowRoute = WorkflowRouteImport.update({
   path: '/workflow',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GettingStartedIndexRoute = GettingStartedIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => GettingStartedRoute,
+} as any)
+const GettingStartedTopicRoute = GettingStartedTopicRouteImport.update({
+  id: '/$topic',
+  path: '/$topic',
+  getParentRoute: () => GettingStartedRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/factory': typeof FactoryRoute
+  '/getting-started': typeof GettingStartedRouteWithChildren
   '/reports': typeof ReportsRoute
   '/skills': typeof SkillsRoute
   '/specs': typeof SpecsRoute
   '/vault': typeof VaultRoute
   '/workflow': typeof WorkflowRoute
+  '/getting-started/$topic': typeof GettingStartedTopicRoute
+  '/getting-started/': typeof GettingStartedIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -70,27 +91,35 @@ export interface FileRoutesByTo {
   '/specs': typeof SpecsRoute
   '/vault': typeof VaultRoute
   '/workflow': typeof WorkflowRoute
+  '/getting-started/$topic': typeof GettingStartedTopicRoute
+  '/getting-started': typeof GettingStartedIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/factory': typeof FactoryRoute
+  '/getting-started': typeof GettingStartedRouteWithChildren
   '/reports': typeof ReportsRoute
   '/skills': typeof SkillsRoute
   '/specs': typeof SpecsRoute
   '/vault': typeof VaultRoute
   '/workflow': typeof WorkflowRoute
+  '/getting-started/$topic': typeof GettingStartedTopicRoute
+  '/getting-started/': typeof GettingStartedIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/factory'
+    | '/getting-started'
     | '/reports'
     | '/skills'
     | '/specs'
     | '/vault'
     | '/workflow'
+    | '/getting-started/$topic'
+    | '/getting-started/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -100,20 +129,26 @@ export interface FileRouteTypes {
     | '/specs'
     | '/vault'
     | '/workflow'
+    | '/getting-started/$topic'
+    | '/getting-started'
   id:
     | '__root__'
     | '/'
     | '/factory'
+    | '/getting-started'
     | '/reports'
     | '/skills'
     | '/specs'
     | '/vault'
     | '/workflow'
+    | '/getting-started/$topic'
+    | '/getting-started/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   FactoryRoute: typeof FactoryRoute
+  GettingStartedRoute: typeof GettingStartedRouteWithChildren
   ReportsRoute: typeof ReportsRoute
   SkillsRoute: typeof SkillsRoute
   SpecsRoute: typeof SpecsRoute
@@ -135,6 +170,13 @@ declare module '@tanstack/react-router' {
       path: '/factory'
       fullPath: '/factory'
       preLoaderRoute: typeof FactoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/getting-started': {
+      id: '/getting-started'
+      path: '/getting-started'
+      fullPath: '/getting-started'
+      preLoaderRoute: typeof GettingStartedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reports': {
@@ -172,12 +214,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkflowRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/getting-started/': {
+      id: '/getting-started/'
+      path: '/'
+      fullPath: '/getting-started/'
+      preLoaderRoute: typeof GettingStartedIndexRouteImport
+      parentRoute: typeof GettingStartedRoute
+    }
+    '/getting-started/$topic': {
+      id: '/getting-started/$topic'
+      path: '/$topic'
+      fullPath: '/getting-started/$topic'
+      preLoaderRoute: typeof GettingStartedTopicRouteImport
+      parentRoute: typeof GettingStartedRoute
+    }
   }
 }
+
+interface GettingStartedRouteChildren {
+  GettingStartedTopicRoute: typeof GettingStartedTopicRoute
+  GettingStartedIndexRoute: typeof GettingStartedIndexRoute
+}
+
+const GettingStartedRouteChildren: GettingStartedRouteChildren = {
+  GettingStartedTopicRoute: GettingStartedTopicRoute,
+  GettingStartedIndexRoute: GettingStartedIndexRoute,
+}
+
+const GettingStartedRouteWithChildren = GettingStartedRoute._addFileChildren(
+  GettingStartedRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   FactoryRoute: FactoryRoute,
+  GettingStartedRoute: GettingStartedRouteWithChildren,
   ReportsRoute: ReportsRoute,
   SkillsRoute: SkillsRoute,
   SpecsRoute: SpecsRoute,

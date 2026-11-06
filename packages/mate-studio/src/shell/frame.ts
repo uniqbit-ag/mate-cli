@@ -16,12 +16,19 @@ import { useTerminalUi } from "../stores/terminal-ui";
 /** What the frame's parts share: view order and icons, companion names, refresh and terminal. */
 
 /** Navigation order; core decides which views a mode offers. */
-const MODE_ORDER: readonly StudioView[] = ["dashboard", "workflow", "factory", "skills"];
+const MODE_ORDER: readonly StudioView[] = [
+  "dashboard",
+  "workflow",
+  "factory",
+  "skills",
+  "getting-started",
+];
 const LIBRARY_ORDER: readonly StudioView[] = ["specs", "vault", "reports"];
 
 export const VIEW_ICONS: Record<StudioView, IconName> = {
   dashboard: "home",
   workflow: "flow",
+  "getting-started": "doc",
   factory: "factory",
   skills: "spark",
   specs: "doc",
