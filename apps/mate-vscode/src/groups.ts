@@ -17,6 +17,8 @@ export interface Workset {
 export type SessionGroupKind = "workset" | "branch" | "default" | "older" | "none";
 
 export interface SessionGroup {
+  /** Stable across reloads, so the tree keeps the group's collapse state. */
+  key: string;
   kind: SessionGroupKind;
   label: string;
   description?: string;
@@ -84,6 +86,7 @@ export function groupSessions(
     let group = groups.get(key);
     if (!group) {
       group = {
+        key,
         kind,
         label,
         description: kind === "workset" ? session.branch : undefined,
@@ -108,7 +111,8 @@ export function groupSessions(
     else if (session.branch === defaultBranch) add("default", "default", session.branch, session);
     else add(`b:${session.branch}`, "branch", session.branch, session);
   }
-  if (older.length > 0) groups.set("older", { kind: "older", label: "Older", sessions: older });
+  if (older.length > 0)
+    groups.set("older", { key: "older", kind: "older", label: "Older", sessions: older });
 
   const rank: Record<SessionGroupKind, number> = {
     workset: 0,

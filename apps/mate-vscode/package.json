@@ -43,6 +43,17 @@
     "typescript": "latest"
   },
   "contributes": {
+    "configuration": {
+      "title": "Mate",
+      "properties": {
+        "mate.autoRefreshInterval": {
+          "type": "number",
+          "default": 30,
+          "minimum": 0,
+          "markdownDescription": "Seconds between automatic reloads of the visible Mate sections, only while the window is focused. Values below 5 count as 5. `0` turns the interval off; sections still reload when the window regains focus."
+        }
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {

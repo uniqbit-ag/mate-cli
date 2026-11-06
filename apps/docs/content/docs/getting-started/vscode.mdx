@@ -61,7 +61,14 @@ Once the managed workspace is open, the sidebar offers:
 - **Open changes:** active companion changes grouped by Workset, with task progress and session counts. Expand a group to see its changes or resume the latest session. Opening a change shows its proposal, or its tasks when it has no proposal.
 - **Ready to publish:** archived changes reported by Mate, including those still waiting for their delivery merge. Being listed does not mean a change has been published.
 
-Use **Refresh** to update the sidebar. It also reloads when made visible.
+Visible sections reload every 30 seconds while the editor window is focused,
+and when you return to the window. Change the interval with the
+`mate.autoRefreshInterval` setting; `0` turns it off and keeps the reload on
+focus. Use **Refresh** to update the sidebar at once.
+
+Reloads read only local state and make no network calls. A delivery branch
+merged on the remote keeps showing as waiting for merge until
+`mate artifact link <change> --refresh` records the merge.
 
 ## Start and reconnect a session
 
