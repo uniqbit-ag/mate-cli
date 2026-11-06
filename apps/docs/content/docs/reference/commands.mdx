@@ -289,9 +289,12 @@ Once that workspace is open, the Mate sidebar shows:
   `mate opencode -- --bg`): closing a terminal detaches it, _Attach_ reconnects
   one, _Stop_ ends the agent's work and keeps the conversation for _Resume_.
 - **Worktrees**: the repository's Git worktrees; Workset branches are marked.
-  Opening one opens a new window.
+  Opening one opens a new window; its _New session_ button starts a session in
+  that worktree.
 - **Open changes**: the active changes of the linked Companion Repository with
   their task progress.
+- **Ready to archive**: the active changes whose tasks are all checked, with
+  their Workset. They are no longer listed under Open changes.
 - **Ready to publish**: the archived changes `mate artifact pending` reports,
   marked when they still wait for their merge.
 
