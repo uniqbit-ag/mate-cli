@@ -23,7 +23,7 @@ const MODE_ORDER: readonly StudioView[] = [
   "skills",
   "getting-started",
 ];
-const LIBRARY_ORDER: readonly StudioView[] = ["specs", "vault", "reports"];
+const LIBRARY_ORDER: readonly StudioView[] = ["specs", "vault", "graph", "reports"];
 
 export const VIEW_ICONS: Record<StudioView, IconName> = {
   dashboard: "home",
@@ -34,6 +34,7 @@ export const VIEW_ICONS: Record<StudioView, IconName> = {
   specs: "doc",
   vault: "folder",
   reports: "chart",
+  graph: "graph",
 };
 
 /** Core's views in Studio's order; a view the order does not name yet goes last, never missing. */

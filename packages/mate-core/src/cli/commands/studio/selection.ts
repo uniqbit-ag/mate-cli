@@ -10,7 +10,8 @@ export type StudioView =
   | "specs"
   | "skills"
   | "vault"
-  | "reports";
+  | "reports"
+  | "graph";
 
 export const STUDIO_VIEWS: readonly StudioView[] = [
   "dashboard",
@@ -21,6 +22,7 @@ export const STUDIO_VIEWS: readonly StudioView[] = [
   "skills",
   "vault",
   "reports",
+  "graph",
 ];
 
 /** A lens on the views offered, never access control. */
@@ -36,7 +38,7 @@ export const MODE_VIEWS: Readonly<Record<StudioMode, readonly StudioView[]>> = {
 };
 
 /** Views every mode is offered, in navigation order. */
-export const SHARED_VIEWS: readonly StudioView[] = ["vault", "specs", "reports"];
+export const SHARED_VIEWS: readonly StudioView[] = ["vault", "specs", "reports", "graph"];
 
 /** Where a mode lands when its URL names no view, or one it is not offered. */
 export const LANDING_VIEW: Readonly<Record<StudioMode, StudioView>> = {
@@ -94,6 +96,8 @@ export const REFRESH_PARAM = "refresh";
 export const FILE_PARAM = "path";
 export const DIR_PARAM = "dir";
 export const MODE_PARAM = "mode";
+/** The Graph view's selected node id; Studio's graph route reads it, no other view does. */
+export const NODE_PARAM = "node";
 
 /** Every URL parameter Studio names; no other module writes one out. */
 export const STUDIO_PARAMS: readonly string[] = [
@@ -105,6 +109,7 @@ export const STUDIO_PARAMS: readonly string[] = [
   FILE_PARAM,
   DIR_PARAM,
   MODE_PARAM,
+  NODE_PARAM,
 ];
 
 /** Filled into a prompt when no change is named, so a prompt is never half-written. */

@@ -59,6 +59,7 @@ import {
   type StudioProfile,
 } from "./selection";
 import { errorMessage } from "../../../runtime/error-message";
+import type { SpecGraphCache } from "./graph";
 import { createStudioSnapshotCache, type StudioSnapshotCache } from "./snapshot";
 import type { StudioPage } from "./views/model";
 import { createVaultManager, resolveVaultPath, VaultPathError, type VaultManager } from "./vault";
@@ -370,6 +371,8 @@ export function createStudioFetch(
   const snapshots =
     deps.snapshots ?? createStudioSnapshotCache({ assembleCompanionPayload: companion });
   const vault = deps.vault ?? createVaultManager();
+  /** Created on the first Graph request, so other views never load the graph index. */
+  let graphs: Promise<SpecGraphCache> | null = null;
   const writable = options.writable === true;
   const policy = modePolicy(options.profile ?? "standard");
   const broker = deps.factoryClient !== undefined ? deps.factoryClient : factoryClient();
@@ -560,6 +563,11 @@ export function createStudioFetch(
     vaultSave: async (digest, path, content, token) => {
       if (!writable) throw new VaultPathError("start Studio with --writable to enable saving");
       return vault.save(await companionPathOf(digest), path, content, token);
+    },
+    graph: async (digest) => {
+      const companionPath = await companionPathOf(digest);
+      graphs ??= import("./graph").then(({ createSpecGraphCache }) => createSpecGraphCache());
+      return (await graphs).read(companionPath);
     },
     reports: async (digest) => {
       await companionPathOf(digest);

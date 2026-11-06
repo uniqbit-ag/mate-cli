@@ -59,7 +59,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 function RootLayout() {
-  return <StudioLayout search={Route.useSearch()} />;
+  const { companion, studioMode } = Route.useSearch();
+  // Only the shared address: a view's own parameters (a vault path, a graph node) stay off
+  // the links to other views.
+  return <StudioLayout search={{ companion, studioMode }} />;
 }
 
 function RootDocument({ children }: { children: ReactNode }) {

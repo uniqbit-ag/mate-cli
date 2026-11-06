@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { cp, mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -315,5 +315,42 @@ describe("built server", () => {
     const html = await served.text();
     expect(html).toContain("Engineering is unavailable in the appliance.");
     expect(html).not.toMatch(/href="\/(workflow|skills|factory)/);
+  });
+
+  test("keeps the graph renderer in its own chunk", async () => {
+    const assets = path.join(import.meta.dir, "../dist/client/assets");
+    const chunks = (await readdir(assets)).filter((name) => name.endsWith(".js"));
+    const carrying: string[] = [];
+    for (const name of chunks) {
+      // oxlint-disable-next-line no-await-in-loop -- a few dozen small files
+      const source = await readFile(path.join(assets, name), "utf8");
+      // A sigma shader and a graphology method stand for each library.
+      if (source.includes("sdf_diamond") || source.includes("addUndirectedEdgeWithKey")) {
+        carrying.push(name);
+      }
+    }
+    expect(carrying).toHaveLength(1);
+    expect(carrying[0]).toStartWith("graph-canvas-");
+  });
+
+  test("serves the Graph view without building the graph on the server", async () => {
+    let asked = 0;
+    const studio = {
+      ...selecting(services),
+      graph: async () => {
+        asked += 1;
+        throw new Error("not on the server");
+      },
+    } as unknown as StudioServices;
+    for (const studioMode of ["engineering", "analysis"]) {
+      const { response } = await follow(
+        `/graph?companion=${acmeDigest}&studioMode=${studioMode}&node=spec%3Aacme-gone`,
+        studio,
+      );
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html).toMatch(/<a[^>]*aria-current="page"[^>]*href="\/graph\?/);
+    }
+    expect(asked).toBe(0);
   });
 });
