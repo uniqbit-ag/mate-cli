@@ -505,12 +505,14 @@ describe("bundled Mate pre-explore skills", () => {
         "ruff format",
         "Format only the files you changed",
         "never an `npx`-downloaded version",
-        "mktemp -d",
-        "delete only the path",
+        "Run `mktemp -d` once per run",
+        "under its repository-relative path",
         "Where `mktemp` is unavailable",
+        "delete only the backup folder this run created",
       ]) {
         expect(source).toContain(marker);
       }
+      expect(sectionOf(source, "## Red Flags")).toMatch(/fixed `\$TMPDIR` folder/);
     }
   });
 
