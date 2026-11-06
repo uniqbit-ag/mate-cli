@@ -4,6 +4,7 @@ import {
   edgeKey,
   indexNodes,
   NO_FILTER,
+  placeNodes,
   searchNodes,
   seedPositions,
   sharedArchives,
@@ -26,6 +27,27 @@ describe("toGraphology", () => {
 
   it("seeds the same positions on every visit", () => {
     expect(seedPositions(fixture())).toEqual(seedPositions(fixture()));
+  });
+});
+
+describe("placeNodes", () => {
+  it("keeps held positions by node id and places a new node near its held neighbours", () => {
+    const wire = fixture();
+    const held = new Map(
+      wire.nodes.slice(1).map((node, index) => [node.id, { x: index, y: index }]),
+    );
+    const { positions, missing } = placeNodes(wire, held);
+    expect(missing).toBe(1);
+    expect(positions.slice(1)).toEqual(
+      wire.nodes.slice(1).map((_, index) => ({ x: index, y: index })),
+    );
+    expect(Math.hypot(positions[0].x, positions[0].y)).toBeLessThan(10);
+  });
+
+  it("needs no layout when every node is held", () => {
+    const wire = fixture();
+    const held = new Map(wire.nodes.map((node) => [node.id, { x: 1, y: 2 }]));
+    expect(placeNodes(wire, held).missing).toBe(0);
   });
 });
 

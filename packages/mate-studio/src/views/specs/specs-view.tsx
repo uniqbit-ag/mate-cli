@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
+  canonicalSpecPath,
+  ROOT_AREA_LABEL,
   type SpecActionOffer,
   type StudioCompanionPayload,
   type StudioSpec,
@@ -19,8 +21,6 @@ import { groupSpecsByArea } from "./spec-areas";
 
 const NO_ACTIONS: SpecActionOffer[] = [];
 
-const specPath = (capability: string) => `openspec/specs/${capability}/spec.md`;
-
 function specStatus(spec: StudioSpec) {
   if (spec.valid === false) {
     return <StatusWord marker="issue">{`${spec.issueCount ?? 0} issues`}</StatusWord>;
@@ -31,7 +31,7 @@ function specStatus(spec: StudioSpec) {
 
 const ROOT_AREA = ".";
 /** The repository-root Area reads as words; any other Area is its path. */
-const areaLabel = (area: string): string => (area === ROOT_AREA ? "Repository root" : area);
+const areaLabel = (area: string): string => (area === ROOT_AREA ? ROOT_AREA_LABEL : area);
 
 function requirementsText(count: number | undefined): string {
   if (count === undefined) return "requirements unknown";
@@ -182,7 +182,7 @@ export function SpecDetail({
   /** Sections shown between the head and the spec, e.g. the Graph's History. */
   children?: ReactNode;
 }) {
-  const path = specPath(spec.capability);
+  const path = canonicalSpecPath(spec.capability);
   const file = useQuery({
     ...vaultQuery(companion ?? "", { path }),
     enabled: Boolean(companion),

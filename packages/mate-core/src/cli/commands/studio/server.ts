@@ -567,7 +567,7 @@ export function createStudioFetch(
     graph: async (digest) => {
       const companionPath = await companionPathOf(digest);
       graphs ??= import("./graph").then(({ createSpecGraphCache }) => createSpecGraphCache());
-      return (await graphs).read(companionPath, snapshots.collectedAt?.(companionPath) ?? null);
+      return (await graphs).read(companionPath);
     },
     reports: async (digest) => {
       await companionPathOf(digest);

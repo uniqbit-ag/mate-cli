@@ -23,7 +23,7 @@ const MODE_ORDER: readonly StudioView[] = [
   "skills",
   "getting-started",
 ];
-const LIBRARY_ORDER: readonly StudioView[] = ["specs", "vault", "reports", "graph"];
+const LIBRARY_ORDER: readonly StudioView[] = ["specs", "vault", "graph", "reports"];
 
 export const VIEW_ICONS: Record<StudioView, IconName> = {
   dashboard: "home",

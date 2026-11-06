@@ -2,11 +2,19 @@ import { GRAPH_EDGE_STRIDE, type StudioSpecGraph } from "@uniqbit/mate-core/stud
 import type { Attributes } from "graphology-types";
 import FA2Layout from "graphology-layout-forceatlas2/worker";
 import { inferSettings } from "graphology-layout-forceatlas2";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 import { Sigma } from "sigma";
-import { extremityArrow, sdfCircle, sdfDiamond, sdfSquare } from "sigma/rendering";
 
-import { type EdgeAttributes, type EdgeFilter, layoutWeight, type NodeAttributes } from "./model";
+import { cssColor, DEPTH_LAYERS, DIM_DEPTH, dimLayer } from "./dim-layer";
+import {
+  type EdgeAttributes,
+  type EdgeFilter,
+  edgeVisible,
+  layoutWeight,
+  type NodeAttributes,
+  placeNodes,
+  type Point,
+} from "./model";
 import { filterEdges, type SpecGraph, toGraphology } from "./spec-graph";
 
 /**
@@ -16,6 +24,8 @@ import { filterEdges, type SpecGraph, toGraphology } from "./spec-graph";
 
 interface GraphCanvasProps {
   wire: StudioSpecGraph;
+  /** Whose graph this is; laid-out positions are held per key, so a rebuild keeps them. */
+  layoutKey: string;
   filter: EdgeFilter;
   /** The selected node id; it and its neighbours stay highlighted. */
   selected: string | null;
@@ -25,18 +35,24 @@ interface GraphCanvasProps {
   onSelectEdge: (index: number) => void;
 }
 
-/** Laid-out positions per wire graph, so a revisit draws at once and runs no layout. */
-const settled = new WeakMap<StudioSpecGraph, { x: number; y: number }[]>();
+/**
+ * Laid-out positions per layout key and node id, so a revisit draws at once and runs no layout,
+ * and a rebuilt graph lays out only around the nodes it adds.
+ */
+const settled = new Map<string, ReadonlyMap<string, Point>>();
 
 /** How long the pointer rests on a node before it and its neighbours are highlighted. */
 const HOVER_REST_MS = 70;
 
-/** Above this many nodes the layout's positions are shown every `STEP_MS`, not every step. */
+/** Above this many nodes the layout's positions are shown in steps, not every iteration. */
 const STEPPED_LAYOUT_ORDER = 2_000;
-const STEP_MS = 1_000;
+/** Each step re-indexes the graph, so larger graphs step less often: 1s, up to 3s at 150k. */
+const stepMs = (order: number) => Math.min(3_000, Math.max(1_000, order / 50));
 
 /** Layout runs at most this long; large graphs get longer, capped. */
 const layoutBudget = (order: number) => Math.min(15_000, 3_000 + order * 0.6);
+/** Share of the full budget a layout gets when most nodes keep held positions. */
+const MIN_BUDGET_SHARE = 0.2;
 
 interface Palette {
   text: string;
@@ -69,38 +85,33 @@ function nodeColor(palette: Palette, kind: NodeAttributes["kind"]): string {
   return palette.accent;
 }
 
-function edgeColor(palette: Palette, kind: EdgeAttributes["kind"]): string {
-  if (kind === "mentions") return palette.text;
-  if (kind === "co-change") return palette.accent;
-  return palette.muted;
-}
-
-const SHAPES: Record<NodeAttributes["kind"], string> = {
-  repository: "square",
-  area: "diamond",
-  capability: "circle",
+/**
+ * Edges are quiet hairlines in the muted tone, so thousands of them read as texture rather than
+ * a fill; only a highlight gives them colour. Mentions are a little stronger than the rest.
+ */
+const EDGE_OPACITY: Record<EdgeAttributes["kind"], number> = {
+  binds: 0.18,
+  in: 0.18,
+  "co-change": 0.22,
+  mentions: 0.45,
 };
 
 /** What the styles read, as attributes; written again only when the theme changes. */
 interface NodePaint {
   color: string;
-  fadedColor: string;
   labelColor: string;
-  fadedLabelColor: string;
   backdropColor: string;
-  shape: string;
   hoverSize: number;
 }
 
 interface EdgePaint {
   color: string;
-  fadedColor: string;
+  highlightColor: string;
   opacity: number;
-  head: string;
 }
 
-/** Set on everything outside a highlight. */
-type FadeState = { isFaded: boolean };
+/** How much the veil covers the rest of the graph while something is highlighted. */
+const DIM_ALPHA = 0.78;
 
 type PaintedNode = NodeAttributes & Partial<NodePaint>;
 type PaintedEdge = EdgeAttributes & Partial<EdgePaint>;
@@ -110,110 +121,111 @@ function paint(graph: SpecGraph, palette: Palette): void {
   graph.updateEachNodeAttributes((_node, attributes) => ({
     ...attributes,
     color: nodeColor(palette, attributes.kind),
-    fadedColor: palette.border,
     labelColor: palette.text,
-    fadedLabelColor: palette.muted,
     backdropColor: palette.panel,
-    shape: SHAPES[attributes.kind],
-    hoverSize: attributes.size * 1.4,
+    hoverSize: attributes.size * 1.6,
   }));
   graph.updateEachEdgeAttributes((_edge, attributes) => ({
     ...attributes,
-    color: edgeColor(palette, attributes.kind),
-    fadedColor: palette.border,
-    opacity: attributes.kind === "co-change" ? 0.45 : 0.6,
-    head: attributes.kind === "mentions" ? "arrow" : "none",
+    color: attributes.kind === "mentions" ? palette.text : palette.muted,
+    highlightColor:
+      attributes.kind === "binds" || attributes.kind === "in" ? palette.info : palette.accent,
+    opacity: EDGE_OPACITY[attributes.kind],
   }));
 }
 
+const PRIMITIVES = { depthLayers: DEPTH_LAYERS };
+
 /**
  * Styles are attribute bindings and item-state conditionals only: Sigma re-evaluates a style
- * function on every camera move, which on large graphs costs whole frames.
+ * function on every camera move, which on large graphs costs whole frames. Every node is a
+ * circle; kind shows in colour and size, which stays legible when the whole graph is in view.
  */
 // oxlint-disable unicorn/no-thenable -- Sigma's style conditionals are `{ whenState, then }` objects
 function createRenderer(graph: SpecGraph, container: HTMLElement) {
-  return new Sigma<PaintedNode, PaintedEdge, Attributes, FadeState, FadeState>(graph, container, {
-    primitives: {
-      nodes: { shapes: [sdfCircle(), sdfSquare(), sdfDiamond()] },
-      edges: { extremities: [extremityArrow()] },
-    },
-    customNodeState: { isFaded: false },
-    customEdgeState: { isFaded: false },
-    styles: {
-      nodes: [
-        {
-          x: { attribute: "x" },
-          y: { attribute: "y" },
-          label: { attribute: "label" },
-          shape: { attribute: "shape" },
-          size: { attribute: "size" },
-          color: { attribute: "color" },
-          labelColor: { attribute: "labelColor" },
-          labelVisibility: "auto",
-          depth: "nodes",
-          visibility: { whenState: "isHidden", then: "hidden", else: "visible" },
-          backdropVisibility: "hidden",
-          backdropColor: { attribute: "backdropColor" },
-          backdropShadowColor: "rgba(0, 0, 0, 0.35)",
-          backdropShadowBlur: 10,
-          backdropPadding: 5,
-        },
-        {
-          whenState: "isFaded",
-          then: {
-            color: { attribute: "fadedColor" },
-            labelColor: { attribute: "fadedLabelColor" },
+  return new Sigma<PaintedNode, PaintedEdge, Attributes, object, object, object, typeof PRIMITIVES>(
+    graph,
+    container,
+    {
+      primitives: PRIMITIVES,
+      styles: {
+        nodes: [
+          {
+            x: { attribute: "x" },
+            y: { attribute: "y" },
+            label: { attribute: "label" },
+            size: { attribute: "size" },
+            color: { attribute: "color" },
+            labelColor: { attribute: "labelColor" },
+            labelVisibility: "auto",
+            depth: "nodes",
+            visibility: { whenState: "isHidden", then: "hidden", else: "visible" },
+            backdropVisibility: "hidden",
+            backdropColor: { attribute: "backdropColor" },
+            backdropShadowColor: "rgba(0, 0, 0, 0.3)",
+            backdropShadowBlur: 8,
+            backdropPadding: 4,
           },
-        },
-        { whenState: "isHighlighted", then: { labelVisibility: "visible", depth: "topNodes" } },
-        {
-          whenState: "isHovered",
-          then: {
-            size: { attribute: "hoverSize" },
-            labelVisibility: "visible",
-            depth: "topNodes",
-            backdropVisibility: "visible",
+          { whenState: "isHighlighted", then: { labelVisibility: "visible", depth: "topNodes" } },
+          {
+            whenState: "isHovered",
+            then: {
+              size: { attribute: "hoverSize" },
+              labelVisibility: "visible",
+              depth: "topNodes",
+              backdropVisibility: "visible",
+            },
           },
-        },
-      ],
-      edges: [
-        {
-          size: { attribute: "size" },
-          color: { attribute: "color" },
-          opacity: { attribute: "opacity" },
-          head: { attribute: "head" },
-          depth: "edges",
-          visibility: { whenState: "isHidden", then: "hidden", else: "visible" },
-        },
-        { whenState: "isFaded", then: { color: { attribute: "fadedColor" }, opacity: 0.15 } },
-        { whenState: "isHighlighted", then: { opacity: 0.9, depth: "topEdges" } },
-      ],
+        ],
+        edges: [
+          {
+            size: { attribute: "size" },
+            color: { attribute: "color" },
+            opacity: { attribute: "opacity" },
+            depth: "edges",
+            visibility: { whenState: "isHidden", then: "hidden", else: "visible" },
+          },
+          {
+            whenState: "isHighlighted",
+            then: { color: { attribute: "highlightColor" }, opacity: 0.85, depth: "topEdges" },
+          },
+        ],
+      },
+      settings: {
+        // The panel and narrow layouts may briefly collapse the container; Sigma resizes after.
+        allowInvalidContainer: true,
+        enableEdgeEvents: true,
+        enableNodeDrag: true,
+        // Sigma's default floor is 1.7px, which turns large graphs into a solid fill.
+        minEdgeThickness: 0.5,
+        // No hideEdgesOnMove/hideLabelsOnMove: Sigma re-indexes the whole graph on every release
+        // to restore them, which freezes large graphs after each pan.
+        labelDensity: 0.6,
+        labelRenderedSizeThreshold: 6,
+      },
     },
-    settings: {
-      // The panel and narrow layouts may briefly collapse the container; Sigma resizes after.
-      allowInvalidContainer: true,
-      enableEdgeEvents: true,
-      enableNodeDrag: true,
-      // Large graphs drop edges and labels while the camera moves, so panning stays smooth.
-      hideEdgesOnMove: graph.size > 50_000,
-      hideLabelsOnMove: graph.order > 5_000,
-      labelDensity: 0.6,
-      labelRenderedSizeThreshold: 6,
-    },
-  });
+  );
 }
 
 // oxlint-enable unicorn/no-thenable
 
 type Renderer = ReturnType<typeof createRenderer>;
 
-/** The node and its direct neighbours, with the edges between them. */
-function neighbourhood(graph: SpecGraph, node: string) {
-  return { nodes: [node, ...graph.neighbors(node)], edges: graph.edges(node) };
+/** The node and its neighbours over edges `filter` shows, with those edges. */
+function neighbourhood(graph: SpecGraph, node: string, filter: EdgeFilter) {
+  const nodes = new Set([node]);
+  const edges: string[] = [];
+  graph.forEachEdge(node, (edge, attributes, source, target) => {
+    if (!edgeVisible(attributes, filter)) return;
+    edges.push(edge);
+    nodes.add(source === node ? target : source);
+  });
+  return { nodes: [...nodes], edges };
 }
 
 export default function GraphCanvas({
   wire,
+  layoutKey,
   filter,
   selected,
   focus,
@@ -225,10 +237,11 @@ export default function GraphCanvas({
   const graphRef = useRef<SpecGraph | null>(null);
   const hoveredRef = useRef<string | null>(null);
   const shownRef = useRef<{ nodes: string[]; edges: string[] }>({ nodes: [], edges: [] });
-  const fadedRef = useRef(false);
-  // The wire graph whose layout finished in this mount; a held layout never runs.
-  const [laidOut, setLaidOut] = useState<StudioSpecGraph | null>(null);
-  const laying = wire.nodes.length > 1 && laidOut !== wire && !settled.has(wire);
+  // Whether the veil is drawn, and in which colour; read by the dim layer on every frame.
+  const dimRef = useRef(false);
+  const dimColorRef = useRef<readonly [number, number, number, number]>([0, 0, 0, DIM_ALPHA]);
+  // Shown while the layout worker runs; the layout's lifecycle toggles it, not React state.
+  const layingNote = useRef<HTMLSpanElement>(null);
   const selectNode = useEffectEvent(onSelectNode);
   const selectEdge = useEffectEvent(onSelectEdge);
 
@@ -239,22 +252,17 @@ export default function GraphCanvas({
     if (!sigma || !graph) return;
     const target = hoveredRef.current ?? chosen;
     const next =
-      target && graph.hasNode(target) ? neighbourhood(graph, target) : { nodes: [], edges: [] };
-    const fading = next.nodes.length > 0;
-    // Everything fades once when a highlight starts and clears once when it ends.
-    if (fading !== fadedRef.current) {
-      sigma.setNodesState(graph.nodes(), { isFaded: fading });
-      sigma.setEdgesState(graph.edges(), { isFaded: fading });
-      fadedRef.current = fading;
-    } else if (fading) {
-      sigma.setNodesState(shownRef.current.nodes, { isFaded: true });
-      sigma.setEdgesState(shownRef.current.edges, { isFaded: true });
-    }
+      target && graph.hasNode(target)
+        ? neighbourhood(graph, target, filter)
+        : { nodes: [], edges: [] };
+    // Only the neighbourhood changes state; the veil dims everything else at once.
     sigma.setNodesState(shownRef.current.nodes, { isHighlighted: false });
     sigma.setEdgesState(shownRef.current.edges, { isHighlighted: false });
     shownRef.current = next;
-    sigma.setNodesState(next.nodes, { isHighlighted: true, isFaded: false });
-    sigma.setEdgesState(next.edges, { isHighlighted: true, isFaded: false });
+    sigma.setNodesState(next.nodes, { isHighlighted: true });
+    sigma.setEdgesState(next.edges, { isHighlighted: true });
+    dimRef.current = next.nodes.length > 0;
+    sigma.scheduleRender();
   });
 
   const applyFilter = useEffectEvent((shown: EdgeFilter = filter) => {
@@ -269,20 +277,35 @@ export default function GraphCanvas({
   useEffect(() => {
     const element = container.current;
     if (!element) return;
-    const held = settled.get(wire);
-    const graph = toGraphology(wire, held);
-    paint(graph, readPalette(element));
+    const note = layingNote.current;
+    const showLaying = (shown: boolean) => {
+      if (note) note.hidden = !shown;
+    };
+    const held = settled.get(layoutKey);
+    const { positions, missing } = placeNodes(wire, held);
+    const graph = toGraphology(wire, positions);
+    let palette = readPalette(element);
+    paint(graph, palette);
+    dimColorRef.current = cssColor(palette.panel, DIM_ALPHA);
     const sigma = createRenderer(graph, element);
+    sigma.addCustomLayerProgram(
+      DIM_DEPTH,
+      DIM_DEPTH,
+      dimLayer(
+        () => dimRef.current,
+        () => dimColorRef.current,
+      ),
+    );
     graphRef.current = graph;
     renderer.current = sigma;
     shownRef.current = { nodes: [], edges: [] };
-    fadedRef.current = false;
+    dimRef.current = false;
     hoveredRef.current = null;
     applyFilter();
     highlight();
 
-    // Highlighting restyles every node and edge, so a pointer sweeping across the graph or
-    // panning it does not highlight on the way; only a rest on a node does.
+    // A pointer sweeping across the graph or panning it does not highlight every node on the
+    // way, which would flash the veil; only a rest on a node does.
     let hoverTimer: ReturnType<typeof setTimeout> | undefined;
     const hover = (node: string | null) => {
       clearTimeout(hoverTimer);
@@ -305,8 +328,14 @@ export default function GraphCanvas({
     sigma.on("clickEdge", onClickEdge);
     sigma.on("clickStage", onClickStage);
 
-    // Theme changes repaint the attributes the styles read.
-    const recolor = () => paint(graph, readPalette(element));
+    // Theme changes repaint the attributes the styles read; other class changes repaint nothing.
+    const recolor = () => {
+      const next = readPalette(element);
+      if (JSON.stringify(next) === JSON.stringify(palette)) return;
+      palette = next;
+      paint(graph, next);
+      dimColorRef.current = cssColor(next.panel, DIM_ALPHA);
+    };
     const themes = new MutationObserver(recolor);
     themes.observe(document.documentElement, {
       attributes: true,
@@ -333,16 +362,31 @@ export default function GraphCanvas({
       );
     };
     const keep = () => {
-      sync();
       settled.set(
-        wire,
-        wire.nodes.map((node) => {
-          const { x, y } = graph.getNodeAttributes(node.id);
-          return { x, y };
-        }),
+        layoutKey,
+        new Map(
+          wire.nodes.map((node) => {
+            const { x, y } = graph.getNodeAttributes(node.id);
+            return [node.id, { x, y }];
+          }),
+        ),
       );
     };
-    if (!held && graph.order > 1) {
+    const finish = () => {
+      clearTimeout(stopTimer);
+      clearInterval(syncTimer);
+      layout?.stop();
+      sync();
+      keep();
+      showLaying(false);
+    };
+    // A drag takes over from the layout, which would otherwise move the node back.
+    const onDragStart = () => {
+      if (layout?.isRunning()) finish();
+    };
+    sigma.on("nodeDragStart", onDragStart);
+    sigma.on("nodeDragEnd", keep);
+    if (missing > 0 && graph.order > 1) {
       layout = new FA2Layout(layoutGraph, {
         settings: {
           ...inferSettings(layoutGraph),
@@ -354,13 +398,16 @@ export default function GraphCanvas({
         getEdgeWeight: (_edge, attributes) => layoutWeight(attributes as EdgeAttributes),
       });
       layout.start();
-      if (stepped) syncTimer = setInterval(sync, STEP_MS);
-      stopTimer = setTimeout(() => {
-        clearInterval(syncTimer);
-        layout?.stop();
-        keep();
-        setLaidOut(wire);
-      }, layoutBudget(graph.order));
+      if (stepped) {
+        // A step while the viewer pans, zooms or drags would freeze that gesture; it waits.
+        syncTimer = setInterval(() => {
+          const { isPanning, isZooming, isDragging } = sigma.getGraphState();
+          if (!isPanning && !isZooming && !isDragging) sync();
+        }, stepMs(graph.order));
+      }
+      const share = held ? Math.max(MIN_BUDGET_SHARE, missing / graph.order) : 1;
+      stopTimer = setTimeout(finish, layoutBudget(graph.order) * share);
+      showLaying(true);
     }
 
     return () => {
@@ -369,8 +416,12 @@ export default function GraphCanvas({
       clearInterval(syncTimer);
       if (layout) {
         // A layout cut short still keeps how far it got.
-        if (layout.isRunning()) keep();
+        if (layout.isRunning()) {
+          sync();
+          keep();
+        }
         layout.kill();
+        showLaying(false);
       }
       themes.disconnect();
       scheme.removeEventListener("change", recolor);
@@ -379,14 +430,20 @@ export default function GraphCanvas({
       sigma.off("clickNode", onClickNode);
       sigma.off("clickEdge", onClickEdge);
       sigma.off("clickStage", onClickStage);
+      sigma.off("nodeDragStart", onDragStart);
+      sigma.off("nodeDragEnd", keep);
+      sigma.removeCustomLayerProgram(DIM_DEPTH);
       sigma.kill();
       renderer.current = null;
       graphRef.current = null;
     };
-  }, [wire]);
+  }, [wire, layoutKey]);
 
   useEffect(() => highlight(selected), [selected]);
-  useEffect(() => applyFilter(filter), [filter]);
+  useEffect(() => {
+    applyFilter(filter);
+    highlight();
+  }, [filter]);
 
   useEffect(() => {
     const sigma = renderer.current;
@@ -404,14 +461,14 @@ export default function GraphCanvas({
         role="img"
         aria-label={`Spec graph: ${wire.nodes.length} nodes, ${wire.edges.length / GRAPH_EDGE_STRIDE} edges`}
       />
-      {laying ? (
-        <span
-          className="pointer-events-none absolute right-3 bottom-3 text-2xs text-muted"
-          aria-live="polite"
-        >
-          Laying out…
-        </span>
-      ) : null}
+      <span
+        ref={layingNote}
+        hidden
+        className="pointer-events-none absolute right-3 bottom-3 text-2xs text-muted"
+        aria-live="polite"
+      >
+        Laying out…
+      </span>
     </div>
   );
 }

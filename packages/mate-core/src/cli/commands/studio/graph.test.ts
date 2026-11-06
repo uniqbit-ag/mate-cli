@@ -11,6 +11,7 @@ import {
   GRAPH_EDGE_STRIDE,
   type GraphArchiveSource,
   type GraphSpecSource,
+  specGraphFingerprint,
   type StudioGraphEdgeKind,
   type StudioSpecGraph,
 } from "./graph";
@@ -100,6 +101,30 @@ describe("deriveSpecGraph nodes and binding", () => {
     expect(graph.unbound).toEqual(["acme-a", "acme-b"]);
     expect(edgesOf(graph, "binds")).toEqual([["spec:acme-c", "area:acme/web#x", "binds", 1]]);
   });
+
+  test("binds scopes pairs, inline Area markers and a BOM-prefixed spec as the Specs view does", () => {
+    const graph = deriveSpecGraph(
+      [
+        {
+          capability: "acme-a",
+          content: "---\nscopes:\n  - repository: acme/web\n    area: x\n---\n\n**Area:** `y`\n",
+        },
+        { capability: "acme-b", content: "\uFEFF" + spec("acme-b", "acme/web", ["x"]).content },
+        {
+          capability: "acme-c",
+          content: spec("acme-c", "acme/web", undefined, "**Area:** `z`").content,
+        },
+      ],
+      [],
+    );
+    expect(graph.unbound).toEqual([]);
+    expect(edgesOf(graph, "binds")).toEqual([
+      ["spec:acme-a", "area:acme/web#x", "binds", 1],
+      ["spec:acme-a", "area:acme/web#y", "binds", 1],
+      ["spec:acme-b", "area:acme/web#x", "binds", 1],
+      ["spec:acme-c", "area:acme/web#z", "binds", 1],
+    ]);
+  });
 });
 
 describe("deriveSpecGraph mentions", () => {
@@ -124,6 +149,17 @@ describe("deriveSpecGraph mentions", () => {
     expect(edgesOf(graph, "mentions")).toEqual([
       ["spec:acme-auth", "spec:acme-session", "mentions", 1],
     ]);
+  });
+
+  test("resolves site-absolute and URL links by their specs/ tail", () => {
+    const graph = known(
+      "See [a](/openspec/specs/acme-session/spec.md) and [b](https://example.com/o/r/blob/main/openspec/specs/acme/billing/spec.md).",
+    );
+    expect(edgesOf(graph, "mentions")).toEqual([
+      ["spec:acme-auth", "spec:acme-session", "mentions", 1],
+      ["spec:acme-auth", "spec:acme/billing", "mentions", 1],
+    ]);
+    expect(graph.broken).toEqual([]);
   });
 
   test("resolves a backticked id, once, and ignores ordinary words and itself", () => {
@@ -234,28 +270,36 @@ describe("createSpecGraphCache", () => {
     broken: [],
   };
 
-  test("builds an unchanged companion once and rebuilds after a refresh", async () => {
+  test("builds an unchanged companion once and rebuilds when its fingerprint changes", async () => {
     let builds = 0;
-    const cache = createSpecGraphCache(async () => {
-      builds++;
-      return empty;
-    });
-    await Promise.all([cache.read("/acme", 1), cache.read("/acme", 1)]);
-    await cache.read("/acme", 1);
+    let basis = "one";
+    const cache = createSpecGraphCache(
+      async () => {
+        builds++;
+        return empty;
+      },
+      async () => basis,
+    );
+    await Promise.all([cache.read("/acme"), cache.read("/acme")]);
+    await cache.read("/acme");
     expect(builds).toBe(1);
-    await cache.read("/acme", 2);
+    basis = "two";
+    await cache.read("/acme");
     expect(builds).toBe(2);
   });
 
   test("does not hold a failed build", async () => {
     let builds = 0;
-    const cache = createSpecGraphCache(async () => {
-      builds++;
-      if (builds === 1) throw new Error("unreadable");
-      return empty;
-    });
-    await expect(cache.read("/acme", null)).rejects.toThrow("unreadable");
-    expect(await cache.read("/acme", null)).toBe(empty);
+    const cache = createSpecGraphCache(
+      async () => {
+        builds++;
+        if (builds === 1) throw new Error("unreadable");
+        return empty;
+      },
+      async () => "one",
+    );
+    await expect(cache.read("/acme")).rejects.toThrow("unreadable");
+    expect(await cache.read("/acme")).toBe(empty);
   });
 });
 
@@ -271,6 +315,51 @@ describe("buildSpecGraph", () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, content);
   }
+
+  test("finds nested capabilities inside a known one and skips removed ones", async () => {
+    companion = await fs.mkdtemp(path.join(os.tmpdir(), "acme-graph-"));
+    await write("openspec/specs/acme/spec.md", spec("acme").content);
+    await write("openspec/specs/acme/billing/spec.md", spec("acme/billing").content);
+    await write("openspec/changes/archive/2026-01-01-one/specs/acme/spec.md", "x");
+    await write("openspec/changes/archive/2026-01-01-one/specs/acme/billing/spec.md", "x");
+    await write("openspec/changes/archive/2026-01-01-one/specs/acme-gone/spec.md", "x");
+
+    const graph = await buildSpecGraph(companion);
+
+    expect(edgesOf(graph, "co-change")).toEqual([
+      ["spec:acme", "spec:acme/billing", "co-change", 1],
+    ]);
+  });
+
+  test("does not count a parent capability's folder that holds only nested delta specs", async () => {
+    companion = await fs.mkdtemp(path.join(os.tmpdir(), "acme-graph-"));
+    await write("openspec/specs/acme/spec.md", spec("acme").content);
+    await write("openspec/specs/acme/billing/spec.md", spec("acme/billing").content);
+    await write("openspec/specs/acme-cart/spec.md", spec("acme-cart").content);
+    await write("openspec/changes/archive/2026-01-01-one/specs/acme/billing/spec.md", "x");
+    await write("openspec/changes/archive/2026-01-01-one/specs/acme-cart/spec.md", "x");
+
+    const graph = await buildSpecGraph(companion);
+
+    expect(edgesOf(graph, "co-change")).toEqual([
+      ["spec:acme-cart", "spec:acme/billing", "co-change", 1],
+    ]);
+    const parent = graph.nodes.findIndex((node) => node.id === "spec:acme");
+    expect(graph.history[parent]).toEqual([]);
+  });
+
+  test("fingerprints spec edits and new archives, not other files", async () => {
+    companion = await fs.mkdtemp(path.join(os.tmpdir(), "acme-graph-"));
+    await write("openspec/specs/acme/spec.md", "a");
+    const first = await specGraphFingerprint(companion);
+    await write("openspec/changes/acme-open/proposal.md", "p");
+    expect(await specGraphFingerprint(companion)).toBe(first);
+    await write("openspec/specs/acme/spec.md", "ab");
+    const edited = await specGraphFingerprint(companion);
+    expect(edited).not.toBe(first);
+    await write("openspec/changes/archive/2026-01-01-one/tasks.md", "t");
+    expect(await specGraphFingerprint(companion)).not.toBe(edited);
+  });
 
   test("reads specs and archives without changing the companion", async () => {
     companion = await fs.mkdtemp(path.join(os.tmpdir(), "acme-graph-"));

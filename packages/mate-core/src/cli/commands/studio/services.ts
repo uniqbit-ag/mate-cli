@@ -58,7 +58,7 @@ export interface StudioServices {
     content: string,
     token?: string,
   ): Promise<VaultSaved | VaultConflict>;
-  /** The spec graph of the companion's canonical specs and archives; read-only, held until refresh. */
+  /** The spec graph of the companion's canonical specs and archives; read-only, rebuilt when they change. */
   graph(companionDigest: string): Promise<StudioSpecGraph>;
   /** A registered companion's published reports, newest first; no paths or content. */
   reports(companionDigest: string): Promise<StoredReport[]>;

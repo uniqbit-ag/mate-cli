@@ -25,9 +25,9 @@ export interface EdgeAttributes {
 }
 
 export const NODE_SIZE: Record<StudioGraphNodeKind, number> = {
-  repository: 12,
-  area: 8,
-  capability: 3,
+  repository: 8,
+  area: 5,
+  capability: 2.5,
 };
 
 /** Edge key of the wire graph's `index`th edge. */
@@ -90,6 +90,47 @@ export function seedPositions(wire: StudioSpecGraph): { x: number; y: number }[]
         : around(positions[area], node.id, scale / 5);
   });
   return positions;
+}
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+/**
+ * Start positions given `held` ones by node id: a held node keeps its own, a new node starts
+ * near the held nodes it connects to, else at its seed. `missing` counts nodes without one.
+ */
+export function placeNodes(
+  wire: StudioSpecGraph,
+  held?: ReadonlyMap<string, Point>,
+): { positions: Point[]; missing: number } {
+  if (!held) return { positions: seedPositions(wire), missing: wire.nodes.length };
+  const positions: (Point | undefined)[] = wire.nodes.map((node) => held.get(node.id));
+  const missing = positions.filter((position) => !position).length;
+  if (missing === 0) return { positions: positions as Point[], missing };
+  const sums = new Map<number, { x: number; y: number; count: number }>();
+  const pull = (node: number, from: number) => {
+    const anchor = positions[from];
+    if (positions[node] || !anchor) return;
+    const sum = sums.get(node) ?? { x: 0, y: 0, count: 0 };
+    sums.set(node, { x: sum.x + anchor.x, y: sum.y + anchor.y, count: sum.count + 1 });
+  };
+  forEachEdge(wire, (source, target) => {
+    pull(source, target);
+    pull(target, source);
+  });
+  const seeds = seedPositions(wire);
+  return {
+    positions: positions.map((position, index) => {
+      if (position) return position;
+      const sum = sums.get(index);
+      return sum
+        ? around({ x: sum.x / sum.count, y: sum.y / sum.count }, wire.nodes[index].id, 1)
+        : seeds[index];
+    }),
+    missing,
+  };
 }
 
 export function forEachEdge(

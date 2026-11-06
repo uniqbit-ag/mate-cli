@@ -42,7 +42,7 @@ export interface StudioSpecGraph {
   archives: StudioGraphArchive[];
   /** Per node, indices into `archives` naming it, newest first; empty for non-capabilities. */
   history: number[][];
-  /** Capabilities whose frontmatter names no repository or no Area. */
+  /** Capabilities that bind no repository/Area pair. */
   unbound: string[];
   /** Explicit spec links that resolve to no capability. */
   broken: { from: string; target: string }[];

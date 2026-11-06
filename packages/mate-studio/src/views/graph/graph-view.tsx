@@ -76,7 +76,9 @@ function LoadedGraph({
 }: GraphViewProps & { wire: StudioSpecGraph }) {
   const index = useMemo(() => indexNodes(wire), [wire]);
   const [filter, setFilter] = useState<EdgeFilter>(NO_FILTER);
-  const [edge, setEdge] = useState<number | null>(null);
+  // Edge indices are not stable across rebuilds, so a pick holds only for the wire it was made on.
+  const [picked, setPicked] = useState<{ wire: StudioSpecGraph; edge: number } | null>(null);
+  const edge = picked?.wire === wire ? picked.edge : null;
   const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null);
   const capabilities = wire.nodes.filter((entry) => entry.kind === "capability").length;
 
@@ -86,7 +88,7 @@ function LoadedGraph({
     edge !== null ? { edge } : selectedNode ? { node: selectedNode } : null;
 
   const selectNode = (id: string | null) => {
-    setEdge(null);
+    setPicked(null);
     onNodeChange(id ?? undefined);
   };
   const focusNode = (id: string) => {
@@ -115,13 +117,14 @@ function LoadedGraph({
         <Suspense fallback={<p className="m-0 p-4 text-sm text-muted">Loading the renderer…</p>}>
           <GraphCanvas
             wire={wire}
+            layoutKey={search.companion ?? ""}
             filter={filter}
             selected={selectedNode}
             focus={focus}
             onSelectNode={selectNode}
             onSelectEdge={(next) => {
               onNodeChange(undefined);
-              setEdge(next);
+              setPicked({ wire, edge: next });
             }}
           />
         </Suspense>
@@ -288,9 +291,7 @@ function Problems({
       <div className="grid gap-2 pt-2">
         {wire.unbound.length > 0 ? (
           <div>
-            <p className="m-0">
-              Their frontmatter names no repository or no Area, so they bind nothing:
-            </p>
+            <p className="m-0">They name no repository/Area pair, so they bind nothing:</p>
             <p className="m-0 flex flex-wrap gap-x-2 font-mono">
               {wire.unbound.map((capability) => (
                 <button
@@ -326,13 +327,13 @@ function Legend() {
       aria-label="Legend"
     >
       <li className="inline-flex items-center gap-1.5">
-        <span className="size-2 rounded-full bg-accent" aria-hidden="true" /> Spec
+        <span className="size-1.5 rounded-full bg-accent" aria-hidden="true" /> Spec
       </li>
       <li className="inline-flex items-center gap-1.5">
-        <span className="size-2 rotate-45 bg-info" aria-hidden="true" /> Area
+        <span className="size-2 rounded-full bg-info" aria-hidden="true" /> Area
       </li>
       <li className="inline-flex items-center gap-1.5">
-        <span className="size-2 bg-why" aria-hidden="true" /> Repository
+        <span className="size-2.5 rounded-full bg-why" aria-hidden="true" /> Repository
       </li>
     </ul>
   );

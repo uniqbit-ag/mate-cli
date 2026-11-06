@@ -17,11 +17,11 @@ import {
 
 export type SpecGraph = Graph<NodeAttributes, EdgeAttributes>;
 
-/** Co-change edges thicken with their weight, capped; mentions stand out from frontmatter edges. */
+/** Hairlines; co-change edges thicken gently with their weight, mentions a little more. */
 function edgeSize(kind: EdgeAttributes["kind"], weight: number): number {
-  if (kind === "co-change") return Math.min(6, 0.6 + Math.log2(weight + 1));
-  if (kind === "mentions") return 1.2;
-  return 0.6;
+  if (kind === "co-change") return Math.min(1.6, 0.5 + 0.3 * Math.log2(weight));
+  if (kind === "mentions") return 0.8;
+  return 0.5;
 }
 
 /** The wire graph as a mixed multigraph: co-change undirected, the rest directed. */

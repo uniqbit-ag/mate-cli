@@ -9,7 +9,7 @@ import { parse } from "yaml";
  * merely mentions the marker inside prose or a code span binds no Area by
  * talking about one.
  */
-const INLINE_AREA = /^\*\*Area:\*\*[ \t]*`([^`\n]+)`/gm;
+export const INLINE_AREA = /^\*\*Area:\*\*[ \t]*`([^`\n]+)`/gm;
 
 function frontmatterAreas(content: string): string[] {
   if (!content.startsWith("---")) return [];

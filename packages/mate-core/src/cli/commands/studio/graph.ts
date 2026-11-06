@@ -4,12 +4,13 @@ import path from "node:path";
 import {
   archiveAnchors,
   archiveDirOf,
-  deltaSpecs,
   filesBelow,
   parseAnchor,
   SPECS_RELATIVE_DIR,
 } from "../../../lib/change-layout";
 import { readFrontmatter } from "../../../lib/frontmatter";
+import { BOM, parseScopes, type ScopePair } from "../../../lib/openspec-scopes";
+import { INLINE_AREA } from "./areas";
 import {
   areaNodeId,
   capabilityNodeId,
@@ -49,23 +50,50 @@ const MARKDOWN_SPEC_LINK = /\]\(<?([^)\s>]*?spec\.md)(?:#[^)\s>]*)?>?(?:\s+"[^"]
 const BACKTICKED = /`([A-Za-z0-9][A-Za-z0-9._/-]*)`/g;
 const SPECS_SUFFIX = /(?:^|\/)specs\/(.+)\/spec\.md$/;
 
-function scopeOf(content: string): { repository: string | null; areas: string[] } {
+/** The frontmatter `repository`, else the one repository `scopes` names; null when neither. */
+function bindingRepository(
+  frontmatter: Record<string, unknown> | null,
+  scoped: readonly ScopePair[],
+): string | null {
+  const named = typeof frontmatter?.repository === "string" ? frontmatter.repository.trim() : "";
+  if (named) return named;
+  const scopedRepositories = new Set(scoped.map((pair) => pair.repository.trim()));
+  return scopedRepositories.size === 1 ? [...scopedRepositories][0] : null;
+}
+
+/**
+ * Repository/Area pairs one spec binds, read as the Specs view reads Areas: frontmatter
+ * `repository` with `areas`, `scopes` pairs, and inline `**Area:**` markers, which bind to the
+ * frontmatter repository, else to the one repository `scopes` names.
+ */
+function scopeOf(source: string): ScopePair[] {
+  const content = source.startsWith(BOM) ? source.slice(BOM.length) : source;
   const frontmatter = readFrontmatter(content);
-  const repository =
-    typeof frontmatter?.repository === "string" && frontmatter.repository.trim()
-      ? frontmatter.repository.trim()
-      : null;
+  const scoped = parseScopes(content);
+  const repository = bindingRepository(frontmatter, scoped);
   const areas = Array.isArray(frontmatter?.areas)
-    ? frontmatter.areas
-        .filter((area): area is string => typeof area === "string")
-        .map((area) => area.trim())
-        .filter(Boolean)
+    ? frontmatter.areas.filter((area): area is string => typeof area === "string")
     : [];
-  return { repository, areas: [...new Set(areas)] };
+  const inline = [...content.matchAll(INLINE_AREA)].map((match) => match[1]);
+  const pairs = [
+    ...scoped,
+    ...(repository ? [...areas, ...inline].map((area) => ({ repository, area })) : []),
+  ];
+  const seen = new Map<string, ScopePair>();
+  for (const pair of pairs) {
+    const trimmed = { repository: pair.repository.trim(), area: pair.area.trim() };
+    if (!trimmed.repository || !trimmed.area) continue;
+    seen.set(areaNodeId(trimmed.repository, trimmed.area), trimmed);
+  }
+  return [...seen.values()];
 }
 
 /** The capability a relative markdown link from `capability`'s spec names; null when none. */
 function linkedCapability(capability: string, target: string): string | null {
+  // Site-absolute paths and URLs are not relative to the spec; only their `specs/` tail names it.
+  if (target.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(target)) {
+    return SPECS_SUFFIX.exec(decodeURI(target))?.[1] ?? null;
+  }
   const from = `${SPECS_RELATIVE_DIR}/${capability}`;
   const resolved = path.posix.normalize(path.posix.join(from, decodeURI(target)));
   const prefix = `${SPECS_RELATIVE_DIR}/`;
@@ -139,28 +167,25 @@ export function deriveSpecGraph(
   const linkedAreas = new Set<number>();
   for (const spec of sorted) {
     const source = indexOf.get(capabilityNodeId(spec.capability))!;
-    const { repository, areas } = scopeOf(spec.content);
-    if (!repository || areas.length === 0) {
-      unbound.push(spec.capability);
-    } else {
+    const pairs = scopeOf(spec.content);
+    if (pairs.length === 0) unbound.push(spec.capability);
+    for (const { repository, area } of pairs) {
       const repositoryIndex = node({
         kind: "repository",
         id: repositoryNodeId(repository),
         label: repository,
       });
-      for (const area of areas) {
-        const areaIndex = node({
-          kind: "area",
-          id: areaNodeId(repository, area),
-          label: area === "." ? ROOT_AREA_LABEL : area,
-          repository,
-          area,
-        });
-        edge(source, areaIndex, "binds");
-        if (!linkedAreas.has(areaIndex)) {
-          linkedAreas.add(areaIndex);
-          edge(areaIndex, repositoryIndex, "in");
-        }
+      const areaIndex = node({
+        kind: "area",
+        id: areaNodeId(repository, area),
+        label: area === "." ? ROOT_AREA_LABEL : area,
+        repository,
+        area,
+      });
+      edge(source, areaIndex, "binds");
+      if (!linkedAreas.has(areaIndex)) {
+        linkedAreas.add(areaIndex);
+        edge(areaIndex, repositoryIndex, "in");
       }
     }
     const mentions = resolveMentions(spec.capability, spec.content, known);
@@ -211,15 +236,20 @@ export function deriveSpecGraph(
   return { nodes, edges, archives: graphArchives, history, unbound, broken };
 }
 
+const specsDirOf = (companionPath: string) =>
+  path.join(companionPath, ...SPECS_RELATIVE_DIR.split("/"));
+
 /** Canonical specs with their contents, and dated archives by entry names. */
 async function readSpecGraphSources(companionPath: string): Promise<{
   specs: GraphSpecSource[];
   archives: GraphArchiveSource[];
 }> {
-  const specsDir = path.join(companionPath, ...SPECS_RELATIVE_DIR.split("/"));
+  const specsDir = specsDirOf(companionPath);
   const specFiles = (await filesBelow(specsDir)).filter(
     (file) => path.posix.basename(file) === "spec.md" && path.posix.dirname(file) !== ".",
   );
+  const known = new Set(specFiles.map((file) => path.posix.dirname(file)));
+  const parents = parentsOf(known);
   const archiveDir = archiveDirOf(companionPath);
   const [specs, archives] = await Promise.all([
     Promise.all(
@@ -232,15 +262,11 @@ async function readSpecGraphSources(companionPath: string): Promise<{
       Promise.all(
         anchors.map(async (anchor) => {
           const dir = path.join(archiveDir, anchor);
-          const [deltas, entries] = await Promise.all([
-            deltaSpecs(dir),
+          const [capabilities, entries] = await Promise.all([
+            deltaCapabilities(path.join(dir, "specs"), known, parents),
             fs.readdir(dir).catch((): string[] => []),
           ]);
-          return {
-            anchor,
-            capabilities: deltas.flatMap((delta) => (delta.capability ? [delta.capability] : [])),
-            entries,
-          };
+          return { anchor, capabilities, entries };
         }),
       ),
     ),
@@ -248,26 +274,85 @@ async function readSpecGraphSources(companionPath: string): Promise<{
   return { specs, archives };
 }
 
+/** Every path prefix of a nested capability id: `acme/billing` yields `acme`. */
+function parentsOf(ids: Iterable<string>): Set<string> {
+  const parents = new Set<string>();
+  for (const id of ids) {
+    const parts = id.split("/");
+    for (let depth = 1; depth < parts.length; depth++) parents.add(parts.slice(0, depth).join("/"));
+  }
+  return parents;
+}
+
+/**
+ * The canonical capabilities an archive's delta specs name. A folder named after a known leaf
+ * capability counts without reading inside it; other folders, and known ones that have nested
+ * capabilities, are descended, and a known parent counts only when it holds its own `spec.md`.
+ * On large companions this is one directory read per archive instead of one per delta spec.
+ */
+async function deltaCapabilities(
+  specsDir: string,
+  known: ReadonlySet<string>,
+  parents: ReadonlySet<string>,
+): Promise<string[]> {
+  const found: string[] = [];
+  const visit = async (relative: string): Promise<void> => {
+    const dir = relative ? path.join(specsDir, ...relative.split("/")) : specsDir;
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    if (
+      known.has(relative) &&
+      entries.some((entry) => entry.isFile() && entry.name === "spec.md")
+    ) {
+      found.push(relative);
+    }
+    await Promise.all(
+      entries.map(async (entry) => {
+        if (!entry.isDirectory()) return;
+        const id = relative ? `${relative}/${entry.name}` : entry.name;
+        if (!known.has(id) || parents.has(id)) await visit(id);
+        else found.push(id);
+      }),
+    );
+  };
+  await visit("");
+  return found;
+}
+
 export async function buildSpecGraph(companionPath: string): Promise<StudioSpecGraph> {
   const { specs, archives } = await readSpecGraphSources(companionPath);
   return deriveSpecGraph(specs, archives);
 }
 
-export interface SpecGraphCache {
-  /**
-   * The companion's graph, built once per `basis`: when its collected state was collected,
-   * so refreshing that state also rebuilds the graph.
-   */
-  read(companionPath: string, basis: number | null): Promise<StudioSpecGraph>;
+/**
+ * What the graph is built from, without reading contents: each canonical spec file's size and
+ * modification time, and the dated archive names. Equal fingerprints build equal graphs.
+ */
+export async function specGraphFingerprint(companionPath: string): Promise<string> {
+  const specsDir = specsDirOf(companionPath);
+  const [files, anchors] = await Promise.all([filesBelow(specsDir), archiveAnchors(companionPath)]);
+  const stamps = await Promise.all(
+    files.map(async (file) => {
+      const stat = await fs.stat(path.join(specsDir, ...file.split("/"))).catch(() => null);
+      return `${file}:${stat?.size ?? -1}:${stat?.mtimeMs ?? -1}`;
+    }),
+  );
+  return [...stamps, "", ...anchors].join("\n");
 }
 
-/** Holds one graph per companion; reads for the same basis share one build. */
+export interface SpecGraphCache {
+  /** The companion's graph, rebuilt only when its fingerprint changes. */
+  read(companionPath: string): Promise<StudioSpecGraph>;
+}
+
+/** Holds one graph per companion; reads for the same fingerprint share one build. */
 export function createSpecGraphCache(
   build: (companionPath: string) => Promise<StudioSpecGraph> = buildSpecGraph,
+  fingerprint: (companionPath: string) => Promise<string> = specGraphFingerprint,
 ): SpecGraphCache {
-  const held = new Map<string, { basis: number | null; graph: Promise<StudioSpecGraph> }>();
+  const held = new Map<string, { basis: string; graph: Promise<StudioSpecGraph> }>();
   return {
-    read(companionPath, basis) {
+    async read(companionPath) {
+      const basis = await fingerprint(companionPath);
       const entry = held.get(companionPath);
       if (entry && entry.basis === basis) return entry.graph;
       const graph = build(companionPath);
