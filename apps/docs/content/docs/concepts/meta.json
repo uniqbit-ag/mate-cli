@@ -2,6 +2,7 @@
   "title": "Concepts",
   "pages": [
     "repositories",
+    "umbrella-repository",
     "worktrees",
     "secret-guardrails",
     "merge-state",

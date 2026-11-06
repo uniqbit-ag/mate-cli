@@ -416,3 +416,87 @@ describe("repository identity", () => {
     expect(calls[0]).toStartWith("https://api.github.com/repos/acme/acme-lib");
   });
 });
+
+describe("mate artifact link in an Umbrella Repository", () => {
+  let umbrella: string;
+  const ORIGINS: Record<string, string> = {
+    api: "git@github.com:acme/api.git",
+    web: "https://github.com/acme/web.git",
+  };
+
+  beforeEach(async () => {
+    umbrella = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "artifact-link-acme-")));
+    for (const child of Object.keys(ORIGINS)) {
+      await fs.mkdir(path.join(umbrella, child, ".git"), { recursive: true });
+    }
+  });
+
+  afterEach(async () => {
+    await fs.rm(umbrella, { recursive: true, force: true });
+  });
+
+  async function scope(change: string, ...repositories: string[]): Promise<void> {
+    const scopes = repositories.map((repository) => `  - repository: ${repository}\n    area: .\n`);
+    await fs.writeFile(
+      path.join(companion, "openspec", "changes", change, "proposal.md"),
+      `---\nchange: ${change}\nscopes:\n${scopes.join("")}---\n\n## Why\n`,
+    );
+  }
+
+  const inUmbrella = (): Partial<LinkCommandDeps> => ({
+    resolveContext: async () =>
+      ({
+        companionPath: companion,
+        repositoryId: "acme",
+        repository: { id: "acme", path: umbrella },
+      }) as unknown as LaunchContext,
+    workingRepoGit: (repoPath) =>
+      repoGit({ remoteUrl: async () => ORIGINS[path.basename(repoPath)] ?? null }),
+    readChildOrigin: async (checkout) => ORIGINS[path.basename(checkout)] ?? null,
+  });
+
+  test("one scoped child takes the delivery", async () => {
+    await scope("x", "acme/api");
+    const [result] = await run(["x", "--branch", "workset/x"], inUmbrella());
+    expect(process.exitCode).toBe(0);
+    expect(result.record.deliveries).toEqual([{ repository: "acme/api", branch: "workset/x" }]);
+  });
+
+  test("two scoped children are refused and name both", async () => {
+    await scope("x", "acme/api", "acme/web");
+    await run(["x", "--branch", "workset/x"], inUmbrella());
+    expect(process.exitCode).toBe(1);
+    expect(err[0]).toContain("acme/api, acme/web");
+    expect(err[0]).toContain("--repository");
+    await expect(readRaw("x")).rejects.toThrow();
+    process.exitCode = 0;
+  });
+
+  test("an explicit repository is recorded, and a read needs none", async () => {
+    await scope("x", "acme/api", "acme/web");
+    const [read] = await run(["x"], inUmbrella());
+    expect(process.exitCode).toBe(0);
+    expect(read.record.deliveries).toEqual([]);
+    const [result] = await run(
+      ["x", "--repository", "acme/web", "--branch", "workset/x"],
+      inUmbrella(),
+    );
+    expect(result.record.deliveries).toEqual([{ repository: "acme/web", branch: "workset/x" }]);
+  });
+
+  test("an unknown change is refused as unknown, not for the umbrella", async () => {
+    await run(["acme-typo", "--branch", "workset/x"], inUmbrella());
+    expect(process.exitCode).toBe(1);
+    expect(err[0]).toBe('mate: no active or archived change named "acme-typo".');
+    process.exitCode = 0;
+  });
+
+  test("a refresh through the one scoped child still refreshes every delivery", async () => {
+    await scope("x", "acme/api");
+    await run(["x", "--branch", "main", "--direct"], inUmbrella());
+    await run(["x", "--repository", "acme/web", "--branch", "main", "--direct"], inUmbrella());
+    const [result] = await run(["x", "--refresh"], inUmbrella());
+    expect(process.exitCode).toBe(0);
+    expect(result.outcomes.map((outcome) => outcome.repository)).toEqual(["acme/api", "acme/web"]);
+  });
+});

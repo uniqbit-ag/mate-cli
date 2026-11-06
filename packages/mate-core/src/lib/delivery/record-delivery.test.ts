@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -741,6 +742,83 @@ describe("tickets", () => {
     const current = "feature/ABC-123-retry";
     const [recorded] = results(await run({ changes: ["x"] }, {}, jira({ current })));
     expect(recorded.ticketCandidate).toBe("XYZ-9");
+  });
+});
+
+describe("recordDelivery in an Umbrella Repository", () => {
+  let child: string;
+
+  beforeEach(async () => {
+    child = await fs.mkdtemp(path.join(os.tmpdir(), "record-delivery-acme-app-"));
+    const inChild = (...args: string[]) => execFileSync("git", ["-C", child, ...args]);
+    inChild("init", "-q", "-b", "main");
+    inChild(
+      "-c",
+      "user.name=acme",
+      "-c",
+      "user.email=acme@acme.test",
+      "commit",
+      "-q",
+      "--allow-empty",
+      "-m",
+      "first",
+    );
+    inChild("switch", "-q", "-c", "change/x");
+  });
+
+  afterEach(async () => {
+    await fs.rm(child, { recursive: true, force: true });
+  });
+
+  const scope = (...repositories: string[]) =>
+    fs.writeFile(
+      path.join(changeDir("x"), "proposal.md"),
+      `---\nscopes:\n${repositories.map((repository) => `  - repository: ${repository}\n    area: .\n`).join("")}---\n`,
+    );
+
+  /** The umbrella's own Git would suggest `workset/x`; the child's checkout is on `change/x`. */
+  const umbrella = (): DeliveryEnvironment => ({
+    companionPath: companion,
+    workingRepo: {
+      path: "/acme",
+      slug: null,
+      forgeRepo: null,
+      git: git(["workset/x"], "workset/x"),
+      umbrellaChildren: [APP, LIB],
+    },
+    protectedPatterns: [],
+    checkoutOf: async (repository) => (repository === APP ? child : null),
+  });
+
+  test("the only scoped child's checkout is read, not the umbrella's", async () => {
+    await scope(APP);
+    const outcome = await run({ changes: ["x"], requireDelivery: true }, {}, umbrella());
+    expect(outcome).toMatchObject({ needsBranch: { suggestedBranch: "change/x" } });
+  });
+
+  test("the only scoped child takes an edit", async () => {
+    await scope(APP);
+    await run(
+      { changes: ["x"], edit: { delivery: { branch: "change/x", direct: false } } },
+      {},
+      umbrella(),
+    );
+    expect((await written("x"))?.deliveries).toEqual([
+      expect.objectContaining({ repository: APP, branch: "change/x" }),
+    ]);
+  });
+
+  test("an edit scoped to two children is refused naming both", async () => {
+    await scope(APP, LIB);
+    const outcome = await run(
+      { changes: ["x"], edit: { delivery: { branch: "change/x", direct: false } } },
+      {},
+      umbrella(),
+    );
+    expect(outcome).toMatchObject({
+      refusal: { reason: "umbrella-repository", umbrella: "/acme", scoped: [APP, LIB] },
+    });
+    expect(await written("x")).toBeNull();
   });
 });
 

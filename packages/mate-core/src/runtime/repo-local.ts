@@ -28,19 +28,33 @@ export function companionLinkPath(repoPath: string): string {
   return path.join(repoLocalDirPath(repoPath), "companion");
 }
 
+/** A linked non-Git `<umbrella>.worktrees/<id>` folder: an umbrella's mirrored worktree. */
+function isMirroredWorktree(folder: string): boolean {
+  return (
+    path.basename(path.dirname(folder)).endsWith(".worktrees") &&
+    readGitLayout(folder) === null &&
+    fs.existsSync(repoLocalRegistryPath(folder))
+  );
+}
+
 /**
  * `cwd` and each of its ancestors, nearest first, ending at the filesystem
  * root or after a linked worktree's root, so a worktree nested in the main
  * worktree never reads the main worktree's `.mate/`. A main worktree or a
  * submodule walks on, so a submodule still resolves to the outer repository.
- * Shared by the async and sync registry walks so the two cannot land on
- * different ancestors.
+ * A linked worktree directly in a mirrored worktree also yields that folder,
+ * which serves it as an Umbrella Repository serves its children. Shared by the
+ * async and sync registry walks so the two cannot land on different ancestors.
  */
 export function* ancestorDirectories(cwd: string): Generator<string> {
   let dir = path.resolve(cwd);
   for (;;) {
     yield dir;
-    if (readGitLayout(dir)?.kind === "linked") return;
+    if (readGitLayout(dir)?.kind === "linked") {
+      const parent = path.dirname(dir);
+      if (isMirroredWorktree(parent)) yield parent;
+      return;
+    }
     const parent = path.dirname(dir);
     if (parent === dir) return;
     dir = parent;
