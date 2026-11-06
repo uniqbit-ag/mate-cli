@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { countTasks, readOpenChanges } from "./changes";
+import { countTasks, readOpenChanges, readyToArchive } from "./changes";
 import { MateNotFoundError, prepareWorkspace, runMateJson, shellQuote } from "./mate";
 import { toPendingItems } from "./pending";
 import { parseWorktrees } from "./worktrees";
@@ -61,6 +61,12 @@ describe("open changes", () => {
       done: 2,
       total: 3,
     });
+  });
+
+  test("is ready to archive only when every task of at least one is checked", () => {
+    expect(readyToArchive({ done: 5, total: 5 })).toBe(true);
+    expect(readyToArchive({ done: 2, total: 7 })).toBe(false);
+    expect(readyToArchive({ done: 0, total: 0 })).toBe(false);
   });
 
   test("lists active changes with progress and skips archive", async () => {

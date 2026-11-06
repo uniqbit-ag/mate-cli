@@ -75,6 +75,11 @@
           "when": "mate.workspaceReady"
         },
         {
+          "id": "mate.readyToArchive",
+          "name": "Ready to archive",
+          "when": "mate.workspaceReady"
+        },
+        {
           "id": "mate.readyToPublish",
           "name": "Ready to publish",
           "when": "mate.workspaceReady"
@@ -199,6 +204,11 @@
         {
           "command": "mate.resumeWorksetSession",
           "when": "view == mate.openChanges && viewItem == workset.sessions",
+          "group": "inline@1"
+        },
+        {
+          "command": "mate.newSession",
+          "when": "view == mate.worktrees && viewItem == worktree",
           "group": "inline@1"
         }
       ],

@@ -4,13 +4,14 @@ import path from "node:path";
 
 import * as vscode from "vscode";
 
-import { readOpenChanges, type OpenChange } from "./changes";
+import { readOpenChanges, readyToArchive, type OpenChange } from "./changes";
 import {
   groupSessions,
   latestSession,
   sessionLabel,
   worksetProgress,
   worksetSessions,
+  worksetLabel,
   worksetsOf,
   type SessionGroupKind,
   type Workset,
@@ -49,6 +50,7 @@ import { TerminalTracker } from "./terminals";
 import { WorkspaceGate, resolveWorkspaceState } from "./workspace";
 
 const NO_REPOSITORY = "Mate needs a Git repository: open a folder inside one.";
+const NOT_LINKED = "This repository is not linked to a Companion Repository.";
 
 function workspaceRepository(): Promise<string | null> {
   return resolveRepository(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
@@ -57,6 +59,17 @@ function workspaceRepository(): Promise<string | null> {
 async function repositoryRoots(repo: string): Promise<string[]> {
   const worktrees = await listWorktrees(repo).catch(() => []);
   return worktrees.length > 0 ? worktrees.map((worktree) => worktree.path) : [repo];
+}
+
+/** The only root, else the one the user picks; undefined when dismissed. */
+async function pickDirectory(repo: string): Promise<string | undefined> {
+  const roots = await repositoryRoots(repo);
+  if (roots.length === 1) return roots[0];
+  const picked = await vscode.window.showQuickPick(
+    roots.map((root) => ({ label: path.basename(root), description: root, root })),
+    { title: "Mate: New session", placeHolder: "Directory" },
+  );
+  return picked?.root;
 }
 
 function openSessionTerminal(
@@ -72,7 +85,7 @@ function openSessionTerminal(
   terminal.sendText(command);
 }
 
-/** Everything the Sessions and Open changes sections share for one repository. */
+/** Everything the Sessions and change sections share for one repository. */
 async function loadRepositoryView(repo: string) {
   const [all, roots, id, base] = await Promise.all([
     listSessions(repo),
@@ -81,9 +94,17 @@ async function loadRepositoryView(repo: string) {
     defaultBranch(repo),
   ]);
   const changes = await readOpenChanges(repo, id);
-  const openChanges: OpenChange[] = changes.linked ? changes.changes : [];
+  const active: OpenChange[] = changes.linked ? changes.changes : [];
   const mine = sessionsForRepository(all, roots).filter((session) => session.state !== "done");
-  return { sessions: mine, changes, worksets: worksetsOf(openChanges), defaultBranch: base };
+  return {
+    sessions: mine,
+    changes,
+    // Sessions and Worktrees still group by every active change's Workset.
+    worksets: worksetsOf(active),
+    openWorksets: worksetsOf(active.filter((change) => !readyToArchive(change))),
+    ready: active.filter(readyToArchive),
+    defaultBranch: base,
+  };
 }
 
 type RepositoryView = Awaited<ReturnType<typeof loadRepositoryView>>;
@@ -124,6 +145,16 @@ const changeItem = (change: OpenChange): SectionItem => ({
     : {}),
 });
 
+/** A Ready to archive item: the change with its Workset label. */
+function readyItem(change: OpenChange): SectionItem {
+  const item = changeItem(change);
+  const workset = change.deliveryBranch ? worksetLabel(change.deliveryBranch) : undefined;
+  return {
+    ...item,
+    description: [item.description, workset].filter(Boolean).join(" · ") || undefined,
+  };
+}
+
 export function worksetItem(workset: Workset, sessions: Session[]): SectionItem {
   const onBranch = worksetSessions(workset, sessions);
   const latest = latestSession(onBranch);
@@ -147,6 +178,15 @@ export function worksetItem(workset: Workset, sessions: Session[]): SectionItem 
 
 function sessionOf(item: SectionItem | undefined): Session | undefined {
   return item?.data as Session | undefined;
+}
+
+/** Payload of a Worktrees item. */
+interface WorktreeTarget {
+  cwd: string;
+}
+
+function worktreeOf(item: SectionItem | undefined): WorktreeTarget | undefined {
+  return item?.contextValue === "worktree" ? (item.data as WorktreeTarget) : undefined;
 }
 
 /** Reports a session whose directory no longer exists; true when it is gone. */
@@ -326,6 +366,8 @@ export function activate(context: vscode.ExtensionContext): void {
             .join(" · "),
           tooltip: worktree.path,
           icon: worktree.workset ? ICONS.worksetWorktree : ICONS.worktree,
+          contextValue: "worktree",
+          data: { cwd: worktree.path } satisfies WorktreeTarget,
           command: {
             command: "vscode.openFolder",
             title: "Open in new window",
@@ -340,12 +382,19 @@ export function activate(context: vscode.ExtensionContext): void {
     "mate.openChanges",
     forRepository(async (repo) => {
       const view = await repositoryView(repo);
-      if (!view.changes.linked) {
-        return { message: "This repository is not linked to a Companion Repository." };
-      }
+      if (!view.changes.linked) return { message: NOT_LINKED };
       return {
-        items: view.worksets.map((workset) => worksetItem(workset, view.sessions)),
+        items: view.openWorksets.map((workset) => worksetItem(workset, view.sessions)),
       };
+    }),
+  );
+
+  const readyToArchiveChanges = new Section(
+    "mate.readyToArchive",
+    forRepository(async (repo) => {
+      const view = await repositoryView(repo);
+      if (!view.changes.linked) return { message: NOT_LINKED };
+      return { items: view.ready.map(readyItem) };
     }),
   );
 
@@ -361,7 +410,7 @@ export function activate(context: vscode.ExtensionContext): void {
     })),
   );
 
-  const sections = [sessions, worktrees, openChanges, readyToPublish];
+  const sections = [sessions, worktrees, openChanges, readyToArchiveChanges, readyToPublish];
 
   /** Asked once per window; without `--bg`, Claude sessions start in the foreground as before. */
   let backgroundSupport: Promise<boolean> | undefined;
@@ -403,6 +452,24 @@ export function activate(context: vscode.ExtensionContext): void {
     openSessionTerminal(session, attachCommand(session));
     sessions.refresh();
     if (!retried) void retryEarlyFailure(session, resumeId);
+  };
+
+  /** Starts a new session in `cwd`: Claude in the background when it can, else in a terminal. */
+  const startSession = async (runtime: Runtime, cwd: string) => {
+    if (runtime === "claude" && (await backgroundSupported(cwd))) {
+      await startInBackground(cwd);
+      return;
+    }
+    const session = { id: newSessionId(runtime), runtime, cwd };
+    try {
+      await addSession(session);
+    } catch (error) {
+      return void vscode.window.showErrorMessage(
+        `Mate: could not register the session: ${(error as Error).message}`,
+      );
+    }
+    openSessionTerminal(session, launchCommand(session));
+    sessions.refresh();
   };
 
   const retryEarlyFailure = async (
@@ -472,7 +539,8 @@ export function activate(context: vscode.ExtensionContext): void {
       }),
     ),
 
-    vscode.commands.registerCommand("mate.newSession", async () => {
+    // A Worktrees item passes its worktree, so no directory is asked.
+    vscode.commands.registerCommand("mate.newSession", async (item?: SectionItem) => {
       if (!gate.ready) {
         return void vscode.window.showInformationMessage(
           "Open the Mate workspace before starting a session.",
@@ -490,32 +558,9 @@ export function activate(context: vscode.ExtensionContext): void {
       );
       if (!runtime) return;
 
-      const roots = await repositoryRoots(repo);
-      const cwd =
-        roots.length === 1
-          ? roots[0]
-          : (
-              await vscode.window.showQuickPick(
-                roots.map((root) => ({ label: path.basename(root), description: root, root })),
-                { title: "Mate: New session", placeHolder: "Directory" },
-              )
-            )?.root;
+      const cwd = worktreeOf(item)?.cwd || (await pickDirectory(repo));
       if (!cwd) return;
-
-      if (runtime.runtime === "claude" && (await backgroundSupported(cwd))) {
-        await startInBackground(cwd);
-        return;
-      }
-      const session = { id: newSessionId(runtime.runtime), runtime: runtime.runtime, cwd };
-      try {
-        await addSession(session);
-      } catch (error) {
-        return void vscode.window.showErrorMessage(
-          `Mate: could not register the session: ${(error as Error).message}`,
-        );
-      }
-      openSessionTerminal(session, launchCommand(session));
-      sessions.refresh();
+      await startSession(runtime.runtime, cwd);
     }),
 
     vscode.commands.registerCommand("mate.resumeSession", async (item?: SectionItem) => {

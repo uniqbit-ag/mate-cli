@@ -64,6 +64,11 @@ export function countTasks(tasks: string): { done: number; total: number } {
   return { done, total };
 }
 
+/** Every task checked, and at least one task. */
+export function readyToArchive(change: Pick<OpenChange, "done" | "total">): boolean {
+  return change.total > 0 && change.done === change.total;
+}
+
 async function readIfExists(file: string): Promise<string | undefined> {
   return fs.readFile(file, "utf8").catch(() => undefined);
 }
