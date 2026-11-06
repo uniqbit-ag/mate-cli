@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { runVscodeSetupCommand, type VscodeSetupDeps } from "./setup";
+import { runVscodeSetupCommand, type InstalledExtension, type VscodeSetupDeps } from "./setup";
 import { resolveVsix, VSIX_FILE, type VsixResolverDeps } from "./vsix";
 
 let exitCode: typeof process.exitCode;
@@ -38,7 +38,7 @@ function vsixDeps(overrides: Partial<VsixResolverDeps> = {}) {
 
 function setupDeps(
   binaries: Partial<Record<"code" | "cursor", string>>,
-  ok = true,
+  ok: boolean | Record<string, boolean> = true,
   extensions: Record<string, string[] | null> = {},
 ) {
   const installs: string[] = [];
@@ -47,9 +47,18 @@ function setupDeps(
     resolveEditor: (cli) => binaries[cli] ?? null,
     install: (binary, file) => {
       installs.push(`${binary} ${file}`);
-      return { ok, output: ok ? "" : "boom" };
+      const succeeded = typeof ok === "boolean" ? ok : (ok[binary] ?? true);
+      return { ok: succeeded, output: succeeded ? "" : "boom" };
     },
-    installedExtensions: (binary) => extensions[binary] ?? [],
+    installedExtensions: (binary) => {
+      const lines = binary in extensions ? extensions[binary]! : [];
+      return (
+        lines?.map((line): InstalledExtension => {
+          const [id, version] = line.split("@");
+          return { id: id!, version };
+        }) ?? null
+      );
+    },
     vsix,
     version: "1.2.3",
   };
@@ -118,6 +127,79 @@ describe("mate vscode setup", () => {
     expect(installs.map((line) => line.split(" ")[0])).toEqual(["/bin/code", "/bin/cursor"]);
     expect(result.out).toContain("VS Code: installed");
     expect(result.out).toContain("Cursor: installed");
+    expect(result.out).not.toContain("Continuing");
+  });
+
+  test("reports the version the editor lists after the install", async () => {
+    const { deps } = setupDeps({ code: "/bin/code" }, true, {
+      "/bin/code": ["acme.other@9.9.9", "uniqbit.mate@1.2.3"],
+    });
+    const result = await run([], deps);
+    expect(result.out).toContain("VS Code: installed v1.2.3");
+  });
+
+  test("a --vsix build reports its listed version, not the CLI version", async () => {
+    const { deps } = setupDeps({ code: "/bin/code" }, true, {
+      "/bin/code": ["uniqbit.mate@1.2.4-dev"],
+    });
+    const result = await run(["--vsix", "/acme/local.vsix"], deps);
+    expect(result.out).toContain("VS Code: installed v1.2.4-dev");
+    expect(result.out).not.toContain("v1.2.3");
+  });
+
+  test("falls back to the CLI version when the listing fails", async () => {
+    const { deps } = setupDeps({ code: "/bin/code" }, true, { "/bin/code": null });
+    const result = await run([], deps);
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("VS Code: installed v1.2.3");
+  });
+
+  test("closing line names the version and only the editors that installed", async () => {
+    const { deps } = setupDeps(
+      { code: "/bin/code", cursor: "/bin/cursor" },
+      { "/bin/cursor": false },
+      { "/bin/code": ["uniqbit.mate@1.2.3"] },
+    );
+    const result = await run([], deps);
+    expect(result.out).toContain("Mate extension v1.2.3 installed in VS Code.");
+    expect(result.out.trimEnd().split("\n").at(-1)).toBe(
+      "Reload open editor windows to load the Mate sidebar.",
+    );
+  });
+
+  test("Cursor failing after VS Code says setup continues with VS Code", async () => {
+    const { deps } = setupDeps(
+      { code: "/bin/code", cursor: "/bin/cursor" },
+      { "/bin/cursor": false },
+    );
+    const result = await run([], deps);
+    expect(result.code).toBe(0);
+    const lines = result.out.split("\n").map((line) => line.trim());
+    expect(lines.indexOf("Continuing with VS Code.")).toBe(
+      lines.indexOf("Cursor: failed — boom") + 1,
+    );
+  });
+
+  test("VS Code failing before Cursor says setup continues with Cursor", async () => {
+    const { deps } = setupDeps(
+      { code: "/bin/code", cursor: "/bin/cursor" },
+      { "/bin/code": false },
+    );
+    const result = await run([], deps);
+    expect(result.code).toBe(0);
+    const lines = result.out.split("\n").map((line) => line.trim());
+    expect(lines.slice(0, 3)).toEqual([
+      "VS Code: failed — boom",
+      "Continuing with Cursor.",
+      "Cursor: installed v1.2.3",
+    ]);
+  });
+
+  test("every editor failing prints no continuing line", async () => {
+    const { deps } = setupDeps({ code: "/bin/code", cursor: "/bin/cursor" }, false);
+    const result = await run([], deps);
+    expect(result.code).toBe(1);
+    expect(result.out).not.toContain("Continuing");
   });
 
   test("--editor restricts to one editor", async () => {
@@ -176,8 +258,8 @@ describe("mate vscode setup", () => {
 
   test("--if-installed updates only editors that have the extension", async () => {
     const { deps, installs } = setupDeps({ code: "/bin/code", cursor: "/bin/cursor" }, true, {
-      "/bin/code": ["acme.other", "Uniqbit.Mate"],
-      "/bin/cursor": ["acme.other"],
+      "/bin/code": ["acme.other@1.0.0", "Uniqbit.Mate@1.2.2"],
+      "/bin/cursor": ["acme.other@1.0.0"],
     });
     const result = await run(["--if-installed"], deps);
     expect(result.code).toBe(0);

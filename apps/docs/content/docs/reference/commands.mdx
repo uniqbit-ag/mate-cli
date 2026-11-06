@@ -257,6 +257,12 @@ that already have the extension, and does nothing when none has it. It needs no
 linked repository. `mate update` runs it with `--if-installed`, so an installed
 extension follows the CLI to the new version.
 
+For each editor it reports the extension version that editor now lists, such as
+`VS Code: installed v1.2.3`. If the editor cannot list its extensions, it reports
+the CLI version instead. When one editor fails, setup prints the error and then
+`Continuing with <editor>.`, and still exits zero. It exits non-zero only when
+every editor fails.
+
 If the repository's managed workspace is not open, the extension shows a single
 **Open workspace** button. Clicking it prepares the document, creating it if
 missing, and opens it in the same window. The editor restarts the extension as
