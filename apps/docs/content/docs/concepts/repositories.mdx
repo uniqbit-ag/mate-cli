@@ -148,6 +148,15 @@ Sessions in that worktree then see the kept ID in `MATE_REPO_ID`, and the
 Graphify graph stored under the old ID is no longer used. Delete it once you no
 longer need it.
 
+## Umbrella Repository
+
+A plain folder that holds several Git checkouts can be linked once instead of
+each repository. Such a folder is an _Umbrella Repository_: each child checkout
+counts as a linked checkout of its own repository, and a session started in
+the folder can work on a change that spans them. Its Worksets get one mirrored
+worktree for all children. See
+[Umbrella Repository](/docs/concepts/umbrella-repository).
+
 ## Resolution Order
 
 For normal local commands, Mate resolves the context in this order:

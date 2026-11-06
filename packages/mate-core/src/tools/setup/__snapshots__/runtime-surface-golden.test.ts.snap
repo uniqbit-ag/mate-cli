@@ -5835,7 +5835,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
     },
   },
   "claudeSkills": {
-    "mate-apply-change/SKILL.md": "c74a5671ea56",
+    "mate-apply-change/SKILL.md": "2b02ae654234",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "d11b6fc25bf4",
     "mate-archive-change/SKILL.md": "a231ddabb438",
@@ -5855,10 +5855,10 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
     "mate-propose-change/references/mate-revise.md": "fab04cde133f",
     "mate-propose-change/references/openspec-propose.md": "dbd00207ffa4",
     "mate-propose-change/references/openspec-update-change.md": "678af6ec1889",
-    "mate-publish-artifact/SKILL.md": "07454a91dba0",
+    "mate-publish-artifact/SKILL.md": "1daa076a037a",
     "mate-publish-artifact/references/openspec.md": "d004aed5cf3f",
     "mate-show-me/SKILL.md": "908f009299ac",
-    "mate-simplify-code/SKILL.md": "a728118654f8",
+    "mate-simplify-code/SKILL.md": "3620932bd724",
   },
   "opencodeConfig": null,
   "opencodePlugins": {},
@@ -6179,7 +6179,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
   "opencodeSkills": {},
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-apply-change/SKILL.md": "c74a5671ea56",
+    "mate-apply-change/SKILL.md": "2b02ae654234",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "de22021f4daa",
     "mate-archive-change/SKILL.md": "a231ddabb438",
@@ -6199,10 +6199,10 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
     "mate-propose-change/references/mate-revise.md": "fab04cde133f",
     "mate-propose-change/references/openspec-propose.md": "c1f1d1291283",
     "mate-propose-change/references/openspec-update-change.md": "cdb8d6c17526",
-    "mate-publish-artifact/SKILL.md": "07454a91dba0",
+    "mate-publish-artifact/SKILL.md": "1daa076a037a",
     "mate-publish-artifact/references/openspec.md": "d004aed5cf3f",
     "mate-show-me/SKILL.md": "908f009299ac",
-    "mate-simplify-code/SKILL.md": "a728118654f8",
+    "mate-simplify-code/SKILL.md": "3620932bd724",
   },
 }
 `;
@@ -6590,7 +6590,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     },
   },
   "claudeSkills": {
-    "mate-apply-change/SKILL.md": "c74a5671ea56",
+    "mate-apply-change/SKILL.md": "2b02ae654234",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "d11b6fc25bf4",
     "mate-archive-change/SKILL.md": "a231ddabb438",
@@ -6610,10 +6610,10 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     "mate-propose-change/references/mate-revise.md": "fab04cde133f",
     "mate-propose-change/references/openspec-propose.md": "dbd00207ffa4",
     "mate-propose-change/references/openspec-update-change.md": "678af6ec1889",
-    "mate-publish-artifact/SKILL.md": "07454a91dba0",
+    "mate-publish-artifact/SKILL.md": "1daa076a037a",
     "mate-publish-artifact/references/openspec.md": "d004aed5cf3f",
     "mate-show-me/SKILL.md": "908f009299ac",
-    "mate-simplify-code/SKILL.md": "a728118654f8",
+    "mate-simplify-code/SKILL.md": "3620932bd724",
   },
   "opencodeConfig": {
     "$schema": "https://opencode.ai/config.json",
@@ -6636,7 +6636,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
   "opencodeSkills": {},
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-apply-change/SKILL.md": "c74a5671ea56",
+    "mate-apply-change/SKILL.md": "2b02ae654234",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "de22021f4daa",
     "mate-archive-change/SKILL.md": "a231ddabb438",
@@ -6656,10 +6656,10 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     "mate-propose-change/references/mate-revise.md": "fab04cde133f",
     "mate-propose-change/references/openspec-propose.md": "c1f1d1291283",
     "mate-propose-change/references/openspec-update-change.md": "cdb8d6c17526",
-    "mate-publish-artifact/SKILL.md": "07454a91dba0",
+    "mate-publish-artifact/SKILL.md": "1daa076a037a",
     "mate-publish-artifact/references/openspec.md": "d004aed5cf3f",
     "mate-show-me/SKILL.md": "908f009299ac",
-    "mate-simplify-code/SKILL.md": "a728118654f8",
+    "mate-simplify-code/SKILL.md": "3620932bd724",
   },
 }
 `;
@@ -7398,7 +7398,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 "Outputs land in $GRAPHIFY_OUT by default.
 "
 ,
-    "mate-apply-change/SKILL.md": "c74a5671ea56",
+    "mate-apply-change/SKILL.md": "2b02ae654234",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "d11b6fc25bf4",
     "mate-archive-change/SKILL.md": "a231ddabb438",
@@ -7418,12 +7418,12 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "mate-propose-change/references/mate-revise.md": "fab04cde133f",
     "mate-propose-change/references/openspec-propose.md": "dbd00207ffa4",
     "mate-propose-change/references/openspec-update-change.md": "678af6ec1889",
-    "mate-publish-artifact/SKILL.md": "07454a91dba0",
+    "mate-publish-artifact/SKILL.md": "1daa076a037a",
     "mate-publish-artifact/references/openspec.md": "d004aed5cf3f",
     "mate-react-doctor/SKILL.md": "2ecf137679df",
     "mate-react-doctor/references/explain.md": "86754a7e5436",
     "mate-show-me/SKILL.md": "908f009299ac",
-    "mate-simplify-code/SKILL.md": "a728118654f8",
+    "mate-simplify-code/SKILL.md": "3620932bd724",
   },
   "opencodeConfig": {
     "$schema": "https://opencode.ai/config.json",
@@ -7482,7 +7482,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   },
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-apply-change/SKILL.md": "c74a5671ea56",
+    "mate-apply-change/SKILL.md": "2b02ae654234",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "de22021f4daa",
     "mate-archive-change/SKILL.md": "a231ddabb438",
@@ -7502,12 +7502,12 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "mate-propose-change/references/mate-revise.md": "fab04cde133f",
     "mate-propose-change/references/openspec-propose.md": "c1f1d1291283",
     "mate-propose-change/references/openspec-update-change.md": "cdb8d6c17526",
-    "mate-publish-artifact/SKILL.md": "07454a91dba0",
+    "mate-publish-artifact/SKILL.md": "1daa076a037a",
     "mate-publish-artifact/references/openspec.md": "d004aed5cf3f",
     "mate-react-doctor/SKILL.md": "2ecf137679df",
     "mate-react-doctor/references/explain.md": "86754a7e5436",
     "mate-show-me/SKILL.md": "908f009299ac",
-    "mate-simplify-code/SKILL.md": "a728118654f8",
+    "mate-simplify-code/SKILL.md": "3620932bd724",
   },
 }
 `;

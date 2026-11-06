@@ -58,6 +58,10 @@ mate working worktree acme-fix
 
 Do not combine a Workset argument with `--change`.
 
+The children of an [Umbrella Repository](/docs/concepts/umbrella-repository)
+share one mirrored worktree, `<umbrella>.worktrees/<workset-id>`, which holds a
+worktree per child.
+
 ## Enter and start a session
 
 Creating a worktree alone does not move your shell or record delivery. Inside
@@ -77,6 +81,15 @@ a move tool or a handoff. The CLI itself never moves a session. Claude Code
 uses `EnterWorktree` with approval; OpenCode uses `mate_enter_worktree`. If the
 move is unsupported or declined, open a new session in the reported checkout
 and invoke the apply skill there before editing.
+
+In OpenCode, a new session started with `/new` or `/clear` in the main checkout
+follows the worktree a session last entered, and is told where it was moved.
+Sessions an editor starts in a directory it chose stay there.
+`mate_exit_worktree` moves a session back to the main checkout and stops new
+sessions from following; the worktree stays. Following also stops when the
+worktree is removed or the OpenCode server restarts. When you resume a change
+from the main checkout, the apply skill moves the session into the change's
+existing worktree.
 
 For a fresh terminal session, change to the reported directory first:
 

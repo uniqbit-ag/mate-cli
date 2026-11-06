@@ -30,7 +30,7 @@ function link(paths: string[]): void {
 
 function workingRepo(name: string, remote: string): string {
   const repo = path.join(root, name);
-  fs.mkdirSync(repo);
+  fs.mkdirSync(repo, { recursive: true });
   execFileSync("git", ["init", "-q", repo]);
   execFileSync("git", ["-C", repo, "remote", "add", "origin", remote]);
   return repo;
@@ -62,6 +62,19 @@ describe("repository sources", () => {
     expect(sources.get("acme/web")).toBe("git@git.acme.test:acme/web.git");
   });
 
+  test("an Umbrella Repository offers its children, also one cloned after linking", async () => {
+    workingRepo(path.join("acme", "web"), "https://git.acme.test/acme/web.git");
+    workingRepo(path.join("acme", "api"), "git@git.acme.test:acme/api.git");
+    link([path.join(root, "acme")]);
+    expect(await linkedRepositoryIdentities(companion, {})).toEqual(["acme/api", "acme/web"]);
+    workingRepo(path.join("acme", "docs"), "git@git.acme.test:acme/docs.git");
+    expect(await linkedRepositoryIdentities(companion, {})).toEqual([
+      "acme/api",
+      "acme/docs",
+      "acme/web",
+    ]);
+  });
+
   test("names are offered sorted, and a companion without a registry offers the configured ones", async () => {
     expect(
       await linkedRepositoryIdentities(companion, {
@@ -78,5 +91,14 @@ describe("repository sources", () => {
     });
     expect(catalog.identities).toEqual(["acme/api", "acme/web"]);
     expect([...catalog.aliases.entries()]).toEqual([["repo-0", "acme/web"]]);
+  });
+
+  test("the catalog offers an Umbrella Repository's children but maps its ID to none", async () => {
+    workingRepo(path.join("acme", "web"), "https://git.acme.test/acme/web.git");
+    workingRepo(path.join("acme", "api"), "git@git.acme.test:acme/api.git");
+    link([path.join(root, "acme"), workingRepo("docs", "git@git.acme.test:acme/docs.git")]);
+    const catalog = await linkedRepositoryCatalog(companion, {});
+    expect(catalog.identities).toEqual(["acme/api", "acme/docs", "acme/web"]);
+    expect([...catalog.aliases.entries()]).toEqual([["repo-1", "acme/docs"]]);
   });
 });
