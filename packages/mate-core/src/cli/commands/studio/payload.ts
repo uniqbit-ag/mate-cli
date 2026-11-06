@@ -8,7 +8,7 @@ import {
   SPECS_RELATIVE_DIR,
 } from "../../../lib/change-layout";
 import { companionTicketFormat, type TicketFormat } from "../../../lib/delivery/branches";
-import { linkedRepositoryIdentities } from "../../../lib/workset/repositories";
+import { linkedRepositoryCatalog } from "../../../lib/workset/repositories";
 import type { readWorksets, WorksetProblem } from "../../../lib/workset/record";
 import type { WorksetStageId, WorksetTurn } from "../../../lib/workset/stage";
 import {
@@ -19,7 +19,7 @@ import {
 import { errorMessage } from "../../../runtime/error-message";
 import { canonicalSpecsFor, discoverArchives } from "../artifact/pending/discovery";
 import { defaultGitOps } from "../artifact/finish/git";
-import { readSpecAreas } from "./areas";
+import { readSpecScopes } from "./areas";
 import { collectSkillInventory, type StudioSkillInventory } from "./mate-inventory";
 import {
   listChanges,
@@ -48,10 +48,18 @@ export interface StudioChange {
   issueCount?: number;
 }
 
+/** One repository/Area pair a spec binds; at least one of the two is set. */
+export interface StudioSpecScope {
+  /** `org/repository`, or the value the spec names when it matches no linked repository. */
+  repository?: string;
+  area?: string;
+}
+
 export interface StudioSpec {
   capability: string;
   requirementCount?: number;
-  areas: string[];
+  /** Sorted by repository, pairs without one last, then by Area. */
+  scopes: StudioSpecScope[];
   valid?: boolean;
   issueCount?: number;
 }
@@ -117,7 +125,7 @@ export interface CompanionPayloadDeps {
   readAllChangeStatus?: typeof readAllChangeStatus;
   validateAll?: typeof validateAll;
   readWorkflowTopology?: typeof readWorkflowTopology;
-  readSpecAreas?: (specsRoot: string, specId: string) => Promise<string[]>;
+  readSpecScopes?: typeof readSpecScopes;
   collectSkillInventory?: typeof collectSkillInventory;
   discoverArchives?: typeof discoverArchives;
   canonicalSpecsFor?: typeof canonicalSpecsFor;
@@ -125,7 +133,7 @@ export interface CompanionPayloadDeps {
   readUncommittedPaths?: (companionPath: string) => Promise<string[]>;
   hasArchivedProposal?: (companionPath: string, anchor: string) => Promise<boolean>;
   readWorksets?: typeof readWorksets;
-  linkedRepositoryIdentities?: typeof linkedRepositoryIdentities;
+  linkedRepositoryCatalog?: typeof linkedRepositoryCatalog;
   ticketFormat?: typeof companionTicketFormat;
   archiveAnchors?: typeof archiveAnchors;
   /** Whether an archive's Publication Merge Gate is open: merged, not applicable, or legacy. */
@@ -307,8 +315,13 @@ export async function assembleCompanionPayload(
   const collectStatus = deps.readAllChangeStatus ?? readAllChangeStatus;
   const collectValidation = deps.validateAll ?? validateAll;
   const collectTopology = deps.readWorkflowTopology ?? readWorkflowTopology;
-  const collectAreas = deps.readSpecAreas ?? readSpecAreas;
+  const collectScopes = deps.readSpecScopes ?? readSpecScopes;
   const collectSkills = deps.collectSkillInventory ?? collectSkillInventory;
+  // Started now: spec scopes need its registry IDs, and it runs alongside the OpenSpec reads.
+  const linked = (deps.linkedRepositoryCatalog ?? linkedRepositoryCatalog)(companionPath).then(
+    (catalog) => ({ catalog }),
+    (error: unknown) => ({ error }),
+  );
 
   const [changeList, specList, status, validation, topology, skillInventory, shipped] =
     await Promise.all([
@@ -373,27 +386,30 @@ export async function assembleCompanionPayload(
     companionPath;
   const specsRoot = path.join(planningRoot, "openspec", "specs");
 
+  const linkedResult = await linked;
+  if ("error" in linkedResult) {
+    warnings.push(`linked repositories: ${errorMessage(linkedResult.error)}`);
+  }
+  const catalog =
+    "catalog" in linkedResult
+      ? linkedResult.catalog
+      : { identities: [], aliases: new Map<string, string>() };
+
   const specs: StudioSpec[] = await Promise.all(
     (specList.value.specs ?? []).map(async (spec) => ({
       capability: spec.id,
       ...(spec.requirementCount === undefined ? {} : { requirementCount: spec.requirementCount }),
-      areas: await collectAreas(specsRoot, spec.id),
+      scopes: await collectScopes(specsRoot, spec.id, undefined, catalog.aliases),
       ...validationOf(validationItems, spec.id, "spec"),
     })),
   );
 
   const shippedChanges = "changes" in shipped ? shipped.changes : [];
-  const [worksets, linkedRepositories, ticketFormat] = await Promise.all([
+  const [worksets, ticketFormat] = await Promise.all([
     collectWorksets(companionPath, changes, shippedChanges, deps).catch((error: unknown) => {
       warnings.push(`worksets: ${errorMessage(error)}`);
       return { worksets: [], problems: [] };
     }),
-    (deps.linkedRepositoryIdentities ?? linkedRepositoryIdentities)(companionPath).catch(
-      (error: unknown) => {
-        warnings.push(`linked repositories: ${errorMessage(error)}`);
-        return [];
-      },
-    ),
     (deps.ticketFormat ?? companionTicketFormat)(companionPath).catch(
       (error: unknown): TicketFormat => {
         warnings.push(`ticket setting: ${errorMessage(error)}`);
@@ -421,7 +437,7 @@ export async function assembleCompanionPayload(
       "skills" in skillInventory ? skillInventory.skills : { claude: [], opencode: [], agents: [] },
     topology: topology.ok ? topology.value : null,
     worksets: worksets.worksets,
-    linkedRepositories,
+    linkedRepositories: catalog.identities,
     ticketFormat,
     worksetProblems: worksets.problems,
     warnings,

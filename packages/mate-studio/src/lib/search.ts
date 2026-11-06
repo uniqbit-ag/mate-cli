@@ -37,6 +37,33 @@ export function validateStudioSearch(raw: {
   return search;
 }
 
+/** The Specs view's search and filters; absent means All. */
+export interface SpecsSearch {
+  q?: string;
+  repo?: string;
+  area?: string;
+}
+
+/** The router JSON-parses search values, so `?q=2026` arrives as a number; read it as typed. */
+function searchText(value: unknown): string | undefined {
+  if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
+    return undefined;
+  }
+  return String(value).trim() || undefined;
+}
+
+/** Values naming nothing in the companion's specs are dropped by the view, not here. */
+export function validateSpecsSearch(raw: {
+  q?: unknown;
+  repo?: unknown;
+  area?: unknown;
+}): SpecsSearch {
+  const q = searchText(raw.q);
+  const repo = searchText(raw.repo);
+  const area = searchText(raw.area);
+  return { ...(q ? { q } : {}), ...(repo ? { repo } : {}), ...(area ? { area } : {}) };
+}
+
 /**
  * The address to replace this one with so it names the effective mode and no legacy `role`,
  * or `null` when it already does. A view the mode is not offered lands on the Overview.
