@@ -1,0 +1,116 @@
+---
+title: VS Code & Cursor
+description: Install the Mate sidebar, open your workspace, and start a session in the right checkout.
+---
+
+The Mate extension puts sessions, worktrees, and change progress next to your
+code. It works in VS Code and Cursor. It does not replace Git or create a
+worktree just by opening a workspace.
+
+## Install the extension
+
+Install Mate and your chosen Agent Runtime first. The editor CLI (`code` or
+`cursor`) must be on PATH for extension installation. In a terminal:
+
+```sh
+mate vscode setup
+```
+
+Mate installs the extension matching its CLI version into every editor it
+finds. To select one:
+
+```sh
+mate vscode setup --editor code
+mate vscode setup --editor cursor
+```
+
+Run only the command for the editor you want. No Repository Link is needed
+for installation; using the sidebar's workspace and change features does
+require a linked Working Repository. `mate update` updates an already
+installed extension with the CLI. Do not install the npm VSIX carrier package
+directly.
+
+## Open the managed workspace
+
+Open your linked repository folder in the editor, then open the Mate sidebar.
+If the repository's managed workspace is not open, you see only **Open workspace**.
+Click it to prepare `.mate/acme.mate.code-workspace` for a folder named `acme`
+and open it in the same window. Viewing the sidebar alone writes nothing.
+
+The managed workspace groups the Working Repository and its linked Companion
+Repositories. Existing folders, settings, and comments are preserved. An
+untitled or unrelated workspace does not satisfy this gate. If preparation
+fails, fix the reported link or workspace error and retry; no separate reload
+is normally needed.
+
+From a terminal in the linked Working Repository, you can also run:
+
+```sh
+mate companion open
+```
+
+This opens the same managed document. A workspace groups folders; it neither
+creates a Git worktree nor switches your Git branch.
+
+## Find your work
+
+Once the managed workspace is open, the sidebar offers:
+
+- **Sessions:** Claude and OpenCode sessions started from this sidebar for the repository and its worktrees, grouped by Workset and branch. Sessions launched in a terminal are not listed.
+- **Worktrees:** the repository's Git checkouts, with Workset branches marked. Opening one opens another editor window.
+- **Open changes:** active companion changes grouped by Workset, with task progress and session counts. Expand a group to see its changes or resume the latest session. Opening a change shows its proposal, or its tasks when it has no proposal.
+- **Ready to publish:** archived changes reported by Mate, including those still waiting for their delivery merge. Being listed does not mean a change has been published.
+
+Use **Refresh** to update the sidebar. It also reloads when made visible.
+
+## Start and reconnect a session
+
+Start a Claude or OpenCode session from the sidebar in the checkout you intend
+to edit. Check its branch and change before giving implementation instructions.
+The terminal is an attachment to the background session when supported:
+
+| Action                  | Effect                                                                                   |
+| ----------------------- | ---------------------------------------------------------------------------------------- |
+| Close attached terminal | Detach; background work can continue.                                                    |
+| Attach                  | Reconnect a terminal to a running session.                                               |
+| Stop                    | End Claude background work, or interrupt OpenCode's running turn; keep the conversation. |
+| Resume                  | Continue a kept conversation.                                                            |
+
+Claude requires background-service support (`--bg`). Without it, the session
+runs in a terminal and stops when that terminal closes. A Claude session
+running in its own terminal outside the service has neither Attach nor Stop
+in the sidebar; return to its terminal.
+
+OpenCode 2.x uses a Mate-managed server shared by the repository and its
+worktrees. Closing the client terminal does not stop its running turn. After
+an hour without a running turn, the server shuts down; the conversation stays
+available and the next session restarts it. Attach and Resume reconnect a
+terminal, while Stop interrupts the running turn.
+
+Parked sessions older than 14 days move to **Older**. Sessions whose worktree
+is gone or whose branch is merged are hidden. Terminal-started sessions such
+as `mate opencode` are intentionally absent, not lost: return to that runtime
+to continue them.
+
+## Work in another checkout
+
+Use a [worktree](/docs/concepts/worktrees#create-a-checkout-for-a-planned-change)
+to keep a second change's working files separate. Create it with Mate or Git,
+then open it from **Worktrees** in another window. Open that checkout's managed
+workspace if prompted, and start the sidebar session there.
+
+Opening a worktree window does not move a running agent conversation. For
+session movement and delivery recording, follow the
+[worktree entry instructions](/docs/concepts/worktrees#enter-and-start-a-session).
+Plans and tasks remain in the shared Companion Repository, so coordinate
+parallel edits to those files.
+
+## Troubleshooting
+
+- **No editor detected:** enable the editor's CLI on PATH, reopen the terminal, and rerun `mate vscode setup` for that editor.
+- **Only Open workspace appears:** open the linked repository and click the button; an arbitrary workspace is not its managed workspace.
+- **Workspace preparation fails:** run `mate doctor` from the checkout, repair the Repository Link or the reported invalid workspace document, and retry. The button does not require an editor CLI on PATH.
+- **CLI older than extension:** update Mate, then rerun `mate vscode setup` so versions match.
+- **Session missing:** only sidebar-started sessions are listed; also check Older, whether the worktree still exists, and whether its branch was merged.
+- **Agent keeps working after closing terminal:** attach again, or explicitly Stop it; closing a background attachment is not cancellation.
+- **Worktree lacks Mate guidance:** run `mate opencode` or `mate wrap` there before using plain OpenCode.

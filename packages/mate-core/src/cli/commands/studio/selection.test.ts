@@ -63,6 +63,17 @@ const beta = companionDigest("/home/dev/.mate/companions/beta-companion");
 const at = (query: string) => new URL(`http://localhost:1/${query}`);
 
 describe("parse", () => {
+  it("offers Getting Started only in Engineering without changing the landing or companion", () => {
+    expect(parse(at("?view=getting-started"))).toMatchObject({
+      view: "getting-started",
+      companionDigest: null,
+    });
+    expect(parse(at("?view=getting-started&studioMode=analysis"))).toMatchObject({
+      view: "dashboard",
+      studioMode: "analysis",
+    });
+    expect(parse(at(""))).toMatchObject({ view: "dashboard" });
+  });
   it("reads every view the sidebar can name", () => {
     for (const view of STUDIO_VIEWS) expect(parse(at(`?view=${view}`)).view).toBe(view);
   });

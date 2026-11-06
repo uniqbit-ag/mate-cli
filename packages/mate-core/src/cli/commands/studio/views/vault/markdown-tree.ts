@@ -58,6 +58,9 @@ export interface MdAttributes {
   href?: string;
   /** A companion-relative markdown path the link opens in the vault. */
   note?: string;
+  /** An allowlisted Studio guide route or fragment. */
+  guide?: string;
+  id?: string;
 }
 
 const MARKDOWN_TARGET = /\.(md|markdown)$/i;
@@ -170,14 +173,18 @@ function markNormative(node: MdNode): MdNode {
 
 /** The same mapping the server-rendered vault used, producing data instead of markup. */
 class TreeMapper {
-  constructor(private readonly path: string) {}
+  constructor(
+    private readonly path: string,
+    private readonly guide?: GuideContext,
+  ) {}
 
   blocks(tokens: Token[] | undefined): MdNode[] {
     const list = tokens ?? [];
     const nodes: MdNode[] = [];
     for (let index = 0; index < list.length; index += 1) {
       const token = list[index]!;
-      const kind = token.type === "heading" ? sectionKind(token as Tokens.Heading) : null;
+      const kind =
+        !this.guide && token.type === "heading" ? sectionKind(token as Tokens.Heading) : null;
       if (!kind) {
         nodes.push(...this.block(token));
         continue;
@@ -261,7 +268,13 @@ class TreeMapper {
         return [];
       case "heading": {
         const heading = token as Tokens.Heading;
-        return [el(headingTag(heading), this.inline(heading.tokens, heading.text))];
+        return [
+          el(
+            headingTag(heading),
+            this.inline(heading.tokens, heading.text),
+            this.guide ? { id: this.guide.heading(heading.text) } : undefined,
+          ),
+        ];
       }
       case "paragraph": {
         const paragraph = token as Tokens.Paragraph;
@@ -408,9 +421,71 @@ class TreeMapper {
   private link(link: Tokens.Link): MdNode {
     const label = this.inline(link.tokens, link.text);
     if (/^https?:\/\//i.test(link.href)) return el("a", label, { href: link.href });
+    if (this.guide) return el("a", label, { guide: this.guide.link(link.href) });
     const note = resolveNoteLink(link.href, this.path);
     return note === null ? el("span", label) : el("a", label, { note });
   }
+}
+
+interface GuideContext {
+  heading(text: string): string;
+  link(target: string): string;
+}
+
+/** Bundled Markdown only; rejects constructs the reader cannot faithfully render. */
+export function guideTree(
+  source: string,
+  path: string,
+  routes: Readonly<Record<string, string>>,
+): MdNode[] {
+  const body = source.replace(FRONTMATTER, "");
+  const tokens = new Lexer({ gfm: true }).lex(body);
+  const fail = (value: string): never => {
+    throw new Error(`${path}: ${value}`);
+  };
+  const validate = (items: Token[]): void => {
+    for (const token of items) {
+      if (token.type === "code" || token.type === "codespan" || token.type === "escape") continue;
+      if (token.type === "html" || token.type === "image")
+        fail(`unsupported ${token.type}: ${token.raw}`);
+      if (
+        token.type === "text" &&
+        !("tokens" in token && token.tokens) &&
+        /[{}]|^\s*(?:import|export)\s/m.test(token.raw)
+      )
+        fail(`unsupported MDX: ${token.raw}`);
+      if ("tokens" in token && token.tokens) validate(token.tokens);
+      if (token.type === "list")
+        for (const item of (token as Tokens.List).items) {
+          if (item.task) fail("unsupported task list");
+          validate(item.tokens);
+        }
+      if (token.type === "table") {
+        const table = token as Tokens.Table;
+        for (const cell of [...table.header, ...table.rows.flat()]) validate(cell.tokens);
+      }
+    }
+  };
+  validate(tokens);
+  const counts = new Map<string, number>();
+  return new TreeMapper(path, {
+    heading(text) {
+      const slug = text
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}_\s-]/gu, "")
+        .replace(/\s/g, "-");
+      const count = counts.get(slug) ?? 0;
+      counts.set(slug, count + 1);
+      return count ? `${slug}-${count}` : slug;
+    },
+    link(target) {
+      if (target.startsWith("#")) return target;
+      const [page, fragment] = target.split("#");
+      const route = page && Object.hasOwn(routes, page) ? routes[page] : undefined;
+      if (!route) return fail(`unresolved or unsafe guide link: ${target}`);
+      return `${route}${fragment === undefined ? "" : `#${fragment}`}`;
+    },
+  }).blocks(tokens);
 }
 
 /** A markdown file as data the browser renders; `path` is where its relative links start. */
