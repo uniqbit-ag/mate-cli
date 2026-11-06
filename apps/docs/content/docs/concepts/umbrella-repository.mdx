@@ -1,0 +1,124 @@
+---
+title: Umbrella Repository
+description: Link one plain folder that holds several Git checkouts, and work on changes that span them.
+---
+
+Some teams keep several repositories side by side in one plain folder. Instead
+of linking each repository, you can link that folder once:
+
+```text
+~/src/acme/        linked with mate companion link; no .git of its own
+  api/             Git checkout, origin acme/api
+  web/             Git checkout, origin acme/web
+```
+
+Such a folder is an _Umbrella Repository_. A session started in it sees every
+child, so one change can cross `acme/api` and `acme/web`.
+
+## Set It Up
+
+Run `mate companion link` in the folder, as you would in a single repository:
+
+```sh
+cd ~/src/acme
+mate companion link
+```
+
+Nothing is written into the children. A repository you clone into the folder
+later counts at once, without linking again.
+
+## Which Folders Count
+
+Mate recognises an umbrella on every lookup; the companion's registry records
+nothing about it. A linked folder is an umbrella when:
+
+- it is not a Git checkout itself, and
+- its direct children include Git checkouts whose `origin` names a forge
+  repository.
+
+Each such child counts as a linked checkout of its own repository, in
+folder-name order, wherever Mate looks a repository up: Workset choices,
+`mate working worktree`, and delivery's merge checks. The identity is the raw
+`remote.origin.url`, so a Git `insteadOf` rewrite does not change it.
+
+- **Only direct children count.** A checkout nested deeper is not scanned.
+- **A child without a forge `origin` is ignored.**
+- **A Git checkout is never an umbrella**, even when it holds other checkouts.
+- **A child's own link wins.** A child with its own `.mate/` link is
+  represented by that link only, whichever companion it names.
+- **The same repository twice.** When a repository is both an umbrella child
+  and linked elsewhere, the first in the companion's registry order wins.
+- **A symlinked umbrella is one umbrella.** Mate compares real paths, so a
+  folder linked through a symlink is the folder it points to.
+
+**Linking a broad folder exposes its children.** Linking a folder such as
+`~/src` that holds many clones makes each of them a linked checkout of the
+companion. Nothing is written into them, but they all appear in Workset
+choices.
+
+## Sessions And Delivery
+
+A session launched in the umbrella keeps the umbrella as its Working
+Repository. Since the umbrella has no `origin` of its own, the repository a
+command acts on comes from the change:
+
+- `mate artifact link <change> --branch <branch>` records the delivery for the
+  change's only scoped child. With several scoped children, or none, an edit
+  exits non-zero, names them, and asks for `--repository <org/repo>`. A read
+  without an edit always works.
+- Branch checks, such as the suggested delivery branch, run in that child's
+  checkout, never in the umbrella folder.
+- `mate-apply-change` settles the delivery branch per scoped child: it reads
+  each child's branch and its record with
+  `mate artifact link <change> --repository <org/repo> --json`, and records each
+  child separately.
+
+## Worktrees
+
+A Workset's umbrella children get one _mirrored worktree_,
+`<umbrella>.worktrees/<workset-id>`, which holds a Git worktree per child:
+
+```text
+~/src/acme.worktrees/acme-login/   linked and wrapped like ~/src/acme
+  api/                             git worktree of ~/src/acme/api
+  web/                             git worktree of ~/src/acme/web
+```
+
+`mate working worktree <workset-id>`, or `--change <change>`, creates it. Only
+the Workset's repositories get a worktree there.
+
+- **The folder carries the link and the wrap.** It gets a repo-local link under
+  the umbrella's repository ID and a wrap for the runtimes the umbrella is
+  wrapped for. The child worktrees get no `.mate/` folder, so `git status`
+  stays clean in them. Install, env-file hints, and the TokenSave index still
+  run per child worktree.
+- **A session there sees the whole Workset**, as one in the umbrella sees the
+  whole umbrella. Inside a child worktree, Mate finds the folder's link.
+- **The folder must be free.** It must be absent, already this umbrella's
+  mirrored worktree, or hold nothing but OS metadata such as `.DS_Store` and
+  the Workset's own child worktrees, as an interrupted run leaves it. Any other
+  folder stops the command without changes.
+- **One umbrella per Workset.** A Workset may mix umbrella children with
+  repositories linked on their own, but not span two umbrellas.
+
+With `--change <change> --enter`, Mate records the branch for every child that
+got a worktree, then always hands off to the mirrored worktree: it is not a Git
+worktree an agent runtime can move into, so start a new session there. A child
+whose recording fails is a warning. A session in another umbrella, or one whose
+children got no worktree, gets a hand-off without a path.
+
+## Cleaning Up
+
+`mate working worktree prune` removes the child worktrees of Done Worksets as
+it removes any other worktree. Then it removes the mirrored folder, only when
+nothing but Mate's own files and OS metadata are left: it unwraps the folder,
+then removes it and an empty `<umbrella>.worktrees` without deleting
+recursively. A folder that still holds a child worktree or any other file
+stays, still linked and wrapped, and is named with the reason.
+
+A worktree of an umbrella child made by hand outside the mirrored folder is
+unwrapped before removal. When Git refuses to remove it, it is kept and named,
+and you run `mate wrap` there yourself.
+
+See [`mate working worktree`](/docs/reference/commands#setup-and-linking) for
+every option.

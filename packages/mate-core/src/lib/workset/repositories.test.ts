@@ -26,7 +26,7 @@ function link(paths: string[]): void {
 
 function workingRepo(name: string, remote: string): string {
   const repo = path.join(root, name);
-  fs.mkdirSync(repo);
+  fs.mkdirSync(repo, { recursive: true });
   execFileSync("git", ["init", "-q", repo]);
   execFileSync("git", ["-C", repo, "remote", "add", "origin", remote]);
   return repo;
@@ -56,6 +56,19 @@ describe("repository sources", () => {
       MATE_FACTORY_REPOSITORIES: "https://mirror.acme.test/acme/web.git",
     });
     expect(sources.get("acme/web")).toBe("git@git.acme.test:acme/web.git");
+  });
+
+  test("an Umbrella Repository offers its children, also one cloned after linking", async () => {
+    workingRepo(path.join("acme", "web"), "https://git.acme.test/acme/web.git");
+    workingRepo(path.join("acme", "api"), "git@git.acme.test:acme/api.git");
+    link([path.join(root, "acme")]);
+    expect(await linkedRepositoryIdentities(companion, {})).toEqual(["acme/api", "acme/web"]);
+    workingRepo(path.join("acme", "docs"), "git@git.acme.test:acme/docs.git");
+    expect(await linkedRepositoryIdentities(companion, {})).toEqual([
+      "acme/api",
+      "acme/docs",
+      "acme/web",
+    ]);
   });
 
   test("names are offered sorted, and a companion without a registry offers the configured ones", async () => {

@@ -192,6 +192,96 @@ describe("mate working worktree", () => {
     });
   });
 
+  describe("an Umbrella Repository", () => {
+    const umbrella = () => path.join(root, "src", "acme");
+
+    function linkUmbrella(companion: string): void {
+      const config = path.join(umbrella(), ".mate", "config");
+      fs.mkdirSync(config, { recursive: true });
+      fs.mkdirSync(path.join(umbrella(), "api"), { recursive: true });
+      fs.writeFileSync(
+        path.join(config, "registry.yaml"),
+        `companions:\n  - path: ${companion}\n    repositoryId: acme\n`,
+      );
+    }
+
+    test("run in the umbrella folder, outside Git, uses its link", async () => {
+      const companion = companionAt("acme-companion");
+      linkUmbrella(companion);
+      const seen: string[] = [];
+      await runWorkingWorktreeCommand(
+        ["acme-login"],
+        deps({
+          cwd: umbrella(),
+          checkoutRoots: async () => null,
+          collectInventory: async () => inventory(),
+          create: async (used) => (seen.push(used), created),
+        }),
+      );
+      expect(process.exitCode).toBe(0);
+      expect(seen).toEqual([companion]);
+    });
+
+    test("run in the umbrella folder without a repo-local link pairs through the registry", async () => {
+      const companion = companionAt("acme-companion");
+      fs.mkdirSync(umbrella(), { recursive: true });
+      const seen: string[] = [];
+      await runWorkingWorktreeCommand(
+        ["acme-login"],
+        deps({
+          cwd: umbrella(),
+          checkoutRoots: async () => null,
+          collectInventory: async () => ({
+            schemaVersion: 1,
+            companions: [],
+            pairings: [
+              {
+                companionPath: companion,
+                repository: { id: "acme", path: umbrella() },
+                health: "ready",
+                ambiguous: false,
+              },
+            ],
+          }),
+          create: async (used) => (seen.push(used), created),
+        }),
+      );
+      expect(process.exitCode).toBe(0);
+      expect(seen).toEqual([companion]);
+    });
+
+    test("run in a child without its own link walks up to the umbrella's", async () => {
+      const companion = companionAt("acme-companion");
+      linkUmbrella(companion);
+      const seen: string[] = [];
+      const child = path.join(umbrella(), "api");
+      await runWorkingWorktreeCommand(
+        ["acme-login"],
+        deps({
+          cwd: child,
+          checkoutRoots: async () => [child],
+          collectInventory: async () => inventory(),
+          create: async (used) => (seen.push(used), created),
+        }),
+      );
+      expect(process.exitCode).toBe(0);
+      expect(seen).toEqual([companion]);
+    });
+
+    test("a folder outside Git without any link asks for --companion", async () => {
+      const plain = path.join(root, "src", "plain");
+      fs.mkdirSync(plain, { recursive: true });
+      await runWorkingWorktreeCommand(
+        ["acme-login"],
+        deps({ cwd: plain, checkoutRoots: async () => null }),
+      );
+      expect(process.exitCode).toBe(1);
+      expect(err.join("\n")).toContain(
+        `${plain} is neither inside a Git working tree nor linked to a companion; pass --companion`,
+      );
+    });
+  });
+
   test("--companion overrides the pairings", async () => {
     const explicit = companionAt("acme-explicit");
     const seen: string[] = [];
@@ -360,6 +450,8 @@ describe("mate working worktree", () => {
         },
       ],
       diagnostics: [],
+      // Its own: the command appends to it.
+      warnings: [],
     });
     const recorded = {
       repository: "acme/web",
@@ -455,6 +547,52 @@ describe("mate working worktree", () => {
       });
       // Never another repository's worktree.
       expect(instruction.path).toBeUndefined();
+    });
+
+    test("an Umbrella Repository hands off to the mirrored worktree, even in Claude Code", async () => {
+      const mirror = "/src/acme.worktrees/acme-fix";
+      const reason = `${mirror} is a mirrored umbrella worktree, not a Git worktree`;
+      const calls: unknown[] = [];
+      await enter(
+        { CLAUDECODE: "1" },
+        {
+          recordBranch: async () => ({
+            handoff: reason,
+            path: mirror,
+            repositories: ["acme/api", "acme/web"],
+          }),
+          attribute: async (attribution) => (calls.push(attribution), null),
+        },
+      );
+      expect(process.exitCode).toBe(0);
+      expect(JSON.parse(out.join("")).enter).toEqual({
+        runtime: "claude",
+        action: "handoff",
+        path: mirror,
+        reason,
+      });
+      // The session is not moved, so only the change is attributed.
+      expect(calls).toEqual([{ change: "acme-fix" }]);
+    });
+
+    test("an umbrella child's failed record still hands off to the mirror and warns", async () => {
+      const mirror = "/src/acme.worktrees/acme-fix";
+      const reason = `${mirror} is a mirrored umbrella worktree, not a Git worktree`;
+      await enter(
+        { CLAUDECODE: "1" },
+        {
+          recordBranch: async () => ({
+            handoff: reason,
+            path: mirror,
+            repositories: ["acme/api"],
+            failed: ["acme/web: acme refused"],
+          }),
+        },
+      );
+      expect(process.exitCode).toBe(0);
+      const parsed = JSON.parse(out.join(""));
+      expect(parsed.enter).toEqual({ runtime: "claude", action: "handoff", path: mirror, reason });
+      expect(parsed.warnings).toEqual(["acme/web: acme refused"]);
     });
 
     test("text output without a worktree to enter names no path", async () => {
