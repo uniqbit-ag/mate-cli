@@ -1,5 +1,5 @@
 import { type StudioCompanionPayload } from "@uniqbit/mate-core/studio";
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useState, type CSSProperties } from "react";
 
 import { CommandLine, Count, ListCard, PAGE_PAD, Pills } from "../../components/view-parts";
 import { cn } from "../../lib/cn";
@@ -13,7 +13,6 @@ import {
   percentOf,
   workflowGraph,
   type WorkflowGraph,
-  type WorkflowGraphEdge,
 } from "./graph";
 import { PHASE_LABELS, type WorkflowPath, workflowPlan, type WorkflowStep } from "./steps";
 
@@ -153,42 +152,6 @@ function PathBody({
 
 const overviewId = (path: WorkflowPath): string => `workflow-${path.schema}-overview`;
 
-/**
- * Where one item is on the path: the node it is at (a stage id, or `reviews` for the review
- * group), or `complete` past the end. Nodes before it are done.
- */
-export interface GraphProgress {
-  current: string;
-  /** How the current stage stands, e.g. `running`; styles the current node. */
-  activity: string;
-  /** A word or two under the current node, e.g. `running · 8m`. */
-  note?: string;
-}
-
-type NodeProgress = "done" | "current" | "next";
-
-/** Each node's progress, by column: everything left of the current node is done. */
-function progressOf(
-  graph: WorkflowGraph,
-  progress: GraphProgress | undefined,
-): (node: { id: string; column: number }) => NodeProgress | undefined {
-  if (!progress) return () => undefined;
-  const at = currentColumn(graph, progress.current);
-  return (node) => {
-    if (node.column < at) return "done";
-    return node.id === progress.current ? "current" : "next";
-  };
-}
-
-/** The current node's column; past the last column when `complete`. */
-function currentColumn(graph: WorkflowGraph, current: string): number {
-  const found = graph.nodes.find((node) => node.id === current);
-  if (found) return found.column;
-  if (current === "complete") return graph.columns;
-  // A node this path lacks (reviews of an unreadable schema) marks nothing.
-  return -1;
-}
-
 const COUNT_NAMES: Record<string, (count: number) => string> = {
   reviews: (count) => `${count} ${count === 1 ? "change waits" : "changes wait"} for review`,
 };
@@ -212,32 +175,28 @@ function CountBadge({ count, name }: { count: number | undefined; name: string }
 
 /**
  * Stage buttons are the only announced part: their document order is the stage order. Bands,
- * edges, and marks are decorative and hidden from assistive technology. With `progress` the
- * map shows one item's position, and nodes are plain labels.
+ * edges, and marks are decorative and hidden from assistive technology. Without `onSelect`
+ * nodes are plain labels.
  */
-export function WorkflowGraphView({
+function WorkflowGraphView({
   path,
-  progress,
   label = "Delivery Path map",
   selected = null,
   onSelect,
   counts = NO_COUNTS,
 }: {
   path: WorkflowPath;
-  progress?: GraphProgress;
   label?: string;
   selected?: string | null;
   onSelect?: (stage: string) => void;
   counts?: StageCounts;
 }) {
   const graph = workflowGraph(path);
-  const stateOf = progressOf(graph, progress);
-  const plain = Boolean(progress) || !onSelect;
+  const plain = !onSelect;
   return (
     <nav
       className="workflow-graph"
       aria-label={label}
-      data-progress-activity={progress?.activity}
       style={
         {
           "--graph-columns": String(graph.columns),
@@ -265,7 +224,7 @@ export function WorkflowGraphView({
           <span>workset</span>
         </div>
       </div>
-      <GraphLayer graph={graph} stateOf={stateOf} />
+      <GraphLayer graph={graph} />
       <ol className="workflow-graph-nodes">
         {graph.nodes.map((node) =>
           node.kind === "start" ? null : (
@@ -273,8 +232,6 @@ export function WorkflowGraphView({
               key={node.id}
               className="workflow-graph-node"
               data-node-kind={node.kind}
-              data-progress={stateOf(node)}
-              aria-current={stateOf(node) === "current" ? "step" : undefined}
               style={
                 {
                   "--graph-row": String(node.column + 1),
@@ -291,9 +248,7 @@ export function WorkflowGraphView({
                     plain={plain}
                     current={selected === node.step.id}
                     onSelect={onSelect}
-                  >
-                    <ProgressNote progress={progress} state={stateOf(node)} />
-                  </NodeLink>
+                  />
                   {plain ? null : (
                     <CountBadge
                       count={counts[node.id]}
@@ -322,7 +277,6 @@ export function WorkflowGraphView({
                       </li>
                     ))}
                   </ol>
-                  <ProgressNote progress={progress} state={stateOf(node)} />
                   {plain ? null : (
                     <CountBadge
                       count={counts.reviews}
@@ -363,32 +317,7 @@ function GraphLegend() {
   );
 }
 
-/** The current node's note, plus the done mark for assistive technology. */
-function ProgressNote({
-  progress,
-  state,
-}: {
-  progress: GraphProgress | undefined;
-  state: NodeProgress | undefined;
-}) {
-  if (state === "done") return <span className="sr-only">, done</span>;
-  if (state !== "current" || !progress?.note) return null;
-  return <span className="workflow-graph-note">{progress.note}</span>;
-}
-
-function GraphLayer({
-  graph,
-  stateOf,
-}: {
-  graph: WorkflowGraph;
-  stateOf: ReturnType<typeof progressOf>;
-}) {
-  /** A flow edge into a done or current node is the way the item came. */
-  const travelled = (edge: WorkflowGraphEdge): boolean => {
-    const to = graph.nodes.find((node) => node.id === edge.to);
-    const state = to ? stateOf(to) : undefined;
-    return edge.kind === "flow" && (state === "done" || state === "current");
-  };
+function GraphLayer({ graph }: { graph: WorkflowGraph }) {
   return (
     <svg className="workflow-graph-layer" aria-hidden="true" focusable="false">
       <svg
@@ -405,7 +334,6 @@ function GraphLayer({
             data-edge-from={edge.from}
             data-edge-to={edge.to}
             data-new-session={edge.newSession ? "true" : undefined}
-            data-travelled={travelled(edge) ? "true" : undefined}
           />
         ))}
       </svg>
@@ -442,14 +370,12 @@ function NodeLink({
   plain,
   current,
   onSelect,
-  children,
 }: {
   step: WorkflowStep;
   box?: boolean;
   plain?: boolean;
   current?: boolean;
   onSelect?: (stage: string) => void;
-  children?: ReactNode;
 }) {
   const className = box ? "workflow-graph-link workflow-graph-box" : "workflow-graph-link";
   const shared = {
@@ -466,7 +392,6 @@ function NodeLink({
       ) : null}
       {/* Inside the review group the group names the action, so only the artifact shows. */}
       {step.kind === "human" ? step.artifact : step.label}
-      {children}
     </>
   );
   if (plain) return <span {...shared}>{body}</span>;

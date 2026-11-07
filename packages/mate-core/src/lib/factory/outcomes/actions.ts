@@ -63,10 +63,14 @@ export function outcomeRefusal(
 ): string | null {
   const { id, stage, stageLabel } = workset;
   const state = run?.state ?? "idle";
-  switch (action) {
-    case "start":
-    case "later":
-      return stage === "done" ? `Workset ${id} is done` : null;
+  if (action === "start") return stage === "done" ? `Workset ${id} is done` : null;
+  if (action === "later") {
+    if (stage === "done") return `Workset ${id} is done`;
+    // Later only before work begins; a failed or interrupted clarify left nothing running.
+    const begun = stage !== "clarify-intent" || state === "running" || state === "waiting";
+    return begun
+      ? `work on Workset ${id} has begun (${stageLabel}, ${state}); it can no longer move to Later`
+      : null;
   }
   if (!companion.runner) return NO_RUNNER_REFUSAL;
   switch (action) {

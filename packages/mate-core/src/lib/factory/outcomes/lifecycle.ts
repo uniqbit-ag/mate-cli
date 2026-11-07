@@ -6,7 +6,7 @@ import { compareRanked, rankOf } from "../runner/rank";
 import { type FactoryRunner, pickableStage } from "../runner/scheduler";
 import type { Run } from "../runner/run";
 import { StageError } from "../runner/workflow";
-import { readWorksets } from "../../workset/record";
+import { findWorkset, readWorksets } from "../../workset/record";
 import type { WorksetWithStage } from "../../workset/stages";
 import { NO_CREDENTIAL } from "../credential-store";
 
@@ -174,8 +174,15 @@ export async function pickUpReady(deps: PickUpDeps): Promise<string[]> {
   const requested: string[] = [];
   for (const candidate of candidates) {
     try {
+      // Re-read under the run's lock: Later may have cleared the start since the list was read.
+      const pickable = async () => {
+        const record = await findWorkset(deps.companionPath, candidate.id);
+        return record !== undefined && pickableStage(record) === candidate.stage;
+      };
       // oxlint-disable-next-line no-await-in-loop -- free slots go to the lowest rank first
-      if (await deps.runner.pickUp(candidate.id, candidate.stage)) requested.push(candidate.id);
+      if (await deps.runner.pickUp(candidate.id, candidate.stage, pickable)) {
+        requested.push(candidate.id);
+      }
     } catch (error) {
       // Another request won the race; the Workset is running anyway.
       if (!(error instanceof StageError)) throw error;

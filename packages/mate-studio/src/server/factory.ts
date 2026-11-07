@@ -10,7 +10,7 @@ import {
 /** What the Factory reads from the companion payload; nothing else crosses to the browser. */
 export type FactoryPayload = Pick<
   StudioCompanionPayload,
-  "worksets" | "linkedRepositories" | "ticketFormat" | "topology" | "worksetProblems" | "warnings"
+  "worksets" | "linkedRepositories" | "ticketFormat" | "worksetProblems" | "warnings"
 >;
 
 /** Board actions a person can take: core's Outcome actions, plus `create`, which needs no runner. */
@@ -85,7 +85,6 @@ export const getFactory = createServerFn({ method: "GET" })
             worksets: payload.worksets,
             linkedRepositories: payload.linkedRepositories,
             ticketFormat: payload.ticketFormat,
-            topology: payload.topology,
             worksetProblems: payload.worksetProblems,
             warnings: payload.warnings,
           } satisfies FactoryPayload)

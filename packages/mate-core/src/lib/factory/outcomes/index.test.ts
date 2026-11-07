@@ -40,16 +40,18 @@ beforeEach(() => {
 
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 
-function outcomes(sessions = new LiveSessions()): {
-  outcomes: FactoryOutcomes;
-  runner: FactoryRunner;
-} {
-  const agent: StageAgent = {
+function outcomes(
+  sessions = new LiveSessions(),
+  agent: StageAgent = {
     turn: async ({ prompt }) => {
       turns.push(prompt);
       return { kind: "done" };
     },
-  };
+  },
+): {
+  outcomes: FactoryOutcomes;
+  runner: FactoryRunner;
+} {
   const runner = new FactoryRunner({
     runs,
     maxRuns: 1,
@@ -126,6 +128,109 @@ describe("an action on an Outcome", () => {
   });
 });
 
+describe("moving an Outcome to Later", () => {
+  const STARTED = "2026-11-02T09:00:00.000Z";
+  const started = (id: string) =>
+    fs.writeFileSync(
+      path.join(companion, "worksets", `${id}.yaml`),
+      `id: ${id}\ntitle: ${id}\nrepositories: [acme/web]\nstage: explore\nqueuedAt: ${STARTED}\n`,
+    );
+  const queuedAt = async (id: string) =>
+    (await readWorksets(companion)).worksets.find((w) => w.id === id)?.queuedAt;
+
+  beforeEach(() => {
+    stage = "clarify-intent";
+    started("acme-login");
+  });
+
+  test("is refused once its run is running, keeping its start time", async () => {
+    const { outcomes: o } = outcomes();
+    await runs.start("acme-login", "clarify");
+    await expect(o.act("acme-login", "later", none)).rejects.toThrow(
+      "it can no longer move to Later",
+    );
+    expect(await queuedAt("acme-login")).toBe(STARTED);
+    expect((await runs.facts("acme-login")).execution.state).toBe("running");
+  });
+
+  test("is refused past Clarify intent, keeping its start time", async () => {
+    const { outcomes: o } = outcomes();
+    stage = "explore";
+    await expect(o.act("acme-login", "later", none)).rejects.toThrow(
+      "it can no longer move to Later",
+    );
+    expect(await queuedAt("acme-login")).toBe(STARTED);
+  });
+
+  test("while queued clears its start time and removes the queued run", async () => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const { outcomes: o, runner } = outcomes(undefined, {
+      turn: async () => {
+        await held;
+        return { kind: "done" };
+      },
+    });
+    started("acme-busy");
+    await runner.request("acme-busy", "propose", "go on");
+    await runner.request("acme-login", "propose", "go on");
+    expect((await runs.facts("acme-login")).execution.state).toBe("queued");
+    await o.act("acme-login", "later", none);
+    expect(await queuedAt("acme-login")).toBeUndefined();
+    expect((await runs.facts("acme-login")).execution.state).toBe("idle");
+    expect(runner.isActive("acme-login")).toBe(false);
+    release();
+    await runner.idle("acme-busy");
+  });
+
+  test("is refused, keeping its start time, when the run started during the move", async () => {
+    const { outcomes: o } = outcomes();
+    const facts = runs.facts.bind(runs);
+    let first = true;
+    // The policy reads a queued run, which the runner starts right after.
+    runs.facts = async (id) => {
+      const read = await facts(id);
+      if (id === "acme-login" && first) {
+        first = false;
+        await runs.start(id, "clarify");
+      }
+      return read;
+    };
+    await runs.queue("acme-login", "clarify");
+    await expect(o.act("acme-login", "later", none)).rejects.toThrow(
+      "it can no longer move to Later",
+    );
+    expect(await queuedAt("acme-login")).toBe(STARTED);
+  });
+
+  test("is refused, keeping its start time, when its stage moved on during the move", async () => {
+    const { outcomes: o } = outcomes();
+    const facts = runs.facts.bind(runs);
+    let first = true;
+    // The clarify run ends between the policy check and the dequeue.
+    runs.facts = async (id) => {
+      if (id === "acme-login" && first) {
+        first = false;
+        const read = await facts(id);
+        stage = "explore";
+        return read;
+      }
+      return facts(id);
+    };
+    await expect(o.act("acme-login", "later", none)).rejects.toThrow(
+      "it can no longer move to Later",
+    );
+    expect(await queuedAt("acme-login")).toBe(STARTED);
+  });
+
+  test("after a cancelled clarify clears its start time", async () => {
+    const { outcomes: o } = outcomes();
+    await runs.fail("acme-login", "clarify", "cancelled");
+    await o.act("acme-login", "later", none);
+    expect(await queuedAt("acme-login")).toBeUndefined();
+  });
+});
+
 describe("Outcomes without the AFK runner", () => {
   const recorded = () =>
     recordOutcomes(companion, async () => ({
@@ -137,6 +242,7 @@ describe("Outcomes without the AFK runner", () => {
   const record = async () => (await readWorksets(companion)).worksets[0];
 
   test("Start and Later change only the record's start time", async () => {
+    stage = "clarify-intent";
     const o = recorded();
     await o.act("acme-login", "start", none);
     expect((await record())?.queuedAt).toBeString();
@@ -173,6 +279,16 @@ describe("Outcomes without the AFK runner", () => {
       "the AFK runner needs the appliance's factory mode for this companion",
     );
     expect((await record())?.stage).toBe("explore");
+  });
+
+  test("Later past Clarify intent is refused and keeps the start time", async () => {
+    const o = recorded();
+    await o.act("acme-login", "start", none);
+    const startedAt = (await record())?.queuedAt;
+    await expect(o.act("acme-login", "later", none)).rejects.toThrow(
+      "it can no longer move to Later",
+    );
+    expect((await record())?.queuedAt).toBe(startedAt);
   });
 
   test("Done refuses Start", async () => {
