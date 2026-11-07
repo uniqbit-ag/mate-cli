@@ -138,6 +138,15 @@ export function toWorksetRecord(fileId: string, document: unknown): WorksetRecor
   };
 }
 
+/** One record file: the record, or why it is not one. */
+async function readWorksetFile(dir: string, id: string): Promise<WorksetRecord | string> {
+  try {
+    return toWorksetRecord(id, parse(await fs.readFile(path.join(dir, `${id}.yaml`), "utf8")));
+  } catch (error) {
+    return `cannot be read: ${errorMessage(error)}`;
+  }
+}
+
 /** Every record, sorted by id; an unreadable one is a problem, never a reason to stop. */
 export async function readWorksets(companionPath: string): Promise<WorksetListing> {
   const dir = worksetsDirOf(companionPath);
@@ -153,16 +162,10 @@ export async function readWorksets(companionPath: string): Promise<WorksetListin
       .filter((name) => name.endsWith(".yaml"))
       .toSorted()
       .map(async (entry): Promise<WorksetRecord | WorksetProblem> => {
-        const relative = path.join(WORKSETS_RELATIVE_DIR, entry);
-        try {
-          const record = toWorksetRecord(
-            entry.slice(0, -".yaml".length),
-            parse(await fs.readFile(path.join(dir, entry), "utf8")),
-          );
-          return typeof record === "string" ? { path: relative, reason: record } : record;
-        } catch (error) {
-          return { path: relative, reason: `cannot be read: ${errorMessage(error)}` };
-        }
+        const record = await readWorksetFile(dir, entry.slice(0, -".yaml".length));
+        return typeof record === "string"
+          ? { path: path.join(WORKSETS_RELATIVE_DIR, entry), reason: record }
+          : record;
       }),
   );
   return {
@@ -176,7 +179,10 @@ export async function findWorkset(
   companionPath: string,
   id: string,
 ): Promise<WorksetRecord | undefined> {
-  return (await readWorksets(companionPath)).worksets.find((entry) => entry.id === id);
+  // Reads only this record's file; an id that is no file name has none.
+  if (!isWorksetId(id)) return undefined;
+  const record = await readWorksetFile(worksetsDirOf(companionPath), id);
+  return typeof record === "string" ? undefined : record;
 }
 
 export type WorksetResolution =

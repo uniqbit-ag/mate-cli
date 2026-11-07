@@ -191,7 +191,7 @@ describe("the Factory home", () => {
     expect(active).not.toContain("Apply change");
   });
 
-  it("puts goal, situation, next step, results and the Outcome's place on the path in the dialog", async () => {
+  it("puts goal, situation, next step, results and the execution facts in the dialog", async () => {
     const markup = await render(
       payload({
         worksets: [
@@ -229,14 +229,9 @@ describe("the Factory home", () => {
     expect(dialog).toContain("Review plan");
     expect(dialog).toContain("View changes");
     expect(dialog).toContain('data-passed="true"');
-    // The rail: the Delivery Path with the Outcome at Archive, and the execution facts.
+    // The rail holds the execution facts and no Delivery Path map.
     const rail = dialog.slice(dialog.indexOf('class="outcome-dialog-rail"'));
-    expect(rail).toMatch(/data-progress="done"[^>]*>.*?data-map-stage="apply"/s);
-    expect(rail).toMatch(
-      /data-progress="current" aria-current="step"[^>]*>.*?data-map-stage="archive"/s,
-    );
-    expect(rail).toMatch(/data-progress="next"[^>]*>.*?data-map-stage="publish"/s);
-    expect(rail).not.toContain('href="#workflow-');
+    expect(dialog).not.toContain("data-map-stage");
     expect(rail).toContain("Waiting for merge");
     expect(dialog.slice(0, dialog.indexOf('class="outcome-dialog-rail"'))).not.toContain(
       "Waiting for merge",
@@ -324,7 +319,7 @@ describe("the Factory home", () => {
     expect(accept).toContain('name="round" value="acme-round"');
   });
 
-  it("shows a plan review with its report, Approve, Request a change and Regenerate", async () => {
+  it("shows a plan review with a control per report, Approve, Request a change and Regenerate", async () => {
     const markup = await render(
       payload({
         worksets: [
@@ -347,13 +342,15 @@ describe("the Factory home", () => {
     );
     expect(sectionMarkup(markup, "attention")).toContain("Plan ready for review");
     const dialog = dialogMarkup(markup, "acme-onboarding");
-    expect(dialog).toContain('src="/studio/reports/r1"');
+    const review = dialog.slice(dialog.indexOf('aria-label="Needs you"'));
+    expect(review).toMatch(/data-open-report="acme-a"[^>]*>Read the report · acme-a</);
     expect(dialog).toContain("start-apply");
     expect(dialog).toContain('name="feedback"');
     expect(dialog).toContain('data-report-missing="acme-b"');
     expect(dialog).toContain("Regenerate");
-    // The review is shown once, in the attention block.
-    expect(dialog.match(/<iframe/g)).toHaveLength(1);
+    // Reports open in the panel on request; none is embedded and no link leaves Studio.
+    expect(dialog).not.toContain("<iframe");
+    expect(dialog).not.toContain("/studio/reports/r1");
   });
 
   it("offers Approve only at the Human Reviews", async () => {
@@ -471,9 +468,6 @@ describe("the Factory home", () => {
     const dialog = dialogMarkup(markup, "acme-onboarding");
     const rail = dialog.slice(dialog.indexOf('class="outcome-dialog-rail"'));
     expect(rail).toContain("running explore");
-    expect(rail).toMatch(
-      /data-progress="current"[^>]*>.*?data-map-stage="explore".*?running · 1h/s,
-    );
     expect(dialog).toMatch(/aria-label="Run actions">.*?Cancel run/s);
     expect(sectionMarkup(markup, "active")).not.toContain("running explore");
   });
@@ -493,32 +487,39 @@ describe("controls with and without the runner", () => {
   it.each<[string, Partial<StudioWorkset>, FactoryRunView | undefined, string[], string[]]>([
     ["Later in Clarify intent", { stage: "clarify-intent" }, undefined, ["start"], ["start"]],
     [
+      "queued in Clarify intent",
+      { stage: "clarify-intent", ...started() },
+      { state: "queued", stage: "clarify", updatedAt: "" } as FactoryRunView,
+      ["cancel", "later"],
+      ["later"],
+    ],
+    [
       "asking in Clarify intent",
       { stage: "clarify-intent", ...started() },
       waiting,
-      ["answer", "later"],
+      ["answer"],
       ["later"],
     ],
     [
       "at the Human Reviews",
       { stage: "human-review", stageLabel: "Human Reviews", ...started() },
       undefined,
-      ["feedback", "later", "regenerate", "start-apply"],
-      ["later"],
+      ["feedback", "regenerate", "start-apply"],
+      [],
     ],
     [
       "applying",
       { stage: "apply", stageLabel: "Apply change", ...started() },
       running(),
-      ["cancel", "feedback", "later"],
-      ["later"],
+      ["cancel", "feedback"],
+      [],
     ],
     [
       "merged and archived",
       { stage: "publish", stageLabel: "Publish", ...started() },
       undefined,
-      ["later", "publish"],
-      ["later"],
+      ["publish"],
+      [],
     ],
     ["Done", { stage: "done", stageLabel: "Done", ...started() }, undefined, [], []],
   ])("%s", async (_name, overrides, run, withRunner, withoutRunner) => {

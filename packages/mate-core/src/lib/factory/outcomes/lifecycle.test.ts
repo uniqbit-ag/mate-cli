@@ -126,6 +126,22 @@ describe("pickup", () => {
     expect(requests).toEqual([]);
   });
 
+  test("an Outcome moved to Later after the list was read is not requested", async () => {
+    workset("acme-a", "stage: ready\nqueuedAt: 2026-11-02T09:00:00.000Z\n");
+    const requested: string[] = [];
+    const runner = {
+      isActive: () => false,
+      pickUp: async (id: string, _stage: string, pickable: () => Promise<boolean>) => {
+        workset("acme-a", "stage: ready\n");
+        if (!(await pickable())) return false;
+        requested.push(id);
+        return true;
+      },
+    } as unknown as FactoryRunner;
+    expect(await pick(runner)).toEqual([]);
+    expect(requested).toEqual([]);
+  });
+
   test("an active run is left alone", async () => {
     workset("acme-b", "stage: ready\nqueuedAt: 2026-11-02T09:00:00.000Z\n");
     const { runner, requests } = fakeRunner(["acme-b"]);

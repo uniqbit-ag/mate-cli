@@ -1,16 +1,19 @@
 import { useNavigate } from "@tanstack/react-router";
 import { type FormEvent, useEffect, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 
 import { type FactoryAction, type FactoryPayload } from "../../server/factory";
 import { Warnings } from "../warnings";
+import { Icon } from "../../components/icon";
 import { ListCard, PAGE_PAD, Pills } from "../../components/view-parts";
 import { cn } from "../../lib/cn";
 import { SidePanel } from "../../shell/panel";
-import { type GraphProgress, WorkflowGraphView } from "../workflow/delivery-path";
 import { FactoryCompanion } from "./factory-companion";
 import { AgentsDialog } from "./agents-dialog";
 import { FactoryForm } from "./factory-form";
+import { useAppearance } from "../../stores/appearance";
 import { useFactoryUi } from "../../stores/factory-ui";
+import { reportSrc } from "../reports/report-url";
 import { matchesFilter, useFactoryKeys, useNeedsYou, useNotificationOffer } from "./factory-live";
 import { ageText } from "./age";
 import { useOutcomeLog } from "./use-outcome-log";
@@ -23,7 +26,6 @@ import {
   type OutcomeAction,
   outcomeActions,
   questionsOf,
-  REPORT_VIEW_PREFIX,
   type StudioWorkset,
 } from "@uniqbit/mate-core/studio";
 import {
@@ -36,10 +38,8 @@ import {
   milestonesOf,
   nextStepOf,
   type OutcomeItem,
-  pathNodeOf,
   situationOf,
 } from "./outcome";
-import { workflowPlan, type WorkflowPath } from "../workflow/steps";
 
 interface FactoryProps {
   payload: FactoryPayload;
@@ -101,8 +101,6 @@ interface HomeContext {
   /** `false` without the runner: the policy then accepts only Start and Later. */
   runner: boolean;
   now: number | undefined;
-  /** The companion's Delivery Path, drawn in each dialog with the Outcome's place on it. */
-  path: WorkflowPath;
   /** `jira` adds an optional Ticket field to the forms that create an Outcome. */
   ticketFormat: "none" | "jira";
 }
@@ -249,17 +247,55 @@ function Checks({ checks }: { checks?: { name: string; passed: boolean }[] | und
   );
 }
 
-/** Review plan and View changes, when there is something to look at. */
-function ResultLinks({ item }: { item: OutcomeItem }) {
-  const reports = Object.entries(item.run?.reviewReports ?? {});
+/** Opens a linked change's review report in the panel; Back refocuses `opener`. */
+type OpenReport = (change: string, opener: HTMLElement) => void;
+
+/** Opens `change`'s report; names the change only when there are several. */
+function ReportButton({
+  label,
+  change,
+  several,
+  onOpenReport,
+}: {
+  label: string;
+  change: string;
+  several: boolean;
+  onOpenReport: OpenReport;
+}) {
+  return (
+    <button
+      type="button"
+      className="outcome-report-open"
+      data-open-report={change}
+      onClick={(event) => onOpenReport(change, event.currentTarget)}
+    >
+      {label}
+      {several ? ` · ${change}` : ""}
+    </button>
+  );
+}
+
+/** Report controls name their change once the Outcome has several changes or reports. */
+function namesChanges(item: OutcomeItem): boolean {
+  const reports = Object.keys(item.run?.reviewReports ?? {});
+  return item.workset.changes.length > 1 || reports.length > 1;
+}
+
+/** Review plan, opened in the panel, and View changes, when there is something to look at. */
+function ResultLinks({ item, onOpenReport }: { item: OutcomeItem; onOpenReport: OpenReport }) {
+  const reports = Object.keys(item.run?.reviewReports ?? {});
   const compare = item.run?.compareUrl;
   if (reports.length === 0 && !compare) return null;
   return (
     <div className="outcome-results">
-      {reports.map(([change, id]) => (
-        <a key={change} href={`${REPORT_VIEW_PREFIX}${id}`} target="_blank" rel="noreferrer">
-          Review plan{reports.length > 1 ? ` · ${change}` : ""}
-        </a>
+      {reports.map((change) => (
+        <ReportButton
+          key={change}
+          label="Review plan"
+          change={change}
+          several={namesChanges(item)}
+          onOpenReport={onOpenReport}
+        />
       ))}
       {compare ? (
         <a href={compare} target="_blank" rel="noreferrer">
@@ -270,27 +306,21 @@ function ResultLinks({ item }: { item: OutcomeItem }) {
   );
 }
 
-/** The stored review report per linked change, each in a frame; missing ones are named. */
-function ReviewReports({ item }: { item: OutcomeItem }) {
+/** A control per linked change's stored review report; missing ones are named. */
+function ReviewReports({ item, onOpenReport }: { item: OutcomeItem; onOpenReport: OpenReport }) {
   const stored = item.run?.reviewReports ?? {};
+  const several = namesChanges(item);
   return (
     <div className="factory-review-reports">
       {item.workset.changes.map((change) =>
         stored[change] ? (
-          <figure key={change} className="factory-review-report">
-            <figcaption className="mono">
-              {change} ·{" "}
-              <a href={`${REPORT_VIEW_PREFIX}${stored[change]}`} target="_blank" rel="noreferrer">
-                open
-              </a>
-            </figcaption>
-            <iframe
-              src={`${REPORT_VIEW_PREFIX}${stored[change]}`}
-              title={`Review report for ${change}`}
-              loading="lazy"
-              sandbox="allow-scripts allow-modals"
-            />
-          </figure>
+          <ReportButton
+            key={change}
+            label="Read the report"
+            change={change}
+            several={several}
+            onOpenReport={onOpenReport}
+          />
         ) : (
           <p key={change} className="note" data-report-missing={change}>
             No review report for <span className="mono">{change}</span>.
@@ -298,6 +328,45 @@ function ReviewReports({ item }: { item: OutcomeItem }) {
         ),
       )}
     </div>
+  );
+}
+
+/** One review report in place of the Outcome's content, in Studio's appearance; Back returns. */
+function OutcomeReport({
+  change,
+  report,
+  onBack,
+}: {
+  change: string;
+  report: string;
+  onBack: () => void;
+}) {
+  const theme = useAppearance((state) => state.theme);
+  const src = reportSrc(report, theme);
+  // The opening button is hidden now; focus stays in the panel.
+  const back = useRef<HTMLButtonElement>(null);
+  useEffect(() => back.current?.focus(), []);
+  return (
+    <>
+      <header className="outcome-dialog-head outcome-report-head">
+        <button ref={back} type="button" className="outcome-report-back" onClick={onBack}>
+          <Icon name="left" /> Back
+        </button>
+        <h2>
+          Review report · <span className="mono">{change}</span>
+        </h2>
+        <a href={src} target="_blank" rel="noopener noreferrer">
+          <Icon name="external" /> Open in new tab
+        </a>
+      </header>
+      <iframe
+        className="outcome-report-frame"
+        src={src}
+        title={`Review report for ${change}`}
+        sandbox="allow-scripts allow-modals"
+        referrerPolicy="no-referrer"
+      />
+    </>
   );
 }
 
@@ -535,15 +604,6 @@ function Facts({ item, context }: { item: OutcomeItem; context: HomeContext }) {
   );
 }
 
-/** The current node's note on the map: how the stage stands, with an age while it runs. */
-function progressNote(item: OutcomeItem, activity: Activity, now: number | undefined): string {
-  const { run } = item;
-  const label = ACTIVITY_LABELS[activity].toLowerCase();
-  if (run?.state === "running" && now !== undefined)
-    return `${label} · ${ageText(run.startedAt, now)}`;
-  return activity === "idle" ? "" : label;
-}
-
 /** The recommendation, marked in words beside the option it belongs to. */
 function RecommendedTag() {
   return <span className="factory-recommended">recommended</span>;
@@ -763,10 +823,12 @@ function AttentionBody({
   item,
   kind,
   context,
+  onOpenReport,
 }: {
   item: OutcomeItem;
   kind: AttentionKind;
   context: HomeContext;
+  onOpenReport: OpenReport;
 }) {
   const { run } = item;
   const form = actionFor(item, context);
@@ -789,7 +851,7 @@ function AttentionBody({
     const missing = reportsMissing(item);
     return (
       <div className="factory-sheet">
-        <ReviewReports item={item} />
+        <ReviewReports item={item} onOpenReport={onOpenReport} />
         <div className="factory-sheet-actions">
           {form("start-apply", "Approve")}
           {missing ? form("regenerate", "Regenerate") : null}
@@ -911,10 +973,12 @@ function AttentionSection({
   item,
   kind,
   context,
+  onOpenReport,
 }: {
   item: OutcomeItem;
   kind: AttentionKind;
   context: HomeContext;
+  onOpenReport: OpenReport;
 }) {
   return (
     <section className="outcome-dialog-attention" data-kind={kind} aria-label="Needs you">
@@ -922,7 +986,7 @@ function AttentionSection({
       {ATTENTION_HINTS[kind] ? (
         <p className="outcome-attention-hint">{ATTENTION_HINTS[kind]}</p>
       ) : null}
-      <AttentionBody item={item} kind={kind} context={context} />
+      <AttentionBody item={item} kind={kind} context={context} onOpenReport={onOpenReport} />
     </section>
   );
 }
@@ -931,9 +995,11 @@ function AttentionSection({
 function OutcomeStatus({
   item,
   situation,
+  onOpenReport,
 }: {
   item: OutcomeItem;
   situation: ReturnType<typeof situationOf>;
+  onOpenReport: OpenReport;
 }) {
   const { workset, run } = item;
   const next = nextStepOf(workset, run);
@@ -947,7 +1013,7 @@ function OutcomeStatus({
         </p>
       )}
       <Checks checks={situation.checks} />
-      <ResultLinks item={item} />
+      <ResultLinks item={item} onOpenReport={onOpenReport} />
       {workset.problems.length > 0 ? (
         <ul className="factory-problems">
           {workset.problems.map((problem) => (
@@ -979,8 +1045,8 @@ function History({ run, now }: { run: FactoryRunView | undefined; now: number | 
 
 /**
  * Everything about one Outcome, in the slide-over panel. It leads with what needs the person,
- * then the log, status and the run's actions, and history; Details holds where the Outcome is
- * on the Delivery Path and the execution facts. In control the terminal takes the width.
+ * then the log, status and the run's actions, and history; Details holds the execution facts.
+ * In control the terminal takes the width. A review report opens in its place, with Back.
  */
 function OutcomePanel({
   item,
@@ -997,20 +1063,40 @@ function OutcomePanel({
   // How long it has been in this state: running since the turn started, else since the last change.
   const since = run?.state === "running" ? run.startedAt : run?.updatedAt || situation.at;
   const id = dialogId(workset.id);
-  const progress: GraphProgress = {
-    current: pathNodeOf(workset),
-    activity,
-    note: progressNote(item, activity, context.now),
+  // Keyed by Workset, so stepping to another Outcome starts on its content again.
+  const [openReport, setOpenReport] = useState<{ change: string; report: string } | null>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  // The report id is kept: a regenerated report replaces it and never opens unasked.
+  if (openReport && run?.reviewReports?.[openReport.change] !== openReport.report) {
+    setOpenReport(null);
+  }
+  const showReport = (change: string, from: HTMLElement) => {
+    const stored = run?.reviewReports?.[change];
+    if (!stored) return;
+    opener.current = from;
+    setOpenReport({ change, report: stored });
   };
+  const back = () => {
+    flushSync(() => setOpenReport(null));
+    opener.current?.focus();
+  };
+  const reportOpen = openReport !== null;
+  let layout: "report" | "control" | undefined;
+  if (reportOpen) layout = "report";
+  else if (kind === "control") layout = "control";
   return (
     <div
       id={id}
       className="outcome-dialog"
       data-outcome-panel=""
       data-workset={workset.id}
-      data-layout={kind === "control" ? "control" : undefined}
+      data-layout={layout}
     >
-      <header className="outcome-dialog-head">
+      {openReport ? (
+        <OutcomeReport change={openReport.change} report={openReport.report} onBack={back} />
+      ) : null}
+      {/* Hidden, not unmounted, behind a report: a typed draft and the log stream stay. */}
+      <header className="outcome-dialog-head" hidden={reportOpen}>
         <div className="outcome-dialog-heading">
           <h2 id={`${id}-title`}>{workset.title}</h2>
           <p className="outcome-dialog-state">
@@ -1022,11 +1108,13 @@ function OutcomePanel({
           </p>
         </div>
       </header>
-      <div className="outcome-dialog-main">
-        {kind ? <AttentionSection item={item} kind={kind} context={context} /> : null}
+      <div className="outcome-dialog-main" hidden={reportOpen}>
+        {kind ? (
+          <AttentionSection item={item} kind={kind} context={context} onOpenReport={showReport} />
+        ) : null}
         <TakeoverPending run={run} now={context.now} />
         <OutcomeLog item={item} />
-        <OutcomeStatus item={item} situation={situation} />
+        <OutcomeStatus item={item} situation={situation} onOpenReport={showReport} />
         <RunActions item={item} context={context} />
         <TakeControl item={item} context={context} />
         <History run={run} now={context.now} />
@@ -1039,14 +1127,6 @@ function OutcomePanel({
         {kind !== "review" ? <FeedbackField item={item} context={context} /> : null}
         <details className="outcome-dialog-rail" aria-label="Details">
           <summary>Details</summary>
-          {/* In control the terminal gets the width; stage and changes stay in the facts. */}
-          {kind === "control" ? null : (
-            <WorkflowGraphView
-              path={context.path}
-              progress={progress}
-              label="Where it is on the Delivery Path"
-            />
-          )}
           <Facts item={item} context={context} />
         </details>
       </div>
@@ -1238,7 +1318,6 @@ function contextOf({
       sessions,
       runner: runs !== null,
       now,
-      path: workflowPlan({ topology: payload.topology }).paths[0]!,
       ticketFormat: payload.ticketFormat,
     },
   };
@@ -1251,7 +1330,7 @@ export function OutcomeDetail(props: FactoryProps & { openId: string }) {
   const item = all.find((entry) => entry.workset.id === props.openId);
   if (!item) return null;
   const kind = home.attention.find((entry) => entry.workset.id === props.openId)?.kind ?? null;
-  return <OutcomePanel item={item} kind={kind} context={context} />;
+  return <OutcomePanel key={item.workset.id} item={item} kind={kind} context={context} />;
 }
 
 /** Outcomes as lists of one line each; everything else opens in the Outcome's panel. */

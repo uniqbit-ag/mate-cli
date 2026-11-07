@@ -125,6 +125,13 @@ function assertWorksetId(id: string): void {
   }
 }
 
+/** What the Outcome action policy reads of a Workset. */
+const outcomeFacts = (id: string, workset: WorksetWithStage) => ({
+  id,
+  stage: workset.derived.stage,
+  stageLabel: workset.derived.label,
+});
+
 /**
  * The Workset `action` targets once the Outcome action policy accepts it; refused with a
  * reason, changing nothing, otherwise. `undefined` for Start or Later on a Workset without a
@@ -149,12 +156,9 @@ async function acceptedAction(
     if (action === "start" || action === "later") return undefined;
     throw new StageError(`this companion has no valid Workset ${id}`);
   }
-  const refusal = outcomeRefusal(
-    action,
-    { id, stage: workset.derived.stage, stageLabel: workset.derived.label },
-    await companion.run?.(),
-    { runner: companion.runner },
-  );
+  const refusal = outcomeRefusal(action, outcomeFacts(id, workset), await companion.run?.(), {
+    runner: companion.runner,
+  });
   if (refusal) throw new StageError(refusal);
   return workset;
 }
@@ -227,6 +231,20 @@ function assemble(parts: OutcomesParts) {
     };
   };
 
+  /** Clears the start and drops a queued run, re-checked under the lock: work may have begun. */
+  const moveToLater = (id: string) =>
+    runner.park(
+      id,
+      async (running) => {
+        const current = (await stages()).worksets.find((entry) => entry.record.id === id);
+        if (!current) return null;
+        const run = await runFacts(id);
+        const facts = running ? { ...run, state: "running" as const } : run;
+        return outcomeRefusal("later", outcomeFacts(id, current), facts, { runner: true });
+      },
+      () => setWorksetStarted(companionPath, id, false),
+    );
+
   const outcomes: FactoryOutcomes = {
     companionPath,
     automated: true,
@@ -237,10 +255,14 @@ function assemble(parts: OutcomesParts) {
         run: () => ready.then(() => runFacts(id)),
       });
       await ready;
-      if (action === "start" || action === "later") {
-        await setWorksetStarted(companionPath, id, action === "start");
-        if (action === "later") await runner.dequeue(id);
-        else await runner.rerank(id);
+      if (action === "start") {
+        await setWorksetStarted(companionPath, id, true);
+        await runner.rerank(id);
+        await pickUp();
+        return;
+      }
+      if (action === "later") {
+        await moveToLater(id);
         await pickUp();
         return;
       }

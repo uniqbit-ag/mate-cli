@@ -223,18 +223,3 @@ export function activityOf(workset: StudioWorkset, run: FactoryRunView | undefin
   if (attentionKind(workset, run)) return "needs-you";
   return underWay({ workset, run }) ? "idle" : "later";
 }
-
-/** The Delivery Path map node each stage sits at; `complete` once delivered. */
-const PATH_NODES: Record<WorksetStageId, string> = {
-  "clarify-intent": "clarify-intent",
-  explore: "explore",
-  propose: "propose",
-  "human-review": "reviews",
-  apply: "apply",
-  // Archive may run before the merge; the merge gate is what Publish waits on.
-  "merge-wait": "archive",
-  publish: "publish",
-  done: "complete",
-};
-
-export const pathNodeOf = (workset: StudioWorkset): string => PATH_NODES[workset.stage];

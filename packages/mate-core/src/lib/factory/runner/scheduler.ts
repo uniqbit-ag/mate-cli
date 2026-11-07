@@ -171,14 +171,16 @@ export class FactoryRunner {
 
   /**
    * Starts the stage pickup chose unless the Outcome is busy, not idle or with a person; true
-   * when it was requested. Under the Workset's lock, so it never races Return to automation.
+   * when it was requested. Under the Workset's lock, so it never races Return to automation
+   * or `park`; `pickable` re-checks there that the Outcome still wants the stage.
    */
-  pickUp(id: string, stage: RunnableStage): Promise<boolean> {
+  pickUp(id: string, stage: RunnableStage, pickable?: () => Promise<boolean>): Promise<boolean> {
     return this.locks.run(id, async () => {
       if (this.isActive(id) || this.options.sessionLive?.(id)) return false;
       const { execution, control } = await this.options.runs.facts(id);
       // A person has the conversation; only Return to automation continues it.
       if (execution.state !== "idle" || control.mode !== "automatic") return false;
+      if (pickable && !(await pickable())) return false;
       await this.request(id, stage);
       return true;
     });
@@ -249,6 +251,28 @@ export class FactoryRunner {
   async rerank(id: string): Promise<void> {
     const request = this.queue.find((entry) => entry.id === id);
     if (request) request.rank = (await this.options.rankFor?.(id)) ?? null;
+  }
+
+  /**
+   * Later, under the Workset's lock: `refusal` is checked before anything changes, then a
+   * queued request is dropped and `unstart` runs. A pickup runs wholly before or after.
+   * `refusal` is told whether a run is running, which its facts may not show yet.
+   */
+  park(
+    id: string,
+    refusal: (running: boolean) => Promise<string | null>,
+    unstart: () => Promise<unknown>,
+  ): Promise<void> {
+    return this.locks.run(id, async () => {
+      const refuse = async () => {
+        const reason = await refusal(this.active.has(id));
+        if (reason) throw new StageError(reason);
+      };
+      await refuse();
+      // The queued request may have started while the check read.
+      if (!(await this.dequeue(id)) && this.active.has(id)) await refuse();
+      await unstart();
+    });
   }
 
   /** Drops a queued request, leaving the Workset idle; a running one is left to finish. */

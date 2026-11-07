@@ -801,6 +801,7 @@
   .outcome-results {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 6px 16px;
     font-size: 0.875rem;
   }
@@ -896,23 +897,41 @@
     font-size: 0.75rem;
   }
   .factory-review-reports {
-    display: grid;
-    gap: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
   }
-  .factory-review-report {
-    display: grid;
-    gap: 6px;
+  /* A report replaces the Outcome's content: Back stays put, the frame fills the rest. */
+  .outcome-dialog[data-layout="report"] {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .outcome-report-head {
+    align-items: center;
+  }
+  .outcome-report-head h2 {
+    min-width: 0;
     margin: 0;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    overflow-wrap: anywhere;
   }
-  .factory-review-report figcaption {
-    font-size: 0.75rem;
-    color: var(--muted);
+  .outcome-report-head a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    font-size: 0.8125rem;
+    white-space: nowrap;
   }
-  .factory-review-report iframe {
+  .outcome-report-frame {
+    flex: 1;
     width: 100%;
-    height: 420px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
+    min-height: 0;
+    border: 0;
     background: var(--bg);
   }
   .outcome-control-reason {
@@ -1014,10 +1033,6 @@
   .outcome-dialog-rail[open] {
     display: grid;
     gap: 20px;
-  }
-  .outcome-dialog-rail .workflow-graph {
-    width: min(100% - 64px, 420px);
-    margin: 40px auto 8px;
   }
   .outcome-facts {
     display: grid;
@@ -1423,7 +1438,6 @@
   }
   .workflow-graph {
     --graph-gutter: 3.75rem;
-    --progress: var(--accent);
     position: relative;
     padding-left: var(--graph-gutter);
   }
@@ -1495,11 +1509,6 @@
   }
   .workflow-graph-edge[data-new-session="true"] {
     stroke: var(--accent);
-  }
-  .workflow-graph-edge[data-travelled="true"] {
-    stroke: var(--accent);
-    stroke-width: 2;
-    opacity: 1;
   }
   .workflow-graph-start {
     fill: var(--muted);
@@ -1614,52 +1623,6 @@
   }
   .workflow-graph-group[data-current="true"] {
     box-shadow: inset 0 0 0 1px var(--why);
-  }
-
-  /* One item's place on the map: done behind it, its current node in its state's colour. */
-  .workflow-graph[data-progress-activity="needs-you"] {
-    --progress: var(--warn);
-  }
-  .workflow-graph[data-progress-activity="control"] {
-    --progress: var(--why);
-  }
-  .workflow-graph[data-progress-activity="stopped"] {
-    --progress: var(--bad);
-  }
-  .workflow-graph[data-progress-activity="idle"],
-  .workflow-graph[data-progress-activity="later"] {
-    --progress: var(--muted);
-  }
-  .workflow-graph-node[data-progress="next"] .workflow-graph-link,
-  .workflow-graph-node[data-progress="next"] .workflow-graph-group-label {
-    color: var(--muted);
-  }
-  .workflow-graph-node[data-progress="next"] .workflow-graph-openspec {
-    background: var(--border);
-  }
-  .workflow-graph-node[data-progress="done"] .workflow-graph-box {
-    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-  }
-  .workflow-graph-node[data-progress="done"] .workflow-graph-link {
-    color: var(--muted);
-  }
-  .workflow-graph-node[data-progress="current"] .workflow-graph-box {
-    border-color: var(--progress);
-    background: color-mix(in srgb, var(--progress) 14%, var(--panel));
-    outline: 2px solid color-mix(in srgb, var(--progress) 35%, transparent);
-    outline-offset: 2px;
-  }
-  .workflow-graph-node[data-progress="current"] .workflow-graph-link {
-    color: var(--text);
-    font-weight: 600;
-  }
-  .workflow-graph-note {
-    display: block;
-    margin-top: 2px;
-    color: var(--progress);
-    font-family: var(--font-sans);
-    font-size: 0.66rem;
-    font-weight: 600;
   }
 
   .workflow-graph-legend {

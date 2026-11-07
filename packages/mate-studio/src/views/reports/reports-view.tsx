@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "@tanstack/react-router";
-import { REPORT_VIEW_PREFIX } from "@uniqbit/mate-core/studio";
 import { useEffect, useState } from "react";
 
 import { Icon } from "../../components/icon";
@@ -9,16 +8,12 @@ import { cn } from "../../lib/cn";
 import { formatReportTime } from "../../lib/report-time";
 import { reportsQuery, type ReportSummary } from "../../lib/studio-queries";
 import { PanelHead, SidePanel } from "../../shell/panel";
-import { type Theme, useAppearance } from "../../stores/appearance";
+import { useAppearance } from "../../stores/appearance";
 import { usePageUi } from "../../stores/page-ui";
+import { reportSrc } from "./report-url";
 
 /** The report the address names, as `#report=<id>`. */
 const REPORT_ID = /(?:^|[#&])report=([0-9a-f]{32})/;
-
-function reportSrc(id: string, theme: Theme): string {
-  const scheme = theme === "system" ? "" : `?scheme=${theme}`;
-  return `${REPORT_VIEW_PREFIX}${id}${scheme}`;
-}
 
 function setAddress(id: string | null): void {
   try {

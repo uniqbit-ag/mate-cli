@@ -210,7 +210,8 @@ describe("the board's runner actions", () => {
     });
     await act("take-control");
     expect((await runs.facts("acme-login")).control.mode).toBe("manual");
-    await act("later");
+    // Start picks up started Outcomes; a fenced one stays idle.
+    await act("start");
     expect(runner.isActive("acme-login")).toBe(false);
     handler.close();
   });

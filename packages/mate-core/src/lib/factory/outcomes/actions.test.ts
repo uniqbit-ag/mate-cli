@@ -22,20 +22,28 @@ const sorted = (actions: ReadonlySet<OutcomeAction>) => [...actions].toSorted();
 describe("the actions an Outcome accepts", () => {
   test.each<[string, WorksetStageId, OutcomeRunFacts | undefined, OutcomeAction[]]>([
     ["Later in Clarify intent, never run", "clarify-intent", undefined, ["later", "start"]],
-    ["asking in Explore change", "explore", run("waiting"), ["answer", "later", "start"]],
-    ["proposing", "propose", run("running"), ["cancel", "later", "start"]],
-    ["queued for a slot", "propose", run("queued"), ["cancel", "later", "start"]],
+    ["started, not yet run", "clarify-intent", run("idle"), ["later", "start"]],
+    ["queued in Clarify intent", "clarify-intent", run("queued"), ["cancel", "later", "start"]],
+    ["clarifying", "clarify-intent", run("running"), ["cancel", "start"]],
+    ["asking in Clarify intent", "clarify-intent", run("waiting"), ["answer", "start"]],
+    // A cancelled queued run is failed; nothing runs, so it can still move to Later.
+    ["clarify failed", "clarify-intent", run("failed"), ["later", "retry", "start"]],
+    ["clarify interrupted", "clarify-intent", run("interrupted"), ["later", "retry", "start"]],
+    ["asking in Explore change", "explore", run("waiting"), ["answer", "start"]],
+    ["explored", "explore", run("idle"), ["start"]],
+    ["proposing", "propose", run("running"), ["cancel", "start"]],
+    ["queued for a slot", "propose", run("queued"), ["cancel", "start"]],
     [
       "at the Human Reviews",
       "human-review",
       run("idle"),
-      ["feedback", "later", "regenerate", "start", "start-apply"],
+      ["feedback", "regenerate", "start", "start-apply"],
     ],
-    ["applying", "apply", run("running"), ["cancel", "feedback", "later", "start"]],
-    ["apply failed", "apply", run("failed"), ["feedback", "later", "retry", "start"]],
-    ["interrupted", "apply", run("interrupted"), ["feedback", "later", "retry", "start"]],
-    ["waiting for merge", "merge-wait", run("idle"), ["feedback", "later", "start"]],
-    ["merged and archived", "publish", run("idle"), ["later", "publish", "start"]],
+    ["applying", "apply", run("running"), ["cancel", "feedback", "start"]],
+    ["apply failed", "apply", run("failed"), ["feedback", "retry", "start"]],
+    ["interrupted", "apply", run("interrupted"), ["feedback", "retry", "start"]],
+    ["waiting for merge", "merge-wait", run("idle"), ["feedback", "start"]],
+    ["merged and archived", "publish", run("idle"), ["publish", "start"]],
     ["Done", "done", run("idle", { conversation: true }), []],
   ])("%s", (_name, stage, facts, expected) => {
     expect(sorted(outcomeActions(workset(stage), facts, runner))).toEqual(expected.toSorted());
@@ -75,7 +83,7 @@ describe("the actions an Outcome accepts", () => {
           runner,
         ),
       ),
-    ).toEqual(["answer", "later", "return", "start"]);
+    ).toEqual(["answer", "return", "start"]);
   });
 });
 
@@ -92,6 +100,18 @@ describe("a refusal", () => {
     );
   });
 
+  test("Later once work has begun names the stage and the run", () => {
+    expect(outcomeRefusal("later", workset("clarify-intent"), run("running"), runner)).toBe(
+      "work on Workset acme-login has begun (at clarify-intent, running); it can no longer move to Later",
+    );
+    expect(outcomeRefusal("later", workset("explore"), run("idle"), runner)).toBe(
+      "work on Workset acme-login has begun (at explore, idle); it can no longer move to Later",
+    );
+    expect(outcomeRefusal("later", workset("done"), run("idle"), runner)).toBe(
+      "Workset acme-login is done",
+    );
+  });
+
   test("an answer after the round closed reads as already answered", () => {
     expect(outcomeRefusal("answer", workset("explore"), run("running"), runner)).toBe(
       "this question was already answered",
@@ -100,16 +120,22 @@ describe("a refusal", () => {
 });
 
 describe("a companion the factory does not run", () => {
+  test("accepts Start and Later in Clarify intent", () => {
+    expect(sorted(outcomeActions(workset("clarify-intent"), undefined, noRunner))).toEqual([
+      "later",
+      "start",
+    ]);
+  });
+
   test.each<WorksetStageId>([
-    "clarify-intent",
     "explore",
     "propose",
     "human-review",
     "apply",
     "merge-wait",
     "publish",
-  ])("accepts only Start and Later at %s", (stage) => {
-    expect(sorted(outcomeActions(workset(stage), undefined, noRunner))).toEqual(["later", "start"]);
+  ])("accepts only Start at %s, where work has begun", (stage) => {
+    expect(sorted(outcomeActions(workset(stage), undefined, noRunner))).toEqual(["start"]);
   });
 
   test("accepts nothing once Done", () => {
