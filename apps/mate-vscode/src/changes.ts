@@ -38,17 +38,25 @@ export function parseDeliveries(yaml: string): Delivery[] {
   return deliveries;
 }
 
+function idList(repositoryIds: string | null | readonly string[]): readonly string[] {
+  if (repositoryIds === null) return [];
+  return typeof repositoryIds === "string" ? [repositoryIds] : repositoryIds;
+}
+
 /**
- * This repository's Delivery Branch: the entry naming it, else the only entry.
+ * This repository's Delivery Branch: the entry naming it, else the only entry. An umbrella
+ * passes its children's ids in name order; the first child with an entry wins.
  * Repository ids compare case-insensitively, as GitHub slugs do.
  */
 export function deliveryBranchFor(
   deliveries: Delivery[],
-  repositoryId: string | null,
+  repositoryIds: string | null | readonly string[],
 ): string | undefined {
-  const own = repositoryId
-    ? deliveries.find((entry) => entry.repository?.toLowerCase() === repositoryId.toLowerCase())
-    : undefined;
+  let own: Delivery | undefined;
+  for (const id of idList(repositoryIds)) {
+    own = deliveries.find((entry) => entry.repository?.toLowerCase() === id.toLowerCase());
+    if (own) break;
+  }
   return (own ?? (deliveries.length === 1 ? deliveries[0] : undefined))?.branch || undefined;
 }
 
@@ -76,7 +84,7 @@ async function readIfExists(file: string): Promise<string | undefined> {
 /** Active changes of the companion linked at `<repo>/.mate/companion`. */
 export async function readOpenChanges(
   repoRoot: string,
-  repositoryId: string | null = null,
+  repositoryIds: string | null | readonly string[] = null,
 ): Promise<OpenChanges> {
   const companion = path.join(repoRoot, ".mate", "companion");
   if (!(await fs.stat(companion).catch(() => null))) return { linked: false };
@@ -96,7 +104,7 @@ export async function readOpenChanges(
         else if (tasks !== undefined) file = tasksFile;
         const delivery = await readIfExists(path.join(dir, "delivery.yaml"));
         const deliveryBranch = delivery
-          ? deliveryBranchFor(parseDeliveries(delivery), repositoryId)
+          ? deliveryBranchFor(parseDeliveries(delivery), repositoryIds)
           : undefined;
         return {
           name: entry.name,

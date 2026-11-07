@@ -32,6 +32,8 @@ export interface TokensaveRunner {
 }
 
 const MAIN_NOT_INDEXED = "main checkout not indexed";
+/** Skip reason when an Umbrella Repository, indexed like a checkout, has no index. */
+export const UMBRELLA_NOT_INDEXED = "umbrella not indexed";
 const TOKENSAVE_NOT_ON_PATH = "tokensave not on PATH";
 
 const STDERR_TAIL = 4096;
@@ -76,7 +78,8 @@ async function cpuUsage(checkout: string): Promise<string | undefined> {
 
 /**
  * Indexes `worktree` like `checkout`: `init` plus Mate's posture when it has no
- * index yet, `sync` when it has one. `onRun` fires before tokensave starts.
+ * index yet, `sync` when it has one; skipped with `notIndexedReason` while `checkout` has
+ * none. `onRun` fires before tokensave starts.
  * Never throws; a failure is an outcome.
  */
 export async function indexWorktree(
@@ -85,9 +88,10 @@ export async function indexWorktree(
   companionPath: string,
   tokensave: TokensaveRunner = runTokensave,
   onRun?: (action: "init" | "sync") => void,
+  notIndexedReason = MAIN_NOT_INDEXED,
 ): Promise<IndexOutcome> {
   if (!(await isTokensaveIndexed(checkout)))
-    return { outcome: "skipped", reason: MAIN_NOT_INDEXED };
+    return { outcome: "skipped", reason: notIndexedReason };
   if (!tokensave.available()) return { outcome: "skipped", reason: TOKENSAVE_NOT_ON_PATH };
   try {
     const posture = () =>

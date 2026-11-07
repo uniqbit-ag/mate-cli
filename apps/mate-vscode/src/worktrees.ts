@@ -24,9 +24,15 @@ export function parseWorktrees(
     worktrees.push({
       path: pathLine.slice("worktree ".length),
       ...(branch ? { branch } : {}),
-      workset:
-        branch !== undefined && (worksetBranches.has(branch) || branch.startsWith("workset/")),
+      workset: isWorksetBranch(branch, worksetBranches),
     });
   }
   return worktrees;
+}
+
+export function isWorksetBranch(
+  branch: string | undefined,
+  worksetBranches: ReadonlySet<string> = new Set(),
+): boolean {
+  return branch !== undefined && (worksetBranches.has(branch) || branch.startsWith("workset/"));
 }

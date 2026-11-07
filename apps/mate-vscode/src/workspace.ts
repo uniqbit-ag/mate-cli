@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { resolveRepository } from "./repository";
+import { resolveRepository, type WindowRepository } from "./repository";
 
 interface WorkspaceUri {
   scheme: string;
@@ -9,7 +9,9 @@ interface WorkspaceUri {
 }
 
 export interface WorkspaceState {
+  /** The window repository's root; it names the managed workspace document. */
   repo: string | null;
+  repository?: WindowRepository | null;
   ready: boolean;
   canOpen: boolean;
   workspaceFile?: string;
@@ -36,13 +38,15 @@ export async function resolveWorkspaceState(
   folder: WorkspaceUri | undefined,
   workspaceFile: WorkspaceUri | undefined,
 ): Promise<WorkspaceState> {
-  const repo = await resolveRepository(folder?.scheme === "file" ? folder.fsPath : undefined);
+  const repository = await resolveRepository(folder?.scheme === "file" ? folder.fsPath : undefined);
+  const repo = repository?.root ?? null;
   const canOpen = Boolean(
     repo &&
     (!workspaceFile || workspaceFile.scheme === "file" || workspaceFile.scheme === "untitled"),
   );
   return {
     repo,
+    repository,
     canOpen,
     workspaceFile: workspaceFile ? `${workspaceFile.scheme}:${workspaceFile.fsPath}` : undefined,
     ready: Boolean(
@@ -99,7 +103,9 @@ export class WorkspaceGate {
     const target = this.state;
     if (this.ready) return;
     if (this.checking || !target.repo || !target.canOpen) {
-      throw new Error("Open a local Git repository before opening its Mate workspace.");
+      throw new Error(
+        "Open a local Git repository or a linked umbrella folder before opening its Mate workspace.",
+      );
     }
     await this.deps.opening(true);
     try {

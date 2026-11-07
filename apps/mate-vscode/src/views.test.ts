@@ -6,7 +6,47 @@ import path from "node:path";
 import { countTasks, readOpenChanges, readyToArchive } from "./changes";
 import { MateNotFoundError, prepareWorkspace, runMateJson, shellQuote } from "./mate";
 import { toPendingItems } from "./pending";
+import { resolveRepository, umbrellaWorktrees } from "./repository";
+import { umbrellaFixture } from "./umbrella.fixture";
 import { parseWorktrees } from "./worktrees";
+
+describe("umbrellaWorktrees", () => {
+  test("mirrored worktrees with their branch, then each child's own worktrees by child", async () => {
+    const acme = await umbrellaFixture();
+    try {
+      const repository = await resolveRepository(acme.umbrella);
+      if (repository?.kind !== "umbrella") throw new Error("Fixture must be an umbrella");
+      expect(await umbrellaWorktrees(repository)).toEqual({
+        mirrored: [{ path: acme.mirrored, branch: "workset/acme-fix", workset: true }],
+        children: [
+          { name: "api", worktrees: [{ path: acme.scratch, branch: "spike", workset: false }] },
+        ],
+      });
+      expect(
+        (await umbrellaWorktrees(repository, new Set(["spike"]))).children[0]!.worktrees[0]!
+          .workset,
+      ).toBe(true);
+    } finally {
+      await fs.rm(acme.root, { recursive: true, force: true });
+    }
+  });
+
+  test("a mirrored worktree window lists neither the main checkouts nor its own children", async () => {
+    const acme = await umbrellaFixture();
+    try {
+      const repository = await resolveRepository(acme.mirrored);
+      if (repository?.kind !== "umbrella") throw new Error("Fixture must be an umbrella");
+      expect(await umbrellaWorktrees(repository)).toEqual({
+        mirrored: [],
+        children: [
+          { name: "api", worktrees: [{ path: acme.scratch, branch: "spike", workset: false }] },
+        ],
+      });
+    } finally {
+      await fs.rm(acme.root, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("parseWorktrees", () => {
   test("marks branches an open change records, whatever their name", () => {

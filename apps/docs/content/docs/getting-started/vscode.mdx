@@ -63,6 +63,19 @@ Once the managed workspace is open, the sidebar offers:
 
 Use **Refresh** to update the sidebar. It also reloads when made visible.
 
+### Umbrella folders
+
+An [Umbrella Repository](/docs/concepts/repositories#umbrella-repository) is
+not a Git checkout itself, but the sidebar works there too. Open the umbrella
+folder `acme`, which holds `api/` and `web/`, or one of its mirrored worktrees
+such as `acme.worktrees/acme-fix`, then open its managed workspace as above.
+The sections then cover the whole umbrella:
+
+- **Sessions:** sessions in the umbrella, its children, their worktrees, and its mirrored worktrees.
+- **Worktrees:** the mirrored worktrees first, each with its Workset branch, then each child's other worktrees under the child's name. The children's own checkouts are not listed.
+- **Open changes:** a change is grouped by the Delivery Branch any child records, so a change delivered in `api` and `web` appears once. Session counts span the umbrella.
+- **Ready to publish:** unchanged, because it covers the whole Companion Repository.
+
 ## Start and reconnect a session
 
 Start a Claude or OpenCode session from the sidebar in the checkout you intend
@@ -109,6 +122,7 @@ parallel edits to those files.
 
 - **No editor detected:** enable the editor's CLI on PATH, reopen the terminal, and rerun `mate vscode setup` for that editor.
 - **Only Open workspace appears:** open the linked repository and click the button; an arbitrary workspace is not its managed workspace.
+- **Sidebar asks for a Git repository in an umbrella:** open the umbrella folder itself, not a folder above or beside it, and check that it is linked and holds at least one child checkout with an `origin`.
 - **Workspace preparation fails:** run `mate doctor` from the checkout, repair the Repository Link or the reported invalid workspace document, and retry. The button does not require an editor CLI on PATH.
 - **CLI older than extension:** update Mate, then rerun `mate vscode setup` so versions match.
 - **Session missing:** only sidebar-started sessions are listed; also check Older, whether the worktree still exists, and whether its branch was merged.

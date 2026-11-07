@@ -102,9 +102,10 @@ the Workset's repositories get a worktree there.
   repositories linked on their own, but not span two umbrellas.
 
 With `--change <change> --enter`, Mate records the branch for every child that
-got a worktree, then always hands off to the mirrored worktree: it is not a Git
-worktree an agent runtime can move into, so start a new session there. A child
-whose recording fails is a warning. A session in another umbrella, or one whose
+got a worktree. In OpenCode, `mate_enter_worktree` then moves the session into
+the mirrored worktree. Claude Code and other runtimes can move only into a Git
+worktree, so they hand off: start a new session there. A child whose recording
+fails is a warning. A session in another umbrella, or one whose
 children got no worktree, gets a hand-off without a path.
 
 ## Cleaning Up

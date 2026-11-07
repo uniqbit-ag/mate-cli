@@ -14,6 +14,7 @@ import {
   type WorkspaceInventoryPairingEntry,
   type WorkspaceInventoryV1,
 } from "../../../lib/orchestrator/workspace-inventory";
+import { umbrellaFolderOf, umbrellaMirroredBy } from "../../../lib/orchestrator/umbrella-checkouts";
 import {
   cleanupWorkingRepository,
   type WorkingRepoCleanupResult,
@@ -32,6 +33,8 @@ async function canonicalPath(candidatePath: string): Promise<string> {
 export interface WorkingCleanupCommandDeps {
   cwd: string;
   resolveGitRoot: (cwd: string) => Promise<string | null>;
+  /** Outside Git: the linked Umbrella Repository or mirrored umbrella worktree holding `cwd`. */
+  resolveUmbrella: (cwd: string) => Promise<string | null>;
   localRootKind: (repoPath: string) => Promise<RootKind | null>;
   collectInventory: () => Promise<WorkspaceInventoryV1>;
   cleanup: (
@@ -49,6 +52,12 @@ async function resolveGitRoot(cwd: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/** Default `resolveUmbrella`: from files alone, canonical like the Git root. */
+export async function resolveUmbrella(cwd: string): Promise<string | null> {
+  const folder = umbrellaFolderOf(await canonicalPath(cwd));
+  return folder ? canonicalPath(folder) : null;
 }
 
 async function localRootKind(repoPath: string): Promise<RootKind | null> {
@@ -69,6 +78,7 @@ async function localRootKind(repoPath: string): Promise<RootKind | null> {
 const defaultDeps: WorkingCleanupCommandDeps = {
   cwd: process.cwd(),
   resolveGitRoot,
+  resolveUmbrella,
   localRootKind,
   collectInventory: collectWorkspaceInventory,
   cleanup: cleanupWorkingRepository,
@@ -100,6 +110,26 @@ async function pairingsOf(
   return { matches: ofClone.map(({ pairing }) => pairing), byClone: true };
 }
 
+/**
+ * The pairings of an umbrella folder: the umbrella's own, which a mirrored worktree
+ * `<umbrella>.worktrees/<id>` shares, since the registry never lists that folder.
+ */
+async function umbrellaPairingsOf(
+  folder: string,
+  pairings: WorkspaceInventoryPairingEntry[],
+): Promise<WorkspaceInventoryPairingEntry[]> {
+  const mirrored = umbrellaMirroredBy(folder);
+  const served = new Set([folder, ...(mirrored ? [await canonicalPath(mirrored)] : [])]);
+  const resolved = await Promise.all(
+    pairings.map(async (pairing) =>
+      served.has(await canonicalPath(pairing.repository.path)) ? pairing : null,
+    ),
+  );
+  return resolved.filter((pairing): pairing is WorkspaceInventoryPairingEntry => pairing !== null);
+}
+
+const NOT_LINKED = `${FRAMEWORK_NAME}: working cleanup must run from a linked Git working repository or Umbrella Repository\n`;
+
 export async function runWorkingCleanupCommand(
   argv: string[],
   deps: WorkingCleanupCommandDeps = defaultDeps,
@@ -109,11 +139,12 @@ export async function runWorkingCleanupCommand(
     process.exitCode = 1;
     return;
   }
-  const repoPath = await deps.resolveGitRoot(deps.cwd);
+  const gitRoot = await deps.resolveGitRoot(deps.cwd);
+  // Its children are Checkouts of their own; only the folder's integration is removed.
+  const umbrella = gitRoot ? null : await deps.resolveUmbrella(deps.cwd);
+  const repoPath = gitRoot ?? umbrella;
   if (!repoPath) {
-    process.stderr.write(
-      `${FRAMEWORK_NAME}: working cleanup must run from a linked Git working repository\n`,
-    );
+    process.stderr.write(NOT_LINKED);
     process.exitCode = 1;
     return;
   }
@@ -125,11 +156,12 @@ export async function runWorkingCleanupCommand(
     process.exitCode = 1;
     return;
   }
-  const { matches, byClone } = await pairingsOf(repoPath, (await deps.collectInventory()).pairings);
+  const { pairings } = await deps.collectInventory();
+  const { matches, byClone } = umbrella
+    ? { matches: await umbrellaPairingsOf(umbrella, pairings), byClone: false }
+    : await pairingsOf(repoPath, pairings);
   if (matches.length === 0) {
-    process.stderr.write(
-      `${FRAMEWORK_NAME}: working cleanup must run from a linked Git working repository\n`,
-    );
+    process.stderr.write(NOT_LINKED);
     process.exitCode = 1;
     return;
   }

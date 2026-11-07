@@ -66,15 +66,18 @@ function bySessionOrder(running: (session: Session) => boolean) {
 /**
  * Workset groups, then other branches, then the default branch, then `Older`
  * (parked outside a Workset, last seen over 14 days ago). Sessions without a
- * branch share an unlabelled group before `Older`.
+ * branch share an unlabelled group before `Older`. An umbrella passes every child's
+ * default branch.
  */
 export function groupSessions(
   sessions: Session[],
   worksets: Workset[],
-  defaultBranch: string,
+  defaultBranch: string | ReadonlySet<string>,
   running: (session: Session) => boolean,
   now: Date = new Date(),
 ): SessionGroup[] {
+  const defaults: ReadonlySet<string> =
+    typeof defaultBranch === "string" ? new Set([defaultBranch]) : defaultBranch;
   const worksetByBranch = new Map(
     worksets.filter((workset) => workset.branch).map((workset) => [workset.branch!, workset]),
   );
@@ -105,8 +108,9 @@ export function groupSessions(
       continue;
     }
     if (!session.branch) add("none", "none", "No branch", session);
-    else if (session.branch === defaultBranch) add("default", "default", session.branch, session);
-    else add(`b:${session.branch}`, "branch", session.branch, session);
+    else if (defaults.has(session.branch)) {
+      add(`d:${session.branch}`, "default", session.branch, session);
+    } else add(`b:${session.branch}`, "branch", session.branch, session);
   }
   if (older.length > 0) groups.set("older", { kind: "older", label: "Older", sessions: older });
 

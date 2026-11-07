@@ -41,6 +41,7 @@ function depsFor(
   return {
     cwd: checkout,
     resolveGitRoot: async () => checkout,
+    resolveUmbrella: async () => null,
     localRootKind: async () => "working",
     collectInventory: async () => ({
       schemaVersion: 1,

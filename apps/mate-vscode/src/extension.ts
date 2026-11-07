@@ -32,7 +32,15 @@ import {
   type BackgroundStart,
 } from "./mate";
 import { toPendingItems } from "./pending";
-import { defaultBranch, listWorktrees, repositoryId, resolveRepository } from "./repository";
+import {
+  defaultBranch,
+  listWorktrees,
+  repositoryId,
+  repositoryRoots,
+  resolveRepository,
+  umbrellaWorktrees,
+  type WindowRepository,
+} from "./repository";
 import { Section, type SectionItem, type SectionLoad } from "./section";
 import {
   attachable,
@@ -47,23 +55,20 @@ import {
   type Session,
 } from "./sessions";
 import { TerminalTracker } from "./terminals";
+import type { Worktree } from "./worktrees";
 import { WorkspaceGate, resolveWorkspaceState } from "./workspace";
 
-const NO_REPOSITORY = "Mate needs a Git repository: open a folder inside one.";
+const NO_REPOSITORY =
+  "Mate needs a Git repository or a linked umbrella folder: open a folder inside a repository, or the umbrella folder itself.";
 const NOT_LINKED = "This repository is not linked to a Companion Repository.";
 
-function workspaceRepository(): Promise<string | null> {
+function workspaceRepository(): Promise<WindowRepository | null> {
   return resolveRepository(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
 }
 
-async function repositoryRoots(repo: string): Promise<string[]> {
-  const worktrees = await listWorktrees(repo).catch(() => []);
-  return worktrees.length > 0 ? worktrees.map((worktree) => worktree.path) : [repo];
-}
-
 /** The only root, else the one the user picks; undefined when dismissed. */
-async function pickDirectory(repo: string): Promise<string | undefined> {
-  const roots = await repositoryRoots(repo);
+async function pickDirectory(repository: WindowRepository): Promise<string | undefined> {
+  const roots = await repositoryRoots(repository);
   if (roots.length === 1) return roots[0];
   const picked = await vscode.window.showQuickPick(
     roots.map((root) => ({ label: path.basename(root), description: root, root })),
@@ -85,15 +90,30 @@ function openSessionTerminal(
   terminal.sendText(command);
 }
 
+/** The ids Delivery Records name the repository by: an umbrella's children's, else its own. */
+async function deliveryIds(repository: WindowRepository): Promise<string | null | string[]> {
+  if (repository.kind === "umbrella") {
+    return repository.children.flatMap((child) => (child.id ? [child.id] : []));
+  }
+  return repositoryId(repository.root);
+}
+
+/** The default branch, or every umbrella child's. */
+async function defaultBranches(repository: WindowRepository) {
+  if (repository.kind === "checkout") return defaultBranch(repository.root);
+  return new Set(await Promise.all(repository.children.map((child) => defaultBranch(child.path))));
+}
+
 /** Everything the Sessions and change sections share for one repository. */
-async function loadRepositoryView(repo: string) {
-  const [all, roots, id, base] = await Promise.all([
+async function loadRepositoryView(repository: WindowRepository) {
+  const repo = repository.root;
+  const [all, roots, ids, base] = await Promise.all([
     listSessions(repo),
-    repositoryRoots(repo),
-    repositoryId(repo),
-    defaultBranch(repo),
+    repositoryRoots(repository),
+    deliveryIds(repository),
+    defaultBranches(repository),
   ]);
-  const changes = await readOpenChanges(repo, id);
+  const changes = await readOpenChanges(repo, ids);
   const active: OpenChange[] = changes.linked ? changes.changes : [];
   const mine = sessionsForRepository(all, roots).filter((session) => session.state !== "done");
   return {
@@ -113,10 +133,11 @@ type RepositoryView = Awaited<ReturnType<typeof loadRepositoryView>>;
 const VIEW_REUSE_MS = 500;
 const views = new Map<string, Promise<RepositoryView>>();
 
-function repositoryView(repo: string): Promise<RepositoryView> {
+function repositoryView(repository: WindowRepository): Promise<RepositoryView> {
+  const repo = repository.root;
   let view = views.get(repo);
   if (!view) {
-    view = loadRepositoryView(repo);
+    view = loadRepositoryView(repository);
     views.set(repo, view);
     const forget = () => setTimeout(() => views.delete(repo), VIEW_REUSE_MS);
     view.then(forget, forget);
@@ -183,6 +204,24 @@ function sessionOf(item: SectionItem | undefined): Session | undefined {
 /** Payload of a Worktrees item. */
 interface WorktreeTarget {
   cwd: string;
+}
+
+function worktreeItem(worktree: Worktree): SectionItem {
+  return {
+    label: path.basename(worktree.path),
+    description: [worktree.branch ?? "detached", worktree.workset ? "Workset" : ""]
+      .filter(Boolean)
+      .join(" · "),
+    tooltip: worktree.path,
+    icon: worktree.workset ? ICONS.worksetWorktree : ICONS.worktree,
+    contextValue: "worktree",
+    data: { cwd: worktree.path } satisfies WorktreeTarget,
+    command: {
+      command: "vscode.openFolder",
+      title: "Open in new window",
+      arguments: [vscode.Uri.file(worktree.path), { forceNewWindow: true }],
+    },
+  };
 }
 
 function worktreeOf(item: SectionItem | undefined): WorktreeTarget | undefined {
@@ -260,11 +299,12 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   const refreshWorkspace = () => gate.refresh().catch(reportWorkspaceError);
   const forRepository =
-    (load: (repo: string) => Promise<SectionLoad>) => async (): Promise<SectionLoad> => {
-      const repo = gate.state.repo;
-      if (!gate.ready || !repo) return { items: [] };
-      const result = await load(repo);
-      return gate.ready && gate.state.repo === repo ? result : { items: [] };
+    (load: (repository: WindowRepository) => Promise<SectionLoad>) =>
+    async (): Promise<SectionLoad> => {
+      const repository = gate.state.repository;
+      if (!gate.ready || !repository) return { items: [] };
+      const result = await load(repository);
+      return gate.ready && gate.state.repo === repository.root ? result : { items: [] };
     };
 
   /** Running here: a terminal of this window belongs to it. */
@@ -333,8 +373,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const sessions = new Section(
     "mate.sessions",
-    forRepository(async (repo) => {
-      const view = await repositoryView(repo);
+    forRepository(async (repository) => {
+      const view = await repositoryView(repository);
       notifyAttention(view.sessions, view.worksets);
       const groups = groupSessions(view.sessions, view.worksets, view.defaultBranch, running);
       return {
@@ -351,37 +391,34 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const worktrees = new Section(
     "mate.worktrees",
-    forRepository(async (repo) => {
+    forRepository(async (repository) => {
       // The view only adds recorded branches' Workset marks; its failure must not hide worktrees.
-      const worksets = await repositoryView(repo).then(
+      const worksets = await repositoryView(repository).then(
         (view) => view.worksets,
         () => [],
       );
       const branches = new Set(worksets.flatMap((workset) => workset.branch ?? []));
+      if (repository.kind === "checkout") {
+        return { items: (await listWorktrees(repository.root, branches)).map(worktreeItem) };
+      }
+      const { mirrored, children } = await umbrellaWorktrees(repository, branches);
       return {
-        items: (await listWorktrees(repo, branches)).map((worktree) => ({
-          label: path.basename(worktree.path),
-          description: [worktree.branch ?? "detached", worktree.workset ? "Workset" : ""]
-            .filter(Boolean)
-            .join(" · "),
-          tooltip: worktree.path,
-          icon: worktree.workset ? ICONS.worksetWorktree : ICONS.worktree,
-          contextValue: "worktree",
-          data: { cwd: worktree.path } satisfies WorktreeTarget,
-          command: {
-            command: "vscode.openFolder",
-            title: "Open in new window",
-            arguments: [vscode.Uri.file(worktree.path), { forceNewWindow: true }],
-          },
-        })),
+        items: [
+          ...mirrored.map(worktreeItem),
+          ...children.map((child): SectionItem => ({
+            label: child.name,
+            icon: ICONS.worktree,
+            children: child.worktrees.map(worktreeItem),
+          })),
+        ],
       };
     }),
   );
 
   const openChanges = new Section(
     "mate.openChanges",
-    forRepository(async (repo) => {
-      const view = await repositoryView(repo);
+    forRepository(async (repository) => {
+      const view = await repositoryView(repository);
       if (!view.changes.linked) return { message: NOT_LINKED };
       return {
         items: view.openWorksets.map((workset) => worksetItem(workset, view.sessions)),
@@ -391,8 +428,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const readyToArchiveChanges = new Section(
     "mate.readyToArchive",
-    forRepository(async (repo) => {
-      const view = await repositoryView(repo);
+    forRepository(async (repository) => {
+      const view = await repositoryView(repository);
       if (!view.changes.linked) return { message: NOT_LINKED };
       return { items: view.ready.map(readyItem) };
     }),
@@ -400,8 +437,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const readyToPublish = new Section(
     "mate.readyToPublish",
-    forRepository(async (repo) => ({
-      items: toPendingItems(await pendingArtifacts(repo)).map((item) => ({
+    forRepository(async (repository) => ({
+      items: toPendingItems(await pendingArtifacts(repository.root)).map((item) => ({
         label: item.name,
         description: item.waitingForMerge ? "waiting for merge" : undefined,
         tooltip: item.anchor,
@@ -546,8 +583,8 @@ export function activate(context: vscode.ExtensionContext): void {
           "Open the Mate workspace before starting a session.",
         );
       }
-      const repo = await workspaceRepository();
-      if (!repo) return void vscode.window.showErrorMessage(NO_REPOSITORY);
+      const repository = await workspaceRepository();
+      if (!repository) return void vscode.window.showErrorMessage(NO_REPOSITORY);
 
       const runtime = await vscode.window.showQuickPick(
         [
@@ -558,7 +595,7 @@ export function activate(context: vscode.ExtensionContext): void {
       );
       if (!runtime) return;
 
-      const cwd = worktreeOf(item)?.cwd || (await pickDirectory(repo));
+      const cwd = worktreeOf(item)?.cwd || (await pickDirectory(repository));
       if (!cwd) return;
       await startSession(runtime.runtime, cwd);
     }),

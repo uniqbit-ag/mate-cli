@@ -5,9 +5,15 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { addWorktree, initRepo } from "../../test/git-checkouts";
+import { writeRepoLocalRegistryEntry } from "../lib/orchestrator/repository-link";
 import { companionLinkPath } from "../runtime/repo-local";
 import type { CompanionContext } from "./companion-policy";
-import { ENTER_WORKTREE_TOOL, EXIT_WORKTREE_TOOL, registerEnterWorktree } from "./enter-worktree";
+import {
+  ENTER_WORKTREE_TOOL,
+  enterWorktreeRefusal,
+  EXIT_WORKTREE_TOOL,
+  registerEnterWorktree,
+} from "./enter-worktree";
 
 const tempRoots: string[] = [];
 
@@ -454,5 +460,102 @@ describe("mate_exit_worktree", () => {
     expect(plugin.moves.filter((move) => move.sessionID === "ses_peer")).toEqual([
       { sessionID: "ses_peer", directory: worktree },
     ]);
+  });
+});
+
+describe("mate_enter_worktree in an Umbrella Repository", () => {
+  /** The umbrella `<root>/acme` holding `api/` and `web/`, mirrored as `acme.worktrees/acme-fix`. */
+  async function umbrellaLayout() {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mate-enter-umbrella-")));
+    tempRoots.push(root);
+    const companionPath = path.join(root, "companion");
+    fs.mkdirSync(companionPath);
+    const umbrella = path.join(root, "acme");
+    const mirrored = path.join(root, "acme.worktrees", "acme-fix");
+    fs.mkdirSync(umbrella);
+    for (const name of ["api", "web"]) {
+      addWorktree(initRepo(path.join(umbrella, name)), path.join(mirrored, name));
+    }
+    for (const folder of [umbrella, mirrored]) {
+      // oxlint-disable-next-line no-await-in-loop -- two links, in order
+      await writeRepoLocalRegistryEntry(
+        folder,
+        companionPath,
+        { id: "acme", path: folder },
+        "existing",
+      );
+    }
+    return { root, companionPath, umbrella, mirrored };
+  }
+
+  test("moves the session into its umbrella's mirrored worktree", async () => {
+    const { companionPath, umbrella, mirrored } = await umbrellaLayout();
+    const { moves, execute } = await tool({ companionPath, repositoryPath: umbrella });
+    expect((await execute(mirrored)).metadata).toEqual({ moved: true, directory: mirrored });
+    expect(moves).toEqual([{ sessionID: "ses_acme", directory: mirrored }]);
+  });
+
+  test("a session already in the mirrored worktree may enter it again", async () => {
+    const { companionPath, mirrored } = await umbrellaLayout();
+    const refusal = enterWorktreeRefusal(
+      { companionPath, repositoryPath: mirrored } as CompanionContext,
+      mirrored,
+    );
+    expect(refusal).toBeNull();
+  });
+
+  test("exit moves the session back to the umbrella and stops following", async () => {
+    const { companionPath, umbrella, mirrored } = await umbrellaLayout();
+    const opencode = server();
+    const main = await opencode.instance({ companionPath, repositoryPath: umbrella });
+    const inMirror = await opencode.instance({ companionPath, repositoryPath: mirrored });
+    await main.execute(mirrored);
+    expect((await inMirror.exit()).metadata).toEqual({ moved: true, directory: umbrella });
+    await opencode.created("ses_new", umbrella);
+    expect(opencode.moves.filter((move) => move.sessionID === "ses_new")).toEqual([]);
+  });
+
+  test("exit moves back from a child worktree inside the mirrored worktree", async () => {
+    const { companionPath, umbrella, mirrored } = await umbrellaLayout();
+    const plugin = await tool({ companionPath, repositoryPath: umbrella });
+    plugin.place("ses_acme", path.join(mirrored, "api"));
+    expect((await plugin.exit()).metadata).toEqual({ moved: true, directory: umbrella });
+  });
+
+  test("new sessions in the umbrella follow its entered mirrored worktree", async () => {
+    const { companionPath, umbrella, mirrored } = await umbrellaLayout();
+    const plugin = await tool({ companionPath, repositoryPath: umbrella });
+    await plugin.execute(mirrored);
+    await plugin.created("ses_new", umbrella);
+    expect(plugin.moves.at(-1)).toEqual({ sessionID: "ses_new", directory: mirrored });
+    expect((await plugin.system("ses_new"))[0]!.text).toContain(
+      `moved into the worktree ${mirrored}`,
+    );
+  });
+
+  test("refuses a mirrored worktree linked to another companion", async () => {
+    const { root, umbrella, mirrored } = await umbrellaLayout();
+    const other = path.join(root, "other-companion");
+    fs.mkdirSync(other);
+    const refusal = enterWorktreeRefusal(
+      { companionPath: other, repositoryPath: umbrella } as CompanionContext,
+      mirrored,
+    );
+    expect(refusal).toBe(`${mirrored} is not linked to the companion ${other}`);
+  });
+
+  test("refuses a plain folder and another repository's session", async () => {
+    const { root, companionPath, umbrella, mirrored } = await umbrellaLayout();
+    const plain = path.join(root, "plain");
+    fs.mkdirSync(plain);
+    const fromUmbrella = { companionPath, repositoryPath: umbrella } as CompanionContext;
+    expect(enterWorktreeRefusal(fromUmbrella, plain)).toBe(
+      `${plain} is not the root of a Git worktree`,
+    );
+    const web = initRepo(path.join(root, "web"));
+    const fromWeb = { companionPath, repositoryPath: web } as CompanionContext;
+    expect(enterWorktreeRefusal(fromWeb, mirrored)).toBe(
+      `${mirrored} is not a mirrored worktree of ${web}`,
+    );
   });
 });

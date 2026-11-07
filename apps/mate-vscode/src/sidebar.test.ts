@@ -92,6 +92,7 @@ const { readOpenChanges } = await import("./changes");
 const { worksetsOf } = await import("./groups");
 import type { OpenChange } from "./changes";
 import type { Session } from "./sessions";
+import { umbrellaFixture } from "./umbrella.fixture";
 
 afterAll(() => mock.restore());
 
@@ -345,6 +346,72 @@ describe("workspace gate wiring", () => {
     expect(add.mock.calls[0]![0]).toMatchObject({ runtime: "opencode", cwd: repo });
     expect(terminals.at(-1)!.cwd).toBe(repo);
     expect(terminals.at(-1)!.sent[0]).toStartWith("mate opencode -- --bg --session ses_");
+  });
+
+  test("an umbrella window spans its children in every section", async () => {
+    const acme = await umbrellaFixture();
+    root = acme.root;
+    const file = path.join(acme.umbrella, ".mate/acme.mate.code-workspace");
+    await fs.writeFile(file, "{}");
+    const changes = path.join(acme.umbrella, ".mate/companion/openspec/changes");
+    await fs.mkdir(path.join(changes, "acme-fix"), { recursive: true });
+    await fs.writeFile(path.join(changes, "acme-fix/tasks.md"), "- [x] a\n- [ ] b\n");
+    await fs.writeFile(
+      path.join(changes, "acme-fix/delivery.yaml"),
+      [
+        "deliveries:",
+        "  - repository: acme/api",
+        "    branch: workset/acme-fix",
+        "  - repository: acme/web",
+        "    branch: workset/acme-fix",
+        "",
+      ].join("\n"),
+    );
+    const at = (id: string, cwd: string, branch?: string): Session => ({
+      ...session(id, new Date().toISOString(), branch),
+      cwd,
+      ...(branch ? {} : { branch: undefined }),
+    });
+    workspace.workspaceFolders = [{ uri: { fsPath: acme.umbrella, scheme: "file" } }];
+    workspace.workspaceFile = { fsPath: file, scheme: "file" };
+    const { spyOn } = await import("bun:test");
+    spyOn(mate, "listSessions").mockImplementation(async () => [
+      at("acme-umbrella", acme.umbrella),
+      at("acme-api", acme.api, "main"),
+      at("acme-fix-web", path.join(acme.mirrored, "web"), "workset/acme-fix"),
+      at("acme-fix", acme.mirrored, "workset/acme-fix"),
+      at("acme-elsewhere", acme.plain, "workset/acme-fix"),
+    ]);
+    spyOn(mate, "pendingArtifacts").mockImplementation(async () => ({ pending: [] }));
+    activate({ subscriptions } as never);
+    await handlers.get("mate.refresh")!();
+    expect(contexts.get("mate.workspaceReady")).toBe(true);
+
+    const open = await providers.get("mate.openChanges")!.getChildren();
+    expect(open.map((item) => [item.label, item.description])).toEqual([
+      ["acme-fix", "1/2 tasks · 2 sessions"],
+    ]);
+    const groups = await providers.get("mate.sessions")!.getChildren();
+    expect(groups.map((group) => [group.label, group.children?.length])).toEqual([
+      ["acme-fix", 2],
+      ["main", 1],
+      ["No branch", 1],
+    ]);
+    const worktrees = await providers.get("mate.worktrees")!.getChildren();
+    expect(
+      worktrees.map((item) => [
+        item.label,
+        item.description,
+        item.children?.map((child) => [child.label, child.description]),
+      ]),
+    ).toEqual([
+      ["acme-fix", "workset/acme-fix · Workset", undefined],
+      ["api", undefined, [["scratch", "spike"]]],
+    ]);
+    expect(worktrees[0]!.command?.arguments).toEqual([
+      { fsPath: acme.mirrored, scheme: "file" },
+      { forceNewWindow: true },
+    ]);
   });
 
   test("contributes one native welcome view instead of five repeated gates", async () => {

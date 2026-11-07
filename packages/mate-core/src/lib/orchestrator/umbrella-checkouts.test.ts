@@ -4,7 +4,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { linkedCheckoutsOf, umbrellaChildrenOf } from "./umbrella-checkouts";
+import {
+  linkedCheckoutsOf,
+  mirroredUmbrellaOf,
+  umbrellaChildrenOf,
+  umbrellaFolderOf,
+} from "./umbrella-checkouts";
 
 let root: string;
 let umbrella: string;
@@ -127,5 +132,50 @@ describe("linkedCheckoutsOf", () => {
     repo(path.join(umbrella, "docs"), "git@github.com:acme/docs.git");
     const paths = (await linkedCheckoutsOf({ path: umbrella })).map((entry) => entry.path);
     expect(paths).toEqual([path.join(umbrella, "api"), path.join(umbrella, "docs")]);
+  });
+});
+
+describe("umbrellaFolderOf", () => {
+  test("the linked umbrella, from itself and from a plain folder inside it", () => {
+    ownLink(umbrella);
+    repo(path.join(umbrella, "api"));
+    fs.mkdirSync(path.join(umbrella, "notes"));
+    expect(umbrellaFolderOf(umbrella)).toBe(umbrella);
+    expect(umbrellaFolderOf(path.join(umbrella, "notes"))).toBe(umbrella);
+  });
+
+  test("a mirrored worktree, whose children are linked worktrees", () => {
+    ownLink(umbrella);
+    const api = repo(path.join(umbrella, "api"));
+    execFileSync("git", ["-C", api, "commit", "-q", "--allow-empty", "-m", "init"]);
+    const mirrored = path.join(root, "acme.worktrees", "acme-fix");
+    fs.mkdirSync(mirrored, { recursive: true });
+    ownLink(mirrored);
+    execFileSync("git", ["-C", api, "worktree", "add", "-q", path.join(mirrored, "api")]);
+    expect(umbrellaFolderOf(mirrored)).toBe(mirrored);
+    expect(mirroredUmbrellaOf(mirrored)).toBe(umbrella);
+    expect(mirroredUmbrellaOf(umbrella)).toBeNull();
+  });
+
+  test("null in a child checkout", () => {
+    ownLink(umbrella);
+    const api = repo(path.join(umbrella, "api"));
+    fs.mkdirSync(path.join(api, "src"));
+    expect(umbrellaFolderOf(api)).toBeNull();
+    expect(umbrellaFolderOf(path.join(api, "src"))).toBeNull();
+  });
+
+  test("null in a plain folder, linked or not, without child checkouts", () => {
+    expect(umbrellaFolderOf(umbrella)).toBeNull();
+    ownLink(umbrella);
+    fs.mkdirSync(path.join(umbrella, "notes"));
+    expect(umbrellaFolderOf(umbrella)).toBeNull();
+  });
+
+  test("a child with its own link is no umbrella child", () => {
+    ownLink(umbrella);
+    const api = repo(path.join(umbrella, "api"));
+    ownLink(api);
+    expect(umbrellaFolderOf(umbrella)).toBeNull();
   });
 });

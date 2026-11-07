@@ -139,6 +139,19 @@ describe("routeTokensaveInput", () => {
       graph_root: worktree,
     });
   });
+
+  test("inert at a mirrored umbrella worktree; routes inside its child worktree", async () => {
+    const root = await tempRoot();
+    const mirrored = path.join(root, "acme.worktrees", "acme-fix");
+    await fs.mkdir(path.join(root, "acme"));
+    const api = initRepo(path.join(root, "acme", "api"));
+    const child = addWorktree(api, path.join(mirrored, "api"));
+    await indexed(mirrored);
+    await indexed(child);
+
+    expect(route(mirrored, { query: "alpha" })).toBeUndefined();
+    expect(route(child, { query: "alpha" })).toEqual({ query: "alpha", graph_root: child });
+  });
 });
 
 describe("routeTokensaveInput with a served directory", () => {

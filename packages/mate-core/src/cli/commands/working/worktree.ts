@@ -57,10 +57,17 @@ export interface EnterInstruction {
 export type RecordedBranch =
   | { repository: string; branch: string; path: string }
   /**
-   * An Umbrella Repository's mirrored worktree: `repositories` were recorded, `failed`
-   * names the rest; the session moves by a new one in `path`.
+   * An Umbrella Repository's mirrored worktree on the Workset `branch`: `repositories` were
+   * recorded, `failed` names the rest. OpenCode moves the session into `path`; any other
+   * runtime hands off to a new session there, for the reason `handoff`.
    */
-  | { handoff: string; path: string; repositories: string[]; failed?: string[] }
+  | {
+      handoff: string;
+      path: string;
+      branch?: string;
+      repositories: string[];
+      failed?: string[];
+    }
   | { skipped: string }
   | { failed: string[] };
 
@@ -254,7 +261,7 @@ async function isSessionUmbrella(
 
 /**
  * In an Umbrella Repository session: the branch of every child worktree in the mirrored
- * worktree, recorded per child. The runtimes move a session only into a Git worktree.
+ * worktree, recorded per child.
  */
 async function recordUmbrella(
   environment: DeliveryEnvironment,
@@ -277,9 +284,13 @@ async function recordUmbrella(
     if ("refusal" in outcome) failed.push(`${entry.repository}: ${refusalText(outcome.refusal)}`);
     else recorded.push(entry.repository);
   }
+  // The first child folder's in name order, as `currentBranch` reads the session's later.
+  const branch = children.toSorted((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))[0]
+    ?.branch;
   return {
     handoff: `${umbrella.worktree} is a mirrored umbrella worktree, not a Git worktree`,
     path: umbrella.worktree,
+    ...(branch ? { branch } : {}),
     repositories: recorded,
     ...(failed.length > 0 ? { failed } : {}),
   };
@@ -300,6 +311,10 @@ function enterInstruction(
   if ("skipped" in recorded) return { runtime, action: "handoff", reason: recorded.skipped };
   // Before `failed`: a mirrored worktree stays the place to work on when a record failed.
   if ("handoff" in recorded) {
+    // Claude's `EnterWorktree` takes only Git worktrees; `mate_enter_worktree` takes this folder.
+    if (runtime === "opencode") {
+      return { runtime, action: "tool", tool: ENTER_TOOLS.opencode, path: recorded.path };
+    }
     return { runtime, action: "handoff", path: recorded.path, reason: recorded.handoff };
   }
   if ("failed" in recorded) {
@@ -382,6 +397,10 @@ function printCreated(result: WorktreeResult): void {
   } else if (wrap.outcome === "skipped") {
     process.stdout.write(`${prefix} wrap skipped (${wrap.reason})\n`);
   }
+  const { index } = umbrella;
+  process.stdout.write(
+    `${prefix} tokensave index ${index.outcome}${index.reason ? ` (${index.reason})` : ""}\n`,
+  );
   if (umbrella.error) console.error(`${n} working worktree: ${umbrella.path}: ${umbrella.error}`);
 }
 
@@ -474,13 +493,14 @@ export async function runWorkingWorktreeCommand(
       const recorded = await record(companion, parsed.change, result, deps.cwd ?? process.cwd());
       if ("failed" in recorded) result.warnings.push(...(recorded.failed ?? []));
       enter = enterInstruction(deps.env ?? process.env, recorded);
+      // A handed-off umbrella session stays where it is; its successor registers the branch.
+      const handedOff = "handoff" in recorded && enter.action !== "tool";
+      const move =
+        "branch" in recorded && recorded.branch && !handedOff
+          ? { cwd: recorded.path, branch: recorded.branch }
+          : undefined;
       await (deps.attribute ?? attributeCurrentSession)(
-        {
-          change: parsed.change,
-          ...("branch" in recorded
-            ? { move: { cwd: recorded.path, branch: recorded.branch } }
-            : {}),
-        },
+        { change: parsed.change, ...(move ? { move } : {}) },
         deps.env ?? process.env,
       );
     }
