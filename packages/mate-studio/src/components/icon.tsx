@@ -8,6 +8,9 @@ const PATHS = {
   doc: "M6 3h5l4 4v10H6zM11 3v4h4M8.5 11h4M8.5 14h4",
   folder: "M3 6.5V15h14V8H9.5L8 6H3.5",
   chart: "M4 16V9m4 7V5m4 11v-5m4 5V8",
+  // Three nodes and the edges between them.
+  graph:
+    "M3 6a2 2 0 1 0 4 0 2 2 0 1 0-4 0m10-1a2 2 0 1 0 4 0 2 2 0 1 0-4 0m-5 10a2 2 0 1 0 4 0 2 2 0 1 0-4 0M7 5.8l6-.6M5.7 7.9l3.6 5.3m5-6.3-3.4 6.3",
   search: "M9 15a6 6 0 1 0 0-12 6 6 0 0 0 0 12Zm4.5-1.5L17 17",
   chevron: "m7 8 3 3 3-3",
   right: "m8 6 4 4-4 4",

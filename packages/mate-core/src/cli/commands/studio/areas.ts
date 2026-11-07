@@ -94,28 +94,16 @@ function normalizeScopes(scopes: StudioSpecScope[]): StudioSpecScope[] {
 }
 
 /**
- * Repository/Area pairs one spec binds. No OpenSpec JSON command reports them
- * in bulk — a per-spec `show --json` would cost one process per spec — so the
- * resolved spec document is read directly: the top-level `repository` with each
- * `areas` entry, each `scopes` entry, and the inline `**Area:**` bindings its
- * requirements carry. A top-level or inline Area pairs with the top-level
- * repository, else the only repository the scopes name. Repositories named by a
- * linked registry ID are read as its `org/repository` identity first, so one
- * repository named both ways still counts once.
+ * Repository/Area pairs one spec's content binds: the top-level `repository` with each
+ * `areas` entry, each `scopes` entry, and the inline `**Area:**` bindings its requirements
+ * carry. A top-level or inline Area pairs with the top-level repository, else the only
+ * repository the scopes name. Repositories named by a linked registry ID are read as its
+ * `org/repository` identity first, so one repository named both ways still counts once.
  */
-export async function readSpecScopes(
-  specsRoot: string,
-  specId: string,
-  readFile: (filePath: string) => Promise<string> = (filePath) => fs.readFile(filePath, "utf8"),
+export function specScopes(
+  content: string,
   aliases: ReadonlyMap<string, string> = new Map(),
-): Promise<StudioSpecScope[]> {
-  let content: string;
-  try {
-    content = await readFile(path.join(specsRoot, specId, "spec.md"));
-  } catch {
-    return [];
-  }
-
+): StudioSpecScope[] {
   const frontmatter = readFrontmatter(content);
   const identity = (repository?: string) =>
     repository === undefined ? undefined : (aliases.get(repository) ?? repository);
@@ -136,4 +124,24 @@ export async function readSpecScopes(
   ].filter((scope): scope is StudioSpecScope => scope !== undefined);
 
   return normalizeScopes(candidates);
+}
+
+/**
+ * Repository/Area pairs one spec binds, by `specScopes`. No OpenSpec JSON command reports
+ * them in bulk — a per-spec `show --json` would cost one process per spec — so the resolved
+ * spec document is read directly.
+ */
+export async function readSpecScopes(
+  specsRoot: string,
+  specId: string,
+  readFile: (filePath: string) => Promise<string> = (filePath) => fs.readFile(filePath, "utf8"),
+  aliases: ReadonlyMap<string, string> = new Map(),
+): Promise<StudioSpecScope[]> {
+  let content: string;
+  try {
+    content = await readFile(path.join(specsRoot, specId, "spec.md"));
+  } catch {
+    return [];
+  }
+  return specScopes(content, aliases);
 }

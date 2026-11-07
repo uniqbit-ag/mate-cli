@@ -1,16 +1,33 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
+  canonicalSpecPath,
+  ROOT_AREA_LABEL,
   type SpecActionOffer,
   type StudioCompanionPayload,
   type StudioSpec,
   type StudioSpecScope,
   SUBJECT_PATTERN,
 } from "@uniqbit/mate-core/studio";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { Icon } from "../../components/icon";
-import { Input, Select } from "../../components/ui/fields";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "../../components/ui/combobox";
+import { Input } from "../../components/ui/fields";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
 import { EmptyNote, ListCard, PAGE_PAD, ROW, StatusWord } from "../../components/view-parts";
 import { cn } from "../../lib/cn";
 import { vaultQuery } from "../../lib/studio-queries";
@@ -28,8 +45,6 @@ import {
 
 const NO_ACTIONS: SpecActionOffer[] = [];
 
-const specPath = (capability: string) => `openspec/specs/${capability}/spec.md`;
-
 function specStatus(spec: StudioSpec) {
   if (spec.valid === false) {
     return <StatusWord marker="issue">{`${spec.issueCount ?? 0} issues`}</StatusWord>;
@@ -40,7 +55,7 @@ function specStatus(spec: StudioSpec) {
 
 const ROOT_AREA = ".";
 /** The repository-root Area reads as words; any other Area is its path. */
-const areaLabel = (area: string): string => (area === ROOT_AREA ? "Repository root" : area);
+const areaLabel = (area: string): string => (area === ROOT_AREA ? ROOT_AREA_LABEL : area);
 const repositoryLabel = (repository: string | null): string => repository ?? "No repository";
 const scopeLabel = ({ repository, area }: StudioSpecScope): string =>
   [repository, area === undefined ? undefined : areaLabel(area)].filter(Boolean).join(" · ");
@@ -89,9 +104,16 @@ export function Specs({
   );
 }
 
-/** Area filter value: the Area under a chosen repository, else the repository and Area. */
-const areaValue = (option: AreaOption, scoped: boolean): string =>
-  scoped ? option.area : `${option.repo}\n${option.area}`;
+/** An Area filter item; All Areas carries no option. */
+interface AreaItem {
+  key: string;
+  label: string;
+  option?: AreaOption;
+}
+
+const ALL_AREAS: AreaItem = { key: "", label: "All Areas" };
+const sameAreaItem = (left: AreaItem, right: AreaItem): boolean => left.key === right.key;
+const areaItemLabel = (item: AreaItem): string => item.label;
 
 function SpecsToolbar({
   specs,
@@ -111,7 +133,28 @@ function SpecsToolbar({
   onChange: (filter: SpecFilter) => void;
 }) {
   const scoped = filter.repo !== undefined;
-  const chooseRepo = (repo: string) => {
+  const repoItems = [
+    { value: "", label: "All repositories" },
+    ...repositories.map((option) => ({
+      value: option.value,
+      label: `${repositoryLabel(option.repository)} (${option.count})`,
+    })),
+  ];
+  const areaItems: AreaItem[] = [
+    ALL_AREAS,
+    ...areas.map((option) => {
+      // Under All repositories an Area names its repository.
+      const place = scoped
+        ? areaLabel(option.area)
+        : `${repositoryLabel(option.repository)} · ${areaLabel(option.area)}`;
+      return { key: `${option.repo}\n${option.area}`, label: `${place} (${option.count})`, option };
+    }),
+  ];
+  const chosenArea =
+    areaItems.find(
+      (item) => item.option?.repo === filter.repo && item.option?.area === filter.area,
+    ) ?? ALL_AREAS;
+  const chooseRepo = (repo: string | null) => {
     const next = repo || undefined;
     // An Area the newly chosen repository lacks, or any Area under All, returns to All.
     const kept = filterOptions(specs, next).areas.some(
@@ -119,12 +162,13 @@ function SpecsToolbar({
     );
     onChange({ ...filter, repo: next, area: kept ? filter.area : undefined });
   };
-  const chooseArea = (value: string) => {
-    if (!value) return onChange({ ...filter, area: undefined });
-    if (scoped) return onChange({ ...filter, area: value });
-    const [repo, ...rest] = value.split("\n");
-    onChange({ ...filter, repo, area: rest.join("\n") });
-  };
+  // Choosing an Area under All repositories chooses its repository too.
+  const chooseArea = (item: AreaItem | null) =>
+    onChange(
+      item?.option
+        ? { ...filter, repo: item.option.repo, area: item.option.area }
+        : { ...filter, area: undefined },
+    );
   return (
     <div className="flex flex-wrap items-center gap-2" role="search" aria-label="Filter specs">
       <Input
@@ -135,32 +179,37 @@ function SpecsToolbar({
         value={search}
         onChange={(event) => onSearch(event.currentTarget.value)}
       />
-      <Select
-        className="w-auto max-w-72"
-        aria-label="Repository"
-        value={filter.repo ?? ""}
-        onChange={(event) => chooseRepo(event.currentTarget.value)}
-      >
-        <option value="">All repositories</option>
-        {repositories.map((option) => (
-          <option key={option.value} value={option.value}>
-            {`${repositoryLabel(option.repository)} (${option.count})`}
-          </option>
-        ))}
+      <Select items={repoItems} value={filter.repo ?? ""} onValueChange={chooseRepo}>
+        <SelectTrigger className="w-auto max-w-72" aria-label="Repository">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {repoItems.map((item) => (
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
       </Select>
-      <Select
-        className="w-auto max-w-96"
-        aria-label="Area"
-        value={filter.area ?? ""}
-        onChange={(event) => chooseArea(event.currentTarget.value)}
+      <Combobox
+        items={areaItems}
+        value={chosenArea}
+        onValueChange={chooseArea}
+        isItemEqualToValue={sameAreaItem}
+        itemToStringLabel={areaItemLabel}
       >
-        <option value="">All Areas</option>
-        {areas.map((option) => (
-          <option key={`${option.repo}\n${option.area}`} value={areaValue(option, scoped)}>
-            {`${scoped ? "" : `${repositoryLabel(option.repository)} · `}${areaLabel(option.area)} (${option.count})`}
-          </option>
-        ))}
-      </Select>
+        <ComboboxInput className="w-80 max-sm:w-full" aria-label="Area" placeholder="All Areas" />
+        <ComboboxContent>
+          <ComboboxEmpty>No Areas match</ComboboxEmpty>
+          <ComboboxList>
+            {(item: AreaItem) => (
+              <ComboboxItem key={item.key} value={item}>
+                {item.label}
+              </ComboboxItem>
+            )}
+          </ComboboxList>
+        </ComboboxContent>
+      </Combobox>
     </div>
   );
 }
@@ -366,16 +415,23 @@ function SpecsByArea({
   );
 }
 
-function SpecDetail({
+/** A spec's panel body: head, Vault link and the rendered spec; the Graph panel reuses it. */
+export function SpecDetail({
   spec,
-  actions,
+  actions = NO_ACTIONS,
   companion,
+  withStatus = true,
+  children,
 }: {
   spec: StudioSpec;
-  actions: SpecActionOffer[];
+  actions?: SpecActionOffer[];
   companion?: string;
+  /** False where validity was never collected, e.g. in the Graph. */
+  withStatus?: boolean;
+  /** Sections shown between the head and the spec, e.g. the Graph's History. */
+  children?: ReactNode;
 }) {
-  const path = specPath(spec.capability);
+  const path = canonicalSpecPath(spec.capability);
   const file = useQuery({
     ...vaultQuery(companion ?? "", { path }),
     enabled: Boolean(companion),
@@ -388,7 +444,7 @@ function SpecDetail({
         title={spec.capability}
         kicker={
           <>
-            {specStatus(spec)}
+            {withStatus ? specStatus(spec) : null}
             <span className="ml-auto">{spec.scopes.map(scopeLabel).join(", ")}</span>
           </>
         }
@@ -398,12 +454,17 @@ function SpecDetail({
           <Link
             className="inline-flex items-center gap-1.5 text-sm"
             to="/vault"
-            search={(previous) => ({ ...previous, path })}
+            search={(previous) => ({
+              companion: previous.companion,
+              studioMode: previous.studioMode,
+              path,
+            })}
           >
             <Icon name="external" className="size-3.5" /> Open in Vault
           </Link>
         </div>
       </PanelHead>
+      {children}
       <PanelSection
         title="Spec"
         aside={

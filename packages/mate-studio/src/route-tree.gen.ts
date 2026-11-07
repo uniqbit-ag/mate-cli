@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as FactoryRouteImport } from './routes/factory'
 import { Route as GettingStartedRouteImport } from './routes/getting-started'
+import { Route as GraphRouteImport } from './routes/graph'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as SpecsRouteImport } from './routes/specs'
@@ -33,6 +34,11 @@ const FactoryRoute = FactoryRouteImport.update({
 const GettingStartedRoute = GettingStartedRouteImport.update({
   id: '/getting-started',
   path: '/getting-started',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GraphRoute = GraphRouteImport.update({
+  id: '/graph',
+  path: '/graph',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReportsRoute = ReportsRouteImport.update({
@@ -75,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/factory': typeof FactoryRoute
   '/getting-started': typeof GettingStartedRouteWithChildren
+  '/graph': typeof GraphRoute
   '/reports': typeof ReportsRoute
   '/skills': typeof SkillsRoute
   '/specs': typeof SpecsRoute
@@ -86,6 +93,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/factory': typeof FactoryRoute
+  '/graph': typeof GraphRoute
   '/reports': typeof ReportsRoute
   '/skills': typeof SkillsRoute
   '/specs': typeof SpecsRoute
@@ -99,6 +107,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/factory': typeof FactoryRoute
   '/getting-started': typeof GettingStartedRouteWithChildren
+  '/graph': typeof GraphRoute
   '/reports': typeof ReportsRoute
   '/skills': typeof SkillsRoute
   '/specs': typeof SpecsRoute
@@ -113,6 +122,7 @@ export interface FileRouteTypes {
     | '/'
     | '/factory'
     | '/getting-started'
+    | '/graph'
     | '/reports'
     | '/skills'
     | '/specs'
@@ -124,6 +134,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/factory'
+    | '/graph'
     | '/reports'
     | '/skills'
     | '/specs'
@@ -136,6 +147,7 @@ export interface FileRouteTypes {
     | '/'
     | '/factory'
     | '/getting-started'
+    | '/graph'
     | '/reports'
     | '/skills'
     | '/specs'
@@ -149,6 +161,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   FactoryRoute: typeof FactoryRoute
   GettingStartedRoute: typeof GettingStartedRouteWithChildren
+  GraphRoute: typeof GraphRoute
   ReportsRoute: typeof ReportsRoute
   SkillsRoute: typeof SkillsRoute
   SpecsRoute: typeof SpecsRoute
@@ -177,6 +190,13 @@ declare module '@tanstack/react-router' {
       path: '/getting-started'
       fullPath: '/getting-started'
       preLoaderRoute: typeof GettingStartedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/graph': {
+      id: '/graph'
+      path: '/graph'
+      fullPath: '/graph'
+      preLoaderRoute: typeof GraphRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reports': {
@@ -249,6 +269,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   FactoryRoute: FactoryRoute,
   GettingStartedRoute: GettingStartedRouteWithChildren,
+  GraphRoute: GraphRoute,
   ReportsRoute: ReportsRoute,
   SkillsRoute: SkillsRoute,
   SpecsRoute: SpecsRoute,

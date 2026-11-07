@@ -421,7 +421,7 @@ class TreeMapper {
   private link(link: Tokens.Link): MdNode {
     const label = this.inline(link.tokens, link.text);
     if (/^https?:\/\//i.test(link.href)) return el("a", label, { href: link.href });
-    if (this.guide) return el("a", label, { guide: this.guide.link(link.href) });
+    if (this.guide) return el("a", label, this.guide.link(link.href));
     const note = resolveNoteLink(link.href, this.path);
     return note === null ? el("span", label) : el("a", label, { note });
   }
@@ -429,10 +429,13 @@ class TreeMapper {
 
 interface GuideContext {
   heading(text: string): string;
-  link(target: string): string;
+  link(target: string): { guide: string } | { href: string };
 }
 
-/** Bundled Markdown only; rejects constructs the reader cannot faithfully render. */
+/**
+ * Bundled Markdown only; rejects constructs the reader cannot faithfully render.
+ * A `routes` value that is an `https:` URL links out instead of to a guide topic.
+ */
 export function guideTree(
   source: string,
   path: string,
@@ -479,11 +482,14 @@ export function guideTree(
       return count ? `${slug}-${count}` : slug;
     },
     link(target) {
-      if (target.startsWith("#")) return target;
+      if (target.startsWith("#")) return { guide: target };
       const [page, fragment] = target.split("#");
+      const hash = fragment === undefined ? "" : `#${fragment}`;
       const route = page && Object.hasOwn(routes, page) ? routes[page] : undefined;
       if (!route) return fail(`unresolved or unsafe guide link: ${target}`);
-      return `${route}${fragment === undefined ? "" : `#${fragment}`}`;
+      return route.startsWith("https://")
+        ? { href: `${route}${hash}` }
+        : { guide: `${route}${hash}` };
     },
   }).blocks(tokens);
 }

@@ -522,7 +522,7 @@ describe("Studio modes", () => {
     for (const view of ["workflow", "skills", "factory", "unknown"]) {
       expect(parse(at(`?studioMode=${an}&view=${view}`)).view).toBe("dashboard");
     }
-    for (const view of ["dashboard", "vault", "specs", "reports"]) {
+    for (const view of ["dashboard", "vault", "specs", "reports", "graph"]) {
       expect(parse(at(`?studioMode=${an}&view=${view}`)).view).toBe(view);
     }
   });

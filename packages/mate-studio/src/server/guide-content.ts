@@ -1,6 +1,10 @@
 import { guideTree, type MdNode } from "@uniqbit/mate-core/studio";
 
+/** Published docs; linked pages Studio doesn't bundle open there. */
+const DOCS_SITE = "https://uniqbit-ag.github.io/mate-cli";
+
 const GUIDE_ROUTES = {
+  "/docs/concepts/umbrella-repository": `${DOCS_SITE}/docs/concepts/umbrella-repository/`,
   "/docs/concepts/worktrees": "/getting-started/worktrees",
   "/docs/getting-started/vscode": "/getting-started/vscode",
 } as const;

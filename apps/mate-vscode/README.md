@@ -12,6 +12,12 @@ If the repository's Mate workspace is not open, the sidebar shows one **Open wor
 - **Ready to archive**: active changes whose tasks are all checked, with their Workset; opening one opens it as in Open changes. Archive with `/mate-archive-change`.
 - **Ready to publish**: archived changes `mate artifact pending` reports.
 
+## Refresh
+
+Visible sections reload every 30 seconds while the window is focused, and when the window regains focus. Set `mate.autoRefreshInterval` to change the interval in seconds (values below 5 count as 5); `0` turns it off, and sections still reload on focus. **Refresh** reloads every section at once; a section also reloads when it becomes visible, and Sessions when a session is recorded.
+
+Reloads read only local state, never the network. A delivery branch merged on the remote shows as waiting for merge until its merge is recorded locally, for example by `mate artifact link <change> --refresh`.
+
 ## Install
 
 ```sh

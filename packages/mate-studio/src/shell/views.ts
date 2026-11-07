@@ -10,6 +10,7 @@ export const VIEW_PATHS: Record<StudioView, string> = {
   vault: "/vault",
   specs: "/specs",
   reports: "/reports",
+  graph: "/graph",
 };
 
 /** A view's page title is its navigation label. */
@@ -22,6 +23,7 @@ export const VIEW_TITLES: Record<StudioView, string> = {
   vault: "Vault",
   specs: "Specs",
   reports: "Reports",
+  graph: "Graph",
 };
 
 export const MODE_TITLES: Record<StudioMode, string> = {
@@ -47,6 +49,7 @@ export const VIEW_DESCRIPTIONS: Record<StudioMode, Record<StudioView, string>> =
     vault: "Every file in the Companion Repository.",
     specs: "Capabilities by Area, with their requirements.",
     reports: "Reports agents published for this companion.",
+    graph: "Capabilities, Areas and repositories, and how they connect.",
   },
   analysis: {
     dashboard: "What shipped lately, and the specs it changed.",
@@ -57,5 +60,6 @@ export const VIEW_DESCRIPTIONS: Record<StudioMode, Record<StudioView, string>> =
     vault: "Every file in the Companion Repository.",
     specs: "Capabilities by Area, with their requirements.",
     reports: "Reports agents published for this companion.",
+    graph: "Capabilities, Areas and repositories, and how they connect.",
   },
 };

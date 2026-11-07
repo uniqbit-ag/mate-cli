@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, jest, mock, test } from "bun:test";
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -7,7 +7,21 @@ import { promisify } from "node:util";
 import type { SectionItem } from "./section";
 import * as mate from "./mate";
 
-const providers = new Map<string, { getChildren(): Promise<SectionItem[]> }>();
+type Provider = {
+  getChildren(): Promise<SectionItem[]>;
+  onDidChangeTreeData?: (listener: () => void) => unknown;
+  loading?: Promise<void>;
+};
+const providers = new Map<string, Provider>();
+/** Tree views by id; a visible one loads when its provider fires, as VS Code does. */
+const views = new Map<string, { visible: boolean; loads: number }>();
+/** Listeners the extension registered, called by tests to simulate VS Code events. */
+const listeners = {
+  windowState: [] as ((state: { focused: boolean }) => void)[],
+  configuration: [] as ((event: { affectsConfiguration(key: string): boolean }) => void)[],
+};
+const windowState = { focused: true };
+const settings = new Map<string, unknown>();
 const handlers = new Map<string, (...args: unknown[]) => unknown>();
 const commands: unknown[][] = [];
 const contexts = new Map<string, unknown>();
@@ -24,13 +38,30 @@ const workspace = {
     dispose() {},
   }),
   onDidChangeWorkspaceFolders: () => ({ dispose() {} }),
+  getConfiguration: (section: string) => ({
+    get: (key: string) => settings.get(`${section}.${key}`),
+  }),
+  onDidChangeConfiguration: (
+    listener: (event: { affectsConfiguration(key: string): boolean }) => void,
+  ) => {
+    listeners.configuration.push(listener);
+    return { dispose() {} };
+  },
 };
 
 mock.module("vscode", () => ({
   EventEmitter: class {
-    event = () => ({ dispose() {} });
-    fire() {}
-    dispose() {}
+    private readonly listeners = new Set<(value: unknown) => void>();
+    event = (listener: (value: unknown) => void) => {
+      this.listeners.add(listener);
+      return { dispose: () => this.listeners.delete(listener) };
+    };
+    fire(value?: unknown) {
+      for (const listener of this.listeners) listener(value);
+    }
+    dispose() {
+      this.listeners.clear();
+    }
   },
   TreeItem: class {
     constructor(
@@ -55,6 +86,11 @@ mock.module("vscode", () => ({
     },
   },
   window: {
+    state: windowState,
+    onDidChangeWindowState: (listener: (state: { focused: boolean }) => void) => {
+      listeners.windowState.push(listener);
+      return { dispose() {} };
+    },
     terminals: [],
     onDidOpenTerminal: () => ({ dispose() {} }),
     onDidCloseTerminal: () => ({ dispose() {} }),
@@ -72,16 +108,22 @@ mock.module("vscode", () => ({
       terminals.push(terminal);
       return { show() {}, sendText: (text: string) => terminal.sent.push(text) };
     },
-    createTreeView: (
-      id: string,
-      options: { treeDataProvider: { getChildren(): Promise<SectionItem[]> } },
-    ) => {
-      providers.set(id, options.treeDataProvider);
-      return {
+    createTreeView: (id: string, options: { treeDataProvider: Provider }) => {
+      const provider = options.treeDataProvider;
+      providers.set(id, provider);
+      const view = {
         visible: false,
+        loads: 0,
         onDidChangeVisibility: () => ({ dispose() {} }),
         dispose() {},
       };
+      views.set(id, view);
+      provider.onDidChangeTreeData?.(() => {
+        if (!view.visible) return;
+        view.loads++;
+        void provider.getChildren();
+      });
+      return view;
     },
   },
 }));
@@ -219,6 +261,12 @@ describe("workspace gate wiring", () => {
     workspace.workspaceFolders = [];
     workspace.workspaceFile = undefined;
     providers.clear();
+    views.clear();
+    listeners.windowState.length = 0;
+    listeners.configuration.length = 0;
+    windowState.focused = true;
+    settings.clear();
+    jest.useRealTimers();
     handlers.clear();
     commands.length = 0;
     contexts.clear();
@@ -275,7 +323,7 @@ describe("workspace gate wiring", () => {
   });
 
   /** A repository with its managed workspace open, so every section loads. */
-  async function openRepository() {
+  async function openRepository(sessionsOf: (repo: string) => Session[] = () => []) {
     root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "acme-editor-")));
     const repo = path.join(root, "acme");
     await fs.mkdir(repo);
@@ -286,13 +334,171 @@ describe("workspace gate wiring", () => {
     workspace.workspaceFolders = [{ uri: { fsPath: repo, scheme: "file" } }];
     workspace.workspaceFile = { fsPath: file, scheme: "file" };
     const { spyOn } = await import("bun:test");
-    spyOn(mate, "listSessions").mockImplementation(async () => []);
+    spyOn(mate, "listSessions").mockImplementation(async () => sessionsOf(repo));
     spyOn(mate, "pendingArtifacts").mockImplementation(async () => ({ pending: [] }));
     activate({ subscriptions } as never);
     await handlers.get("mate.refresh")!();
     expect(contexts.get("mate.workspaceReady")).toBe(true);
     return repo;
   }
+
+  const SECTIONS = [
+    "mate.sessions",
+    "mate.worktrees",
+    "mate.openChanges",
+    "mate.readyToArchive",
+    "mate.readyToPublish",
+  ];
+
+  /** Shows `ids`, hides the other sections, and resets load counts. */
+  function show(...ids: string[]) {
+    for (const id of SECTIONS) {
+      Object.assign(views.get(id)!, { visible: ids.includes(id), loads: 0 });
+    }
+  }
+
+  const loads = () => Object.fromEntries(SECTIONS.map((id) => [id, views.get(id)!.loads]));
+
+  /** Waits for running loads, then passes the 3 s gap and the view reuse window. */
+  async function settle() {
+    await Promise.all([...providers.values()].map((provider) => provider.loading));
+    jest.advanceTimersByTime(3_000);
+  }
+
+  const focus = (focused: boolean) => {
+    windowState.focused = focused;
+    for (const listener of listeners.windowState) listener({ focused });
+  };
+
+  const configureInterval = (seconds: number) => {
+    settings.set("mate.autoRefreshInterval", seconds);
+    for (const listener of listeners.configuration) {
+      listener({ affectsConfiguration: (key) => key === "mate.autoRefreshInterval" });
+    }
+  };
+
+  test("reloads visible sections every interval while focused, and on focus", async () => {
+    jest.useFakeTimers();
+    await openRepository();
+    show("mate.worktrees", "mate.readyToPublish");
+    jest.advanceTimersByTime(29_999);
+    expect(loads()["mate.worktrees"]).toBe(0);
+    jest.advanceTimersByTime(1);
+    expect(loads()).toEqual({
+      "mate.sessions": 0,
+      "mate.worktrees": 1,
+      "mate.openChanges": 0,
+      "mate.readyToArchive": 0,
+      "mate.readyToPublish": 1,
+    });
+
+    // A tick while a load runs starts none.
+    const blocked = Promise.withResolvers<{ pending: never[] }>();
+    (mate.pendingArtifacts as unknown as ReturnType<typeof mock>).mockImplementation(
+      () => blocked.promise,
+    );
+    await settle();
+    show("mate.readyToPublish");
+    jest.advanceTimersByTime(30_000);
+    expect(loads()["mate.readyToPublish"]).toBe(1);
+    jest.advanceTimersByTime(30_000);
+    expect(loads()["mate.readyToPublish"]).toBe(1);
+    blocked.resolve({ pending: [] });
+    await settle();
+
+    show("mate.worktrees");
+    focus(false);
+    jest.advanceTimersByTime(60_000);
+    expect(loads()["mate.worktrees"]).toBe(0);
+    focus(true);
+    expect(loads()["mate.worktrees"]).toBe(1);
+    // Focus right after a reload does nothing.
+    focus(false);
+    focus(true);
+    expect(loads()["mate.worktrees"]).toBe(1);
+  });
+
+  test("applies a changed interval without a window reload, and 0 keeps focus reloads", async () => {
+    jest.useFakeTimers();
+    await openRepository();
+    show("mate.worktrees");
+    configureInterval(60);
+    jest.advanceTimersByTime(30_000);
+    expect(loads()["mate.worktrees"]).toBe(0);
+    jest.advanceTimersByTime(30_000);
+    expect(loads()["mate.worktrees"]).toBe(1);
+    await settle();
+
+    configureInterval(0);
+    show("mate.worktrees");
+    jest.advanceTimersByTime(600_000);
+    expect(loads()["mate.worktrees"]).toBe(0);
+    focus(false);
+    focus(true);
+    expect(loads()["mate.worktrees"]).toBe(1);
+  });
+
+  test("keeps Sessions group ids across reloads, so collapsed groups stay collapsed", async () => {
+    jest.useFakeTimers({ now: new Date("2026-03-10T00:00:00.000Z") });
+    await openRepository((cwd) => [
+      { ...session("acme-recent", "2026-03-09T00:00:00.000Z", "feature/acme"), cwd },
+      { ...session("acme-old", "2026-01-01T00:00:00.000Z", "feature/acme-old"), cwd },
+    ]);
+    const provider = providers.get("mate.sessions") as unknown as InstanceType<typeof Section>;
+    const ids = async () =>
+      (await provider.getChildren()).map((group) => provider.getTreeItem(group).id);
+    const first = await ids();
+    expect(first).toEqual(["sessions:b:feature/acme", "sessions:older"]);
+    show("mate.sessions");
+    await settle();
+    jest.advanceTimersByTime(30_000);
+    expect(loads()["mate.sessions"]).toBe(1);
+    await settle();
+    expect(await ids()).toEqual(first);
+  });
+
+  test("an automatic reload runs only local commands", async () => {
+    jest.useFakeTimers();
+    const bin = await fs.mkdtemp(path.join(os.tmpdir(), "acme-git-"));
+    const log = path.join(bin, "git.log");
+    // Logs each subcommand, then runs the real Git.
+    await fs.writeFile(
+      path.join(bin, "git"),
+      `#!/bin/sh\nprintf '%s\\n' "$1" >> '${log}'\nexec '${Bun.which("git")}' "$@"\n`,
+      { mode: 0o755 },
+    );
+    const originalPath = process.env.PATH;
+    try {
+      await openRepository();
+      const { spyOn } = await import("bun:test");
+      const others = (
+        [
+          "addSession",
+          "removeSession",
+          "stopOpenCode",
+          "stopClaude",
+          "claudeAgents",
+          "claudeSupportsBackground",
+          "startClaudeBackground",
+          "prepareWorkspace",
+        ] as const
+      ).map((name) => spyOn(mate, name));
+      process.env.PATH = `${bin}:${originalPath}`;
+      show(...SECTIONS);
+      jest.advanceTimersByTime(30_000);
+      expect(Object.values(loads())).toEqual([1, 1, 1, 1, 1]);
+      await settle();
+
+      expect(mate.listSessions).toHaveBeenCalled();
+      expect(mate.pendingArtifacts).toHaveBeenCalled();
+      for (const other of others) expect(other).not.toHaveBeenCalled();
+      const subcommands = new Set((await fs.readFile(log, "utf8")).trim().split("\n"));
+      expect([...subcommands].toSorted()).toEqual(["config", "symbolic-ref", "worktree"]);
+    } finally {
+      process.env.PATH = originalPath;
+      await fs.rm(bin, { recursive: true, force: true });
+    }
+  });
 
   test("moves changes with every task checked from Open changes to Ready to archive", async () => {
     const repo = await openRepository();

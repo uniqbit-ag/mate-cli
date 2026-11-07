@@ -32,6 +32,7 @@ import {
   type BackgroundStart,
 } from "./mate";
 import { toPendingItems } from "./pending";
+import { intervalSeconds, ReloadGate } from "./reload";
 import {
   defaultBranch,
   listWorktrees,
@@ -258,7 +259,6 @@ const EARLY_FAILURE_MS = 30_000;
 const EARLY_FAILURE_POLL_MS = 5_000;
 /** Registry writes come in bursts while agents work; each reload runs `mate session list`. */
 const REGISTRY_DEBOUNCE_MS = 300;
-const REGISTRY_MIN_INTERVAL_MS = 3_000;
 
 function reportWorkspaceError(error: unknown) {
   return vscode.window.showErrorMessage(
@@ -379,6 +379,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const groups = groupSessions(view.sessions, view.worksets, view.defaultBranch, running);
       return {
         items: groups.map((group): SectionItem => ({
+          id: `sessions:${group.key}`,
           label: group.label,
           description: group.description,
           icon: GROUP_ICONS[group.kind],
@@ -530,29 +531,46 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   /**
-   * Hooks write the registry; reload Sessions and the Workset session counts
-   * when they do, at most every few seconds. Hidden views reload when shown.
+   * Automatic reloads (interval, window focus, registry) share one gate: visible
+   * sections only, a few seconds apart. Hidden views reload when shown.
    */
+  const reloads = new ReloadGate(() => vscode.window.state.focused);
+  const reloadShown = () => {
+    if (gate.ready) reloads.reload(sections);
+  };
+
+  let interval: ReturnType<typeof setInterval> | undefined;
+  const startInterval = () => {
+    clearInterval(interval);
+    interval = undefined;
+    const seconds = intervalSeconds(
+      vscode.workspace.getConfiguration("mate").get("autoRefreshInterval"),
+    );
+    if (seconds > 0) interval = setInterval(reloadShown, seconds * 1_000);
+  };
+  startInterval();
+
+  /** Hooks write the registry; reload Sessions and the Workset session counts when they do. */
   let registryTimer: ReturnType<typeof setTimeout> | undefined;
-  let registryReloadedAt = 0;
   const registryWatcher = vscode.workspace.createFileSystemWatcher(
     new vscode.RelativePattern(vscode.Uri.file(path.join(os.homedir(), ".mate")), "sessions.json"),
   );
-  const onRegistryChange = () => {
+  const reloadRegistry = () => {
+    registryTimer = undefined;
     if (!gate.ready) return;
-    if (registryTimer) return;
-    const wait = Math.max(
-      REGISTRY_DEBOUNCE_MS,
-      registryReloadedAt + REGISTRY_MIN_INTERVAL_MS - Date.now(),
-    );
-    registryTimer = setTimeout(() => {
-      registryTimer = undefined;
-      if (!gate.ready) return;
-      const shown = [sessions, openChanges].filter((section) => section.view.visible);
-      if (shown.length === 0) return;
-      registryReloadedAt = Date.now();
-      for (const section of shown) section.refresh();
-    }, wait);
+    // Another automatic reload may have run during the debounce.
+    if (reloads.wait() > 0) {
+      registryTimer = setTimeout(reloadRegistry, reloads.wait());
+      return;
+    }
+    const shown = [sessions, openChanges].filter((section) => section.view.visible);
+    if (shown.length === 0) return;
+    reloads.mark();
+    for (const section of shown) section.refresh();
+  };
+  const onRegistryChange = () => {
+    if (!gate.ready || registryTimer) return;
+    registryTimer = setTimeout(reloadRegistry, Math.max(REGISTRY_DEBOUNCE_MS, reloads.wait()));
   };
 
   context.subscriptions.push(
@@ -564,6 +582,13 @@ export function activate(context: vscode.ExtensionContext): void {
     registryWatcher.onDidChange(onRegistryChange),
     registryWatcher.onDidCreate(onRegistryChange),
     { dispose: () => clearTimeout(registryTimer) },
+    { dispose: () => clearInterval(interval) },
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration("mate.autoRefreshInterval")) startInterval();
+    }),
+    vscode.window.onDidChangeWindowState((state) => {
+      if (state.focused) reloadShown();
+    }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => void refreshWorkspace()),
     vscode.commands.registerCommand("mate.openWorkspace", () =>
       gate.open().catch(reportWorkspaceError),
