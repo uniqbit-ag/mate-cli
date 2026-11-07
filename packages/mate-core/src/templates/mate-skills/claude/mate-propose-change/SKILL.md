@@ -37,11 +37,15 @@ propose steps below.
    State the result and the failing statement, if any, in one line. The user may
    override it.
 
-2. **One change per slice.** Slicing test: a feature needs slicing when it holds
-   several behaviours that can each ship and be reviewed on their own, or more work
-   than one review can hold (roughly more than 20 tasks or 800 changed lines).
-   Several Areas alone are no reason to slice: they stay one change with a scope per
-   Area. When exploration agreed on several slices, propose one change per slice,
+2. **One change per slice.** Slicing test: a feature needs slicing only when it
+   holds more work than one review can hold (roughly more than 20 tasks or 800
+   changed lines) and that work splits into behaviours that can each ship and be
+   reviewed on their own. Several Areas alone are no reason to slice: they stay
+   one change with a scope per Area. Cut as few slices as the work allows, each
+   close to one review's size; merge a slice of fewer than about 10 tasks into its
+   neighbour. When each slice needs the one before it to be useful, cut only where
+   a reviewer needs a break, not at every behaviour. When exploration agreed on
+   several slices, propose one change per slice,
    each with its own name. When no slices were agreed and no decision to keep one
    change was made (in exploration or a PRE-EXPLORE HANDOFF), apply the slicing test
    before writing anything. Only when it clearly passes, suggest slices in dependency

@@ -145,10 +145,14 @@ One prompt writes every artifact of the chosen schema.
 
 When you skipped explore, propose applies the same slicing test first, unless
 you already decided to keep one change. The test passes only when the feature
-holds several behaviours that can each ship and be reviewed on their own, or more
-work than one review can hold (roughly more than 20 tasks or 800 changed lines).
-Several Areas alone are no reason to slice: they stay one change with a scope
-per Area. When the test clearly passes, propose suggests slices and writes
+holds more work than one review can hold (roughly more than 20 tasks or 800
+changed lines) and that work splits into behaviours that can each ship and be
+reviewed on their own. Several Areas alone are no reason to slice: they stay one
+change with a scope per Area. Slices are as few as the work allows, each close to
+one review's size; a slice of fewer than about 10 tasks merges into its
+neighbour. When each slice needs the one before it, propose cuts only where a
+reviewer needs a break, not at every behaviour. When the test clearly passes,
+propose suggests slices and writes
 nothing until you agree or keep one change; when the slice boundaries are
 unclear, it points you back to explore. A borderline case stays one change:
 propose says why in one line and goes on.
