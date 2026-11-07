@@ -1188,7 +1188,7 @@ describe("bundled Delivery Path stage skills", () => {
 
   test("explore and propose share one slicing test, and propose checks it without explore", async () => {
     const slicingTest =
-      "Slicing test: a feature needs slicing when it holds several behaviours that can each ship and be reviewed on their own, or more work than one review can hold (roughly more than 20 tasks or 800 changed lines). Several Areas alone are no reason to slice: they stay one change with a scope per Area.";
+      "Slicing test: a feature needs slicing only when it holds more work than one review can hold (roughly more than 20 tasks or 800 changed lines) and that work splits into behaviours that can each ship and be reviewed on their own. Several Areas alone are no reason to slice: they stay one change with a scope per Area. Cut as few slices as the work allows, each close to one review's size; merge a slice of fewer than about 10 tasks into its neighbour. When each slice needs the one before it to be useful, cut only where a reviewer needs a break, not at every behaviour.";
     const flat = (source: string) => source.replace(/\s+/g, " ");
     for (const root of bothRoots) {
       const explore = flat(await readSkillFrom(root, "mate-explore-change"));
@@ -1197,6 +1197,8 @@ describe("bundled Delivery Path stage skills", () => {
       expect(propose).toContain(slicingTest);
       expect(explore).not.toContain("only work together");
       expect(propose).not.toContain("only work together");
+      expect(explore).not.toContain("on their own, or more work");
+      expect(propose).not.toContain("on their own, or more work");
       expect(explore).toContain(
         "Suggest slices only when the test clearly passes; a borderline case stays one change.",
       );
