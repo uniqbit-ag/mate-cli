@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import { createStartupProgress } from "../../lib/components/startup-progress";
 import { publicNpmDeps } from "../../lib/public-npm";
+import { isNewer } from "../../lib/update-checker";
 import { runUpdateCommand, updateCommandDeps } from "./update";
 
 const realCreateProgress = updateCommandDeps.createProgress;
@@ -142,6 +143,61 @@ describe("runUpdateCommand progress", () => {
     expect(transcript).toEqual(["mate · Checking for updates", "  ✗ Checking registry failed"]);
     expect(stderr.chunks.join("")).toContain("could not reach registry");
     expect(process.exitCode).toBe(1);
+  });
+});
+
+describe("runUpdateCommand for a local test build", () => {
+  beforeEach(() => {
+    updateCommandDeps.getCurrentVersion = mock(() => "0.20.0-local.0");
+    updateCommandDeps.isNewer = isNewer;
+  });
+
+  test("treats the same release version as up to date", async () => {
+    updateCommandDeps.fetchLatestVersion = mock(async () => "0.20.0");
+    const logs = captureLogs();
+
+    try {
+      await runUpdateCommand([]);
+    } finally {
+      logs.restore();
+    }
+
+    expect(logs.chunks.join("\n")).toContain("Already up to date.");
+    expect(updateCommandDeps.confirmPrompt).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("prints Up to date. for --check on the same release version", async () => {
+    updateCommandDeps.fetchLatestVersion = mock(async () => "0.20.0");
+    const logs = captureLogs();
+
+    try {
+      await runUpdateCommand(["--check"]);
+    } finally {
+      logs.restore();
+    }
+
+    expect(logs.chunks.join("\n")).toContain("Up to date.");
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("offers a later release version", async () => {
+    updateCommandDeps.fetchLatestVersion = mock(async () => "0.21.0");
+    updateCommandDeps.confirmPrompt = mock(async () => false);
+    const logs = captureLogs();
+    const stderr = captureStderr();
+
+    try {
+      await runUpdateCommand([]);
+    } finally {
+      logs.restore();
+      stderr.restore();
+    }
+
+    const output = logs.chunks.join("\n");
+    expect(output).toContain("Current version: 0.20.0-local.0");
+    expect(output).toContain("Latest version: 0.21.0");
+    expect(updateCommandDeps.confirmPrompt).toHaveBeenCalledWith("Upgrade 0.21.0?");
   });
 });
 

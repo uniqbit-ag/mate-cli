@@ -110,8 +110,14 @@ export function getUpdateChannel(version: string = getCurrentVersion()): UpdateC
   return isCanaryVersion(version) ? "canary" : "latest";
 }
 
+/** A local test build counts as its release version, so `0.20.0` is not newer than `0.20.0-local.0`. */
 export function isNewer(latest: string, current: string): boolean {
-  if (!semver.valid(latest) || !semver.valid(current)) return false;
+  const currentVersion = semver.parse(current);
+  if (!semver.valid(latest) || !currentVersion) return false;
+  if (isLocalVersion(current)) {
+    const { major, minor, patch } = currentVersion;
+    return semver.gt(latest, `${major}.${minor}.${patch}`);
+  }
   return semver.gt(latest, current);
 }
 
