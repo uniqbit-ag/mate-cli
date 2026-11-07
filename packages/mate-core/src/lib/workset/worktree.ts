@@ -12,13 +12,9 @@ import type { WrapRuntime } from "../../runtime/runtime-document-manifest";
 import { readWrapState, WRAP_RUNTIMES } from "../../runtime/wrap-state";
 import { cleanupWorkingRepository } from "../../tools/setup/working-repo-cleanup";
 import { locateChange } from "../change-layout";
-import type { BranchTemplate } from "../delivery/branch-template";
-import { companionBranchTemplate, workingRepoGit } from "../delivery/branches";
-import { mergeGit } from "../delivery/merge-git";
+import { deliveryCheckout } from "../delivery/checkout";
 import { type DeliveryRecord, readDeliveryRecord } from "../delivery/record";
 import {
-  listRefsWith,
-  mergeProbeWith,
   newBranchBase,
   resolveDeliveryBranch,
   worktreeAddArgs,
@@ -61,6 +57,8 @@ export interface GitRunOptions {
   /** Added to the promptless environment every command gets. */
   env?: Record<string, string>;
   timeoutMs?: number;
+  /** Written to standard input, which is then closed. */
+  input?: string;
 }
 
 export type GitRunner = (
@@ -185,16 +183,21 @@ function promptlessEnv(): NodeJS.ProcessEnv {
 const runGit: GitRunner = (cwd, args, options = {}) =>
   new Promise<GitResult>((resolve) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // Unbounded: a merge check pipes a whole `git log -p` range into `git patch-id`.
     const child = execFile(
       "git",
       args,
-      { cwd, env: { ...promptlessEnv(), ...options.env }, maxBuffer: 16 * 1024 * 1024 },
+      { cwd, env: { ...promptlessEnv(), ...options.env }, maxBuffer: Infinity },
       (error, stdout, stderr) => {
         clearTimeout(timer);
         const code = error ? (typeof error.code === "number" ? error.code : 1) : 0;
         resolve({ code, stdout: String(stdout), stderr: String(stderr) });
       },
     );
+    if (options.input !== undefined) {
+      child.stdin?.on("error", () => {});
+      child.stdin?.end(options.input);
+    }
     const { timeoutMs } = options;
     if (timeoutMs !== undefined) {
       // Resolved without awaiting `close`: an SSH grandchild may hold the pipes open.
@@ -459,20 +462,9 @@ async function planWorktrees(
 ): Promise<{ plans: Plan[]; mirror?: Mirror; diagnostics: string[]; warnings: string[] }> {
   const warnings: string[] = [];
   const index = await linkedIndex(companionPath, git, cwd);
-  const template = await companionBranchTemplate(companionPath);
-  if (template.diagnostic) warnings.push(template.diagnostic);
   const checked = await Promise.all(
     target.repositories.map((repository) =>
-      planRepository(
-        companionPath,
-        target.id,
-        repository,
-        git,
-        index,
-        warnings,
-        template.template,
-        ticket,
-      ),
+      planRepository(companionPath, target.id, repository, git, index, warnings, ticket),
     ),
   );
   const plans = checked.filter((entry): entry is Plan => !Array.isArray(entry));
@@ -549,7 +541,6 @@ async function planRepository(
   git: GitRunner,
   index: LinkedIndex,
   warnings: string[],
-  template: BranchTemplate,
   ticket?: string,
 ): Promise<Plan | string[]> {
   const { linked, missing } = linkedCheckout(index, repository);
@@ -569,24 +560,24 @@ async function planRepository(
       `${repository}: fetching origin failed, using local refs: ${fetched.stderr.trim()}`,
     );
   }
-  const hasRef = async (ref: string) =>
-    (await git(linked.path, ["rev-parse", "--verify", "--quiet", ref])).code === 0;
-  const resolution = await resolveDeliveryBranch({
-    companionPath,
-    repository,
-    hasRef,
-    template,
-    listRefs: listRefsWith(async (args) => {
-      const listed = await git(linked.path, args);
-      return listed.code === 0 ? listed.stdout : null;
+  // Every probe runs through the same runner; it already adds the promptless environment.
+  const checkout = deliveryCheckout(linked.path, (args, { input, timeoutMs }) =>
+    git(linked.path, [...args], {
+      env: { GIT_NO_LAZY_FETCH: "1" },
+      ...(input !== undefined ? { input } : {}),
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     }),
-    mergeProbe: mergeProbeWith(
-      mergeGit(linked.path),
-      await workingRepoGit(linked.path).defaultBranch(),
-    ),
-    worksetId,
-    ...(ticket ? { ticket } : {}),
-  });
+  );
+  const resolution = await resolveDeliveryBranch(
+    checkout,
+    { companionPath, repository, worksetId },
+    ticket ? { ticket } : {},
+  );
+  // Concerns the companion, not a repository: reported once, first.
+  const { templateDiagnostic } = resolution;
+  if (templateDiagnostic && !warnings.includes(templateDiagnostic)) {
+    warnings.unshift(templateDiagnostic);
+  }
   const { branch, source } = resolution;
   if (branch === null || source === null) {
     return resolution.diagnostics.map((line) => `${repository}: ${line}`);
@@ -641,7 +632,7 @@ async function planRepository(
   return {
     ...plan,
     target,
-    base: source === "new" ? await newBranchBase(hasRef) : undefined,
+    base: source === "new" ? await newBranchBase(checkout.hasRef) : undefined,
     reuse,
   };
 }

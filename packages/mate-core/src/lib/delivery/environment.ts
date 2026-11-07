@@ -1,6 +1,5 @@
 import path from "node:path";
 
-import type { BranchTemplateSetting } from "./branch-template";
 import type { TicketSetting, WorkingRepoGit } from "./branches";
 import type { ForgeRepo } from "./forge";
 
@@ -21,8 +20,6 @@ export interface DeliveryEnvironment {
   protectedPatterns: string[];
   /** The companion's ticket setting; absent means `none`. */
   ticket?: TicketSetting;
-  /** The companion's Delivery Branch template; absent means the default. */
-  branchTemplate?: BranchTemplateSetting;
   /**
    * Host of a repository other than the Working Repository, from a linked checkout's
    * `origin` remote, else the Working Repository's host; null when neither is known.

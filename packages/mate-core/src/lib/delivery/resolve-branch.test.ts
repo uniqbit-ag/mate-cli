@@ -10,17 +10,15 @@ import {
   type DeliveryRecord,
   type MergeState,
 } from "./record";
-import type { MergeGit, PatchMatch } from "./merge-git";
 import {
-  listRefsWith,
-  mergeProbeWith,
-  newBranchBase,
-  resolveDeliveryBranch,
-  worktreeAddArgs,
-  type HasRef,
-  type ListRefs,
-  type MergeProbe,
-} from "./resolve-branch";
+  deliveryCheckout,
+  probeMerge,
+  type CheckoutRunner,
+  type DeliveryCheckout,
+  type MergeProbeResult,
+} from "./checkout";
+import type { MergeGit, PatchMatch } from "./merge-git";
+import { newBranchBase, resolveDeliveryBranch, worktreeAddArgs } from "./resolve-branch";
 
 const WEB = "acme/web";
 let companion: string;
@@ -58,23 +56,49 @@ async function workset(id: string, changes: string[], ticket?: string): Promise<
   );
 }
 
-/** Local branches; `origin/<b>` entries exist only on the remote. */
-const existing =
-  (...branches: string[]): HasRef =>
-  async (ref) =>
-    branches.some(
-      (branch) =>
-        ref === (branch.startsWith("origin/") ? `refs/remotes/${branch}` : `refs/heads/${branch}`),
-    );
+async function branchTemplate(template: string): Promise<void> {
+  await fs.mkdir(path.join(companion, ".mate", "config"), { recursive: true });
+  await fs.writeFile(
+    path.join(companion, ".mate", "config", "framework.yaml"),
+    `type: companion\ncapabilities:\n  - name: openspec\n    branchTemplate: ${JSON.stringify(template)}\n`,
+  );
+}
 
-const resolve = (worksetId: string, hasRef: HasRef | null, ticket?: string) =>
-  resolveDeliveryBranch({
-    companionPath: companion,
-    repository: WEB,
-    hasRef,
-    worksetId,
-    ...(ticket ? { ticket } : {}),
-  });
+/**
+ * A checkout with these local branches; `origin/<b>` entries exist only on the remote. No
+ * merge can be checked unless `overrides` probes one.
+ */
+const checkoutWith = (
+  branches: string[],
+  overrides: Partial<DeliveryCheckout> = {},
+): DeliveryCheckout => {
+  const refs = branches.map((branch) =>
+    branch.startsWith("origin/") ? `refs/remotes/${branch}` : `refs/heads/${branch}`,
+  );
+  return {
+    hasRef: async (ref) => refs.includes(ref),
+    listRefs: async (prefixes) => refs.filter((ref) => prefixes.some((p) => ref.startsWith(p))),
+    defaultBranch: async () => "main",
+    mergeProbe: async () => null,
+    ...overrides,
+  };
+};
+
+const existing = (...branches: string[]) => checkoutWith(branches);
+
+/** A checkout holding these full ref names. */
+const holding = (refs: string[], overrides: Partial<DeliveryCheckout> = {}) =>
+  checkoutWith(
+    refs.map((ref) => ref.replace(/^refs\/(heads|remotes)\//, "")),
+    overrides,
+  );
+
+const resolve = (worksetId: string, checkout: DeliveryCheckout | null, ticket?: string) =>
+  resolveDeliveryBranch(
+    checkout,
+    { companionPath: companion, repository: WEB, worksetId },
+    ticket ? { ticket } : {},
+  );
 
 beforeEach(async () => {
   companion = await fs.mkdtemp(path.join(os.tmpdir(), "resolve-branch-"));
@@ -229,10 +253,9 @@ describe("resolveDeliveryBranch", () => {
   test("a change and its Workset id resolve alike", async () => {
     await workset("acme-login", ["acme-a", "acme-b"]);
     await record("acme-b", { branch: "workset/ABC-123-acme-login" });
-    const byChange = await resolveDeliveryBranch({
+    const byChange = await resolveDeliveryBranch(existing(), {
       companionPath: companion,
       repository: WEB,
-      hasRef: existing(),
       change: "acme-a",
     });
     expect(byChange).toEqual(await resolve("acme-login", existing()));
@@ -241,18 +264,7 @@ describe("resolveDeliveryBranch", () => {
 });
 
 describe("ticket branches found by name", () => {
-  const listed =
-    (...refs: string[]): ListRefs =>
-    async (prefixes) =>
-      refs.filter((ref) => prefixes.some((prefix) => ref.startsWith(prefix)));
-  const find = (...refs: string[]) =>
-    resolveDeliveryBranch({
-      companionPath: companion,
-      repository: WEB,
-      hasRef: existing(...refs.map((ref) => ref.replace(/^refs\/(heads|remotes)\//, ""))),
-      listRefs: listed(...refs),
-      worksetId: "acme-fix",
-    });
+  const find = (...refs: string[]) => resolve("acme-fix", holding(refs));
 
   test("without a ticket the single ticket branch is found", async () => {
     expect(await find("refs/remotes/origin/workset/abc-7-acme-fix")).toMatchObject({
@@ -285,20 +297,10 @@ describe("ticket branches found by name", () => {
 });
 
 describe("a team branch template", () => {
-  const listed =
-    (...refs: string[]): ListRefs =>
-    async (prefixes) =>
-      refs.filter((ref) => prefixes.some((prefix) => ref.startsWith(prefix)));
-  const find = (template: string, refs: string[], ticket?: string) =>
-    resolveDeliveryBranch({
-      companionPath: companion,
-      repository: WEB,
-      hasRef: existing(...refs.map((ref) => ref.replace(/^refs\/(heads|remotes)\//, ""))),
-      listRefs: listed(...refs),
-      worksetId: "acme-fix",
-      template,
-      ...(ticket ? { ticket } : {}),
-    });
+  const find = async (template: string, refs: string[], ticket?: string) => {
+    await branchTemplate(template);
+    return resolve("acme-fix", holding(refs), ticket);
+  };
 
   test("names a new branch with and without a ticket", async () => {
     expect(await find("feature/{ticket}-{workset}", [], "ABC-123")).toMatchObject({
@@ -377,23 +379,30 @@ describe("a team branch template", () => {
 
   test("a template without {ticket} lists no refs", async () => {
     let listedCount = 0;
-    await resolveDeliveryBranch({
-      companionPath: companion,
-      repository: WEB,
-      hasRef: existing(),
-      listRefs: async () => {
-        listedCount += 1;
-        return [];
-      },
-      worksetId: "acme-fix",
-      template: "feature/{workset}",
-    });
+    await branchTemplate("feature/{workset}");
+    await resolve(
+      "acme-fix",
+      checkoutWith([], {
+        listRefs: async () => {
+          listedCount += 1;
+          return [];
+        },
+      }),
+    );
     // Only the default template's fallback lists refs.
     expect(listedCount).toBe(1);
   });
+
+  test("an invalid template applies the default and is named apart", async () => {
+    await branchTemplate("feature/{user}-{workset}");
+    const resolution = await resolve("acme-fix", existing());
+    expect(resolution.branch).toBe("workset/acme-fix");
+    expect(resolution.diagnostics).toEqual([]);
+    expect(resolution.templateDiagnostic).toContain("unknown placeholder {user}");
+  });
 });
 
-describe("mergeProbeWith", () => {
+describe("probeMerge", () => {
   const HEAD = "a".repeat(40);
   const gitWith = (state: {
     onDefault?: boolean;
@@ -410,7 +419,7 @@ describe("mergeProbeWith", () => {
     fetch: async () => ({ ok: true }),
   });
   const probe = (state: Parameters<typeof gitWith>[0]) =>
-    mergeProbeWith(gitWith(state), "main")("workset/acme-api", undefined);
+    probeMerge(gitWith(state), "main", "workset/acme-api", undefined);
 
   test("a merge commit reads merged", async () => {
     expect(await probe({ onDefault: true, firstParent: false })).toBe("merged");
@@ -428,19 +437,41 @@ describe("mergeProbeWith", () => {
   });
 });
 
-describe("listRefsWith", () => {
+describe("deliveryCheckout", () => {
   test("splits for-each-ref output and treats a failure as no refs", async () => {
-    const calls: string[][] = [];
-    const refs = listRefsWith(async (args) => {
-      calls.push(args);
-      return "refs/heads/workset/a\nrefs/heads/workset/b\n";
-    });
-    expect(await refs(["refs/heads/workset/"])).toEqual([
+    const listing = deliveryCheckout("/acme", async () => ({
+      code: 0,
+      stdout: "refs/heads/workset/a\nrefs/heads/workset/b\n",
+      stderr: "",
+    }));
+    expect(await listing.listRefs(["refs/heads/workset/"])).toEqual([
       "refs/heads/workset/a",
       "refs/heads/workset/b",
     ]);
-    expect(calls).toEqual([["for-each-ref", "--format=%(refname)", "refs/heads/workset/"]]);
-    expect(await listRefsWith(async () => null)(["refs/heads/"])).toEqual([]);
+    const failing = deliveryCheckout("/acme", async () => ({ code: 1, stdout: "", stderr: "" }));
+    expect(await failing.listRefs(["refs/heads/"])).toEqual([]);
+    expect(await failing.defaultBranch()).toBe("main");
+  });
+
+  test("every query runs through the given runner", async () => {
+    const calls: string[] = [];
+    const run: CheckoutRunner = async (args) => {
+      calls.push(args.join(" "));
+      if (args[0] === "symbolic-ref") return { code: 0, stdout: "origin/trunk\n", stderr: "" };
+      if (args[0] === "for-each-ref") {
+        return { code: 0, stdout: "refs/heads/workset/acme\n", stderr: "" };
+      }
+      return { code: 1, stdout: "", stderr: "" };
+    };
+    const checkout = deliveryCheckout("/acme", run);
+    expect(await checkout.hasRef("refs/heads/workset/acme")).toBe(false);
+    expect(await checkout.listRefs(["refs/heads/workset/"])).toEqual(["refs/heads/workset/acme"]);
+    expect(await checkout.defaultBranch()).toBe("trunk");
+    expect(await checkout.mergeProbe("workset/acme", undefined)).toBe("open");
+    expect(calls).toContain("rev-parse --verify --quiet refs/heads/workset/acme");
+    expect(calls).toContain("for-each-ref --format=%(refname) refs/heads/workset/");
+    // The merge probe asked the same runner for the branch's tip.
+    expect(calls).toContain("rev-parse --verify --quiet refs/remotes/origin/workset/acme^{commit}");
   });
 });
 
@@ -468,23 +499,21 @@ describe("Workset record ticket", () => {
 
   test("a changed record ticket keeps the branch the first one named", async () => {
     await workset("acme-login", [], "ABC-2");
-    const resolution = await resolveDeliveryBranch({
-      companionPath: companion,
-      repository: WEB,
-      hasRef: existing("origin/workset/ABC-1-acme-login"),
-      listRefs: async () => ["refs/remotes/origin/workset/ABC-1-acme-login"],
-      worksetId: "acme-login",
-    });
+    const resolution = await resolve(
+      "acme-login",
+      checkoutWith(["origin/workset/ABC-1-acme-login"], {
+        listRefs: async () => ["refs/remotes/origin/workset/ABC-1-acme-login"],
+      }),
+    );
     expect(resolution).toMatchObject({ branch: "workset/ABC-1-acme-login", source: "remote" });
     expect(resolution.diagnostics.join()).toContain("Ticket ABC-2 does not name the branch");
   });
 
   test("link and worktree resolve the same name for a member change", async () => {
     await workset("acme-login", ["acme-a"], "ABC-123");
-    const byChange = await resolveDeliveryBranch({
+    const byChange = await resolveDeliveryBranch(existing(), {
       companionPath: companion,
       repository: WEB,
-      hasRef: existing(),
       change: "acme-a",
     });
     expect(byChange.branch).toBe("workset/ABC-123-acme-login");
@@ -515,17 +544,16 @@ describe("dependsOn inheritance", () => {
   });
 
   describe("a local merge probe for a dependency never checked", () => {
-    const probing = (answer: Awaited<ReturnType<MergeProbe>>, calls: string[] = []) =>
-      resolveDeliveryBranch({
-        companionPath: companion,
-        repository: WEB,
-        hasRef: existing("workset/acme-api"),
-        mergeProbe: async (branch) => {
-          calls.push(branch);
-          return answer;
-        },
-        worksetId: "acme-worker",
-      });
+    const probing = (answer: MergeProbeResult, calls: string[] = []) =>
+      resolve(
+        "acme-worker",
+        checkoutWith(["workset/acme-api"], {
+          mergeProbe: async (branch) => {
+            calls.push(branch);
+            return answer;
+          },
+        }),
+      );
 
     beforeEach(async () => {
       await dependsOn("acme-worker", ["acme-api"]);

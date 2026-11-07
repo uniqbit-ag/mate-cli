@@ -317,6 +317,72 @@ describe("spawn", () => {
     );
   });
 
+  test("a dependency squash-merged in the clone is not inherited and is a spawn warning", async () => {
+    const changes = path.join(companion, "openspec/changes");
+    fs.mkdirSync(path.join(changes, "acme-api"), { recursive: true });
+    fs.mkdirSync(path.join(changes, "acme-worker"), { recursive: true });
+    fs.writeFileSync(
+      path.join(changes, "acme-worker/proposal.md"),
+      "---\nchange: acme-worker\ndependsOn: [acme-api]\n---\n",
+    );
+    fs.writeFileSync(
+      path.join(changes, "acme-api/delivery.yaml"),
+      "version: 1\nchange: acme-api\ndeliveries:\n  - repository: acme/app\n    branch: workset/acme-api\n",
+    );
+    state.remoteBranches.add("workset/acme-api");
+    // The clone holds workset/acme-api's one commit squashed onto origin/main.
+    const plain = state.run;
+    const run: CommandRunner = async (command, args, options = {}) => {
+      const rest = args.slice(4);
+      const line = rest.join(" ");
+      if (command !== "git" || args[2] !== "-C") return plain(command, args, options);
+      state.calls.push({ command, args, options });
+      if (line === "symbolic-ref --quiet --short refs/remotes/origin/HEAD") {
+        return ok("origin/main\n");
+      }
+      if (line === "rev-parse --verify --quiet refs/remotes/origin/workset/acme-api^{commit}") {
+        return ok("head1\n");
+      }
+      if (rest[0] === "merge-base" && rest[1] === "--is-ancestor") return failed("");
+      if (rest[0] === "config") return failed("");
+      if (rest[0] === "merge-base") return ok("fork1\n");
+      if (rest[0] === "rev-list") return ok("1\n");
+      if (rest[0] === "log" && rest[1] === "-p") return ok(`patch of ${rest.at(-1)}\n`);
+      if (rest[0] === "patch-id") {
+        const input = new TextDecoder().decode(options.stdin);
+        return ok(input.includes("..head1") ? "pid1 head1\n" : "pid1 up1\n");
+      }
+      return plain(command, args, options);
+    };
+    const probing = new WorksetRuntime({
+      dockerHost: `unix://${root}/docker.sock`,
+      stateDir: path.join(root, "state"),
+      image: "mate-workset:1.0.0-acme",
+      user: "mate",
+      companionsDir: path.join(root, "companions"),
+      run,
+    });
+
+    const info = await probing.spawn({
+      id: "acme-worker",
+      repository: "acme/app",
+      remoteUrl: "https://git.acme.test/acme/app.git",
+      companion,
+    });
+    expect(info.branch).toBe("workset/acme-worker");
+    expect(info.warnings?.join()).toContain("`mate artifact link acme-api --confirm-open`");
+    // The probe ran in the clone, as the unprivileged user, with ext:: refused.
+    const probe = state.calls.find((call) => call.args.includes("patch-id"))!;
+    expect(probe.options.asUser).toBe("mate");
+    expect(probe.options.timeoutMs).toBeGreaterThan(0);
+    expect(probe.args.slice(0, 4)).toEqual([
+      "-c",
+      "protocol.ext.allow=never",
+      "-C",
+      path.join(root, "state", "repos", "acme__app"),
+    ]);
+  });
+
   test("a second spawn reuses the worktree unchanged", async () => {
     await spawnAcme();
     const worktree = path.join(root, "state", "worktrees", "acme-login");

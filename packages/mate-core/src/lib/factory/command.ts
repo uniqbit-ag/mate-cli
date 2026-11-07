@@ -16,6 +16,8 @@ export interface CommandOptions {
   /** Written to the command's standard input, which is then closed. */
   stdin?: Uint8Array;
   cwd?: string;
+  /** Killed after this long and answered as failed. */
+  timeoutMs?: number;
 }
 
 export type CommandRunner = (
@@ -48,14 +50,28 @@ export const runCommand: CommandRunner = (command, args, options = {}) => {
       ...(options.cwd ? { cwd: options.cwd } : {}),
       stdio: [options.stdin ? "pipe" : "ignore", "pipe", "pipe"],
     });
+    // Own timer, so only its kill reads as a timeout.
+    // `setpriv` execs the command, so the kill reaches it.
+    let timedOut = false;
+    const timer =
+      options.timeoutMs !== undefined
+        ? setTimeout(() => {
+            timedOut = true;
+            child.kill("SIGTERM");
+          }, options.timeoutMs)
+        : undefined;
     if (options.stdin) child.stdin?.end(options.stdin);
     let stdout = "";
     let stderr = "";
     child.stdout?.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
     child.stderr?.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
-    child.on("error", (error) =>
-      resolve({ status: 127, stdout, stderr: `${stderr}${error.message}` }),
-    );
-    child.on("close", (code) => resolve({ status: code ?? 1, stdout, stderr }));
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      resolve({ status: 127, stdout, stderr: `${stderr}${error.message}` });
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve({ status: code ?? 1, stdout, stderr: timedOut ? `${stderr}timed out` : stderr });
+    });
   });
 };

@@ -117,10 +117,22 @@ function patchIds(output: string): Array<[string, string]> {
     .filter((parts): parts is [string, string] => parts.length === 2 && parts[0] !== "");
 }
 
+function promptlessEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { ...withoutAskPass(base), GIT_TERMINAL_PROMPT: "0" };
+}
+
+/** Environment for local Git queries: never prompts, never fetches lazily. */
+export function localGitEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return {
+    ...promptlessEnv(gitEnvironment(env) as NodeJS.ProcessEnv),
+    GIT_NO_LAZY_FETCH: "1",
+  };
+}
+
 export function mergeGit(repoPath: string, deps: MergeGitDeps = {}): MergeGit {
   const spawnFn = deps.spawn ?? spawnProcess;
   const base = gitEnvironment(deps.env ?? process.env) as NodeJS.ProcessEnv;
-  const promptless: NodeJS.ProcessEnv = { ...withoutAskPass(base), GIT_TERMINAL_PROMPT: "0" };
+  const promptless = promptlessEnv(base);
   const localEnv: NodeJS.ProcessEnv = { ...promptless, GIT_NO_LAZY_FETCH: "1" };
 
   const git = (args: readonly string[], input?: string) =>

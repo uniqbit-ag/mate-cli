@@ -4,6 +4,12 @@ import type { FactoryClient } from "./client";
 import { FactoryError } from "./ids";
 import type { MemorySize } from "./runtime";
 
+export interface PreparedWorkset {
+  record: WorksetRecord;
+  /** What the spawn reported about a new worktree's Delivery Branch, for a person to read. */
+  warnings: string[];
+}
+
 /**
  * Makes a Workset's container ready for work: cloned or fetched, its worktree on the
  * delivery branch, the container created or started, and the worktree linked to the
@@ -16,7 +22,7 @@ export async function prepareWorkset(
   id: string,
   env: NodeJS.ProcessEnv = process.env,
   size?: MemorySize,
-): Promise<WorksetRecord> {
+): Promise<PreparedWorkset> {
   const record = (await readWorksets(companionPath)).worksets.find((entry) => entry.id === id);
   if (!record) throw new FactoryError(`this companion has no valid Workset ${id}`);
   if (record.repositories.length !== 1) {
@@ -31,7 +37,7 @@ export async function prepareWorkset(
       `${repository} is neither linked here nor a configured factory repository`,
     );
   }
-  await client.spawn({
+  const spawned = await client.spawn({
     id,
     repository,
     remoteUrl,
@@ -45,5 +51,5 @@ export async function prepareWorkset(
   if (link.status !== 0) {
     throw new FactoryError(`linking the worktree failed: ${(link.stderr || link.stdout).trim()}`);
   }
-  return record;
+  return { record, warnings: spawned?.warnings ?? [] };
 }

@@ -22,12 +22,12 @@ function record(id: string, body: string): void {
   fs.writeFileSync(path.join(companion, "worksets", `${id}.yaml`), `id: ${id}\n${body}`);
 }
 
-function fakeClient(linkStatus = 0) {
+function fakeClient(linkStatus = 0, warnings?: string[]) {
   const calls: Array<[string, unknown]> = [];
   const client = {
     spawn: async (request: unknown) => {
       calls.push(["spawn", request]);
-      return {};
+      return warnings ? { warnings } : {};
     },
     exec: async (request: { command: string[] }) => {
       calls.push(["exec", request.command]);
@@ -42,7 +42,10 @@ describe("preparing a Workset's container", () => {
     record("acme-greet", "title: Greet\nstage: ready\nrepositories: [acme/web]\n");
     const { client, calls } = fakeClient();
     const prepared = await prepareWorkset(client, companion, "acme-greet", ENV);
-    expect(prepared.id).toBe("acme-greet");
+    expect(prepared).toEqual({
+      record: expect.objectContaining({ id: "acme-greet" }),
+      warnings: [],
+    });
     expect(calls).toEqual([
       [
         "spawn",
@@ -54,6 +57,15 @@ describe("preparing a Workset's container", () => {
         },
       ],
       ["exec", ["mate", "working", "link", "--companion", companion, "--yes"]],
+    ]);
+  });
+
+  test("the spawn's warnings are returned", async () => {
+    record("acme-greet", "repositories: [acme/web]\n");
+    const warning = "workset/acme-api of acme-api is merged into the default branch.";
+    const { client } = fakeClient(0, [warning]);
+    expect((await prepareWorkset(client, companion, "acme-greet", ENV)).warnings).toEqual([
+      warning,
     ]);
   });
 
