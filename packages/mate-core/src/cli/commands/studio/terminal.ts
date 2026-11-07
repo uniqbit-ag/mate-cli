@@ -184,7 +184,13 @@ export interface TerminalSessionInfo {
 
 /** A Workset session start, resolved on the server; the browser named only the Workset. */
 export type WorksetSessionResolution =
-  | { companionPath: string; workset: { id: string; title: string }; argv: string[] }
+  | {
+      companionPath: string;
+      workset: { id: string; title: string };
+      argv: string[];
+      /** Shown before the session's output, e.g. the spawn's warnings. */
+      notice?: string;
+    }
   | { reason: string };
 
 /** A registered action and its subject; the client names them, the server builds the prompt. */
@@ -488,6 +494,7 @@ export class TerminalRegistry {
       id,
       argv: resolved.argv,
       workset: resolved.workset,
+      ...(resolved.notice ? { notice: resolved.notice } : {}),
     });
     this.attachTo(connection, session, size);
   }

@@ -1,7 +1,7 @@
 import { locateChange } from "../change-layout";
-import type { MergeGit } from "./merge-git";
+import { companionBranchTemplate } from "./branches";
+import type { DeliveryCheckout, HasRef, ListRefs } from "./checkout";
 import { declaredDependencies } from "./overlap";
-import { localMergeEvidence } from "./refresh";
 import {
   findWorkset,
   resolveWorksetBranch,
@@ -21,33 +21,17 @@ import {
   type DeliveryRecord,
 } from "./record";
 
-/** True when the ref resolves in the repository's checkout. */
-export type HasRef = (ref: string) => Promise<boolean>;
-
-/** Full names of the refs under the given prefixes, e.g. `refs/heads/workset/`. */
-export type ListRefs = (prefixes: string[]) => Promise<string[]>;
-
 /** Where the resolved branch lives: a local branch, only `origin/<branch>`, or nowhere yet. */
 export type BranchSource = "local" | "remote" | "new";
 
-export interface DeliveryBranchRequest {
+/** What a Delivery Branch is resolved for: a change, or a Workset by id. */
+export type DeliverySubject = {
   companionPath: string;
   /** Null when no repository is known; recorded branches are then not consulted. */
   repository: string | null;
-  /** Null when no checkout is known: the computed name, with `source` null. */
-  hasRef: HasRef | null;
-  /**
-   * Finds an existing branch the template names with any ticket when none is given; without it
-   * only the name without a ticket is probed.
-   */
-  listRefs?: ListRefs | null;
-  /** The companion's Delivery Branch template; defaults to `workset/{ticket}-{workset}`. */
-  template?: BranchTemplate;
-  /**
-   * Checks a dependency never checked for a merge before its branch is inherited; without it
-   * such a branch is inherited with a diagnostic asking for a refresh.
-   */
-  mergeProbe?: MergeProbe | null;
+} & ({ change: string } | { worksetId: string });
+
+export interface DeliveryBranchOptions {
   /**
    * Names the branch with the template and this ticket, even over an existing branch without
    * one; never renames a recorded or inherited one. Defaults to the explicit Workset record's
@@ -64,6 +48,8 @@ export interface DeliveryBranchResolution {
   /** The `dependsOn` changes whose branch `branch` is; empty when it is not inherited. */
   inheritedFrom: string[];
   diagnostics: string[];
+  /** Set when the companion's branch template is invalid and the default applies. */
+  templateDiagnostic?: string;
 }
 
 interface Member {
@@ -134,8 +120,7 @@ type Existing = { branch: string; source: BranchSource } | "ambiguous" | null;
 async function existingBranch(
   worksetId: string,
   template: BranchTemplate,
-  hasRef: HasRef,
-  listRefs: ListRefs | null | undefined,
+  { hasRef, listRefs }: DeliveryCheckout,
   diagnostics: string[],
   probed?: string,
 ): Promise<Existing> {
@@ -144,7 +129,6 @@ async function existingBranch(
     const source = await sourceOf(plain, hasRef);
     if (source !== "new") return { branch: plain, source };
   }
-  if (!listRefs) return null;
   // The ticket lives only in the branch name, so a branch created with one is found by name.
   const ticketed = await ticketedBranches(worksetId, listRefs, template);
   if (ticketed.length > 1) {
@@ -155,26 +139,6 @@ async function existingBranch(
   }
   if (ticketed.length === 0) return null;
   return { branch: ticketed[0]!, source: await sourceOf(ticketed[0]!, hasRef) };
-}
-
-/** A local checkout's merge check, without fetch or forge; see {@link mergeProbeWith}. */
-export type MergeProbe = (
-  branch: string,
-  recordedHead: string | undefined,
-) => Promise<"merged" | "squashed" | "open">;
-
-/**
- * A {@link MergeProbe} over local Git: a merge commit settles `merged`, commits matched on the
- * default branch read as `squashed`. A head on the default branch's own line is `open`: it
- * may be a fast-forward, but then its commits are already there and continuing on it is safe.
- */
-export function mergeProbeWith(git: MergeGit, defaultBranch: string): MergeProbe {
-  return async (branch, recordedHead) => {
-    const evidence = await localMergeEvidence(git, defaultBranch, branch, recordedHead);
-    if (evidence.merged) return "merged";
-    const style = evidence.suggestion?.style;
-    return style === "squash" || style === "rebase" ? "squashed" : "open";
-  };
 }
 
 const SETTLED: ReadonlySet<string> = new Set(["merged", "closed-unmerged"]);
@@ -189,14 +153,14 @@ interface Inherited {
 /**
  * The branches the Workset's direct `dependsOn` changes deliver in `repository` that are still
  * open (not direct, not merged or dropped, present when refs can be probed), each with the
- * dependencies recording it. A dependency never checked for a merge is probed locally when
- * `mergeProbe` is given; one that looks merged is skipped and named in `diagnostics`.
+ * dependencies recording it. A dependency never checked for a merge is probed in the
+ * checkout; one that looks merged is skipped and named in `diagnostics`.
  */
 async function inheritedBranches(
   companionPath: string,
   found: Member[],
   repository: string,
-  { hasRef, mergeProbe }: Pick<DeliveryBranchRequest, "hasRef" | "mergeProbe">,
+  checkout: DeliveryCheckout | null,
   diagnostics: string[],
 ): Promise<Inherited[]> {
   const own = new Set(found.map((member) => member.change));
@@ -211,10 +175,10 @@ async function inheritedBranches(
         return null;
       }
       const { branch } = delivery;
-      if (hasRef && (await sourceOf(branch, hasRef)) === "new") return null;
+      if (checkout && (await sourceOf(branch, checkout.hasRef)) === "new") return null;
       if (delivery.merge !== undefined) return { name, branch, unchecked: false };
-      if (!mergeProbe) return { name, branch, unchecked: true };
-      const probed = await mergeProbe(branch, delivery.head);
+      const probed = checkout ? await checkout.mergeProbe(branch, delivery.head) : null;
+      if (probed === null) return { name, branch, unchecked: true };
       if (probed === "open") return { name, branch, unchecked: false };
       diagnostics.push(
         probed === "merged"
@@ -241,13 +205,14 @@ async function inheritedBranches(
 
 /** Branch order for a Workset whose identity is already checked. */
 async function branchOf(
-  request: DeliveryBranchRequest,
+  checkout: DeliveryCheckout | null,
+  { companionPath, repository }: DeliverySubject,
+  options: DeliveryBranchOptions,
+  template: BranchTemplate,
   worksetId: string,
 ): Promise<DeliveryBranchResolution> {
-  const { companionPath, repository, hasRef, listRefs } = request;
-  const template = request.template ?? DEFAULT_BRANCH_TEMPLATE;
   const workset = await findWorkset(companionPath, worksetId);
-  const ticket = request.ticket ?? workset?.ticket ?? null;
+  const ticket = options.ticket ?? workset?.ticket ?? null;
   // The template's branch with the ticket; without it when there is none.
   const named = defaultDeliveryBranch(worksetId, ticket, template);
   // The same under the default template, for branches made before the team switched templates.
@@ -255,9 +220,9 @@ async function branchOf(
   const found = await members(companionPath, worksetId, workset);
   const records = found.flatMap((member) => (member.record ? [member.record] : []));
   const diagnostics: string[] = [];
-  if (request.ticket && !template.includes("{ticket}")) {
+  if (options.ticket && !template.includes("{ticket}")) {
     diagnostics.push(
-      `Ticket ${request.ticket} is not in the branch name: branchTemplate ${template} has no {ticket}.`,
+      `Ticket ${options.ticket} is not in the branch name: branchTemplate ${template} has no {ticket}.`,
     );
   }
   const unresolved = (): DeliveryBranchResolution => ({
@@ -277,7 +242,7 @@ async function branchOf(
     }
     return {
       branch,
-      source: source ?? (hasRef ? await sourceOf(branch, hasRef) : null),
+      source: source ?? (checkout ? await sourceOf(branch, checkout.hasRef) : null),
       inheritedFrom,
       diagnostics,
     };
@@ -302,7 +267,7 @@ async function branchOf(
         ticketKeyOf(branch, worksetId, template) ??
         ticketKeyOf(branch, worksetId, DEFAULT_BRANCH_TEMPLATE);
       // Only the branch name carries a ticket, so a wrong one is fixed by renaming the branch.
-      if (request.ticket && key && key.toUpperCase() !== request.ticket.toUpperCase()) {
+      if (options.ticket && key && key.toUpperCase() !== options.ticket.toUpperCase()) {
         const changes = found.map((member) => member.change).join(" ");
         diagnostics.push(
           `To change the ticket of ${branch} before it is pushed, run \`git branch -m ${branch} ${named}\`, then \`mate artifact link ${changes} --branch ${named}\`.`,
@@ -315,7 +280,7 @@ async function branchOf(
       companionPath,
       found,
       repository,
-      request,
+      checkout,
       diagnostics,
     );
     if (inherited.length > 1) {
@@ -342,7 +307,8 @@ async function branchOf(
     );
     return resolved(branch, { source });
   };
-  if (!hasRef) return resolved(named);
+  if (!checkout) return resolved(named);
+  const { hasRef } = checkout;
   if (ticket) {
     const source = await sourceOf(named, hasRef);
     if (source !== "new") return resolved(named, { source });
@@ -351,7 +317,7 @@ async function branchOf(
       if (defaultSource !== "new") return followsDefault(defaultNamed, defaultSource);
     }
     // An explicit ticket asks for its own branch; a stale plain one must not take its place.
-    if (request.ticket) {
+    if (options.ticket) {
       const stale = distinct([plain, defaultDeliveryBranch(worksetId)]).filter(
         (branch) => branch !== named,
       );
@@ -367,7 +333,7 @@ async function branchOf(
     }
     // A Workset record's ticket only names a branch none of whose forms exists yet.
   }
-  const existing = await existingBranch(worksetId, template, hasRef, listRefs, diagnostics);
+  const existing = await existingBranch(worksetId, template, checkout, diagnostics);
   if (existing === "ambiguous") return unresolved();
   if (existing) return resolved(existing.branch, { source: existing.source });
   // A branch made before the team switched templates keeps resolving.
@@ -375,8 +341,7 @@ async function branchOf(
     const fallback = await existingBranch(
       worksetId,
       DEFAULT_BRANCH_TEMPLATE,
-      hasRef,
-      listRefs,
+      checkout,
       diagnostics,
       plain,
     );
@@ -384,14 +349,6 @@ async function branchOf(
     if (fallback) return followsDefault(fallback.branch, fallback.source);
   }
   return resolved(named, { source: "new" });
-}
-
-/** A {@link ListRefs} over a Git runner that answers stdout, or null on failure. */
-export function listRefsWith(git: (args: string[]) => Promise<string | null>): ListRefs {
-  return async (prefixes) => {
-    const stdout = await git(["for-each-ref", "--format=%(refname)", ...prefixes]);
-    return stdout ? stdout.split("\n").filter(Boolean) : [];
-  };
 }
 
 /**
@@ -402,18 +359,23 @@ export function listRefsWith(git: (args: string[]) => Promise<string | null>): L
  * template names without a ticket, else the single one with any ticket, else for a non-default
  * template the same under the default, else the name without a ticket. The default template
  * gives `workset/<id>` and `workset/<TICKET>-<id>`. Direct
- * deliveries are not a Workset's branch. Existence is read through `hasRef`, local branch
- * first, so callers fetch before resolving. A damaged record throws, as
- * when it is read on its own.
+ * deliveries are not a Workset's branch. The template is the companion's; an invalid one
+ * counts as the default and is named in `templateDiagnostic`. Existence and merges are read
+ * in `checkout`, local branch first, so callers fetch before resolving; a null checkout gives
+ * the computed name with `source` null. A damaged record throws, as when it is read on its own.
  */
 export async function resolveDeliveryBranch(
-  request: DeliveryBranchRequest & ({ change: string } | { worksetId: string }),
+  checkout: DeliveryCheckout | null,
+  subject: DeliverySubject,
+  options: DeliveryBranchOptions = {},
 ): Promise<DeliveryBranchResolution & { worksetId: string | null }> {
-  const repository = request.repository ?? undefined;
+  const repository = subject.repository ?? undefined;
+  const setting = await companionBranchTemplate(subject.companionPath);
+  const templateField = setting.diagnostic ? { templateDiagnostic: setting.diagnostic } : {};
   const identity =
-    "change" in request
-      ? await resolveWorksetOf(request.companionPath, request.change, repository)
-      : await resolveWorksetBranch(request.companionPath, request.worksetId, repository);
+    "change" in subject
+      ? await resolveWorksetOf(subject.companionPath, subject.change, repository)
+      : await resolveWorksetBranch(subject.companionPath, subject.worksetId, repository);
   if (identity.id === null) {
     return {
       worksetId: null,
@@ -421,13 +383,15 @@ export async function resolveDeliveryBranch(
       source: null,
       inheritedFrom: [],
       diagnostics: identity.diagnostics,
+      ...templateField,
     };
   }
-  const resolution = await branchOf(request, identity.id);
+  const resolution = await branchOf(checkout, subject, options, setting.template, identity.id);
   return {
     ...resolution,
     worksetId: identity.id,
     diagnostics: [...identity.diagnostics, ...resolution.diagnostics],
+    ...templateField,
   };
 }
 

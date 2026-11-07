@@ -6,6 +6,7 @@ import { prepareWorkset } from "../../../lib/factory/prepare";
 import { writeWorkset } from "../../../lib/workset/record";
 import { effectiveLaunchCompanion } from "./terminal-launch";
 import type { StudioInventory } from "./inventory";
+import type { WorksetSessionResolution } from "./terminal";
 import { NO_CREDENTIAL } from "../../../lib/factory/credential-store";
 
 /**
@@ -13,10 +14,6 @@ import { NO_CREDENTIAL } from "../../../lib/factory/credential-store";
  * (credential, record, container, link, first turn), and the terminal is handed only
  * the attach helper's argv. The browser names the Workset and nothing else.
  */
-
-export type WorksetLaunchResolution =
-  | { companionPath: string; workset: { id: string; title: string }; argv: string[] }
-  | { reason: string };
 
 export interface WorksetResolverOptions {
   collectInventory: () => Promise<StudioInventory>;
@@ -61,7 +58,7 @@ const ONBOARDED = [
 
 export function createWorksetResolver(
   options: WorksetResolverOptions,
-): (id: string, digest: string | null, session: string) => Promise<WorksetLaunchResolution> {
+): (id: string, digest: string | null, session: string) => Promise<WorksetSessionResolution> {
   const clientFor = options.client ?? (() => factoryClient(options.env?.MATE_FACTORY_BROKER));
   const now = options.now ?? (() => new Date());
   return async (id, digest, session) => {
@@ -77,7 +74,7 @@ export function createWorksetResolver(
       if ((await client.info()).credential === null) {
         return { reason: NO_CREDENTIAL };
       }
-      const record = await prepareWorkset(client, companion.path, id, options.env);
+      const { record, warnings } = await prepareWorkset(client, companion.path, id, options.env);
       const onboarded = await client.exec({ id, command: ONBOARDED });
       if (onboarded.status !== 0)
         return { reason: "the Workset's Claude settings could not be prepared" };
@@ -121,6 +118,10 @@ export function createWorksetResolver(
           ...(resumeSession ? ["--resume-session", resumeSession] : []),
           ...(options.noGit ? ["--no-git"] : []),
         ],
+        // The terminal needs CRLF: a bare LF moves down without returning.
+        ...(warnings.length > 0
+          ? { notice: warnings.join("\n").replaceAll(/\r?\n/g, "\r\n") }
+          : {}),
       };
     } catch (error) {
       return { reason: (error as Error).message };

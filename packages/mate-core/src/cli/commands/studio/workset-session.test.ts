@@ -25,7 +25,12 @@ function record(id: string, body: string): void {
 }
 
 function fakeClient(
-  options: { credential?: string | null; conversation?: boolean; linkFails?: boolean } = {},
+  options: {
+    credential?: string | null;
+    conversation?: boolean;
+    linkFails?: boolean;
+    warnings?: string[];
+  } = {},
 ) {
   const calls: Array<[string, unknown]> = [];
   const client = {
@@ -34,7 +39,7 @@ function fakeClient(
     }),
     spawn: async (request: unknown) => {
       calls.push(["spawn", request]);
-      return {};
+      return options.warnings ? { warnings: options.warnings } : {};
     },
     exec: async (request: { command: string[] }) => {
       calls.push(["exec", request.command]);
@@ -147,6 +152,16 @@ describe("resolving a Workset session", () => {
         companion,
       ],
     });
+  });
+
+  test("the spawn's warnings open the terminal as a notice", async () => {
+    record("acme-login", "repositories: [acme/web]\n");
+    const warnings = [
+      "workset/acme-api of acme-api looks squash-merged into the default branch; it is not inherited.",
+      "Ticket ABC-1 does not name the branch.",
+    ];
+    const result = await resolver(fakeClient({ warnings }).client)("acme-login", null, SESSION);
+    expect("notice" in result && result.notice).toBe(warnings.join("\r\n"));
   });
 
   test("a later session continues the conversation", async () => {

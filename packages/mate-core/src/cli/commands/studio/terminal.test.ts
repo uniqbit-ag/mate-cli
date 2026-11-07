@@ -889,6 +889,22 @@ describe("Workset sessions", () => {
     expect(types(second)).toContain("ready");
   });
 
+  test("the resolution's notice comes before the helper's output", async () => {
+    const r = registry({
+      resolveWorkset: async (_id, _digest, sessionId) => ({
+        ...resolved(sessionId),
+        notice: "workset/acme-api of acme-api is merged into the default branch.",
+      }),
+    });
+    const v = viewer();
+    await r.registry.connect(v).message(JSON.stringify(WORKSET_START));
+    r.spawned[0]!.emit("helper output");
+    expect(v.output).toBe(
+      "workset/acme-api of acme-api is merged into the default branch.\r\nhelper output",
+    );
+    await r.registry.stopAll();
+  });
+
   test("a refusal starts no process and is shown", async () => {
     const r = registry({
       resolveWorkset: async () => ({ reason: "no Workset agent credential is configured" }),

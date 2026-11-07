@@ -4,7 +4,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { parseBranchTemplate } from "./branch-template";
 import type { ProtectionReason, TicketFormat, WorkingRepoGit } from "./branches";
 import type { DeliveryEnvironment } from "./environment";
 import type { ForgeAdapter, PullClassification } from "./forge";
@@ -823,16 +822,20 @@ describe("recordDelivery in an Umbrella Repository", () => {
 });
 
 describe("branch template", () => {
-  const team = (template: string): DeliveryEnvironment => ({
-    ...environment({ ticket: "jira" }),
-    branchTemplate: parseBranchTemplate(template),
-  });
+  const team = async (template: string): Promise<DeliveryEnvironment> => {
+    await fs.mkdir(path.join(companion, ".mate", "config"), { recursive: true });
+    await fs.writeFile(
+      path.join(companion, ".mate", "config", "framework.yaml"),
+      `type: companion\ncapabilities:\n  - name: openspec\n    branchTemplate: ${JSON.stringify(template)}\n`,
+    );
+    return environment({ ticket: "jira" });
+  };
 
   test("a ticket records the team template's branch", async () => {
     const outcome = await run(
       { changes: ["x"], edit: { ticket: "ABC-123" } },
       {},
-      team("feature/{ticket}-{workset}"),
+      await team("feature/{ticket}-{workset}"),
     );
     expect((await written("x"))?.deliveries).toEqual([
       { repository: APP, branch: "feature/ABC-123-x" },
@@ -841,7 +844,9 @@ describe("branch template", () => {
   });
 
   test("an invalid template applies the default and is reported", async () => {
-    const [result] = results(await run({ changes: ["x"] }, {}, team("feature/{user}-{workset}")));
+    const [result] = results(
+      await run({ changes: ["x"] }, {}, await team("feature/{user}-{workset}")),
+    );
     expect(result.defaultBranch).toBe("workset/x");
     expect(result.diagnostics.join()).toContain("unknown placeholder {user}");
   });

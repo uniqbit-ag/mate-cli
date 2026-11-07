@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { readCompanionConfig } from "../orchestrator/config-store";
 import type { CapabilityConfig, TicketFormat } from "../orchestrator/types";
 import { parseBranchTemplate, type BranchTemplateSetting } from "./branch-template";
-import { listRefsWith } from "./resolve-branch";
+import { deliveryCheckout } from "./checkout";
 
 export type { TicketFormat };
 
@@ -125,20 +125,8 @@ export function workingRepoGit(repoPath: string): WorkingRepoGit {
     }
   };
 
-  const remoteTip = async (branch: string): Promise<string | null> =>
-    (await run("rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`)) || null;
-  const defaultBranch = async (): Promise<string> => {
-    const remoteHead = await run("symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD");
-    if (remoteHead) return remoteHead.replace(/^origin\//, "");
-    for (const candidate of ["main", "master"]) {
-      // oxlint-disable-next-line no-await-in-loop -- the steps are a decision chain
-      if (await remoteTip(candidate)) return candidate;
-    }
-    return (await run("config", "--get", "init.defaultBranch")) || "main";
-  };
-
-  const hasRef = async (ref: string): Promise<boolean> =>
-    (await run("rev-parse", "--verify", "--quiet", ref)) !== null;
+  // Ref queries are the ones a Delivery Branch resolves through.
+  const { hasRef, listRefs, defaultBranch } = deliveryCheckout(repoPath);
 
   const currentBranch = async (): Promise<string | null> =>
     (await run("symbolic-ref", "--quiet", "--short", "HEAD")) || null;
@@ -159,6 +147,6 @@ export function workingRepoGit(repoPath: string): WorkingRepoGit {
       );
     },
     hasRef,
-    listRefs: listRefsWith((args) => run(...args)),
+    listRefs,
   };
 }

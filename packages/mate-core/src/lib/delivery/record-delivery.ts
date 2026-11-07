@@ -27,12 +27,8 @@ import {
   type RefreshAccess,
   type RefreshCache,
 } from "./refresh";
-import {
-  mergeProbeWith,
-  resolveDeliveryBranch,
-  type HasRef,
-  type ListRefs,
-} from "./resolve-branch";
+import { probeMerge, type DeliveryCheckout } from "./checkout";
+import { resolveDeliveryBranch } from "./resolve-branch";
 import {
   repositoryAccessFor,
   type RepositoryAccess,
@@ -176,14 +172,26 @@ async function sessionGitOf(
   return repository ? checkoutGit(environment, repository) : null;
 }
 
-/** Ref lookups in the repository's local checkout; null when none is known. */
-async function refsIn(
+/**
+ * The repository's local checkout for resolving its Delivery Branch; null when none is known.
+ * Merges are checked through the repository's local merge access, without a fetch.
+ */
+async function deliveryCheckoutIn(
   environment: DeliveryEnvironment,
   repository: string,
-): Promise<{ hasRef: HasRef; listRefs: ListRefs | null } | null> {
+  access: RepositoryAccess,
+): Promise<DeliveryCheckout | null> {
   const git = await checkoutGit(environment, repository);
   if (!git) return null;
-  return { hasRef: (ref) => git.hasRef(ref), listRefs: git.listRefs?.bind(git) ?? null };
+  return {
+    hasRef: (ref) => git.hasRef(ref),
+    listRefs: async (prefixes) => (await git.listRefs?.(prefixes)) ?? [],
+    defaultBranch: () => git.defaultBranch(),
+    mergeProbe: async (branch, recordedHead) => {
+      const local = await access.local?.();
+      return local ? probeMerge(local.git, local.defaultBranch, branch, recordedHead) : null;
+    },
+  };
 }
 
 /** A delivery a ticket must not replace: direct, or not applicable. */
@@ -268,27 +276,21 @@ export async function recordDelivery(
   };
   const cache: RefreshCache = new Map();
   const resolved: Array<DeliveryResult & { dir: string }> = [];
-  const refs = repository ? await refsIn(environment, repository) : null;
-  const local = repository ? await access(repository).local?.() : null;
-  const mergeProbe = local ? mergeProbeWith(local.git, local.defaultBranch) : null;
+  const checkout = repository
+    ? await deliveryCheckoutIn(environment, repository, access(repository))
+    : null;
   const sessionGit = await sessionGitOf(environment, repository);
   const currentBranch = (await sessionGit?.currentBranch()) ?? null;
 
   for (const { change, dir, archived } of located) {
     let record = await readOrUnlinkedRecord(dir, change);
-    const resolution = await resolveDeliveryBranch({
-      companionPath: environment.companionPath,
-      repository,
-      hasRef: refs?.hasRef ?? null,
-      listRefs: refs?.listRefs ?? null,
-      mergeProbe,
-      change,
-      template: environment.branchTemplate?.template,
-      ...(edit.ticket !== undefined ? { ticket: edit.ticket } : {}),
-    });
+    const resolution = await resolveDeliveryBranch(
+      checkout,
+      { companionPath: environment.companionPath, repository, change },
+      edit.ticket !== undefined ? { ticket: edit.ticket } : {},
+    );
     // Reported once, on the first change, as it concerns the companion, not a change.
-    const templateDiagnostic =
-      resolved.length === 0 ? environment.branchTemplate?.diagnostic : null;
+    const templateDiagnostic = resolved.length === 0 ? resolution.templateDiagnostic : null;
     const diagnostics = templateDiagnostic
       ? [templateDiagnostic, ...resolution.diagnostics]
       : resolution.diagnostics;

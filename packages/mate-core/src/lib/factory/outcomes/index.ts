@@ -349,13 +349,14 @@ export function createFactoryOutcomes(
     async turn(request) {
       await requireAgentCredential(client);
       // A Workset may reach Ready without a session, so the turn spawns its container.
-      await prepareWorkset(
+      const { warnings } = await prepareWorkset(
         client,
         companionPath,
         request.worksetId,
         env,
         memorySizeFor(request.stage),
       );
+      for (const warning of warnings) request.onText(`\n${warning}\n`);
       return harness.turn(request);
     },
   };

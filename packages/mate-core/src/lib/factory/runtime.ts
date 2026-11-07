@@ -1,15 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import { companionBranchTemplate } from "../delivery/branches";
-import {
-  listRefsWith,
-  newBranchBase,
-  resolveDeliveryBranch,
-  worktreeAddArgs,
-} from "../delivery/resolve-branch";
+import { deliveryCheckout } from "../delivery/checkout";
+import { newBranchBase, resolveDeliveryBranch, worktreeAddArgs } from "../delivery/resolve-branch";
 import { resolveWorksetBranch } from "../workset/record";
 
-import { type CommandResult, type CommandRunner, runCommand } from "./command";
+import { type CommandOptions, type CommandResult, type CommandRunner, runCommand } from "./command";
 import { KeyedSerial } from "./keyed-serial";
 import { readWorktreeBranch } from "./worktree-branch";
 import {
@@ -44,6 +39,8 @@ export interface WorksetInfo {
   repository: string | null;
   branch: string;
   state: WorksetState;
+  /** What resolving a new worktree's Delivery Branch reported, e.g. a dependency not inherited. */
+  warnings?: string[];
 }
 
 export interface SpawnRequest {
@@ -238,9 +235,13 @@ export class WorksetRuntime {
     return this.run("docker", args, { env: { ...this.dockerEnv(), ...env } });
   }
 
-  private git(args: string[]): Promise<CommandResult> {
+  private git(
+    args: string[],
+    options: Pick<CommandOptions, "env" | "stdin" | "timeoutMs"> = {},
+  ): Promise<CommandResult> {
     // `ext::` would run a command named by the remote URL.
     return this.run("git", ["-c", "protocol.ext.allow=never", ...args], {
+      ...options,
       asUser: this.options.user,
     });
   }
@@ -354,8 +355,9 @@ export class WorksetRuntime {
       );
     }
 
-    const branch =
-      existingBranch ?? (await this.createWorktree(request, companion, repoDir, worktree));
+    const { branch, warnings } = existingBranch
+      ? { branch: existingBranch, warnings: [] }
+      : await this.createWorktree(request, companion, repoDir, worktree);
 
     const size = request.size ?? "build";
     let state = await this.containerState(request.id);
@@ -424,40 +426,50 @@ export class WorksetRuntime {
       );
     }
     this.touch(request.id);
-    return { id: request.id, repository: request.repository, branch, state: "running" };
+    return {
+      id: request.id,
+      repository: request.repository,
+      branch,
+      state: "running",
+      ...(warnings.length > 0 ? { warnings } : {}),
+    };
   }
 
-  /** Puts a new worktree on the resolved Delivery Branch; call after fetching `repoDir`. */
+  /**
+   * Puts a new worktree on the resolved Delivery Branch; call after fetching `repoDir`. The
+   * branch is resolved and merges are probed in the factory's clone, as its user.
+   */
   private async createWorktree(
     request: SpawnRequest,
     companion: string,
     repoDir: string,
     worktree: string,
-  ): Promise<string> {
-    const hasRef = async (ref: string) =>
-      (await this.git(["-C", repoDir, "rev-parse", "--verify", "--quiet", ref])).status === 0;
-    const resolution = await resolveDeliveryBranch({
+  ): Promise<{ branch: string; warnings: string[] }> {
+    const checkout = deliveryCheckout(repoDir, async (args, { input, timeoutMs }) => {
+      const result = await this.git(["-C", repoDir, ...args], {
+        // Only the additions: a whole environment would replace the user's HOME with the broker's.
+        env: { GIT_TERMINAL_PROMPT: "0", GIT_NO_LAZY_FETCH: "1" },
+        ...(input !== undefined ? { stdin: new TextEncoder().encode(input) } : {}),
+        ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+      });
+      return { code: result.status, stdout: result.stdout, stderr: result.stderr };
+    });
+    // An invalid template counts as the default; link reports it.
+    const resolution = await resolveDeliveryBranch(checkout, {
       companionPath: companion,
       repository: request.repository,
-      hasRef,
-      // An invalid template counts as the default; link reports it.
-      template: (await companionBranchTemplate(companion)).template,
-      listRefs: listRefsWith(async (args) => {
-        const listed = await this.git(["-C", repoDir, ...args]);
-        return listed.status === 0 ? listed.stdout : null;
-      }),
       worksetId: request.id,
     });
     const { branch, source } = resolution;
     if (branch === null || source === null) {
       throw new FactoryError(resolution.diagnostics.join("\n"));
     }
-    const base = source === "new" ? await newBranchBase(hasRef) : undefined;
+    const base = source === "new" ? await newBranchBase(checkout.hasRef) : undefined;
     await this.must(
       this.git(["-C", repoDir, ...worktreeAddArgs({ branch, source }, worktree, base)]),
       `creating the worktree for ${request.id}`,
     );
-    return branch;
+    return { branch, warnings: resolution.diagnostics };
   }
 
   private memoryOf(size: MemorySize): string | undefined {
