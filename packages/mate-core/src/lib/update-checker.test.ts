@@ -85,6 +85,15 @@ describe("isNewer", () => {
   test("older patch is not newer", () => {
     expect(isNewer("1.0.0", "1.0.1")).toBe(false);
   });
+
+  test("release is not newer than a local build of the same version", () => {
+    expect(isNewer("0.20.0", "0.20.0-local.0")).toBe(false);
+  });
+
+  test("later release is newer than a local build", () => {
+    expect(isNewer("0.20.0", "0.19.0-local.2")).toBe(true);
+    expect(isNewer("0.21.0", "0.20.0-local.0")).toBe(true);
+  });
 });
 
 describe("isCanaryVersion", () => {
@@ -215,6 +224,53 @@ describe("update helpers", () => {
     }
 
     expect(stderrWrite).not.toHaveBeenCalled();
+  });
+
+  test("does not show a banner for a local build of the cached release version", async () => {
+    const previous = getActiveDistribution();
+    setActiveDistribution({
+      ...previous,
+      config: { ...previous.config, version: "0.20.0-local.0" },
+    });
+    const store = createStore({ lastChecked: "", latestVersion: "0.20.0" });
+    const stderrWrite = mock(() => true);
+    const originalWrite = process.stderr.write;
+    process.stderr.write = stderrWrite as typeof process.stderr.write;
+
+    try {
+      await showUpdateBannerIfAvailable(store as never);
+    } finally {
+      process.stderr.write = originalWrite;
+      setActiveDistribution(previous);
+    }
+
+    expect(stderrWrite).not.toHaveBeenCalled();
+  });
+
+  test("shows a banner but does not block a local build of an older release version", async () => {
+    const previous = getActiveDistribution();
+    setActiveDistribution({
+      ...previous,
+      config: { ...previous.config, version: "0.19.0-local.2", update: { enforce: true } },
+    });
+    const store = createStore({ lastChecked: "", latestVersion: "0.20.0" });
+    const stderrChunks: string[] = [];
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      stderrChunks.push(chunk.toString());
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      await expect(enforceUpdateIfRequired(store as never)).resolves.toBe(false);
+      await showUpdateBannerIfAvailable(store as never);
+    } finally {
+      process.stderr.write = originalWrite;
+      setActiveDistribution(previous);
+    }
+
+    expect(stderrChunks.join("")).toContain("update available (0.19.0-local.2 → 0.20.0)");
+    expect(stderrChunks.join("")).not.toContain("update required");
   });
 
   test("swallows banner load failures", async () => {
