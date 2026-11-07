@@ -16,6 +16,12 @@ describe("buildOpenCodeGuidance", () => {
     expect(guidance.companionGuidance).not.toContain("openspec-publish");
   });
 
+  test("carries no Claude-only RTK git rule", () => {
+    const guidance = buildOpenCodeGuidance([{ name: "rtk" }]);
+
+    expect(guidance.companionGuidance).not.toContain("RTK_DISABLED");
+  });
+
   test("delivers codebase exploration guidance as its own field, not embedded twice", () => {
     const guidance = buildOpenCodeGuidance([
       { name: "openspec" },

@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 import type { SetupContext } from "../plugin";
 import { createRtkPlugin } from "./rtk";
@@ -144,4 +147,107 @@ describe("createRtkPlugin", () => {
       expect(runRtkMock).not.toHaveBeenCalled();
     });
   }
+});
+
+describe("RTK upgrade", () => {
+  const home = "/home/acme";
+
+  async function upgrade(deps: Parameters<typeof createRtkPlugin>[0]): Promise<string[]> {
+    const ran: string[] = [];
+    const [requirement] = createRtkPlugin({
+      isBrewAvailable: () => false,
+      homeDir: () => home,
+      runRtkCommandSilently: async (cmd) => {
+        ran.push(cmd);
+      },
+      ...deps,
+    }).getInstallRequirements!(makeCtx().config);
+    await requirement!.update!();
+    return ran;
+  }
+
+  const local = `${home}/.local/bin/rtk`;
+
+  test("upgrades the Homebrew formula the rtk on PATH comes from", async () => {
+    expect(
+      await upgrade({ rtkBinaryPath: () => "/opt/homebrew/bin/rtk", brewFormulaOf: () => "rtk" }),
+    ).toEqual(["brew upgrade rtk"]);
+    expect(
+      await upgrade({
+        rtkBinaryPath: () => "/opt/homebrew/bin/rtk",
+        brewFormulaOf: () => "rtk-ai/tap/rtk",
+      }),
+    ).toEqual(["brew upgrade rtk-ai/tap/rtk"]);
+  });
+
+  test("reads the formula from the keg's install receipt", async () => {
+    const prefix = fs.mkdtempSync(path.join(os.tmpdir(), "acme-brew-"));
+    try {
+      const keg = path.join(prefix, "Cellar", "rtk", "1.1.0");
+      fs.mkdirSync(path.join(keg, "bin"), { recursive: true });
+      fs.writeFileSync(path.join(keg, "bin", "rtk"), "");
+      fs.mkdirSync(path.join(prefix, "bin"));
+      fs.symlinkSync(path.join(keg, "bin", "rtk"), path.join(prefix, "bin", "rtk"));
+      const binary = () => path.join(prefix, "bin", "rtk");
+      expect(await upgrade({ rtkBinaryPath: binary })).toEqual(["brew upgrade rtk"]);
+      const receipt = { source: { tap: "rtk-ai/tap" } };
+      fs.writeFileSync(path.join(keg, "INSTALL_RECEIPT.json"), JSON.stringify(receipt));
+      expect(await upgrade({ rtkBinaryPath: binary })).toEqual(["brew upgrade rtk-ai/tap/rtk"]);
+    } finally {
+      fs.rmSync(prefix, { recursive: true, force: true });
+    }
+  });
+
+  test("runs the installer of a newer release, pinned to its tag, for ~/.local/bin/rtk", async () => {
+    expect(
+      await upgrade({
+        rtkBinaryPath: () => local,
+        brewFormulaOf: () => null,
+        latestRtkTag: async () => "v1.2.0",
+        installedRtkVersion: () => "1.1.0",
+      }),
+    ).toEqual([
+      "curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/v1.2.0/install.sh | RTK_VERSION=v1.2.0 sh",
+    ]);
+  });
+
+  test("runs nothing when ~/.local/bin/rtk is current or the latest release is unknown", async () => {
+    const current = {
+      rtkBinaryPath: () => local,
+      brewFormulaOf: () => null,
+      installedRtkVersion: () => "1.1.0",
+    };
+    expect(await upgrade({ ...current, latestRtkTag: async () => "v1.1.0" })).toEqual([]);
+    expect(await upgrade({ ...current, latestRtkTag: async () => null })).toEqual([]);
+  });
+
+  test("leaves any other installation alone", async () => {
+    const latestRtkTag = async () => "v9.9.9";
+    expect(
+      await upgrade({
+        rtkBinaryPath: () => `${home}/.cargo/bin/rtk`,
+        brewFormulaOf: () => null,
+        latestRtkTag,
+      }),
+    ).toEqual([]);
+    expect(await upgrade({ rtkBinaryPath: () => null, latestRtkTag })).toEqual([]);
+  });
+
+  test("a failed upgrade warns and never throws", async () => {
+    const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await upgrade({
+        rtkBinaryPath: () => "/opt/homebrew/bin/rtk",
+        brewFormulaOf: () => "rtk",
+        runRtkCommandSilently: async () => {
+          throw new Error("Command failed: brew upgrade rtk (exit 1)");
+        },
+      });
+      expect(stderr).toHaveBeenCalledWith(
+        expect.stringContaining("rtk: automatic upgrade failed: Command failed: brew upgrade rtk"),
+      );
+    } finally {
+      stderr.mockRestore();
+    }
+  });
 });

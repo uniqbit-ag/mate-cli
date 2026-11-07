@@ -161,7 +161,8 @@ describe("runDoctorCommand", () => {
     if (!("bin" in bundled)) throw new Error(bundled.missing);
     expect(output).toContain(`openspec ${bundled.version}`);
     expect(output).toContain(bundled.bin);
-    expect(output).not.toContain("rtk");
+    // A table row, not a substring: the checkout path may itself contain "rtk".
+    expect(output).not.toMatch(/\|\s*rtk\s*\|/);
     expect(output).toContain("ok");
     expect(output).toContain("missing");
     expect(output).not.toContain("tokensave");

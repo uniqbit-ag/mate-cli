@@ -195,6 +195,30 @@ worktree's own index instead:
   unchanged. Routing never creates or changes an index and never blocks a
   call.
 
+### RTK
+
+RTK compacts command output: its own hook, which Mate sets up for each
+selected agent runtime, rewrites a command such as `git status` to
+`rtk git status`.
+
+#### RTK in worktrees
+
+After a Claude Code session moves into a linked worktree with `EnterWorktree`,
+Claude Code's worktree guard refuses any git command run through RTK. With RTK
+selected, git runs there as `RTK_DISABLED=1 git …`, which both RTK and the
+guard accept:
+
+- Mate's guidance tells the agent so, and so does the enter line of
+  `mate working worktree --enter`.
+- A Mate hook denies a git call that RTK would rewrite and names the command to
+  run instead, such as `RTK_DISABLED=1 git status && rtk ls` for
+  `git status && ls`. Other commands keep RTK.
+- Git output in such a session is not compacted.
+
+A session started in the worktree is not isolated and keeps RTK for git, as do
+Claude Code's own worktrees under `.claude/worktrees/`, which RTK itself leaves
+alone. Mate changes neither RTK's configuration nor its hook.
+
 ### React Doctor
 
 React Doctor installs the `mate-react-doctor` skill for Claude and OpenCode. It

@@ -25,6 +25,7 @@ import { hookGroupKey, type ClaudeHookGroup } from "./claude-format";
 
 const GUARD_HOOK_SHIM = "validate-artifact-path.mjs";
 const TOKENSAVE_ROUTE_HOOK_SHIM = "tokensave-route.mjs";
+const RTK_WORKTREE_GIT_HOOK_SHIM = "rtk-worktree-git.mjs";
 const GUIDANCE_HOOK_SHIM = "session-guidance.mjs";
 const BANNER_HOOK_SHIM = "session-banner.mjs";
 const PREPARE_HOOK_SHIM = "session-prepare.mjs";
@@ -94,6 +95,16 @@ export function mateTokensaveRouteHookGroups(
   commandRoot: string = runtimeClaudePluginRoot(),
 ): ClaudeHookGroup[] {
   return groupsFor("PreToolUse", TOKENSAVE_ROUTE_HOOK_SHIM, commandRoot);
+}
+
+/**
+ * The RTK git deny `PreToolUse` group, resolved the same way. Both copies
+ * deny the same call with the same reason, so loading both changes nothing.
+ */
+export function mateRtkWorktreeGitHookGroups(
+  commandRoot: string = runtimeClaudePluginRoot(),
+): ClaudeHookGroup[] {
+  return groupsFor("PreToolUse", RTK_WORKTREE_GIT_HOOK_SHIM, commandRoot);
 }
 
 /**
@@ -170,6 +181,7 @@ function mateOwnHookGroups(commandRoot: string): ClaudeHookGroup[] {
   return [
     ...mateGuardHookGroups(commandRoot),
     ...mateTokensaveRouteHookGroups(commandRoot),
+    ...mateRtkWorktreeGitHookGroups(commandRoot),
     ...mateGuidanceHookGroups(commandRoot),
     ...mateBannerHookGroups(commandRoot),
     ...mateSessionPrepareHookGroups(commandRoot),
