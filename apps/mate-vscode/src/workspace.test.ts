@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
+import { umbrellaFixture } from "./umbrella.fixture";
 import {
   managedWorkspacePath,
   resolveWorkspaceState,
@@ -90,6 +91,94 @@ describe("managed workspace identity", () => {
     await fs.unlink(workspacePath);
     await fs.mkdir(workspacePath);
     expect((await resolveWorkspaceState(uri(repo), uri(workspacePath))).ready).toBe(false);
+  });
+});
+
+describe("umbrella windows", () => {
+  test("an Umbrella Repository is gated until its managed workspace is open", async () => {
+    const acme = await umbrellaFixture();
+    roots.push(acme.root);
+    expect(await resolveWorkspaceState(uri(acme.umbrella), undefined)).toMatchObject({
+      repo: acme.umbrella,
+      ready: false,
+      canOpen: true,
+      repository: {
+        kind: "umbrella",
+        root: acme.umbrella,
+        children: [
+          { path: acme.api, id: "acme/api" },
+          { path: acme.web, id: "acme/web" },
+        ],
+      },
+    });
+    const file = managedWorkspacePath(acme.umbrella);
+    await fs.writeFile(file, "{}");
+    expect((await resolveWorkspaceState(uri(acme.umbrella), uri(file))).ready).toBe(true);
+  });
+
+  test("a mirrored umbrella worktree is its own window repository", async () => {
+    const acme = await umbrellaFixture();
+    roots.push(acme.root);
+    const file = managedWorkspacePath(acme.mirrored);
+    await fs.writeFile(file, "{}");
+    expect(await resolveWorkspaceState(uri(acme.mirrored), uri(file))).toMatchObject({
+      repo: acme.mirrored,
+      ready: true,
+      repository: {
+        kind: "umbrella",
+        children: [
+          { path: path.join(acme.mirrored, "api"), id: "acme/api" },
+          { path: path.join(acme.mirrored, "web"), id: "acme/web" },
+        ],
+      },
+    });
+  });
+
+  test("a child checkout without origin still makes the folder an umbrella", async () => {
+    const acme = await umbrellaFixture();
+    roots.push(acme.root);
+    await promisify(execFile)("git", ["remote", "remove", "origin"], { cwd: acme.web });
+    expect(await resolveWorkspaceState(uri(acme.umbrella), undefined)).toMatchObject({
+      repository: {
+        kind: "umbrella",
+        children: [{ path: acme.api, id: "acme/api" }, { path: acme.web }],
+      },
+    });
+  });
+
+  test("an umbrella opened through a symlink resolves to its real path", async () => {
+    const acme = await umbrellaFixture();
+    roots.push(acme.root);
+    const alias = path.join(acme.root, "acme-alias");
+    await fs.symlink(acme.umbrella, alias);
+    expect(await resolveWorkspaceState(uri(alias), undefined)).toMatchObject({
+      repo: acme.umbrella,
+      repository: { kind: "umbrella", root: acme.umbrella, children: [{ path: acme.api }, {}] },
+    });
+  });
+
+  test("a non-Git folder inside an umbrella resolves to the umbrella", async () => {
+    const acme = await umbrellaFixture();
+    roots.push(acme.root);
+    const docs = path.join(acme.umbrella, "docs");
+    await fs.mkdir(docs);
+    expect(await resolveWorkspaceState(uri(docs), undefined)).toMatchObject({
+      repo: acme.umbrella,
+      repository: { kind: "umbrella", root: acme.umbrella },
+    });
+  });
+
+  test("a plain folder, or a linked one without child checkouts, stays gated", async () => {
+    const acme = await umbrellaFixture();
+    roots.push(acme.root);
+    expect(await resolveWorkspaceState(uri(acme.plain), undefined)).toMatchObject({
+      repo: null,
+      repository: null,
+      canOpen: false,
+    });
+    await fs.mkdir(path.join(acme.plain, ".mate", "config"), { recursive: true });
+    await fs.writeFile(path.join(acme.plain, ".mate", "config", "registry.yaml"), "version: 1\n");
+    expect((await resolveWorkspaceState(uri(acme.plain), undefined)).repo).toBeNull();
   });
 });
 

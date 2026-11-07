@@ -1,12 +1,16 @@
 import { execFile } from "node:child_process";
-import fs from "node:fs/promises";
-import path from "node:path";
 import { promisify } from "node:util";
 
 import { gitEnvironment } from "../../runtime/companion-git";
 import { readGitLayout } from "../../runtime/git-layout";
-import { repoLocalRegistryPath } from "../../runtime/repo-local";
+import { umbrellaChildFolders } from "../../runtime/umbrella-folder";
 import { parseRemote, type ForgeRepo } from "../delivery/forge";
+
+export {
+  mirroredUmbrellaOf,
+  umbrellaFolderOf,
+  umbrellaMirroredBy,
+} from "../../runtime/umbrella-folder";
 
 /**
  * Umbrella Repositories: a linked folder that is no Git checkout itself and whose
@@ -43,14 +47,6 @@ const rawOrigin: OriginReader = async (checkout) => {
   }
 };
 
-async function isFile(candidate: string): Promise<boolean> {
-  try {
-    return (await fs.stat(candidate)).isFile();
-  } catch {
-    return false;
-  }
-}
-
 /**
  * The Umbrella Repository's children at `folder`, in name order: direct child folders
  * with a Git layout, an `origin` that names a forge repository, and no Repository
@@ -62,14 +58,8 @@ export async function umbrellaChildrenOf(
   readOrigin: OriginReader = rawOrigin,
 ): Promise<EntryCheckout[]> {
   if (readGitLayout(folder)) return [];
-  const listed = await fs.readdir(folder, { withFileTypes: true }).catch(() => []);
-  const candidates = listed
-    .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
-    .map((entry) => path.join(folder, entry.name))
-    .filter((child) => readGitLayout(child) !== null)
-    .toSorted();
+  const candidates = umbrellaChildFolders(folder);
   const children = await mapBounded(candidates, async (child): Promise<EntryCheckout | null> => {
-    if (await isFile(repoLocalRegistryPath(child))) return null;
     const origin = await readOrigin(child);
     const remote = origin ? parseRemote(origin) : null;
     return remote ? { path: child, origin, remote, umbrella: folder } : null;

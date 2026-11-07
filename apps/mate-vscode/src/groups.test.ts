@@ -94,6 +94,27 @@ describe("session groups", () => {
       ["No branch", undefined],
     ]);
   });
+
+  test("an umbrella's children each have their own default branch", () => {
+    const groups = groupSessions(
+      [
+        session("api", { cwd: "/w/acme/api", branch: "main" }),
+        session("web", { cwd: "/w/acme/web", branch: "trunk" }),
+        session("fix", { cwd: "/w/acme.worktrees/acme-fix", branch: "workset/acme" }),
+        session("umbrella", { cwd: "/w/acme" }),
+      ],
+      worksets,
+      new Set(["main", "trunk"]),
+      isRunning,
+      NOW,
+    );
+    expect(groups.map((g) => [g.kind, g.label, g.sessions.map((s) => s.id)])).toEqual([
+      ["workset", "acme", ["fix"]],
+      ["default", "main", ["api"]],
+      ["default", "trunk", ["web"]],
+      ["none", "No branch", ["umbrella"]],
+    ]);
+  });
 });
 
 describe("session labels", () => {
@@ -154,6 +175,16 @@ describe("delivery records", () => {
       "workset/x",
     );
     expect(parseDeliveries("version: 1\ndeliveries: []\n")).toEqual([]);
+  });
+
+  test("an umbrella takes the first child with an entry, in child order", () => {
+    const deliveries = parseDeliveries(yaml);
+    expect(deliveryBranchFor(deliveries, ["acme/api", "acme/web"])).toBe("workset/acme-api");
+    expect(deliveryBranchFor(deliveries, ["acme/docs", "acme/web"])).toBe("workset/acme");
+    expect(deliveryBranchFor(deliveries, ["acme/docs"])).toBeUndefined();
+    expect(deliveryBranchFor([{ repository: "acme/web", branch: "workset/x" }], [])).toBe(
+      "workset/x",
+    );
   });
 
   test("remote URLs map to org/repository", () => {

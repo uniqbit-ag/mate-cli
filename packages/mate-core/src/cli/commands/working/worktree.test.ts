@@ -559,6 +559,7 @@ describe("mate working worktree", () => {
           recordBranch: async () => ({
             handoff: reason,
             path: mirror,
+            branch: "workset/acme-fix",
             repositories: ["acme/api", "acme/web"],
           }),
           attribute: async (attribution) => (calls.push(attribution), null),
@@ -573,6 +574,55 @@ describe("mate working worktree", () => {
       });
       // The session is not moved, so only the change is attributed.
       expect(calls).toEqual([{ change: "acme-fix" }]);
+    });
+
+    test("an Umbrella Repository moves an OpenCode session into the mirrored worktree", async () => {
+      const mirror = "/src/acme.worktrees/acme-fix";
+      const calls: unknown[] = [];
+      await enter(
+        { OPENCODE_SESSION_ID: "ses_acme" },
+        {
+          recordBranch: async () => ({
+            handoff: `${mirror} is a mirrored umbrella worktree, not a Git worktree`,
+            path: mirror,
+            branch: "workset/acme-fix",
+            repositories: ["acme/api", "acme/web"],
+          }),
+          attribute: async (attribution) => (calls.push(attribution), null),
+        },
+      );
+      expect(process.exitCode).toBe(0);
+      expect(JSON.parse(out.join("")).enter).toEqual({
+        runtime: "opencode",
+        action: "tool",
+        tool: "mate_enter_worktree",
+        path: mirror,
+      });
+      expect(calls).toEqual([
+        { change: "acme-fix", move: { cwd: mirror, branch: "workset/acme-fix" } },
+      ]);
+    });
+
+    test("an Umbrella Repository hands off from an unknown runtime", async () => {
+      const mirror = "/src/acme.worktrees/acme-fix";
+      const reason = `${mirror} is a mirrored umbrella worktree, not a Git worktree`;
+      await enter(
+        {},
+        {
+          recordBranch: async () => ({
+            handoff: reason,
+            path: mirror,
+            branch: "workset/acme-fix",
+            repositories: ["acme/api"],
+          }),
+        },
+      );
+      expect(JSON.parse(out.join("")).enter).toEqual({
+        runtime: "unknown",
+        action: "handoff",
+        path: mirror,
+        reason,
+      });
     });
 
     test("an umbrella child's failed record still hands off to the mirror and warns", async () => {

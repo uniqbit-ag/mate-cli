@@ -3,7 +3,13 @@ import fs from "node:fs/promises";
 
 import { workingRepoGit } from "./delivery/branches";
 import { mergeGit } from "./delivery/merge-git";
+import { currentBranch } from "../runtime/current-branch";
 import { processAlive } from "../runtime/opencode-server-record";
+import {
+  umbrellaChildFolders,
+  umbrellaFolderOf,
+  umbrellaMirroredBy,
+} from "../runtime/umbrella-folder";
 import {
   readSessionRegistry,
   sessionRegistryPath,
@@ -48,8 +54,17 @@ export interface SessionStateDeps {
   claudeAgents?: () => Promise<ClaudeAgent[] | null>;
   isAlive?: (pid: number) => boolean;
   directoryExists?: (dir: string) => Promise<boolean>;
-  /** True when the branch's head is merged into the default branch of the checkout at `cwd`. */
+  /**
+   * True when the branch's head is merged into the default branch of the checkout at `cwd`.
+   * Asked per child for a mirrored umbrella worktree.
+   */
   isMerged?: (cwd: string, branch: string) => Promise<boolean>;
+  /** True when the branch has no commits of its own in the checkout at `cwd`. Asked per unmerged child. */
+  isUntouched?: (cwd: string, branch: string) => Promise<boolean>;
+  /** The branch checked out at `cwd`; null when detached. Asked per mirrored worktree child. */
+  branchAt?: (cwd: string) => Promise<string | null>;
+  /** True when the checkout at `cwd` has the branch. Asked per detached mirrored worktree child. */
+  hasBranch?: (cwd: string, branch: string) => Promise<boolean>;
   readFirstPrompt?: (transcript: string) => Promise<string | null>;
 }
 
@@ -104,6 +119,56 @@ export async function branchMerged(cwd: string, branch: string): Promise<boolean
     return !(await git.onFirstParent(tip, defaultBranch));
   }
   return (await git.patchMatch(tip, defaultBranch)) !== null;
+}
+
+async function branchExists(cwd: string, branch: string): Promise<boolean> {
+  return (await mergeGit(cwd).tip(branch)) !== null;
+}
+
+/** True when the branch exists and its tip lies on the default branch's first-parent line. */
+export async function branchUntouched(cwd: string, branch: string): Promise<boolean> {
+  const defaultBranch = await workingRepoGit(cwd).defaultBranch();
+  const git = mergeGit(cwd);
+  const tip = await git.tip(branch);
+  if (!tip) return false;
+  return (
+    (await git.isAncestor(tip, defaultBranch)) && (await git.onFirstParent(tip, defaultBranch))
+  );
+}
+
+type MergeCheck = (cwd: string, branch: string) => Promise<boolean>;
+
+/**
+ * `isMerged` for a session's folder. A mirrored umbrella worktree holds one worktree per
+ * child, each checked on its own branch (the session's when detached; a detached child
+ * without it has no work of its own): merged once some child is and every other child's
+ * branch is untouched; a failing child check throws. An
+ * Umbrella Repository is no Git checkout, so it runs no check and is never merged.
+ */
+async function sessionBranchMerged(
+  cwd: string,
+  branch: string,
+  checks: {
+    isMerged: MergeCheck;
+    isUntouched: MergeCheck;
+    branchAt: (cwd: string) => Promise<string | null>;
+    hasBranch: MergeCheck;
+  },
+): Promise<boolean> {
+  const umbrella = umbrellaFolderOf(cwd);
+  if (!umbrella) return checks.isMerged(cwd, branch);
+  if (!umbrellaMirroredBy(umbrella)) return false;
+  const states = await Promise.all(
+    umbrellaChildFolders(umbrella).map(async (child) => {
+      const own = await checks.branchAt(child);
+      // A branch gone from a checkout counts as merged; a detached child may never have had it.
+      if (own === null && !(await checks.hasBranch(child, branch))) return "untouched";
+      const checked = own ?? branch;
+      if (await checks.isMerged(child, checked)) return "merged";
+      return (await checks.isUntouched(child, checked)) ? "untouched" : "open";
+    }),
+  );
+  return states.includes("merged") && !states.includes("open");
 }
 
 /** Text of a user message line in a Claude transcript; null for anything else. */
@@ -225,6 +290,9 @@ export async function listSessionsWithState(
     isAlive: options.isAlive ?? processAlive,
     directoryExists: options.directoryExists ?? exists,
     isMerged: options.isMerged ?? branchMerged,
+    isUntouched: options.isUntouched ?? branchUntouched,
+    branchAt: options.branchAt ?? currentBranch,
+    hasBranch: options.hasBranch ?? branchExists,
   };
   const now = (options.now ?? (() => new Date()))();
   const readPrompt = options.readFirstPrompt ?? readFirstPrompt;
@@ -234,7 +302,9 @@ export async function listSessionsWithState(
   const mergeCache = new Map<string, Promise<boolean>>();
   const merged = (cwd: string, branch: string) => {
     const key = `${cwd}\0${branch}`;
-    if (!mergeCache.has(key)) mergeCache.set(key, deps.isMerged(cwd, branch));
+    if (!mergeCache.has(key)) {
+      mergeCache.set(key, sessionBranchMerged(cwd, branch, deps));
+    }
     return mergeCache.get(key)!;
   };
 

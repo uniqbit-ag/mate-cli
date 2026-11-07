@@ -110,7 +110,7 @@
       },
       {
         "view": "mate.workspace",
-        "contents": "Open a local Git repository to use the Mate workspace.",
+        "contents": "Open a local Git repository or a linked umbrella folder to use the Mate workspace.",
         "when": "!mate.workspaceCanOpen && !mate.workspaceOpening"
       },
       {

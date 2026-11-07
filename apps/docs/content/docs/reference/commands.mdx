@@ -68,7 +68,12 @@ that file and exits without committing.
 removes the local `.mate` projection, Mate's Git excludes, and the OpenSpec
 store pointer, and updates the Claude settings Mate wrote. Tracked files and
 product work are untouched, and the next link or launch recreates what it needs.
-Run from a companion or a repository that is not linked, it exits non-zero.
+Outside a Git checkout, it cleans up the linked
+[Umbrella Repository](/docs/concepts/umbrella-repository) or the umbrella's
+mirrored worktree that holds the current folder. It removes only that folder's
+integration and leaves its child checkouts and worktrees alone.
+Run from a companion, or from a folder that is neither linked nor in a linked
+umbrella, it exits non-zero.
 
 All worktrees of a clone share one Git exclude file. Cleanup in one worktree keeps
 any exclude line that another worktree still needs, because that worktree still
@@ -137,9 +142,11 @@ runtime, or a current repository that got no worktree, gets a hand-off: start a
 new session in the worktree. A failed creation records nothing. When recording
 the branch fails, the worktrees stay, the reason is a warning, and the command
 hands off. In an Umbrella Repository it records the branch for every child that
-got a worktree, then always hands off to the mirrored worktree, which is not a
-Git worktree a runtime can move into; a child whose recording fails is a
-warning. When no umbrella child got a worktree, it hands off without a path.
+got a worktree, and a child whose recording fails is a warning. In OpenCode,
+`mate_enter_worktree` then moves the session into the mirrored worktree. Claude
+Code's `EnterWorktree` accepts only Git worktrees, so Claude Code and any other
+runtime hand off to the mirrored worktree. When no umbrella child got a
+worktree, it hands off without a path.
 
 On a protected branch, `mate-apply-change` offers the worktree as an option. It
 runs `--change <change> --enter`, moves the session into the worktree, and
@@ -171,7 +178,10 @@ instead of its children: a repo-local link under the umbrella's repository ID,
 never the companion's registry, and a wrap for the runtimes the umbrella is
 wrapped for. The child worktrees get no `.mate/` folder, so `git status` stays
 clean in them and in the umbrella's children. Install, env files, and the
-TokenSave index still run per child worktree.
+TokenSave index still run per child worktree. When the umbrella holds a
+TokenSave index, the mirrored folder gets its own index too, by the same rules.
+When the umbrella has none, that step is skipped with the reason
+`umbrella not indexed`.
 
 The companion is the one the current checkout is paired with. When it is paired
 with several, pass `--companion <path>`. `--json` prints one object with each
@@ -183,7 +193,8 @@ TokenSave `index` step with its outcome and, when skipped or failed, its
 to call or `handoff` with a `reason`, and the current repository's worktree
 `path` when it has one. When an umbrella child is involved, the object also has
 `umbrella`: the umbrella's `path`, the mirrored `worktree`, `created` or
-`reused`, the child `repositories` it holds, and its `wrap` outcome; otherwise
+`reused`, the child `repositories` it holds, its `wrap` outcome, and its TokenSave
+`index` step; otherwise
 the field is absent. Outside a Git checkout, as in an umbrella folder, the
 companion is the one paired with the folder, else the one the nearest
 repo-local link names.

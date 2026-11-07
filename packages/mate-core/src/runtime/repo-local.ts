@@ -28,10 +28,18 @@ export function companionLinkPath(repoPath: string): string {
   return path.join(repoLocalDirPath(repoPath), "companion");
 }
 
+/** The Umbrella Repository `folder` would mirror as `<umbrella>.worktrees/<id>`; else null. */
+export function mirroredUmbrellaOf(folder: string): string | null {
+  const parent = path.dirname(path.resolve(folder));
+  const name = path.basename(parent);
+  if (!name.endsWith(".worktrees") || name === ".worktrees") return null;
+  return path.join(path.dirname(parent), name.slice(0, -".worktrees".length));
+}
+
 /** A linked non-Git `<umbrella>.worktrees/<id>` folder: an umbrella's mirrored worktree. */
 function isMirroredWorktree(folder: string): boolean {
   return (
-    path.basename(path.dirname(folder)).endsWith(".worktrees") &&
+    mirroredUmbrellaOf(folder) !== null &&
     readGitLayout(folder) === null &&
     fs.existsSync(repoLocalRegistryPath(folder))
   );

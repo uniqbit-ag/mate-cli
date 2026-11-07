@@ -1,4 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import fs from "node:fs/promises";
+import path from "node:path";
+
+import { repositoryRoots, resolveRepository } from "./repository";
+import { umbrellaFixture } from "./umbrella.fixture";
 
 import {
   attachable,
@@ -92,5 +97,36 @@ describe("sessionsForRepository", () => {
         ["/work/acme", "/work/acme.worktrees/feature"],
       ).map((session) => session.id),
     ).toEqual([claude.id, opencode.id, "nested"]);
+  });
+
+  test("an umbrella spans itself, its children, their worktrees, and its mirrored worktrees", async () => {
+    const acme = await umbrellaFixture();
+    try {
+      const repository = await resolveRepository(acme.umbrella);
+      if (repository?.kind !== "umbrella") throw new Error("Fixture must be an umbrella");
+      const roots = await repositoryRoots(repository);
+      expect(roots).toEqual(
+        expect.arrayContaining([acme.umbrella, acme.api, acme.web, acme.scratch, acme.mirrored]),
+      );
+      const at = (id: string, cwd: string): Session => ({ ...claude, id, cwd });
+      const listed = sessionsForRepository(
+        [
+          at("umbrella", acme.umbrella),
+          at("api", acme.api),
+          at("mirrored", path.join(acme.mirrored, "web")),
+          at("scratch", acme.scratch),
+          at("other", acme.plain),
+        ],
+        roots,
+      );
+      expect(listed.map((session) => session.id)).toEqual([
+        "umbrella",
+        "api",
+        "mirrored",
+        "scratch",
+      ]);
+    } finally {
+      await fs.rm(acme.root, { recursive: true, force: true });
+    }
   });
 });

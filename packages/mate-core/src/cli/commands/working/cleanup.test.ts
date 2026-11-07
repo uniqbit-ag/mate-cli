@@ -32,6 +32,7 @@ function deps(overrides: Partial<WorkingCleanupCommandDeps> = {}): WorkingCleanu
   return {
     cwd: "/repo/src",
     resolveGitRoot: async () => "/repo",
+    resolveUmbrella: async () => null,
     localRootKind: async () => "working",
     collectInventory: async () => ({
       ...emptyInventory,

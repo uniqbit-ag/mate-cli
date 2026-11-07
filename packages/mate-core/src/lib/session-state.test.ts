@@ -36,6 +36,8 @@ function deps(overrides: SessionStateDeps = {}): SessionStateDeps {
     claudeAgents: async () => [],
     isAlive: () => false,
     isMerged: async () => false,
+    branchAt: async () => null,
+    hasBranch: async () => true,
     readFirstPrompt: async () => null,
     ...overrides,
   };
@@ -213,6 +215,149 @@ describe("session state", () => {
   });
 });
 
+describe("sessions in an Umbrella Repository", () => {
+  /** A linked folder holding `api/` and `web/` checkouts; `.git` folders suffice for detection. */
+  async function umbrellaFolder(folder: string): Promise<string> {
+    await fs.mkdir(path.join(folder, ".mate", "config"), { recursive: true });
+    await fs.writeFile(path.join(folder, ".mate", "config", "registry.yaml"), "companions: []\n");
+    for (const child of ["api", "web"]) {
+      await fs.mkdir(path.join(folder, child, ".git"), { recursive: true });
+    }
+    return folder;
+  }
+
+  const mirrored = async () => {
+    await umbrellaFolder(path.join(home, "acme-umbrella"));
+    return umbrellaFolder(path.join(home, "acme-umbrella.worktrees", "acme-fix"));
+  };
+
+  test("a mirrored worktree is done only when every child worktree is merged", async () => {
+    const folder = await mirrored();
+    await addSession(
+      { id: "m", runtime: "claude", cwd: folder, branch: "workset/acme-fix" },
+      { file },
+    );
+    const asked: string[] = [];
+    const sessions = await list({
+      isMerged: async (cwd) => {
+        asked.push(path.basename(cwd));
+        return true;
+      },
+    });
+    expect(sessions[0]?.state).toBe("done");
+    expect(asked.toSorted()).toEqual(["api", "web"]);
+  });
+
+  test("one unmerged child leaves the mirrored worktree's session parked", async () => {
+    const folder = await mirrored();
+    await addSession(
+      { id: "m", runtime: "claude", cwd: folder, branch: "workset/acme-fix" },
+      { file },
+    );
+    const sessions = await list({
+      isMerged: async (cwd) => path.basename(cwd) === "api",
+      isUntouched: async () => false,
+    });
+    expect(sessions[0]?.state).toBe("parked");
+  });
+
+  test("a child without commits of its own does not hold the session back", async () => {
+    const folder = await mirrored();
+    await addSession(
+      { id: "m", runtime: "claude", cwd: folder, branch: "workset/acme-fix" },
+      { file },
+    );
+    const sessions = await list({
+      isMerged: async (cwd) => path.basename(cwd) === "api",
+      isUntouched: async (cwd) => path.basename(cwd) === "web",
+    });
+    expect(sessions[0]?.state).toBe("done");
+  });
+
+  test("each child is checked on its own branch, the session's when detached", async () => {
+    const folder = await mirrored();
+    await addSession(
+      { id: "m", runtime: "claude", cwd: folder, branch: "workset/acme-fix" },
+      { file },
+    );
+    const asked: string[] = [];
+    const sessions = await list({
+      branchAt: async (cwd) => (path.basename(cwd) === "web" ? "workset/acme-web" : null),
+      isMerged: async (cwd, branch) => {
+        asked.push(`${path.basename(cwd)}:${branch}`);
+        return path.basename(cwd) === "api";
+      },
+      isUntouched: async (_cwd, branch) => branch === "workset/acme-web",
+    });
+    expect(sessions[0]?.state).toBe("done");
+    expect(asked.toSorted()).toEqual(["api:workset/acme-fix", "web:workset/acme-web"]);
+  });
+
+  test("a detached child without the session's branch has no work of its own", async () => {
+    const folder = await mirrored();
+    await addSession(
+      { id: "m", runtime: "claude", cwd: folder, branch: "workset/acme-fix" },
+      { file },
+    );
+    const sessions = await list({
+      isMerged: async () => true,
+      isUntouched: async () => true,
+      hasBranch: async () => false,
+    });
+    expect(sessions[0]?.state).toBe("parked");
+  });
+
+  test("an umbrella under another's .worktrees folder is no mirrored worktree", async () => {
+    const folder = await umbrellaFolder(path.join(home, "acme-other.worktrees", "acme"));
+    await addSession(
+      { id: "u", runtime: "claude", cwd: folder, branch: "workset/acme-fix" },
+      { file },
+    );
+    const sessions = await list({ isMerged: async () => true });
+    expect(sessions[0]?.state).toBe("parked");
+  });
+
+  test("no merged child leaves the mirrored worktree's session parked", async () => {
+    const folder = await mirrored();
+    await addSession(
+      { id: "m", runtime: "claude", cwd: folder, branch: "workset/acme-fix" },
+      { file },
+    );
+    const sessions = await list({ isMerged: async () => false, isUntouched: async () => true });
+    expect(sessions[0]?.state).toBe("parked");
+  });
+
+  test("a failing child check leaves the mirrored worktree's session parked", async () => {
+    const folder = await mirrored();
+    await addSession(
+      { id: "m", runtime: "claude", cwd: folder, branch: "workset/acme-fix" },
+      { file },
+    );
+    const sessions = await list({
+      isMerged: async (cwd) => {
+        if (path.basename(cwd) === "web") throw new Error("git broke");
+        return true;
+      },
+    });
+    expect(sessions[0]?.state).toBe("parked");
+  });
+
+  test("an umbrella session is parked and runs no Git check", async () => {
+    const folder = await umbrellaFolder(path.join(home, "acme-umbrella"));
+    await addSession({ id: "u", runtime: "claude", cwd: folder }, { file });
+    await addSession({ id: "b", runtime: "claude", cwd: folder, branch: "main" }, { file });
+    let asked = 0;
+    const sessions = await list({
+      isMerged: async () => {
+        asked += 1;
+        return true;
+      },
+    });
+    expect(sessions.map((s) => s.state)).toEqual(["parked", "parked"]);
+    expect(asked).toBe(0);
+  });
+});
+
 describe("transcript prompts", () => {
   test("first real user prompt, skipping meta, command, and tool-result lines", async () => {
     const transcript = path.join(home, "s.jsonl");
@@ -310,6 +455,21 @@ describe("branch merge check (real Git)", () => {
 
     git(clone, "branch", "-D", "workset/merged");
     expect(await branchMerged(clone, "workset/merged")).toBe(true);
+  });
+
+  test("untouched: a branch without commits of its own, not one with them or a missing one", async () => {
+    const { branchUntouched } = await import("./session-state");
+    const clone = await repository();
+
+    git(clone, "branch", "workset/fresh");
+    expect(await branchUntouched(clone, "workset/fresh")).toBe(true);
+
+    git(clone, "checkout", "-b", "workset/work");
+    await fs.writeFile(path.join(clone, "b.txt"), "b\n");
+    git(clone, "add", ".");
+    git(clone, "commit", "-m", "b");
+    expect(await branchUntouched(clone, "workset/work")).toBe(false);
+    expect(await branchUntouched(clone, "workset/missing")).toBe(false);
   });
 
   test("a missing branch outside a repository is not merged", async () => {

@@ -1129,6 +1129,76 @@ describe("Umbrella Repository worktrees", () => {
     );
   });
 
+  describe("mirrored worktree index", () => {
+    /** A fake tokensave whose `init` writes the store it would. */
+    function tokensave(failure: string | null = null) {
+      const calls: [string, string[]][] = [];
+      const runner = {
+        available: () => true,
+        run: async (cwd: string, args: string[]) => {
+          calls.push([cwd, args]);
+          if (!failure && args[0] === "init") {
+            fs.mkdirSync(path.join(cwd, ".tokensave"), { recursive: true });
+            fs.writeFileSync(path.join(cwd, ".tokensave", "tokensave.db"), "");
+          }
+          return failure;
+        },
+      };
+      return { calls, runner };
+    }
+
+    function indexUmbrella(): void {
+      fs.mkdirSync(path.join(umbrella(), ".tokensave"), { recursive: true });
+      fs.writeFileSync(path.join(umbrella(), ".tokensave", "tokensave.db"), "");
+    }
+
+    test("an indexed umbrella seeds the mirrored worktree's index", async () => {
+      umbrellaOf("api");
+      indexUmbrella();
+      workset("acme-fix", "acme/api");
+      const { calls, runner } = tokensave();
+      const result = await createWorksetWorktrees(companion, "acme-fix", options, {
+        tokensave: runner,
+      });
+      expect(result.umbrella?.index).toEqual({ outcome: "ok" });
+      expect(calls).toContainEqual([mirror(), ["init", mirror(), "--no-git-hook"]]);
+      expect(fs.existsSync(path.join(mirror(), ".tokensave", "tokensave.db"))).toBe(true);
+    });
+
+    test("an unindexed umbrella skips with a reason", async () => {
+      umbrellaOf("api");
+      workset("acme-fix", "acme/api");
+      const { calls, runner } = tokensave();
+      const result = await createWorksetWorktrees(companion, "acme-fix", options, {
+        tokensave: runner,
+      });
+      expect(result.umbrella?.index).toEqual({
+        outcome: "skipped",
+        reason: "umbrella not indexed",
+      });
+      expect(calls.filter(([cwd]) => cwd === mirror())).toEqual([]);
+    });
+
+    test("a failed index keeps the worktree, warns, and leaves the result ok", async () => {
+      umbrellaOf("api");
+      indexUmbrella();
+      workset("acme-fix", "acme/api");
+      const { runner } = tokensave("tokensave init exited 1: acme");
+      const result = await createWorksetWorktrees(companion, "acme-fix", options, {
+        tokensave: runner,
+      });
+      expect(result.ok).toBe(true);
+      expect(result.umbrella).toMatchObject({
+        index: { outcome: "failed", reason: "tokensave init exited 1: acme" },
+      });
+      expect(result.umbrella?.error).toBeUndefined();
+      expect(result.warnings).toContain(
+        `${umbrella()}: tokensave index step failed: tokensave init exited 1: acme`,
+      );
+      expect(fs.existsSync(path.join(mirror(), "api", ".git"))).toBe(true);
+    });
+  });
+
   test("a Workset naming one of two children gets only its worktree", async () => {
     umbrellaOf("api", "web");
     workset("acme-fix", "acme/api");

@@ -55,4 +55,13 @@ describe("servingClaudeWrapRoot", () => {
 
     expect(servingClaudeWrapRoot(folder, "darwin")).toBe(folder);
   });
+
+  test("a mirrored umbrella worktree serves itself, not a child's main worktree", () => {
+    const root = tempRoot();
+    const mirrored = path.join(root, "acme.worktrees", "acme-fix");
+    fs.mkdirSync(path.join(root, "acme"));
+    addWorktree(initRepo(path.join(root, "acme", "api")), path.join(mirrored, "api"));
+
+    expect(servingClaudeWrapRoot(mirrored, "darwin")).toBe(mirrored);
+  });
 });

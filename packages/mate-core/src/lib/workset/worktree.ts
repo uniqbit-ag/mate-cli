@@ -36,7 +36,12 @@ import { projectionEntries } from "../orchestrator/projection-entries";
 import type { LinkedRepository } from "../orchestrator/types";
 import { linkedCheckoutsOf, type EntryCheckout } from "../orchestrator/umbrella-checkouts";
 import { runWrapPass } from "../orchestrator/wrap-pass";
-import { indexWorktree, type IndexOutcome, type TokensaveRunner } from "./worktree-index";
+import {
+  indexWorktree,
+  UMBRELLA_NOT_INDEXED,
+  type IndexOutcome,
+  type TokensaveRunner,
+} from "./worktree-index";
 import { findWorkset, readWorksets, resolveWorksetBranch, resolveWorksetOf } from "./record";
 
 /**
@@ -122,6 +127,8 @@ export interface UmbrellaWorktreeResult {
   /** The children whose worktree the folder holds, as `org/repository`. */
   repositories: string[];
   wrap: WrapOutcome;
+  /** The folder's tokensave index, kept when the umbrella has one; a failure only warns. */
+  index: IndexOutcome;
   /** Set when linking or wrapping the folder failed; its worktrees stay. */
   error?: string;
 }
@@ -809,11 +816,35 @@ async function createTargetWorktrees(
     mirror && held.length > 0
       ? await realizeMirror(companionPath, mirror, held, deps, warnings)
       : undefined;
+  // An unlinked mirror is reported broken; it gets no index. It holds the children's
+  // worktrees, so it is indexed after theirs rather than over them.
+  if (umbrella && mirror && !umbrella.error) {
+    const children = Promise.all(indexing);
+    indexing.push(
+      children
+        .then(() =>
+          indexWorktree(
+            mirror.umbrella,
+            mirror.folder,
+            companionPath,
+            deps.tokensave,
+            (action) => progress?.(`${mirror.umbrella}: tokensave ${action} of ${mirror.folder}…`),
+            UMBRELLA_NOT_INDEXED,
+          ),
+        )
+        .then((index) => {
+          umbrella.index = index;
+        }),
+    );
+  }
   await Promise.all(indexing);
   for (const result of repositories) {
     if (result.index.outcome === "failed") {
       warnings.push(`${result.repository}: tokensave index step failed: ${result.index.reason}`);
     }
+  }
+  if (umbrella?.index.outcome === "failed") {
+    warnings.push(`${umbrella.path}: tokensave index step failed: ${umbrella.index.reason}`);
   }
   return {
     workset: worksetId,
@@ -851,6 +882,7 @@ async function realizeMirror(
     action: mirror.reuse ? "reused" : "created",
     repositories,
     wrap,
+    index: { outcome: "skipped", ...(error ? { reason: "mirrored worktree broken" } : {}) },
     ...(error ? { error } : {}),
   };
 }
