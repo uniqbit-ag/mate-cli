@@ -28,6 +28,7 @@ import {
 } from "../../../lib/workset/worktree";
 import { attributeCurrentSession } from "../../../lib/session-attribution";
 import { errorMessage } from "../../../runtime/error-message";
+import { companionPolicySelectsRtk } from "../../../runtime/rtk-git-guard";
 import { gitEnvironment } from "../../../runtime/companion-git";
 import { resolveDeliveryEnvironment } from "../artifact/delivery/environment";
 import { sharedRefusalMessage } from "../artifact/delivery/output";
@@ -50,6 +51,7 @@ export interface EnterInstruction {
   tool?: "EnterWorktree" | "mate_enter_worktree";
   /** The current Working Repository's worktree; absent when it has none or it is unknown. */
   path?: string;
+  /** Why a handoff; on Claude's `tool` with RTK selected, how git runs after the move. */
   reason?: string;
 }
 
@@ -92,6 +94,8 @@ export interface WorkingWorktreeDeps {
   ticketFormat?: (companion: string) => Promise<TicketFormat>;
   /** Records the change, and the worktree it moves to, on the agent session this runs in. */
   attribute?: typeof attributeCurrentSession;
+  /** Whether the companion selects RTK, whose git rewrite Claude refuses in an entered worktree. */
+  rtkSelected?: (companion: string) => boolean;
 }
 
 async function canonicalPath(candidate: string): Promise<string> {
@@ -302,10 +306,15 @@ function refusalText(refusal: DeliveryRefusal): string {
     : sharedRefusalMessage(refusal);
 }
 
+/** Claude Code's worktree guard refuses RTK's `rtk git` rewrite once the session moved. */
+const RTK_GIT_NOTE =
+  "then run git as RTK_DISABLED=1 git ...: Claude Code refuses git run through RTK in the entered worktree";
+
 /** Detected by the markers each runtime sets for the commands its agent runs. */
 function enterInstruction(
   env: Record<string, string | undefined>,
   recorded: RecordedBranch,
+  rtkSelected: () => boolean = () => false,
 ): EnterInstruction {
   const runtime = runtimeOf(env);
   if ("skipped" in recorded) return { runtime, action: "handoff", reason: recorded.skipped };
@@ -326,7 +335,8 @@ function enterInstruction(
     const reason = "this Agent Runtime cannot move a running session";
     return { runtime, action: "handoff", path: target, reason };
   }
-  return { runtime, action: "tool", tool: ENTER_TOOLS[runtime], path: target };
+  const note = runtime === "claude" && rtkSelected() ? { reason: RTK_GIT_NOTE } : {};
+  return { runtime, action: "tool", tool: ENTER_TOOLS[runtime], path: target, ...note };
 }
 
 const ENTER_TOOLS = {
@@ -341,7 +351,10 @@ function runtimeOf(env: Record<string, string | undefined>): EnterInstruction["r
 }
 
 function enterLine(enter: EnterInstruction): string {
-  if (enter.action === "tool") return `${n}: enter: call ${enter.tool} with ${enter.path}`;
+  if (enter.action === "tool") {
+    const note = enter.reason ? `; ${enter.reason}` : "";
+    return `${n}: enter: call ${enter.tool} with ${enter.path}${note}`;
+  }
   if (enter.path) return `${n}: enter: start a new session in ${enter.path} (${enter.reason})`;
   return `${n}: enter: not entering (${enter.reason})`;
 }
@@ -492,7 +505,9 @@ export async function runWorkingWorktreeCommand(
       const record = deps.recordBranch ?? recordBranch;
       const recorded = await record(companion, parsed.change, result, deps.cwd ?? process.cwd());
       if ("failed" in recorded) result.warnings.push(...(recorded.failed ?? []));
-      enter = enterInstruction(deps.env ?? process.env, recorded);
+      // Read only for a Claude move, the one the note serves.
+      const rtkSelected = () => (deps.rtkSelected ?? companionPolicySelectsRtk)(companion);
+      enter = enterInstruction(deps.env ?? process.env, recorded, rtkSelected);
       // A handed-off umbrella session stays where it is; its successor registers the branch.
       const handedOff = "handoff" in recorded && enter.action !== "tool";
       const move =

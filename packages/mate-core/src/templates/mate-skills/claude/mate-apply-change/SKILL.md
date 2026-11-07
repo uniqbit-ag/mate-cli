@@ -106,7 +106,8 @@ so a branch only the forge protects looks unprotected; hence the menu below.
      adding `--ticket "<KEY>"` when a ticket was given (below);
      it records the branch. When `enter.action` is `tool`, say an approval prompt may
      follow (Claude Code asks), call the tool `enter.tool` with `enter.path`, then say
-     `enter.path` is now the Working Repository and continue at Step 3 there. On `handoff`
+     `enter.path` is now the Working Repository and continue at Step 3 there, following
+     `enter.reason` when it is set (it says how to run git there). On `handoff`
      or a declined move, report `enter.reason` and any warnings, write no code, and
      stop. `## Next steps`: name each `repositories[].path`, open a new session in this
      repository's worktree, run `/mate-apply-change <change-name>` there. On failure,

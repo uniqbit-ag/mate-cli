@@ -57,6 +57,7 @@ import {
   mateGuardHookGroups,
   mateGuidanceHookGroups,
   mateInstructionHookGroups,
+  mateRtkWorktreeGitHookGroups,
   mateSessionEndHookGroups,
   mateSessionPrepareHookGroups,
   mateTokensaveRouteHookGroups,
@@ -352,7 +353,7 @@ function renderManagedClaudeSettings(
 
 /**
  * Loaded by a managed session beside the launch's plugin, so each Mate hook
- * here runs twice there: the guard and tokensave routing are input-pure, guidance yields under a
+ * here runs twice there: the guard, tokensave routing and the RTK git deny are input-pure, guidance yields under a
  * launch env, and the banner, prepare and instruction copies carry
  * `--projected`, so one copy of each acts. Capability groups run once: the
  * launch omits them from `--settings`.
@@ -372,7 +373,11 @@ function claudeSettingsRegions(
 ): ManagedRegion[] {
   const capabilityHooks = renderManagedClaudeHookGroups(inputs);
   const mateHooks: Record<string, unknown[]> = {
-    PreToolUse: [...mateGuardHookGroups(), ...mateTokensaveRouteHookGroups()],
+    PreToolUse: [
+      ...mateGuardHookGroups(),
+      ...mateTokensaveRouteHookGroups(),
+      ...mateRtkWorktreeGitHookGroups(),
+    ],
     SessionStart: [
       ...mateBannerHookGroups(),
       ...mateGuidanceHookGroups(),

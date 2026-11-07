@@ -204,6 +204,15 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
             ],
             "matcher": "mcp__tokensave__.*",
           },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/rtk-worktree-git.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Bash",
+          },
         ],
       },
       {
@@ -1042,6 +1051,15 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
             ],
             "matcher": "mcp__tokensave__.*",
           },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/rtk-worktree-git.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Bash",
+          },
         ],
       },
       {
@@ -1674,6 +1692,15 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
               },
             ],
             "matcher": "mcp__tokensave__.*",
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/rtk-worktree-git.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Bash",
           },
           {
             "hooks": [
@@ -2593,6 +2620,15 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
           {
             "hooks": [
               {
+                "command": "node "<runtime-claude-plugin>/hooks/rtk-worktree-git.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Bash",
+          },
+          {
+            "hooks": [
+              {
                 "args": [
                   "hook-pre-tool-use",
                 ],
@@ -3255,6 +3291,15 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
               },
             ],
             "matcher": "mcp__tokensave__.*",
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/rtk-worktree-git.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Bash",
           },
         ],
       },
@@ -4011,6 +4056,15 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
             ],
             "matcher": "mcp__tokensave__.*",
           },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/rtk-worktree-git.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Bash",
+          },
         ],
       },
       {
@@ -4589,6 +4643,15 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
               },
             ],
             "matcher": "mcp__tokensave__.*",
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/rtk-worktree-git.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Bash",
           },
         ],
       },
@@ -5329,6 +5392,15 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
             ],
             "matcher": "mcp__tokensave__.*",
           },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/rtk-worktree-git.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Bash",
+          },
         ],
       },
       {
@@ -5835,7 +5907,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
     },
   },
   "claudeSkills": {
-    "mate-apply-change/SKILL.md": "2b02ae654234",
+    "mate-apply-change/SKILL.md": "86676fbb995d",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "d11b6fc25bf4",
     "mate-archive-change/SKILL.md": "a231ddabb438",
@@ -5945,6 +6017,15 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
               },
             ],
             "matcher": "mcp__tokensave__.*",
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/rtk-worktree-git.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Bash",
           },
         ],
       },
@@ -6179,7 +6260,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
   "opencodeSkills": {},
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-apply-change/SKILL.md": "2b02ae654234",
+    "mate-apply-change/SKILL.md": "86676fbb995d",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "de22021f4daa",
     "mate-archive-change/SKILL.md": "a231ddabb438",
@@ -6590,7 +6671,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     },
   },
   "claudeSkills": {
-    "mate-apply-change/SKILL.md": "2b02ae654234",
+    "mate-apply-change/SKILL.md": "86676fbb995d",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "d11b6fc25bf4",
     "mate-archive-change/SKILL.md": "a231ddabb438",
@@ -6636,7 +6717,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
   "opencodeSkills": {},
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-apply-change/SKILL.md": "2b02ae654234",
+    "mate-apply-change/SKILL.md": "86676fbb995d",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "de22021f4daa",
     "mate-archive-change/SKILL.md": "a231ddabb438",
@@ -6786,6 +6867,15 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
               },
             ],
             "matcher": "mcp__tokensave__.*",
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/rtk-worktree-git.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Bash",
           },
         ],
       },
@@ -7398,7 +7488,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 "Outputs land in $GRAPHIFY_OUT by default.
 "
 ,
-    "mate-apply-change/SKILL.md": "2b02ae654234",
+    "mate-apply-change/SKILL.md": "86676fbb995d",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "d11b6fc25bf4",
     "mate-archive-change/SKILL.md": "a231ddabb438",
@@ -7482,7 +7572,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   },
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-apply-change/SKILL.md": "2b02ae654234",
+    "mate-apply-change/SKILL.md": "86676fbb995d",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "de22021f4daa",
     "mate-archive-change/SKILL.md": "a231ddabb438",
@@ -7658,6 +7748,15 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
               },
             ],
             "matcher": "mcp__tokensave__.*",
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/rtk-worktree-git.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Bash",
           },
           {
             "hooks": [

@@ -158,6 +158,26 @@ describe("buildCompanionGuidance", () => {
     expect(withoutOpenspec).not.toContain('id="openspec-publish"');
   });
 
+  test("tells Claude the RTK_DISABLED=1 git form only when RTK is selected", () => {
+    const repository = { id: "app", path: "/tmp/working" };
+    const withRtk = buildCompanionGuidance({
+      capabilities: [{ name: "rtk" }],
+      companionPath: "/tmp/companion",
+      repository,
+    });
+    const rule = withRtk.split("\n").find((line) => line.includes('id="entered-worktree-git"'));
+
+    expect(rule).toContain("EnterWorktree");
+    expect(rule).toContain("RTK_DISABLED=1 git");
+    expect(
+      buildCompanionGuidance({
+        capabilities: [{ name: "tokensave" }],
+        companionPath: "/tmp/companion",
+        repository,
+      }),
+    ).not.toContain("RTK_DISABLED");
+  });
+
   test("explains companion, domain, and repository Area scope", () => {
     const guidance = buildCompanionGuidance({
       companionPath: "/tmp/companion",

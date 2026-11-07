@@ -48,6 +48,13 @@ export function hasTokensaveCapability(capabilities: GuidanceCapability[] = []):
   return capabilities.some((capability) => capability.name === "tokensave");
 }
 
+export function hasRtkCapability(capabilities: GuidanceCapability[] = []): boolean {
+  return capabilities.some((capability) => capability.name === "rtk");
+}
+
+/** Claude only: no other runtime isolates a session it moved into a worktree. */
+const ENTERED_WORKTREE_GIT_RULE = `    <rule id="entered-worktree-git" severity="critical">After EnterWorktree moves this session into a linked worktree, run every git command as RTK_DISABLED=1 git ... (for example RTK_DISABLED=1 git status): Claude Code's worktree guard refuses git run through RTK there. Run other commands as usual.</rule>`;
+
 export const GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT =
   "$MATE_ARTIFACT_PATH/.graphify/$MATE_REPO_ID/graphify-out/";
 export const GRAPHIFY_COMPANION_PATH_CONTRACT =
@@ -107,7 +114,8 @@ export function buildCodebaseExplorationGuidanceSection(
 
 /**
  * Build just the `<companion-policy>` XML block: paths, CLI tools, and
- * mandatory rules (including the capability-gated `openspec-publish` rule).
+ * mandatory rules (including the capability-gated `openspec-publish` rule, and
+ * with `enteredWorktreeGit` the RTK-gated `entered-worktree-git` rule).
  * Does not include codebase-exploration guidance — see
  * `buildCompanionGuidance` for the merged single-string form, or call
  * `buildCodebaseExplorationGuidanceSection` directly when that guidance is
@@ -115,7 +123,7 @@ export function buildCodebaseExplorationGuidanceSection(
  */
 export function buildCompanionPolicyXml(
   context: GuidanceContext,
-  options: { wrapperBinPath: string },
+  options: { wrapperBinPath: string; enteredWorktreeGit?: boolean },
 ): string {
   const { wrapperBinPath } = options;
   const lines = [
@@ -185,6 +193,10 @@ export function buildCompanionPolicyXml(
     );
   }
 
+  if (options.enteredWorktreeGit && hasRtkCapability(context.capabilities)) {
+    lines.push(ENTERED_WORKTREE_GIT_RULE);
+  }
+
   lines.push("  </mandatory-rules>");
 
   lines.push("</companion-policy>");
@@ -196,13 +208,14 @@ export function buildCompanionPolicyXml(
  * Build the merged single-string guidance: the companion-policy XML plus
  * codebase-exploration guidance appended when graphify or tokensave is
  * enabled. Used by providers (e.g. Claude) that inject one combined prompt
- * fragment rather than delivering exploration guidance separately.
+ * fragment rather than delivering exploration guidance separately; only that
+ * form carries the Claude-only `entered-worktree-git` rule.
  */
 export function buildCompanionGuidance(
   context: GuidanceContext,
   options: { wrapperBinPath: string },
 ): string {
-  const lines = [buildCompanionPolicyXml(context, options)];
+  const lines = [buildCompanionPolicyXml(context, { ...options, enteredWorktreeGit: true })];
 
   const graphifyEnabled = hasGraphifyCapability(context.capabilities);
   const tokensaveEnabled = hasTokensaveCapability(context.capabilities);

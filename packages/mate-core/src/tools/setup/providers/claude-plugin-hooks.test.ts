@@ -9,6 +9,7 @@ import {
   mateBannerHookGroups,
   mateGuardHookGroups,
   mateGuidanceHookGroups,
+  mateRtkWorktreeGitHookGroups,
   mateTokensaveRouteHookGroups,
 } from "./claude-plugin-hooks";
 import type { ClaudeHookGroup } from "./claude-format";
@@ -46,6 +47,15 @@ describe("working-target plugin hook groups", () => {
       `node "${runtimeClaudePluginRoot()}/hooks/tokensave-route.mjs"`,
     ]);
     expect(isMateGuardHookGroup(route!)).toBe(true);
+  });
+
+  test("the RTK git deny is carried for Bash and recognized as Mate's", () => {
+    const [deny] = mateRtkWorktreeGitHookGroups();
+    expect(deny?.matcher).toBe("Bash");
+    expect(commands([deny!])).toEqual([
+      `node "${runtimeClaudePluginRoot()}/hooks/rtk-worktree-git.mjs"`,
+    ]);
+    expect(isMateGuardHookGroup(deny!)).toBe(true);
   });
 
   test("a group naming another root is not recognized", () => {

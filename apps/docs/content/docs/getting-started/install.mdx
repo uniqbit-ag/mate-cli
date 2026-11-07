@@ -87,6 +87,14 @@ A tool you have not installed does not block a launch: Mate skips its
 machine-local wiring, such as TokenSave's hooks or the Context Mode plugin for
 Claude, until you install it with `mate install --with <capability>`.
 
+An installed TokenSave or RTK is also upgraded on a best-effort basis when
+`mate install` runs: TokenSave through `tokensave upgrade`, RTK through the
+channel that installed the `rtk` on your `PATH`. A Homebrew `rtk` is upgraded
+through its formula. For `~/.local/bin/rtk`, the installer script of the latest
+release runs, pinned to that release, and only when it is newer than the
+installed version. Any other RTK installation, such as a Cargo one, is left
+alone. A failed upgrade only warns and keeps the installed version.
+
 Run installation again after any of these changes:
 
 - the Mate package is installed or updated (this also refreshes

@@ -194,9 +194,10 @@ describe("a wrapped Working Repository with an empty Mate environment", () => {
     await runWrapCommand(["--companion", companionPath], repoPath);
 
     const commands = hookCommands(await readSettings(repoPath), "PreToolUse");
-    expect(commands).toHaveLength(2);
+    expect(commands).toHaveLength(3);
     expect(commands[0]).toContain("validate-artifact-path");
     expect(commands[1]).toContain("tokensave-route");
+    expect(commands[2]).toContain("rtk-worktree-git");
 
     const blocked = runHookCommand(
       commands[0]!,

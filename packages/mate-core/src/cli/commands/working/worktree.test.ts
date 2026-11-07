@@ -491,6 +491,19 @@ describe("mate working worktree", () => {
       });
     });
 
+    test("Claude with RTK selected: the enter note names the RTK_DISABLED=1 git form", async () => {
+      await enter({ CLAUDECODE: "1" }, { rtkSelected: () => true });
+      const instruction = JSON.parse(out.join("")).enter;
+      expect(instruction).toMatchObject({ action: "tool", tool: "EnterWorktree" });
+      expect(instruction.reason).toContain("RTK_DISABLED=1 git");
+    });
+
+    test("RTK selected: OpenCode and other runtimes get no git note", async () => {
+      await enter({ OPENCODE_SESSION_ID: "ses_acme" }, { rtkSelected: () => true });
+      await enter({}, { rtkSelected: () => true });
+      expect(out.join("")).not.toContain("RTK_DISABLED");
+    });
+
     test("records the change and the worktree on the agent session", async () => {
       const attributed: unknown[] = [];
       await enter(
@@ -734,6 +747,22 @@ describe("mate working worktree", () => {
       );
       expect(out.join("")).toContain(
         "mate: enter: call EnterWorktree with /src/web.worktrees/acme-fix\n",
+      );
+      expect(out.join("")).not.toContain("RTK_DISABLED");
+    });
+
+    test("text output with RTK selected appends the git form to the enter line", async () => {
+      await runWorkingWorktreeCommand(
+        ["--change", "acme-fix", "--enter"],
+        deps({
+          env: { CLAUDECODE: "1" },
+          createForChange: async () => changed(),
+          recordBranch: async () => recorded,
+          rtkSelected: () => true,
+        }),
+      );
+      expect(out.join("")).toContain(
+        "mate: enter: call EnterWorktree with /src/web.worktrees/acme-fix; then run git as RTK_DISABLED=1 git ...",
       );
     });
   });
