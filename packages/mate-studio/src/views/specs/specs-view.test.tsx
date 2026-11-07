@@ -99,8 +99,8 @@ describe("Specs", () => {
     );
     expect(markup).toContain("acme-posts");
     expect(markup).not.toContain("acme-login");
-    expect(markup).toContain(">acme/shop (2)</option>");
-    expect(markup).toContain(">No repository (1)</option>");
+    expect(markup).toContain(">acme/blog (1)</span>");
+    expect(markup).not.toContain('role="option"');
   });
 
   it("states that nothing matches and offers to clear", () => {
@@ -210,24 +210,63 @@ describe("Specs filters in the page", () => {
     return { page, doc: page.container.ownerDocument, changes };
   }
 
+  const settle = () => act(async () => new Promise((done) => setTimeout(done, 20)));
+  /** Types into the Area combobox, then opens its list: happy-dom's input events do not open it. */
+  async function typeArea(doc: Document, text: string) {
+    const input = doc.querySelector<HTMLInputElement>('input[aria-label="Area"]')!;
+    await act(async () => {
+      input.focus();
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setValue.call(input, text);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      doc.querySelector<HTMLElement>('[data-slot="combobox-trigger"]')!.click(),
+    );
+    await settle();
+  }
+  const options = (doc: Document) =>
+    [...doc.querySelectorAll('[role="option"]')].map((option) => option.textContent);
+  const pick = async (doc: Document, label: string) => {
+    const option = [...doc.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (entry) => entry.textContent === label,
+    )!;
+    await act(async () => option.click());
+  };
+
   it("resets the Area when the chosen repository lacks it", async () => {
     const { page, doc, changes } = await mount({ repo: "acme/shop", area: "packages/api" });
-    const select = doc.querySelector<HTMLSelectElement>('select[aria-label="Repository"]')!;
-    await act(async () => {
-      select.value = "acme/blog";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    const trigger = doc.querySelector<HTMLElement>('[aria-label="Repository"]')!;
+    expect(options(doc)).toEqual([]);
+    await act(async () => trigger.click());
+    await settle();
+    expect(doc.querySelector('[role="option"][aria-selected="true"]')?.textContent).toBe(
+      "acme/shop (2)",
+    );
+    await pick(doc, "acme/blog (1)");
     expect(changes.at(-1)).toEqual({ repo: "acme/blog", area: undefined, q: "" });
+    page.unmount();
+  });
+
+  it("narrows the Areas to the typed text, ignoring case", async () => {
+    const { page, doc } = await mount();
+    await typeArea(doc, "SHOP");
+    expect(options(doc)).toEqual(["acme/shop · packages/api (1)", "acme/shop · packages/web (2)"]);
+    page.unmount();
+  });
+
+  it("states that no Area matches the typed text", async () => {
+    const { page, doc } = await mount();
+    await typeArea(doc, "nothing-like-this");
+    expect(options(doc)).toEqual([]);
+    expect(doc.body.textContent).toContain("No Areas match");
     page.unmount();
   });
 
   it("selects the repository with an Area picked under All", async () => {
     const { page, doc, changes } = await mount();
-    const select = doc.querySelector<HTMLSelectElement>('select[aria-label="Area"]')!;
-    await act(async () => {
-      select.value = "acme/shop\npackages/api";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await typeArea(doc, "api");
+    await pick(doc, "acme/shop · packages/api (1)");
     expect(changes.at(-1)).toEqual({ repo: "acme/shop", area: "packages/api", q: "" });
     page.unmount();
   });
