@@ -32,7 +32,11 @@ test("a VSIX cached before the v2 layout is not reused", async () => {
 
   const file = await resolveVsix(
     { version: "1.2.3" },
-    { exists: vsixResolverDeps.exists, pack, extract: async () => {} },
+    {
+      exists: vsixResolverDeps.exists,
+      pack,
+      extract: (_tarball, destination) => fs.writeFile(destination, "new"),
+    },
   );
 
   expect(pack).toHaveBeenCalledTimes(1);

@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { version as coreVersion } from "../../../../package.json";
 import { FRAMEWORK_NAME } from "../../../framework";
 import { resolveEditorBinary } from "../../../lib/orchestrator/editor";
+import releaseVsix from "./release-vsix.json";
 import { resolveVsix, VsixError, vsixResolverDeps, type VsixResolverDeps } from "./vsix";
 
 const EDITORS = ["code", "cursor"] as const;
@@ -70,6 +71,8 @@ export interface VscodeSetupDeps {
   installedExtensions: (binary: string) => InstalledExtension[] | null;
   vsix: VsixResolverDeps;
   version: string;
+  /** Written at release preparation; applies only when it names `version`. */
+  releaseVsix: { version: string | null; sha512: string | null };
 }
 
 export const vscodeSetupDeps: VscodeSetupDeps = {
@@ -95,6 +98,7 @@ export const vscodeSetupDeps: VscodeSetupDeps = {
   },
   vsix: vsixResolverDeps,
   version: coreVersion,
+  releaseVsix,
 };
 
 function fail(message: string, usage = false): void {
@@ -146,9 +150,15 @@ async function installInto(
   vsixArg: string | undefined,
   deps: VscodeSetupDeps,
 ): Promise<void> {
+  const expectedDigest = deps.releaseVsix.version === deps.version ? deps.releaseVsix.sha512 : null;
   let vsix: string;
   try {
-    vsix = await resolveVsix({ vsix: vsixArg, version: deps.version }, deps.vsix);
+    vsix = await resolveVsix({ vsix: vsixArg, version: deps.version, expectedDigest }, deps.vsix);
+    if (!expectedDigest && !vsixArg) {
+      console.error(
+        `VSIX not verified: this Mate build has no release digest for ${deps.version}.`,
+      );
+    }
   } catch (error) {
     if (error instanceof VsixError) return fail(error.message);
     throw error;

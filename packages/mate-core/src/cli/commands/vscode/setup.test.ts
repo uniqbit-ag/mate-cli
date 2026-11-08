@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import { runVscodeSetupCommand, type InstalledExtension, type VscodeSetupDeps } from "./setup";
-import { resolveVsix, VSIX_FILE, type VsixResolverDeps } from "./vsix";
+import { resolveVsix, VSIX_FILE, VsixError, type VsixResolverDeps } from "./vsix";
 
 let exitCode: typeof process.exitCode;
 let cacheRoot: string;
@@ -20,6 +21,12 @@ afterEach(async () => {
   await fs.rm(cacheRoot, { recursive: true, force: true });
 });
 
+const DOWNLOADED = "acme-vsix";
+
+function digest(content: string): string {
+  return `sha512-${createHash("sha512").update(content).digest("base64")}`;
+}
+
 function vsixDeps(overrides: Partial<VsixResolverDeps> = {}) {
   const calls: string[] = [];
   const deps: VsixResolverDeps = {
@@ -29,7 +36,8 @@ function vsixDeps(overrides: Partial<VsixResolverDeps> = {}) {
       return path.join(destination, "acme.tgz");
     },
     extract: async (tarball, target) => {
-      calls.push(`extract ${path.basename(tarball)} -> ${path.basename(target)}`);
+      calls.push(`extract ${path.basename(tarball)}`);
+      await fs.writeFile(target, DOWNLOADED);
     },
     ...overrides,
   };
@@ -61,6 +69,7 @@ function setupDeps(
     },
     vsix,
     version: "1.2.3",
+    releaseVsix: { version: null, sha512: null },
   };
   return { deps, installs };
 }
@@ -84,24 +93,63 @@ async function run(argv: string[], deps: VscodeSetupDeps) {
 }
 
 describe("resolveVsix", () => {
-  test("downloads the exact version when nothing is cached", async () => {
+  test("downloads the exact version when nothing is cached and caches it when it matches", async () => {
     const { deps, calls } = vsixDeps();
-    const file = await resolveVsix({ version: "1.2.3", cacheDir: cacheRoot }, deps);
-    expect(file).toBe(path.join(cacheRoot, VSIX_FILE));
-    expect(calls).toEqual(["pack @uniqbit/mate-vscode@1.2.3", `extract acme.tgz -> ${VSIX_FILE}`]);
+    const resolved = await resolveVsix(
+      { version: "1.2.3", cacheDir: cacheRoot, expectedDigest: digest(DOWNLOADED) },
+      deps,
+    );
+    expect(resolved).toBe(path.join(cacheRoot, VSIX_FILE));
+    expect(calls).toEqual(["pack @uniqbit/mate-vscode@1.2.3", "extract acme.tgz"]);
+    expect(await fs.readFile(path.join(cacheRoot, VSIX_FILE), "utf8")).toBe(DOWNLOADED);
   });
 
-  test("reuses a cached copy", async () => {
+  test("reuses a cached copy that matches", async () => {
+    await fs.writeFile(path.join(cacheRoot, VSIX_FILE), "acme-cached");
     const { deps, calls } = vsixDeps({ exists: async () => true });
-    await resolveVsix({ version: "1.2.3", cacheDir: cacheRoot }, deps);
+    const resolved = await resolveVsix(
+      { version: "1.2.3", cacheDir: cacheRoot, expectedDigest: digest("acme-cached") },
+      deps,
+    );
+    expect(resolved).toBe(path.join(cacheRoot, VSIX_FILE));
     expect(calls).toEqual([]);
   });
 
-  test("--vsix skips the download", async () => {
-    const { deps, calls } = vsixDeps({ exists: async (file) => file === "/acme/mate-vscode.vsix" });
-    expect(await resolveVsix({ vsix: "/acme/mate-vscode.vsix", version: "1.2.3" }, deps)).toBe(
-      "/acme/mate-vscode.vsix",
+  test("refuses a download that differs from the release digest and caches nothing", async () => {
+    const { deps } = vsixDeps();
+    const error = await resolveVsix(
+      { version: "1.2.3", cacheDir: cacheRoot, expectedDigest: digest("acme-released") },
+      deps,
+    ).catch((caught: Error) => caught);
+    expect(error).toBeInstanceOf(VsixError);
+    expect((error as Error).message).toContain("@uniqbit/mate-vscode@1.2.3 does not match");
+    expect((error as Error).message).toContain(digest(DOWNLOADED));
+    expect(await fs.readdir(cacheRoot)).toEqual([]);
+  });
+
+  test("deletes and refuses a cached copy that differs, without downloading", async () => {
+    const cached = path.join(cacheRoot, VSIX_FILE);
+    await fs.writeFile(cached, "acme-tampered");
+    const { deps, calls } = vsixDeps({ exists: async () => true });
+    const error = await resolveVsix(
+      { version: "1.2.3", cacheDir: cacheRoot, expectedDigest: digest("acme-released") },
+      deps,
+    ).catch((caught: Error) => caught);
+    expect(error).toBeInstanceOf(VsixError);
+    expect((error as Error).message).toContain("was removed");
+    expect(await fs.stat(cached).catch(() => null)).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  test("--vsix skips the download and the digest check", async () => {
+    const local = path.join(cacheRoot, "local.vsix");
+    await fs.writeFile(local, "acme-local");
+    const { deps, calls } = vsixDeps({ exists: async (file) => file === local });
+    const resolved = await resolveVsix(
+      { vsix: local, version: "1.2.3", expectedDigest: digest("acme-released") },
+      deps,
     );
+    expect(resolved).toBe(local);
     expect(calls).toEqual([]);
   });
 
@@ -254,6 +302,15 @@ describe("mate vscode setup", () => {
     const result = await run([], { ...deps, version: "0.0.0-acme" });
     expect(result.code).toBe(1);
     expect(result.err).toContain("--vsix");
+  });
+
+  test("an unreleased build installs without verification and says so", async () => {
+    const { deps, installs } = setupDeps({ code: "/bin/code" });
+    deps.releaseVsix = { version: "1.2.2", sha512: digest("acme-released") };
+    const result = await run([], deps);
+    expect(result.code).toBe(0);
+    expect(installs).toHaveLength(1);
+    expect(result.err).toBe("VSIX not verified: this Mate build has no release digest for 1.2.3.");
   });
 
   test("--if-installed updates only editors that have the extension", async () => {

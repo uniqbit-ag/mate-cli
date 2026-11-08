@@ -30,6 +30,10 @@ require a linked Working Repository. `mate update` updates an already
 installed extension with the CLI. Do not install the npm VSIX carrier package
 directly.
 
+Mate checks the downloaded or cached VSIX against the digest shipped with its
+release and installs nothing on a mismatch. A file you pass with `--vsix` is
+not checked.
+
 ## Open the managed workspace
 
 Open your linked repository folder in the editor, then open the Mate sidebar.
@@ -131,6 +135,7 @@ parallel edits to those files.
 - **Only Open workspace appears:** open the linked repository and click the button; an arbitrary workspace is not its managed workspace.
 - **Sidebar asks for a Git repository in an umbrella:** open the umbrella folder itself, not a folder above or beside it, and check that it is linked and holds at least one child checkout with an `origin`.
 - **Workspace preparation fails:** run `mate doctor` from the checkout, repair the Repository Link or the reported invalid workspace document, and retry. The button does not require an editor CLI on PATH.
+- **VSIX does not match the digest:** nothing was installed. A cached copy was already removed; rerun `mate vscode setup` to download a fresh one. If a fresh download does not match, check the npm registry configured for `@uniqbit`, then rerun. Do not install the rejected file with `--vsix`.
 - **CLI older than extension:** update Mate, then rerun `mate vscode setup` so versions match.
 - **Session missing:** only sidebar-started sessions are listed; also check Older, whether the worktree still exists, and whether its branch was merged.
 - **Agent keeps working after closing terminal:** attach again, or explicitly Stop it; closing a background attachment is not cancellation.
