@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { releaseTerminal } from "../../lib/live-progress";
+import { isWithin } from "../../runtime/physical-path";
 
 // Merges src into dest: existing files are kept, but src wins on name clashes.
 export async function mergeDir(src: string, dest: string): Promise<void> {
@@ -23,12 +24,13 @@ export async function mergeDir(src: string, dest: string): Promise<void> {
 }
 
 // Walks up from `dir` toward `stopAt`, removing each directory that is empty.
-// Stops as soon as a non-empty directory (or an error) is encountered.
+// Stops as soon as a non-empty directory, a symbolic link (or an error) is encountered.
 export async function pruneEmptyAncestors(dir: string, stopAt: string): Promise<void> {
   let current = path.resolve(dir);
   const stop = path.resolve(stopAt);
-  while (current !== stop && current.startsWith(stop)) {
+  while (current !== stop && isWithin(current, stop)) {
     try {
+      if ((await fs.lstat(current)).isSymbolicLink()) break;
       await fs.rmdir(current); // throws if non-empty or missing
       current = path.dirname(current);
     } catch {

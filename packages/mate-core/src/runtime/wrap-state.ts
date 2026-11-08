@@ -1,5 +1,3 @@
-import fs from "node:fs";
-
 import { hookGroupKey, type ClaudeHookGroup } from "./claude-hook-group";
 import {
   CLAUDE_SETTINGS_DOCUMENT,
@@ -10,10 +8,10 @@ import {
   documents,
   links,
   recordedMapEntries,
-  manifestPath,
   parseManifest,
   parseManifestStrict,
   readManifestText,
+  readManifestTextSync,
   recordedListValues,
   recordedMapKeys,
   type Manifest,
@@ -141,17 +139,11 @@ export function joinedClaudeWrapState(own: WrapState, serving: WrapState): WrapS
 export const NOT_WRAPPED: WrapState = wrapStateOf(EMPTY_MANIFEST);
 
 /**
- * Lenient, for session-start readers that must never fail: an absent or
- * unreadable manifest reads as not wrapped.
+ * Lenient, for session-start readers that must never fail: an absent,
+ * unreadable or Git-tracked manifest reads as not wrapped.
  */
 export function readWrapStateSync(repoPath: string): WrapState {
-  let raw: string | null = null;
-  try {
-    raw = fs.readFileSync(manifestPath(repoPath), "utf8");
-  } catch {
-    /* absent or unreadable: not wrapped */
-  }
-  return wrapStateOf(parseManifest(raw));
+  return wrapStateOf(parseManifest(readManifestTextSync(repoPath), repoPath));
 }
 
 /**
@@ -159,5 +151,5 @@ export function readWrapStateSync(repoPath: string): WrapState {
  * throws, so a rewrite never strips wrap-placed content it could not see.
  */
 export async function readWrapState(repoPath: string): Promise<WrapState> {
-  return wrapStateOf(parseManifestStrict(await readManifestText(repoPath)));
+  return wrapStateOf(parseManifestStrict(await readManifestText(repoPath), repoPath));
 }

@@ -68,6 +68,10 @@ that file and exits without committing.
 removes the local `.mate` projection, Mate's Git excludes, and the OpenSpec
 store pointer, and updates the Claude settings Mate wrote. Tracked files and
 product work are untouched, and the next link or launch recreates what it needs.
+Cleanup changes nothing outside the working repository, whatever
+`.mate/runtime-documents.json` records, and never follows a symbolic link inside
+it. It prints the same warnings as `mate unwrap` for an ignored record, a skipped
+link, or a tracked manifest.
 Outside a Git checkout, it cleans up the linked
 [Umbrella Repository](/docs/concepts/umbrella-repository) or the umbrella's
 mirrored worktree that holds the current folder. It removes only that folder's
@@ -661,6 +665,16 @@ keeps the repository link; the withdrawal holds until the next `mate claude` or
 `mate opencode` there, which wraps again. A copy's exclude line stays while
 another worktree of the clone still has that copy, and unwrap says so:
 `Kept: <n> copy exclude lines still needed by <path>`.
+
+Wrapping and unwrapping act only on what Mate places itself, inside the
+repository. `.mate/runtime-documents.json` records what a wrap placed, but Mate
+reads it as data: a record naming any other destination is ignored, named in a
+warning, and dropped at the next write. A destination behind a symbolic link
+inside the repository, such as a committed `.claude` or `.opencode` link, is
+skipped with a warning. While Git tracks `.mate/runtime-documents.json`, Mate
+ignores the file, leaves it as committed, and warns how to untrack it. These
+warnings do not fail `mate unwrap`. See
+[Troubleshooting](/docs/troubleshooting#warnings-about-materuntime-documentsjson).
 
 In a Git worktree, `mate wrap` first adopts the worktree when it has no link of
 its own. For Claude it then creates or reconciles the main worktree's wrap,

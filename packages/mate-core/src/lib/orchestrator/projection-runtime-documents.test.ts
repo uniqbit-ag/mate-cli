@@ -74,13 +74,13 @@ function claudeDocument(pluginRoot: string): RenderedRuntimeDocument[] {
 }
 
 /** Local scope in the user's own `~/.claude.json`, the one external target. */
-function localConfigDocument(): RenderedRuntimeDocument[] {
+function localConfigDocument(repoPath: string): RenderedRuntimeDocument[] {
   return [
     {
       path: CLAUDE_LOCAL_CONFIG_DOCUMENT,
       regions: [
         {
-          at: ["projects", "/working", "mcpServers"],
+          at: ["projects", path.resolve(repoPath), "mcpServers"],
           kind: "map",
           entries: { mate: { command: "mate", args: ["mcp"] } },
         },
@@ -614,7 +614,7 @@ describe("a target that does not parse", () => {
       await fs.writeFile(target, torn, "utf8");
 
       await expect(
-        placeRuntimeDocument(repoPath, CLAUDE_LOCAL_CONFIG_DOCUMENT, localConfigDocument()),
+        placeRuntimeDocument(repoPath, CLAUDE_LOCAL_CONFIG_DOCUMENT, localConfigDocument(repoPath)),
       ).rejects.toThrow(/not valid JSON/);
 
       expect(await fs.readFile(target, "utf8")).toBe(torn);
@@ -732,11 +732,14 @@ describe("wrap state per Agent Runtime", () => {
   test("an untagged legacy manifest is attributed by path", async () => {
     const repoPath = await makeRepo("per-runtime-legacy-");
     const regions = [{ at: ["plugins"], kind: "list", values: ["/acme"] }];
+    const localRegions = [
+      { at: ["projects", path.resolve(repoPath), "mcpServers"], kind: "map", entries: {} },
+    ];
     await writeManifest(repoPath, {
       documents: {
         [OPENCODE_CONFIG_DOCUMENT]: regions,
         [CLAUDE_SETTINGS_DOCUMENT]: regions,
-        [CLAUDE_LOCAL_CONFIG_DOCUMENT]: regions,
+        [CLAUDE_LOCAL_CONFIG_DOCUMENT]: localRegions,
         ".mcp.json": regions,
       },
     });
@@ -808,7 +811,7 @@ describe("unwrapping a working repository", () => {
         config,
         runtimeDocuments: [
           ...openCodeDocument("@uniqbit/mate-opencode-plugin@0.15.5"),
-          ...localConfigDocument(),
+          ...localConfigDocument(repoPath),
         ],
       });
       expect((await readWrapState(repoPath)).runtimes.size).toBeGreaterThan(0);
@@ -893,6 +896,7 @@ describe("unwrapping a working repository", () => {
       kind: "absent",
       documents: [],
       copies: [],
+      warnings: [],
     });
   });
 
@@ -911,6 +915,7 @@ describe("unwrapping a working repository", () => {
       kind: "unwrapped",
       documents: [OPENCODE_CONFIG_DOCUMENT],
       copies: [],
+      warnings: [],
     });
     expect(await exists(path.join(repoPath, ".opencode", "opencode.json"))).toBe(false);
   });

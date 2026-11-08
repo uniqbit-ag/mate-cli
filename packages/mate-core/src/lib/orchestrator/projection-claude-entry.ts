@@ -11,9 +11,17 @@ import {
   type ClaudeSettings,
 } from "../../tools/setup/providers/claude-format";
 import { isMateGuardHookGroup } from "../../tools/setup/providers/claude-plugin-hooks";
+import { repoDestination } from "../../runtime/repo-destination";
+import { CLAUDE_SETTINGS_DOCUMENT } from "../../runtime/runtime-document-manifest";
 import { readWrapState, type WrapState } from "../../runtime/wrap-state";
+import { writeAtomic } from "../../runtime/write-atomic";
 import { pruneEmptyAncestors } from "../../tools/setup/utils";
 import { GlobalConfigStore } from "./global-config-store";
+import {
+  removalWithWarnings,
+  type ProjectionRemovalReport,
+  type ProjectionWriteReport,
+} from "./projection-types";
 
 /**
  * The working-repo half of the Claude Runtime Surface, as one Managed Projection
@@ -25,12 +33,19 @@ import { GlobalConfigStore } from "./global-config-store";
 export const CLAUDE_WORKING_SETTINGS_PATH = path.join(".claude", "settings.local.json");
 export const LEGACY_TOKENSAVE_CLAUDE_MD_PATH = "CLAUDE.md";
 
-function settingsPath(repoPath: string): string {
-  return path.join(path.resolve(repoPath), CLAUDE_WORKING_SETTINGS_PATH);
+/** Inside the repository with no symlinked `.claude`, or the warning that refuses it. */
+function settingsPath(repoPath: string): { path: string; root: string } | { warning: string } {
+  return repoDestination(repoPath, CLAUDE_SETTINGS_DOCUMENT);
 }
 
-function claudeMdPath(repoPath: string): string {
-  return path.join(path.resolve(repoPath), LEGACY_TOKENSAVE_CLAUDE_MD_PATH);
+/** A symlinked `CLAUDE.md` is another file's, the user's global one included: read as absent. */
+async function readClaudeMd(repoPath: string): Promise<{ path: string; content: string } | null> {
+  const destination = repoDestination(repoPath, LEGACY_TOKENSAVE_CLAUDE_MD_PATH);
+  if ("warning" in destination) return null;
+  const stat = await fs.lstat(destination.path).catch(() => null);
+  if (!stat?.isFile()) return null;
+  const content = await readRaw(destination.path);
+  return content === null ? null : { path: destination.path, content };
 }
 
 async function readRaw(filePath: string): Promise<string | null> {
@@ -86,8 +101,10 @@ export async function syncWorkingRepoClaudeAdditionalDirectories(
   repoPath: string,
   companionPath: string,
   globalConfigStore: GlobalConfigStore = new GlobalConfigStore(),
-): Promise<"written" | "current"> {
-  const target = settingsPath(repoPath);
+): Promise<"written" | "current" | ProjectionWriteReport> {
+  const destination = settingsPath(repoPath);
+  if ("warning" in destination) return { state: "skipped", warnings: [destination.warning] };
+  const target = destination.path;
   const raw = await readRaw(target);
   const existing = withoutForeignManagedHookGroups(
     parseSettings(raw),
@@ -125,7 +142,8 @@ export async function syncWorkingRepoClaudeAdditionalDirectories(
   if (next === raw) return "current";
 
   await fs.mkdir(path.dirname(target), { recursive: true });
-  await fs.writeFile(target, next, "utf8");
+  /** A rename replaces a symlinked leaf instead of writing through it. */
+  await writeAtomic(target, next);
   return "written";
 }
 
@@ -137,8 +155,10 @@ export async function syncWorkingRepoClaudeAdditionalDirectories(
 export async function removeWorkingRepoClaudeSettings(
   repoPath: string,
   registeredCompanionPaths: string[] = [],
-): Promise<"removed" | "absent"> {
-  const target = settingsPath(repoPath);
+): Promise<"removed" | "absent" | ProjectionRemovalReport> {
+  const destination = settingsPath(repoPath);
+  if ("warning" in destination) return removalWithWarnings("absent", [destination.warning]);
+  const target = destination.path;
   const raw = await readRaw(target);
   if (raw === null) return "absent";
 
@@ -168,16 +188,18 @@ export async function removeWorkingRepoClaudeSettings(
   if (JSON.stringify(settings) === JSON.stringify(existing)) return "absent";
   if (Object.keys(settings).length === 0) {
     await fs.unlink(target);
-    await pruneEmptyAncestors(path.dirname(target), path.resolve(repoPath));
+    await pruneEmptyAncestors(path.dirname(target), destination.root);
     return "removed";
   }
-  await fs.writeFile(target, serializeClaudeSettings(settings), "utf8");
+  await writeAtomic(target, serializeClaudeSettings(settings));
   return "removed";
 }
 
 /** Present when Mate's own key is in the document, not merely when it exists. */
 export async function workingRepoClaudeSettingsPresent(repoPath: string): Promise<boolean> {
-  const settings = parseSettings(await readRaw(settingsPath(repoPath)));
+  const destination = settingsPath(repoPath);
+  if ("warning" in destination) return false;
+  const settings = parseSettings(await readRaw(destination.path));
   return Array.isArray(settings.permissions?.additionalDirectories);
 }
 
@@ -189,21 +211,20 @@ export async function workingRepoClaudeSettingsPresent(repoPath: string): Promis
 export async function stripTokensaveClaudeMdAppend(
   repoPath: string,
 ): Promise<"removed" | "absent"> {
-  const target = claudeMdPath(repoPath);
-  const content = await readRaw(target);
-  if (content === null) return "absent";
+  const claudeMd = await readClaudeMd(repoPath);
+  if (claudeMd === null) return "absent";
 
-  const stripped = cutFromMarker(content, TOKENSAVE_CLAUDE_MD_MARKER);
-  if (stripped === content) return "absent";
+  const stripped = cutFromMarker(claudeMd.content, TOKENSAVE_CLAUDE_MD_MARKER);
+  if (stripped === claudeMd.content) return "absent";
   if (stripped.length > 0) {
-    await fs.writeFile(target, stripped, "utf8");
+    await writeAtomic(claudeMd.path, stripped);
   } else {
-    await fs.unlink(target);
+    await fs.unlink(claudeMd.path);
   }
   return "removed";
 }
 
 export async function legacyTokensaveClaudeMdPresent(repoPath: string): Promise<boolean> {
-  const content = await readRaw(claudeMdPath(repoPath));
-  return content !== null && content.includes(TOKENSAVE_CLAUDE_MD_MARKER);
+  const claudeMd = await readClaudeMd(repoPath);
+  return claudeMd !== null && claudeMd.content.includes(TOKENSAVE_CLAUDE_MD_MARKER);
 }

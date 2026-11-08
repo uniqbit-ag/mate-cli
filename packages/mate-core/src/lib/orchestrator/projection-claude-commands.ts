@@ -24,13 +24,13 @@ export function reconcileWorkingRepoClaudeCommandLinks(
   companionPath: string | null,
   enabled: boolean,
   registeredCompanionPaths: string[] = [],
-): Promise<"written" | "current"> {
+): ReturnType<typeof reconcileClaudeLinks> {
   return reconcileClaudeLinks(COMMANDS, repoPath, companionPath, enabled, registeredCompanionPaths);
 }
 
 export function removeWorkingRepoClaudeCommandLinks(
   repoPath: string,
   registeredCompanionPaths: string[] = [],
-): Promise<"removed" | "absent"> {
+): ReturnType<typeof removeClaudeLinks> {
   return removeClaudeLinks(COMMANDS, repoPath, registeredCompanionPaths);
 }

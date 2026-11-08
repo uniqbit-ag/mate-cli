@@ -9,12 +9,14 @@ import {
   EMPTY_MANIFEST,
   OPENCODE_CONFIG_DOCUMENT,
   manifestPath,
-  parseManifest,
+  parseManifest as parseManifestIn,
   type ManagedRegion,
 } from "./runtime-document-manifest";
 import { readWrapState, readWrapStateSync, wrapStateOf } from "./wrap-state";
 
 const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
+/** Confinement pins `~/.claude.json` regions to this root; these fixtures record none. */
+const parse = (raw: string | null) => parseManifestIn(raw, "/x/acme");
 
 const GUARD = { matcher: "Edit", hooks: [{ type: "command", command: "/acme/guard.mjs" }] };
 const BANNER = { hooks: [{ type: "command", command: "/acme/banner.mjs" }] };
@@ -58,7 +60,7 @@ function repoWithUnreadableManifest(): string {
 describe("wrapStateOf", () => {
   test("names each runtime with a recorded document, copy or link", () => {
     const state = wrapStateOf(
-      parseManifest(
+      parse(
         json({
           documents: { [CLAUDE_SETTINGS_DOCUMENT]: CLAUDE_REGIONS },
           runtimes: { [CLAUDE_SETTINGS_DOCUMENT]: "claude" },
@@ -69,7 +71,7 @@ describe("wrapStateOf", () => {
     expect([...state.runtimes].sort()).toEqual(["claude", "opencode"]);
 
     const linksOnly = wrapStateOf(
-      parseManifest(
+      parse(
         json({
           documents: {},
           links: { ".claude/skills/acme": { runtime: "claude", target: "/acme/skills/acme" } },
@@ -89,14 +91,14 @@ describe("wrapStateOf", () => {
 
   test("a legacy untagged manifest is attributed by document path", () => {
     const state = wrapStateOf(
-      parseManifest(json({ documents: { [OPENCODE_CONFIG_DOCUMENT]: OPENCODE_REGIONS } })),
+      parse(json({ documents: { [OPENCODE_CONFIG_DOCUMENT]: OPENCODE_REGIONS } })),
     );
     expect([...state.runtimes]).toEqual(["opencode"]);
   });
 
   test("carries the hook groups recorded in the settings document, by structure", () => {
     const state = wrapStateOf(
-      parseManifest(json({ documents: { [CLAUDE_SETTINGS_DOCUMENT]: CLAUDE_REGIONS } })),
+      parse(json({ documents: { [CLAUDE_SETTINGS_DOCUMENT]: CLAUDE_REGIONS } })),
     );
     expect(state.carriedClaudeHookGroups).toEqual([GUARD, BANNER]);
     expect(state.carriesClaudeHookGroup(structuredClone(GUARD))).toBe(true);
@@ -105,14 +107,14 @@ describe("wrapStateOf", () => {
 
   test("lists the OpenCode MCP servers the wrap declared", () => {
     const state = wrapStateOf(
-      parseManifest(json({ documents: { [OPENCODE_CONFIG_DOCUMENT]: OPENCODE_REGIONS } })),
+      parse(json({ documents: { [OPENCODE_CONFIG_DOCUMENT]: OPENCODE_REGIONS } })),
     );
     expect(state.openCodeMcpServers).toEqual(["tokensave"]);
   });
 
   test("a malformed hand-edited region reads as nothing instead of throwing", () => {
     const state = wrapStateOf(
-      parseManifest(
+      parse(
         json({
           documents: {
             [OPENCODE_CONFIG_DOCUMENT]: [{ at: "mcp", kind: "map", entries: 1 }],
@@ -173,7 +175,7 @@ describe("readWrapState (strict)", () => {
 
 describe("carriedClaudePluginDirectories", () => {
   const manifestWith = (regions: ManagedRegion[]) =>
-    parseManifest(json({ documents: { [CLAUDE_SETTINGS_DOCUMENT]: regions } }));
+    parse(json({ documents: { [CLAUDE_SETTINGS_DOCUMENT]: regions } }));
   const marketplaces = (entries: Record<string, unknown>): ManagedRegion => ({
     at: ["extraKnownMarketplaces"],
     kind: "map",
