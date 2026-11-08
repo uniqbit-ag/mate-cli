@@ -779,6 +779,97 @@ the repository's `.graphifyignore` and passes the secret patterns as
 keeps the rest of the graph. A secret never stops the run. See
 [Secret Guardrails](/docs/concepts/secret-guardrails).
 
+## Usage And Reports
+
+| Command                           | Purpose                                                                             |
+| --------------------------------- | ----------------------------------------------------------------------------------- |
+| `mate report [--days N] [--json]` | Return usage JSON for one Companion Repository and all linked Working Repositories. |
+| `mate report --input FILE`        | Create an explicit HTML report and return its JSON delivery receipt.                |
+| `mate report --input FILE --json` | Validate and return a generic report document without HTML delivery.                |
+
+For people, open **Usage** in Studio's sidebar or command palette. It shows the
+selected companion and all linked Working Repositories, with period/repository
+filters, daily Tokens/Cost and an accessible table, expandable repository rows,
+source coverage and explicit Refresh. **Reports** remains generic report history.
+The Tokens chart compares consumed tokens with estimated tokens saved; the
+highlighted savings total and daily table use the same scope. Savings stay in
+tokens, without dollar conversion or subtraction from API token costs.
+See [Studio Usage](/docs/reference/deployment#studio-usage).
+
+`mate report` is for agents and other technical callers. Its default output is
+the same as `--json`: one JSON value with `kind: "companion-usage"` and
+`version: 1`. It never opens a browser, publishes an implicit usage report or
+writes `REPORT.md`. Existing callers that expected HTML or a generic
+ReportDocument from the built-in collector must migrate to this usage schema.
+
+Scope includes the Companion Repository's own activity and **every linked
+Working Repository**, not only the repository where the command runs. Activity
+in a shared Working Repository can appear under several companions; those views
+are not exclusive billing allocations. Checkout aliases and duplicate source
+records count once within a companion. Unrelated or unprovably attributed
+activity is excluded, with incomplete coverage reported explicitly.
+
+The default period is seven UTC calendar days including today. `--days` accepts
+an integer from 1 through 365. `window.start` is inclusive UTC midnight;
+`window.endExclusive` is the following midnight after the last day. Today's
+bucket is incomplete until that day ends. `collectedAt` identifies the snapshot's
+collection time. Repository, daily and runtime/model breakdowns reconcile with
+`totals` over the same window.
+
+Claude usage comes from local JSONL metadata; OpenCode usage comes from supported
+local V2 SQLite storage. Enabled TokenSave and RTK capabilities contribute
+separate estimated savings from local read-only ledgers. Collection does not
+install tools, download pricing or write source data. Missing tools, unsupported
+schemas, unreadable sources and timeouts do not discard available data. Source
+statuses distinguish these cases from readable sources with no activity.
+
+RTK ledger discovery follows `RTK_DB_PATH`, then `[tracking].database_path` in
+RTK's `config.toml`, then its platform default: macOS Application Support,
+Linux XDG data, or Windows Local AppData. Missing ledgers and unsupported schemas
+have separate source diagnostics; collection never creates or migrates a ledger.
+
+If Bun cannot open a savings ledger, Mate retries SQLite `CANTOPEN` once through
+local Node.js using the same read-only query. The fallback requires Node.js
+22.19+; Mate does not install it. SQLite may create WAL/SHM coordination sidecars
+for a read-only connection, but ledger records, schema and permissions are unchanged.
+Collection does not use immutable snapshots, which could omit recent WAL activity.
+
+Unknown numbers are `null`, not zero. Metrics carry `complete`, `partial` or
+`unavailable` coverage; cost also carries currency and reported/estimated
+provenance. `savings.estimatedCost` retains only source-provided monetary estimates;
+saved tokens never inherit a price from observed provider usage. Without a
+source-provided monetary value it stays `null`. Estimated savings are not
+subtracted into an asserted actual bill.
+OpenCode output tokens include its separately recorded reasoning tokens.
+
+Claude records without `costUSD` use bundled model-specific LiteLLM standard API
+rates (snapshot dated 2026-11-07), including cache reads and 5-minute/1-hour
+cache writes. This overview values API tokens, regardless of a developer's payment
+plan; subscription prices are never calculated. Unknown-cost notes appear only
+when scoped records lack usable model rates or token counts. Stored costs,
+including zero, take precedence. Mate does not invoke or install ccusage.
+
+A resolved scope with partial or unavailable sources exits 0. Invalid options,
+unresolved/ambiguous context and fatal failures exit nonzero and return one
+`{ "kind": "error", "version": 1, "error": { "code": "…", "message": "…" } }`
+envelope. Codes include `INVALID_OPTIONS`, `COMPANION_UNRESOLVED`,
+`COMPANION_AMBIGUOUS`, `COLLECTION_FAILED` and `PREFLIGHT_FAILED` (Mate needs an
+update or install first, in any report mode). Human diagnostics stay on stderr.
+
+Explicit `--input` still accepts generic ReportDocument version 1, independently
+of usage collection. It renders HTML through the existing report renderer, but
+never starts a browser. Its `report-delivery` version 1 receipt identifies:
+
+- `delivery.kind: "studio"`: a report id and configured public URL, or a
+  `surface: "reports"` locator when no public origin exists.
+- `delivery.kind: "temporary-file"`: a local HTML `path` the caller can present.
+
+Successful Studio hosting takes precedence over temporary files. Hosting failure
+falls back locally. Final delivery failure returns
+`REPORT_DELIVERY_FAILED`, exits nonzero and includes the validated document as
+`fallback`. Invalid input returns `INVALID_REPORT_INPUT` before any delivery.
+`--input --json` creates no HTML; `--days` cannot be combined with `--input`.
+
 ## Artifacts And Updates
 
 | Command                                                          | Purpose                                                               |

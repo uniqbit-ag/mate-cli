@@ -70,6 +70,7 @@ import {
   type TerminalRegistryOptions,
 } from "./terminal";
 import type { StudioFormField, StudioServices } from "./services";
+import type { UsageCache } from "../../../lib/usage/cache";
 import { studioAppAsset, type StudioApp } from "./studio-app";
 import { terminalAsset } from "./terminal-assets";
 import {
@@ -139,6 +140,7 @@ export interface StudioServerDeps {
   snapshots?: StudioSnapshotCache;
   vault?: VaultManager;
   reports?: ReportStore;
+  usage?: UsageCache;
   terminal?: Partial<TerminalRegistryOptions>;
   launchableAgents?: typeof launchableAgents;
   /**
@@ -528,6 +530,7 @@ export function createStudioFetch(
     outcomes.onChanged(() => boardChanged(digest));
   }
 
+  let usage: Promise<UsageCache> | undefined = deps.usage && Promise.resolve(deps.usage);
   const services: StudioServices = {
     writable,
     factoryMode: broker !== null,
@@ -572,6 +575,17 @@ export function createStudioFetch(
     reports: async (digest) => {
       await companionPathOf(digest);
       return reports.list(digest);
+    },
+    usage: async (digest, request) => {
+      const companionPath = await companionPathOf(digest);
+      // A failed load is forgotten so Refresh can retry it.
+      usage ??= import("../../../lib/usage/cache")
+        .then(({ createUsageCache }) => createUsageCache())
+        .catch((error: unknown) => {
+          usage = undefined;
+          throw error;
+        });
+      return (await usage).read(companionPath, request);
     },
     skillPreview: async (digest, agent, name, file) => {
       const { readSkillPreview } = await import("./skill-files");

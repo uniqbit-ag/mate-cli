@@ -82,7 +82,6 @@ async function report(env: Record<string, string>, input: unknown) {
   process.env.MATE_STUDIO_REPORT_TOKEN = env.MATE_STUDIO_REPORT_TOKEN;
   try {
     await runReportCommand(["--input", "report.json"], {
-      ensureUnambiguousCompanion: async () => true,
       readInput: async () => JSON.stringify(input),
       writeTemporaryReport: async () => {
         throw new Error("a hosted report must not touch the temp dir");
@@ -102,7 +101,16 @@ async function report(env: Record<string, string>, input: unknown) {
   }
 }
 
-const reportId = (logs: string[]) => /\(report ([0-9a-f]{32})\)/.exec(logs.join("\n"))?.[1];
+const reportId = (logs: string[]): string | undefined => {
+  expect(logs).toHaveLength(1);
+  const receipt = JSON.parse(logs[0]!);
+  expect(receipt).toMatchObject({
+    kind: "report-delivery",
+    version: 1,
+    delivery: { kind: "studio", surface: "reports" },
+  });
+  return receipt.delivery.id;
+};
 
 describe("Studio terminal session running `mate report --input`", () => {
   test("hosts a diagram report under the cap, renders it with its runtime and print control", async () => {

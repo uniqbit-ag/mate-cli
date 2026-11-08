@@ -5,6 +5,7 @@ const DOCS_SITE = "https://uniqbit-ag.github.io/mate-cli";
 
 const GUIDE_ROUTES = {
   "/docs/concepts/umbrella-repository": `${DOCS_SITE}/docs/concepts/umbrella-repository/`,
+  "/docs/concepts/repositories": `${DOCS_SITE}/docs/concepts/repositories/`,
   "/docs/concepts/worktrees": "/getting-started/worktrees",
   "/docs/getting-started/vscode": "/getting-started/vscode",
 } as const;

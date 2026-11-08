@@ -196,6 +196,16 @@ describe("command gating", () => {
     }
   });
 
+  test("report skips the background update check but keeps update enforcement", async () => {
+    const { deps } = recordingDeps();
+
+    await main(["node", "mate", "report"], deps);
+
+    expect(dispatched).toEqual(["report"]);
+    expect(updateChecker.scheduleBackgroundCheck).not.toHaveBeenCalled();
+    expect(updateChecker.enforceUpdateIfRequired).toHaveBeenCalled();
+  });
+
   test("session context runs before the runtime refresh, plugin loading and update checks", async () => {
     const received: string[][] = [];
     spies.push(
@@ -477,6 +487,7 @@ describe("command gating", () => {
 
   test("report is blocked when installation is incomplete", async () => {
     const originalExitCode = process.exitCode;
+    const output = spyOn(console, "log").mockImplementation(() => {});
     try {
       const { gateCalls, deps } = recordingDeps({ installOk: false });
       process.exitCode = 0;
@@ -484,7 +495,14 @@ describe("command gating", () => {
       expect(gateCalls).toEqual(["install"]);
       expect(dispatched).toEqual([]);
       expect(process.exitCode).toBe(1);
+      expect(output.mock.calls).toHaveLength(1);
+      expect(JSON.parse(String(output.mock.calls[0]![0]))).toMatchObject({
+        kind: "error",
+        version: 1,
+        error: { code: "PREFLIGHT_FAILED" },
+      });
     } finally {
+      output.mockRestore();
       process.exitCode = originalExitCode ?? 0;
     }
   });

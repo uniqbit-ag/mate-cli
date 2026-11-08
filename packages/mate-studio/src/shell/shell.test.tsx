@@ -258,10 +258,33 @@ describe("the sidebar", () => {
       "/specs",
       "/vault",
       "/graph",
+      "/usage",
       "/reports",
     ]);
     expect(markup).toContain('data-studio-nav-section="Engineering"');
     expect(markup).toContain('data-studio-nav-section="Library"');
+  });
+
+  it("groups Usage and Reports under Insights in both modes and rail sizes", () => {
+    for (const studioMode of ["engineering", "analysis"] as const) {
+      for (const rail of ["full", "min"] as const) {
+        useAppearance.setState({ rail });
+        const root = document.createElement("div");
+        root.innerHTML = sidebar(shell({ studioMode }), "usage");
+        const insights = root.querySelector('[data-studio-nav-section="Insights"]')!;
+        expect(insights.getAttribute("aria-label")).toBe("Insights");
+        expect(
+          [...insights.querySelectorAll("a")].map((link) => new URL(link.href).pathname),
+        ).toEqual(["/usage", "/reports"]);
+        expect(insights.querySelector('[aria-current="page"]')?.textContent).toContain("Usage");
+        const library = root.querySelector(
+          `[data-studio-nav-section="${studioMode === "analysis" ? "Published" : "Library"}"]`,
+        )!;
+        expect(
+          [...library.querySelectorAll("a")].map((link) => new URL(link.href).pathname),
+        ).toEqual(["/specs", "/vault", "/graph"]);
+      }
+    }
   });
 
   it("offers Factory after Workflow only where the factory broker runs", () => {
@@ -275,13 +298,14 @@ describe("the sidebar", () => {
       "/specs",
       "/vault",
       "/graph",
+      "/usage",
       "/reports",
     ]);
   });
 
   it("gives Analysis its Overview and the published views, and no Workflow, Skills or Factory", () => {
     const markup = sidebar(shell({ studioMode: "analysis", factoryMode: true }));
-    expect(viewLinks(markup)).toEqual(["/", "/specs", "/vault", "/graph", "/reports"]);
+    expect(viewLinks(markup)).toEqual(["/", "/specs", "/vault", "/graph", "/usage", "/reports"]);
     expect(markup).toContain('data-studio-nav-section="Analysis"');
     expect(markup).toContain('data-studio-nav-section="Published"');
   });

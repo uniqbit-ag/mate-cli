@@ -7,6 +7,7 @@ import { createStudioAccess } from "./access";
 import { createStudioFetch } from "./server";
 import type { StudioRequestContext } from "./services";
 import type { StudioApp } from "./studio-app";
+import { companionDigest } from "./selection";
 
 let root: string;
 let calls: { path: string; context: StudioRequestContext }[];
@@ -43,6 +44,36 @@ function handlerFor(withApp: StudioApp | null) {
 const get = (route: string) => new Request(`http://localhost${route}`);
 
 describe("Studio's application behind the server", () => {
+  test("usage is lazy, read-only and restricted to a registered digest", async () => {
+    let collections = 0;
+    const handler = createStudioFetch(
+      {
+        collectStudioInventory: async () => ({
+          companions: [{ path: "/companions/acme", health: "ready", pairings: [] }],
+        }),
+        usage: {
+          read: async () => {
+            collections++;
+            return {
+              snapshot: null,
+              error: { code: "COLLECTION_FAILED", message: "Synthetic fixture" },
+            };
+          },
+        },
+      },
+      { app: app() },
+    );
+    await handler(get("/"));
+    expect(collections).toBe(0);
+    expect(handler.services.writable).toBe(false);
+    await expect(handler.services.usage("/arbitrary/path", { days: 7 })).rejects.toThrow();
+    expect(collections).toBe(0);
+    expect(
+      (await handler.services.usage(companionDigest("/companions/acme"), { days: 7 })).error?.code,
+    ).toBe("COLLECTION_FAILED");
+    expect(collections).toBe(1);
+    await handler.close();
+  });
   test("serves the application's hashed assets for a year", async () => {
     const response = await handlerFor(app())(get("/assets/index-Ab12.js"));
     expect(response?.status).toBe(200);

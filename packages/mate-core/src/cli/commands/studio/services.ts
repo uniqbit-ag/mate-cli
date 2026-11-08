@@ -1,4 +1,6 @@
 import type { OutcomeAction } from "../../../lib/factory/outcomes/actions";
+import type { UsageRequest } from "../../../lib/usage/cache";
+import type { UsageResponse } from "../../../lib/usage/types";
 import type { StudioSpecGraph } from "./graph";
 import type { StoredReport } from "./reports";
 import type { SkillAgent, SkillPreview } from "./skill-files";
@@ -62,6 +64,8 @@ export interface StudioServices {
   graph(companionDigest: string): Promise<StudioSpecGraph>;
   /** A registered companion's published reports, newest first; no paths or content. */
   reports(companionDigest: string): Promise<StoredReport[]>;
+  /** Read-only, explicitly refreshed usage; never collected for unrelated views. */
+  usage(companionDigest: string, request: UsageRequest): Promise<UsageResponse>;
   /** One installed skill's files and one of them rendered (SKILL.md by default); read-only. */
   skillPreview(
     companionDigest: string,

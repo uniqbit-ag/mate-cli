@@ -16,6 +16,7 @@ import { Route as GraphRouteImport } from './routes/graph'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as SpecsRouteImport } from './routes/specs'
+import { Route as UsageRouteImport } from './routes/usage'
 import { Route as VaultRouteImport } from './routes/vault'
 import { Route as WorkflowRouteImport } from './routes/workflow'
 import { Route as GettingStartedIndexRouteImport } from './routes/getting-started.index'
@@ -56,6 +57,11 @@ const SpecsRoute = SpecsRouteImport.update({
   path: '/specs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const UsageRoute = UsageRouteImport.update({
+  id: '/usage',
+  path: '/usage',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VaultRoute = VaultRouteImport.update({
   id: '/vault',
   path: '/vault',
@@ -85,6 +91,7 @@ export interface FileRoutesByFullPath {
   '/reports': typeof ReportsRoute
   '/skills': typeof SkillsRoute
   '/specs': typeof SpecsRoute
+  '/usage': typeof UsageRoute
   '/vault': typeof VaultRoute
   '/workflow': typeof WorkflowRoute
   '/getting-started/$topic': typeof GettingStartedTopicRoute
@@ -97,6 +104,7 @@ export interface FileRoutesByTo {
   '/reports': typeof ReportsRoute
   '/skills': typeof SkillsRoute
   '/specs': typeof SpecsRoute
+  '/usage': typeof UsageRoute
   '/vault': typeof VaultRoute
   '/workflow': typeof WorkflowRoute
   '/getting-started/$topic': typeof GettingStartedTopicRoute
@@ -111,6 +119,7 @@ export interface FileRoutesById {
   '/reports': typeof ReportsRoute
   '/skills': typeof SkillsRoute
   '/specs': typeof SpecsRoute
+  '/usage': typeof UsageRoute
   '/vault': typeof VaultRoute
   '/workflow': typeof WorkflowRoute
   '/getting-started/$topic': typeof GettingStartedTopicRoute
@@ -126,6 +135,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/skills'
     | '/specs'
+    | '/usage'
     | '/vault'
     | '/workflow'
     | '/getting-started/$topic'
@@ -138,6 +148,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/skills'
     | '/specs'
+    | '/usage'
     | '/vault'
     | '/workflow'
     | '/getting-started/$topic'
@@ -151,6 +162,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/skills'
     | '/specs'
+    | '/usage'
     | '/vault'
     | '/workflow'
     | '/getting-started/$topic'
@@ -165,6 +177,7 @@ export interface RootRouteChildren {
   ReportsRoute: typeof ReportsRoute
   SkillsRoute: typeof SkillsRoute
   SpecsRoute: typeof SpecsRoute
+  UsageRoute: typeof UsageRoute
   VaultRoute: typeof VaultRoute
   WorkflowRoute: typeof WorkflowRoute
 }
@@ -220,6 +233,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SpecsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/usage': {
+      id: '/usage'
+      path: '/usage'
+      fullPath: '/usage'
+      preLoaderRoute: typeof UsageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/vault': {
       id: '/vault'
       path: '/vault'
@@ -273,6 +293,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReportsRoute: ReportsRoute,
   SkillsRoute: SkillsRoute,
   SpecsRoute: SpecsRoute,
+  UsageRoute: UsageRoute,
   VaultRoute: VaultRoute,
   WorkflowRoute: WorkflowRoute,
 }

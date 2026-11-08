@@ -116,6 +116,20 @@ export type { StudioInventory, StudioInventoryCompanion } from "./cli/commands/s
 export type { StudioSkillInventory } from "./cli/commands/studio/mate-inventory";
 export type { SkillAgent, SkillFileEntry, SkillPreview } from "./cli/commands/studio/skill-files";
 export type { StoredReport } from "./cli/commands/studio/reports";
+export type { UsageRequest } from "./lib/usage/cache";
+export type {
+  CompanionUsageSnapshot,
+  UsageBreakdown,
+  UsageCost,
+  UsageCoverage,
+  UsageDaily,
+  UsageMetrics,
+  UsageRepository,
+  UsageResponse,
+  UsageSource,
+  UsageSourceName,
+  UsageWindow,
+} from "./lib/usage/types";
 export {
   findAction,
   SUBJECT_PATTERN,

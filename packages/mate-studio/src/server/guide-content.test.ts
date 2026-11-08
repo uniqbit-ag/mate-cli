@@ -14,6 +14,17 @@ const sources = {
 };
 
 describe("guide catalog", () => {
+  test("keeps the former repository-page umbrella link readable", () => {
+    const compiled = compileGuides({
+      start: {
+        ...sources.start,
+        source: "[Umbrella Repository](/docs/concepts/repositories#umbrella-repository)",
+      },
+    });
+    expect(JSON.stringify(compiled.start)).toContain(
+      "/docs/concepts/repositories/#umbrella-repository",
+    );
+  });
   test("compiles the actual canonical sources without a second prose copy", async () => {
     const worktrees = await readFile(
       new URL("../../../../apps/docs/content/docs/concepts/worktrees.mdx", import.meta.url),

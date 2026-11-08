@@ -14,6 +14,8 @@ export interface StudioSearch {
   companion?: string;
   /** The mode asked for; the server's startup profile decides the effective one. */
   studioMode?: StudioMode;
+  usageDays?: number;
+  usageRepository?: string;
 }
 
 /**
@@ -24,6 +26,8 @@ export function validateStudioSearch(raw: {
   companion?: unknown;
   studioMode?: unknown;
   role?: unknown;
+  usageDays?: unknown;
+  usageRepository?: unknown;
 }): StudioSearch {
   const search: StudioSearch = {};
   if (typeof raw.companion === "string" && COMPANION_DIGEST_PATTERN.test(raw.companion)) {
@@ -34,6 +38,11 @@ export function validateStudioSearch(raw: {
   if (typeof raw.role === "string") params.set(LEGACY_ROLE_PARAM, raw.role);
   const mode = requestedMode(params);
   if (mode) search.studioMode = mode;
+  const days = Number(raw.usageDays);
+  if (/^\d+$/.test(String(raw.usageDays)) && Number.isInteger(days) && days >= 1 && days <= 365)
+    search.usageDays = days;
+  if (typeof raw.usageRepository === "string" && /^[a-zA-Z0-9_-]{1,64}$/.test(raw.usageRepository))
+    search.usageRepository = raw.usageRepository;
   return search;
 }
 

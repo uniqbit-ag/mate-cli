@@ -42,6 +42,8 @@ export interface CompanionSelectionOptions {
   companion?: string;
   /** Pin an interactive answer for this process without writing a projection. */
   persistSelection?: boolean;
+  /** Never open the picker; an unresolved ambiguity returns false as it does without a TTY. */
+  interactive?: false;
 }
 
 function pin(match: Pick<CompanionMatch, "companionPath" | "repositoryId">): void {
@@ -124,7 +126,7 @@ export async function ensureUnambiguousCompanion(
     }
   }
 
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+  if (options.interactive === false || !process.stdin.isTTY || !process.stdout.isTTY) {
     reportLinkedCompanions(
       `${FRAMEWORK_NAME}: this working repo is linked from multiple companions; re-run in a TTY to choose one, run \`${FRAMEWORK_NAME} wrap --companion <path>\`, or set MATE_ARTIFACT_PATH.\n`,
       ambiguousMatches,

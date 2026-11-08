@@ -91,6 +91,30 @@ async function follow(address: string, studio: StudioServices) {
 }
 
 describe("built server", () => {
+  test("serves lazy Usage in both plain-install modes without collecting on the server", async () => {
+    let asked = 0;
+    const studio = {
+      ...selecting(services),
+      factoryMode: false,
+      usage: async () => {
+        asked += 1;
+        throw new Error("not during document rendering");
+      },
+    } as unknown as StudioServices;
+    for (const studioMode of ["engineering", "analysis"]) {
+      const { response } = await follow(
+        `/usage?companion=${acmeDigest}&studioMode=${studioMode}`,
+        studio,
+      );
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html).toMatch(/<a[^>]*aria-current="page"[^>]*href="\/usage\?/);
+      expect(html).toContain('role="status">Loading…');
+      expect(html).not.toContain('href="/factory');
+      expect(html).not.toContain("Consumed tokens");
+    }
+    expect(asked).toBe(0);
+  });
   test("serves both guides from a relocated bundle without the docs checkout or network", async () => {
     const folder = await mkdtemp(path.join(tmpdir(), "acme-studio-offline-"));
     try {

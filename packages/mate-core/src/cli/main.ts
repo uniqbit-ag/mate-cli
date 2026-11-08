@@ -122,6 +122,9 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
   // scheduleBackgroundCheck() has been observed to race a large final stdout
   // write against process exit, truncating it.
   const ownsStdout = isPluginCommand;
+  // `report` prints one large JSON contract, so it skips the background check
+  // too but keeps update enforcement and its stderr banner.
+  const skipsBackgroundCheck = ownsStdout || command === "report";
 
   // Every dispatch case opens with a gate() call declaring what the command
   // needs before it may run. Declared gates run in fixed order — update
@@ -131,7 +134,7 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
   const gate = async (needs: GateNeeds): Promise<boolean> => {
     if (!ownsStdout) {
       const updateStore = new UpdateStateStore();
-      scheduleBackgroundCheck(updateStore);
+      if (!skipsBackgroundCheck) scheduleBackgroundCheck(updateStore);
       if (needs.updateGuard && (await enforceUpdateIfRequired(updateStore))) {
         process.exitCode = 1;
         return false;
@@ -272,7 +275,19 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       await runLaunchOpenCodeCommand(argv.slice(3), { directPassthrough: true });
       return;
     case "report":
-      if (!(await gate({ updateGuard: true, install: true }))) return;
+      if (!(await gate({ updateGuard: true, install: true }))) {
+        console.log(
+          JSON.stringify({
+            kind: "error",
+            version: 1,
+            error: {
+              code: "PREFLIGHT_FAILED",
+              message: "Mate must be updated or installed before reporting; see stderr",
+            },
+          }),
+        );
+        return;
+      }
       await runReportCommand(argv.slice(3));
       return;
     case "studio":
