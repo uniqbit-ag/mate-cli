@@ -5,6 +5,7 @@ import {
   globTargetsSecretFiles,
   isSecretFile,
 } from "./secret-patterns";
+import { policyFileWriteRefusal, type SecretPolicyWrite } from "./secret-policy-weakening";
 import { describeSecretFindings, scanContent, type SecretFinding } from "./secret-scan";
 import { HEREDOC_MARKER, stripHeredocBodies } from "./shell-heredoc";
 
@@ -15,8 +16,11 @@ import { HEREDOC_MARKER, stripHeredocBodies } from "./shell-heredoc";
  */
 export type SecretToolCall =
   | { kind: "read"; paths: string[] }
-  /** `content` is what the call would put into the file: a whole body or an edit's new text. */
-  | { kind: "write"; writes: { path: string; content: string }[] }
+  /**
+   * `content` is what the call would put into the file: a whole body or an
+   * edit's new text. `result` says how to compute the file after the call.
+   */
+  | { kind: "write"; writes: SecretPolicyWrite[] }
   | { kind: "shell"; command: string }
   /** A content search: refused when it names a secret file or a glob aimed at secret files. */
   | { kind: "search"; paths: string[]; globs: string[] };
@@ -133,6 +137,9 @@ export async function checkSecretAccess(
   const secretPath = paths.find((filePath) => filePath && isSecretFile(filePath, policy));
   if (secretPath) return secretFileRefusal(secretPath);
   if (call.kind === "read") return null;
+
+  const weakening = policyFileWriteRefusal(call.writes, scope.companionPath, policy);
+  if (weakening) return weakening;
 
   const scan = deps.scan ?? scanContent;
   for (const write of call.writes) {

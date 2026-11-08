@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import { artifactRefusal, resolveArtifactTarget } from "../runtime/artifact-refusal";
@@ -140,7 +141,14 @@ export function shouldBlockArtifactWrite(context: CompanionContext, filePath: st
   return !isGitignored(context, filePath);
 }
 
-const PATCH_FILE_MARKER = /\*\*\* (?:Add|Update|Move to|Delete) File:\s*(.+)$/gm;
+/** OpenCode expands a leading `~` to the home folder before it touches a path. */
+export function expandHome(filePath: string): string {
+  if (filePath === "~") return os.homedir();
+  return filePath.startsWith("~/") ? path.join(os.homedir(), filePath.slice(2)) : filePath;
+}
+
+/** `*** Move to:` is OpenCode v2's move line; `*** Move to File:` is kept. */
+const PATCH_FILE_MARKER = /\*\*\* (?:(?:Add|Update|Delete) File|Move to(?: File)?):\s*(.+)$/gm;
 
 export function extractPatchPaths(patchText: string): string[] {
   const paths: string[] = [];
@@ -148,7 +156,7 @@ export function extractPatchPaths(patchText: string): string[] {
   while ((match = PATCH_FILE_MARKER.exec(patchText)) !== null) {
     const raw = match[1].trim();
     if (raw) {
-      paths.push(raw);
+      paths.push(expandHome(raw));
     }
   }
   return paths;
@@ -162,9 +170,11 @@ export function extractPatchAdditions(patchText: string): { path: string; conten
   const additions: { path: string; content: string[] }[] = [];
   let current: { path: string; content: string[] } | undefined;
   for (const line of patchText.split("\n")) {
-    const marker = /^\*\*\* (Add|Update|Delete|Move to) File:\s*(.+)$/.exec(line);
+    const marker = /^\*\*\* (Add File|Update File|Delete File|Move to(?: File)?):\s*(.+)$/.exec(
+      line,
+    );
     if (marker) {
-      if (marker[1] === "Move to" && current) {
+      if (marker[1].startsWith("Move to") && current) {
         current.path = marker[2].trim();
       } else {
         current = { path: marker[2].trim(), content: [] };
@@ -174,7 +184,10 @@ export function extractPatchAdditions(patchText: string): { path: string; conten
     }
     if (current && line.startsWith("+")) current.content.push(line.slice(1));
   }
-  return additions.map((entry) => ({ path: entry.path, content: entry.content.join("\n") }));
+  return additions.map((entry) => ({
+    path: expandHome(entry.path),
+    content: entry.content.join("\n"),
+  }));
 }
 
 export function buildArtifactError(context: CompanionContext, filePath: string): string {

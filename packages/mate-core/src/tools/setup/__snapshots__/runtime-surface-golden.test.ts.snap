@@ -53,6 +53,9 @@ exports[`runtime surface golden fixtures setup graphify × claude 1`] = `
         "Read(<root>/companion/**)",
         "Skill(graphify)",
       ],
+      "ask": [
+        "Edit(/<root>/companion/.mate/config/framework.yaml)",
+      ],
       "deny": [
         "EnterPlanMode",
         "DesignSync",
@@ -366,6 +369,16 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
           "Edit(**/.pgpass)",
           "Read(**/.npmrc)",
           "Edit(**/.npmrc)",
+        ],
+      },
+      {
+        "at": [
+          "permissions",
+          "ask",
+        ],
+        "kind": "list",
+        "values": [
+          "Edit(/<root>/companion/.mate/config/framework.yaml)",
         ],
       },
       {
@@ -809,6 +822,9 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 1`] =
         "Read(<root>/companion/**)",
         "Skill(graphify)",
       ],
+      "ask": [
+        "Edit(/<root>/companion/.mate/config/framework.yaml)",
+      ],
       "deny": [
         "EnterPlanMode",
         "DesignSync",
@@ -1217,6 +1233,16 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
       },
       {
         "at": [
+          "permissions",
+          "ask",
+        ],
+        "kind": "list",
+        "values": [
+          "Edit(/<root>/companion/.mate/config/framework.yaml)",
+        ],
+      },
+      {
+        "at": [
           "enableArtifact",
         ],
         "kind": "value",
@@ -1561,6 +1587,9 @@ exports[`runtime surface golden fixtures setup tokensave × claude 1`] = `
         "Read(<root>/companion/**)",
         "mcp__tokensave__*",
       ],
+      "ask": [
+        "Edit(/<root>/companion/.mate/config/framework.yaml)",
+      ],
       "deny": [
         "EnterPlanMode",
         "DesignSync",
@@ -1904,6 +1933,16 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
           "Edit(**/.pgpass)",
           "Read(**/.npmrc)",
           "Edit(**/.npmrc)",
+        ],
+      },
+      {
+        "at": [
+          "permissions",
+          "ask",
+        ],
+        "kind": "list",
+        "values": [
+          "Edit(/<root>/companion/.mate/config/framework.yaml)",
         ],
       },
       {
@@ -2406,6 +2445,9 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
         "Read(<root>/companion/**)",
         "mcp__tokensave__*",
       ],
+      "ask": [
+        "Edit(/<root>/companion/.mate/config/framework.yaml)",
+      ],
       "deny": [
         "EnterPlanMode",
         "DesignSync",
@@ -2832,6 +2874,16 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
       },
       {
         "at": [
+          "permissions",
+          "ask",
+        ],
+        "kind": "list",
+        "values": [
+          "Edit(/<root>/companion/.mate/config/framework.yaml)",
+        ],
+      },
+      {
+        "at": [
           "enableArtifact",
         ],
         "kind": "value",
@@ -3166,6 +3218,9 @@ exports[`runtime surface golden fixtures setup context-mode × claude 1`] = `
         "Skill(context-mode:context-mode)",
         "mcp__plugin_context-mode_context-mode__*",
       ],
+      "ask": [
+        "Edit(/<root>/companion/.mate/config/framework.yaml)",
+      ],
       "deny": [
         "EnterPlanMode",
         "DesignSync",
@@ -3452,6 +3507,16 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
           "Edit(**/.pgpass)",
           "Read(**/.npmrc)",
           "Edit(**/.npmrc)",
+        ],
+      },
+      {
+        "at": [
+          "permissions",
+          "ask",
+        ],
+        "kind": "list",
+        "values": [
+          "Edit(/<root>/companion/.mate/config/framework.yaml)",
         ],
       },
       {
@@ -3868,6 +3933,9 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
         "Skill(context-mode:context-mode)",
         "mcp__plugin_context-mode_context-mode__*",
       ],
+      "ask": [
+        "Edit(/<root>/companion/.mate/config/framework.yaml)",
+      ],
       "deny": [
         "EnterPlanMode",
         "DesignSync",
@@ -4220,6 +4288,16 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
       },
       {
         "at": [
+          "permissions",
+          "ask",
+        ],
+        "kind": "list",
+        "values": [
+          "Edit(/<root>/companion/.mate/config/framework.yaml)",
+        ],
+      },
+      {
+        "at": [
           "enableArtifact",
         ],
         "kind": "value",
@@ -4517,6 +4595,9 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 1`] = `
         "Read(<root>/companion/**)",
         "Skill(mate-react-doctor)",
       ],
+      "ask": [
+        "Edit(/<root>/companion/.mate/config/framework.yaml)",
+      ],
       "deny": [
         "EnterPlanMode",
         "DesignSync",
@@ -4804,6 +4885,16 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
           "Edit(**/.pgpass)",
           "Read(**/.npmrc)",
           "Edit(**/.npmrc)",
+        ],
+      },
+      {
+        "at": [
+          "permissions",
+          "ask",
+        ],
+        "kind": "list",
+        "values": [
+          "Edit(/<root>/companion/.mate/config/framework.yaml)",
         ],
       },
       {
@@ -5203,6 +5294,9 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
         "Read(<root>/companion/**)",
         "Skill(mate-react-doctor)",
       ],
+      "ask": [
+        "Edit(/<root>/companion/.mate/config/framework.yaml)",
+      ],
       "deny": [
         "EnterPlanMode",
         "DesignSync",
@@ -5556,6 +5650,16 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
       },
       {
         "at": [
+          "permissions",
+          "ask",
+        ],
+        "kind": "list",
+        "values": [
+          "Edit(/<root>/companion/.mate/config/framework.yaml)",
+        ],
+      },
+      {
+        "at": [
           "enableArtifact",
         ],
         "kind": "value",
@@ -5866,6 +5970,9 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
         "Skill(mate-publish-artifact)",
         "Skill(mate-show-me)",
         "Skill(mate-simplify-code)",
+      ],
+      "ask": [
+        "Edit(/<root>/companion/.mate/config/framework.yaml)",
       ],
       "deny": [
         "EnterPlanMode",
@@ -6193,6 +6300,16 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
           "Edit(**/.pgpass)",
           "Read(**/.npmrc)",
           "Edit(**/.npmrc)",
+        ],
+      },
+      {
+        "at": [
+          "permissions",
+          "ask",
+        ],
+        "kind": "list",
+        "values": [
+          "Edit(/<root>/companion/.mate/config/framework.yaml)",
         ],
       },
       {
@@ -6631,6 +6748,9 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
         "Skill(mate-show-me)",
         "Skill(mate-simplify-code)",
       ],
+      "ask": [
+        "Edit(/<root>/companion/.mate/config/framework.yaml)",
+      ],
       "deny": [
         "EnterPlanMode",
         "DesignSync",
@@ -7047,6 +7167,16 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
       },
       {
         "at": [
+          "permissions",
+          "ask",
+        ],
+        "kind": "list",
+        "values": [
+          "Edit(/<root>/companion/.mate/config/framework.yaml)",
+        ],
+      },
+      {
+        "at": [
           "enableArtifact",
         ],
         "kind": "value",
@@ -7432,6 +7562,9 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
         "Skill(mate-simplify-code)",
         "mcp__plugin_context-mode_context-mode__*",
         "mcp__tokensave__*",
+      ],
+      "ask": [
+        "Edit(/<root>/companion/.mate/config/framework.yaml)",
       ],
       "deny": [
         "EnterPlanMode",
@@ -7989,6 +8122,16 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
       },
       {
         "at": [
+          "permissions",
+          "ask",
+        ],
+        "kind": "list",
+        "values": [
+          "Edit(/<root>/companion/.mate/config/framework.yaml)",
+        ],
+      },
+      {
+        "at": [
           "enableArtifact",
         ],
         "kind": "value",
@@ -8322,6 +8465,9 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
       ],
+      "ask": [
+        "Edit(/<root>/companion/.mate/config/framework.yaml)",
+      ],
       "deny": [
         "EnterPlanMode",
         "DesignSync",
@@ -8421,6 +8567,9 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
         "Bash(mate:*)",
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
+      ],
+      "ask": [
+        "Edit(/<root>/companion/.mate/config/framework.yaml)",
       ],
       "deny": [
         "EnterPlanMode",
@@ -8523,6 +8672,9 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
       ],
+      "ask": [
+        "Edit(/<root>/companion/.mate/config/framework.yaml)",
+      ],
       "deny": [
         "EnterPlanMode",
         "DesignSync",
@@ -8623,6 +8775,9 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
       ],
+      "ask": [
+        "Edit(/<root>/companion/.mate/config/framework.yaml)",
+      ],
       "deny": [
         "EnterPlanMode",
         "DesignSync",
@@ -8722,6 +8877,9 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
         "Bash(mate:*)",
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
+      ],
+      "ask": [
+        "Edit(/<root>/companion/.mate/config/framework.yaml)",
       ],
       "deny": [
         "EnterPlanMode",
@@ -8839,6 +8997,9 @@ exports[`runtime surface golden fixtures deselect opencode runtime with graphify
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
         "Skill(graphify)",
+      ],
+      "ask": [
+        "Edit(/<root>/companion/.mate/config/framework.yaml)",
       ],
       "deny": [
         "EnterPlanMode",
@@ -9023,6 +9184,9 @@ exports[`working repo golden fixtures hub roots set up providers only without co
         "Bash(mate:*)",
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
+      ],
+      "ask": [
+        "Edit(/<root>/companion/.mate/config/framework.yaml)",
       ],
       "deny": [
         "EnterPlanMode",

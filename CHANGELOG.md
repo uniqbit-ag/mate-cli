@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### OpenCode guards read OpenCode v2 tool calls
+
+- The OpenCode secret guard, artifact guard and commit-attribution check now read OpenCode v2 tool calls: the `path` argument of `read`, `write` and `edit`, the `patch` and `shell` tools, and a patch's `*** Move to:` line. Before, they read only the v1 names, so on OpenCode v2 they missed these calls. OpenCode sessions now get the refusals the guards already promised.
+
 ### Worktrees share their clone's Repository Link (breaking)
 
 - A companion lists a clone once. The first time Mate runs in another checkout of a linked clone (a new `git worktree`, `claude --worktree`, a T3 Code thread), it adopts it: the checkout gets its own `.mate/` link with the clone's repository ID, its own projection, and the wraps of the clone's Registered Checkout. Managed launches, `mate wrap`, `mate session prepare` and the session-prepare hook of plain `claude` all adopt. A `.mate/` folder copied from another checkout is ignored.

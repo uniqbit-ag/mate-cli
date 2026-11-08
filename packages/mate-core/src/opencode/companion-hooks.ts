@@ -13,10 +13,12 @@ import { hasLaunchEnvironment } from "../runtime/env";
 import { MATE_ENV } from "../runtime/env-names";
 import { resolveProjection } from "../runtime/projection";
 import { checkSecretAccess, type SecretToolCall } from "../runtime/secret-guard";
+import { isSecretPolicyFile } from "../runtime/secret-policy-weakening";
 import { routeTokensaveInput } from "../runtime/tokensave-route";
 import { readWrapStateSync } from "../runtime/wrap-state";
 import {
   buildArtifactError,
+  expandHome,
   extractPatchAdditions,
   extractPatchPaths,
   isArtifactPath,
@@ -117,16 +119,44 @@ function secretToolCall(
     case "edit":
       return {
         kind: "write",
-        writes: [{ path: target(args.filePath), content: text(args.newString) }],
+        writes: [
+          {
+            path: target(args.filePath),
+            content: text(args.newString),
+            result: {
+              kind: "replace",
+              edits: [
+                {
+                  oldText: text(args.oldString),
+                  newText: text(args.newString),
+                  all: args.replaceAll === true,
+                },
+              ],
+            },
+          },
+        ],
       };
-    case "apply_patch":
+    case "apply_patch": {
+      const patchText = text(args.patchText);
       return {
         kind: "write",
-        writes: extractPatchAdditions(text(args.patchText)).map((addition) => ({
-          path: target(addition.path),
-          content: addition.content,
-        })),
+        writes: [
+          ...extractPatchAdditions(patchText).map((addition) => ({
+            path: target(addition.path),
+            content: addition.content,
+          })),
+          // A patch's result is not replayed, so a patch touching the policy file is judged unknown.
+          ...extractPatchPaths(patchText)
+            .map(target)
+            .filter((filePath) => isSecretPolicyFile(filePath, context.companionPath))
+            .map((filePath) => ({
+              path: filePath,
+              content: "",
+              result: { kind: "unknown" as const },
+            })),
+        ],
       };
+    }
     case "bash":
       return { kind: "shell", command: text(args.command) };
     case "grep":
@@ -136,6 +166,9 @@ function secretToolCall(
   }
 }
 
+/** OpenCode v2 names these tools `patch` and `shell` and their file argument `path`; v1 names are kept. */
+const V1_TOOL_NAMES: Record<string, string> = { patch: "apply_patch", shell: "bash" };
+
 /**
  * Rejects when the tool call touches a secret, commits with a model co-author
  * trailer, or would write an artifact outside the companion. Checked in that
@@ -143,11 +176,16 @@ function secretToolCall(
  */
 export async function guardToolInput(
   context: CompanionContext,
-  tool: string,
+  toolName: string,
   input: unknown,
   env: Record<string, string | undefined> = process.env,
 ): Promise<void> {
-  const args = (input ?? {}) as Record<string, unknown>;
+  const tool = V1_TOOL_NAMES[toolName] ?? toolName;
+  const args = { ...(input as Record<string, unknown> | undefined) };
+  if (args.filePath === undefined) args.filePath = args.path;
+  for (const key of ["filePath", "path"]) {
+    if (typeof args[key] === "string") args[key] = expandHome(args[key]);
+  }
 
   const secretCall = context.companionPath ? secretToolCall(context, tool, args) : null;
   if (secretCall) {

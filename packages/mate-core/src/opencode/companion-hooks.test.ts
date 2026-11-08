@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
@@ -322,6 +323,65 @@ describe("OpenCode secret guardrails", () => {
         content: GITHUB_TOKEN,
       }),
     ).resolves.toBeUndefined();
+  });
+
+  async function guardedPolicy(config: string) {
+    const guard = await guarded();
+    const configPath = path.join(guard.companion, ".mate", "config", "framework.yaml");
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(configPath, config, "utf8");
+    return { ...guard, configPath };
+  }
+
+  test("refuses an edit that turns guardrails off", async () => {
+    const { context, configPath } = await guardedPolicy(
+      "git: manual\nsecrets:\n  guardrails: true\n",
+    );
+    await expect(
+      guardToolInput(context, "edit", {
+        path: configPath,
+        oldString: "guardrails: true",
+        newString: "guardrails: false",
+      }),
+    ).rejects.toThrow("change: guardrails turned off");
+  });
+
+  test("refuses a patch that touches the policy file", async () => {
+    const { context, configPath } = await guardedPolicy("git: manual\n");
+    await expect(
+      guardToolInput(context, "patch", {
+        patchText: `*** Update File: ${configPath}\n@@\n-git: manual\n+git: auto`,
+      }),
+    ).rejects.toThrow("change: the result could not be checked");
+  });
+
+  test("refuses an edit and a patch that reach the policy file through ~/", async () => {
+    const { context, configPath } = await guardedPolicy(
+      "git: manual\nsecrets:\n  guardrails: true\n",
+    );
+    const viaHome = `~/${path.relative(os.homedir(), configPath)}`;
+    await expect(
+      guardToolInput(context, "edit", {
+        path: viaHome,
+        oldString: "guardrails: true",
+        newString: "guardrails: false",
+      }),
+    ).rejects.toThrow("change: guardrails turned off");
+    await expect(
+      guardToolInput(context, "patch", {
+        patchText: `*** Update File: ${viaHome}\n@@\n-git: manual\n+git: auto`,
+      }),
+    ).rejects.toThrow("change: the result could not be checked");
+  });
+
+  test("refuses a patch that moves another file onto the policy file", async () => {
+    const { context, configPath } = await guardedPolicy("git: manual\n");
+    const source = path.join(path.dirname(configPath), "acme.yaml");
+    await expect(
+      guardToolInput(context, "patch", {
+        patchText: `*** Update File: ${source}\n*** Move to: ${configPath}\n@@\n-a\n+b`,
+      }),
+    ).rejects.toThrow("change: the result could not be checked");
   });
 });
 
