@@ -13,9 +13,9 @@ describe("renderMarkdownSubset", () => {
     );
   });
 
-  test("renders one-level unordered and ordered lists", () => {
-    expect(renderMarkdownSubset("- one\n* two\n\n1. first\n2. second")).toBe(
-      "<ul><li>one</li><li>two</li></ul><ol><li>first</li><li>second</li></ol>",
+  test("renders unordered and ordered lists; a new bullet character starts a new list (CommonMark)", () => {
+    expect(renderMarkdownSubset("- one\n- two\n* three\n\n1. first\n2. second")).toBe(
+      "<ul><li>one</li><li>two</li></ul><ul><li>three</li></ul><ol><li>first</li><li>second</li></ol>",
     );
   });
 
@@ -85,5 +85,58 @@ describe("renderMarkdownSubset", () => {
 
   test("renders unsupported syntax as literal text", () => {
     expect(renderMarkdownSubset("> quote\n| a | b |")).toBe("<p>&gt; quote\n| a | b |</p>");
+  });
+
+  test("an encoded or angle-bracketed destination is not a link", () => {
+    for (const source of [
+      "[x](&#106;avascript:alert(1))",
+      "[y](https&#58;//x)",
+      "[z](https://x&#47;y)",
+      "<https://x>",
+      '[t](https://x "title")',
+    ]) {
+      const html = renderMarkdownSubset(source);
+      expect(html).not.toContain("href=");
+    }
+  });
+
+  test("renders blockquotes, tables, images, and rules as escaped source", () => {
+    const html = renderMarkdownSubset(
+      "> quote\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n![a](https://x)\n\n---",
+    );
+
+    expect(html).not.toContain("<blockquote");
+    expect(html).not.toContain("<table");
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("<hr");
+    expect(html).toContain("&gt; quote");
+    expect(html).toContain("| a | b |");
+    expect(html).toContain("![a](https://x)");
+    expect(html).toContain("<p>---</p>");
+  });
+
+  test("escapes ampersands and angle brackets exactly once", () => {
+    expect(renderMarkdownSubset("a & b &amp; `x&y<z>` [a&b](https://x.com/?a=1&b=2)")).toBe(
+      '<p>a &amp; b &amp;amp; <code>x&amp;y&lt;z&gt;</code> <a href="https://x.com/?a=1&amp;b=2" rel="noopener noreferrer">a&amp;b</a></p>',
+    );
+    expect(renderMarkdownSubset("```\na & b <c> &amp;\n```")).toBe(
+      '<pre class="report-code">a &amp; b &lt;c&gt; &amp;amp;</pre>',
+    );
+  });
+
+  test("renders nested lists nested", () => {
+    expect(renderMarkdownSubset("- a\n  - b\n- c")).toBe(
+      "<ul><li>a<ul><li>b</li></ul></li><li>c</li></ul>",
+    );
+  });
+
+  test("renders setext headings shifted", () => {
+    expect(renderMarkdownSubset("Title\n===\n\nSub\n---")).toBe("<h3>Title</h3><h4>Sub</h4>");
+  });
+
+  test("renders indented code as a code block", () => {
+    expect(renderMarkdownSubset("    code <x>")).toBe(
+      '<pre class="report-code">code &lt;x&gt;</pre>',
+    );
   });
 });
