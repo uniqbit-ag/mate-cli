@@ -1,100 +1,187 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { resolveFrameworkContext } from "../../../lib/orchestrator/framework-context";
-import { ensureUnambiguousCompanion } from "../shared/companion-selection";
 import {
-  collectCcusageSpending,
-  collectRTKSavings,
-  collectTokenSaveSavings,
-  mergeResults,
-} from "./collector";
-import type { CollectorDeps } from "./collector";
-import { reportDataToDocument } from "./adapter";
-import { parseReportDocument, type ReportValidationError } from "./contract";
-import { openReportInBrowser, publishReportToStudio, writeTemporaryReport } from "./delivery";
+  resolveFrameworkContext,
+  type FrameworkContext,
+} from "../../../lib/orchestrator/framework-context";
+import { AmbiguousCompanionError, RepositoryNotFoundError } from "../../../lib/orchestrator/types";
+import { collectCompanionUsage } from "../../../lib/usage/collect";
+import { resolveUsageScope } from "../../../lib/usage/scope";
+import { UsageError, type UsageErrorEnvelope } from "../../../lib/usage/types";
+import { usageDays, usageWindow } from "../../../lib/usage/window";
+import { parseReportDocument } from "./contract";
+import { publishReportToStudio, writeTemporaryReport } from "./delivery";
 import { renderHTML, renderJSON } from "./renderer";
-import type { ReportData, ReportDocument, ReportOptions } from "./types";
+import { ensureUnambiguousCompanion } from "../shared/companion-selection";
+import type { ReportDocument, ReportOptions } from "./types";
 
-interface ReportCommandDeps extends CollectorDeps {
+interface ReportCommandDeps {
   ensureUnambiguousCompanion?: (cwd: string) => Promise<boolean>;
-  resolveFrameworkContext?: typeof resolveFrameworkContext;
+  resolveFrameworkContext?: (cwd: string) => Promise<Pick<FrameworkContext, "companionPath">>;
+  resolveUsageScope?: typeof resolveUsageScope;
+  collectCompanionUsage?: typeof collectCompanionUsage;
   writeTemporaryReport?: typeof writeTemporaryReport;
-  openReportInBrowser?: typeof openReportInBrowser;
   publishReportToStudio?: typeof publishReportToStudio;
   readInput?: (input: string) => Promise<string>;
+  writeOutput?: (output: string, html: string) => Promise<void>;
+  now?: () => Date;
   env?: NodeJS.ProcessEnv;
 }
 
-/** Set by Mate's factory runner: the report goes to this file instead of a browser. */
-const REPORT_OUTPUT_ENV = "MATE_REPORT_OUTPUT";
+interface ReportDeliveryReceipt {
+  kind: "report-delivery";
+  version: 1;
+  title: string;
+  delivery:
+    | { kind: "studio"; id: string; url?: string; surface?: "reports" }
+    | { kind: "runner-output" }
+    | { kind: "temporary-file"; path: string };
+  warnings: string[];
+}
 
 function parseOptions(argv: string[]): ReportOptions {
   let days = 7;
   let json = false;
   let input: string | undefined;
   let daysSpecified = false;
-
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === "--days") {
+    const option = argv[i];
+    if (option === "--days") {
+      if (daysSpecified)
+        throw new UsageError("INVALID_OPTIONS", "--days may only be supplied once");
       daysSpecified = true;
-      const value = argv[i + 1];
-      if (!value) throw new Error("--days requires a positive integer");
-      days = Number.parseInt(value, 10);
-      if (!Number.isInteger(days) || days < 1) {
-        throw new Error("--days requires a positive integer");
-      }
-      i++;
-      continue;
-    }
-    if (argv[i] === "--input") {
-      const value = argv[i + 1];
-      if (!value) throw new Error("--input requires a JSON file path or - for stdin");
-      if (input !== undefined) throw new Error("--input may only be provided once");
-      input = value;
-      i++;
-      continue;
-    }
-    if (argv[i] === "--json") json = true;
+      days = usageDays(argv[++i]);
+    } else if (option === "--input") {
+      if (input !== undefined)
+        throw new UsageError("INVALID_OPTIONS", "--input may only be supplied once");
+      input = argv[++i];
+      if (!input || (input !== "-" && input.startsWith("--")))
+        throw new UsageError("INVALID_OPTIONS", "--input requires a JSON file or -");
+    } else if (option === "--json") json = true;
+    else throw new UsageError("INVALID_OPTIONS", "Unknown report option");
   }
-
-  if (input !== undefined && daysSpecified) {
-    throw new Error("--days cannot be combined with --input; the document supplies its own period");
-  }
+  if (input !== undefined && daysSpecified)
+    throw new UsageError("INVALID_OPTIONS", "--days cannot be combined with --input");
   return { days, json, input };
 }
 
-async function readStdin(): Promise<string> {
-  const chunks: Uint8Array[] = [];
+async function readStructuredInput(input: string): Promise<string> {
+  if (input !== "-") return readFile(input, "utf8");
+  const chunks: Buffer[] = [];
+  let size = 0;
   for await (const chunk of process.stdin) {
-    chunks.push(typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk);
+    const bytes = Buffer.from(chunk);
+    size += bytes.length;
+    if (size > 16 * 1024 * 1024) throw new Error("Input exceeds limit");
+    chunks.push(bytes);
   }
-  const size = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
-  const result = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(result);
+  return Buffer.concat(chunks).toString("utf8");
 }
 
-async function readStructuredInput(input: string, deps: ReportCommandDeps): Promise<string> {
-  if (deps.readInput) return deps.readInput(input);
-  return input === "-" ? readStdin() : readFile(input, "utf8");
+function fail(
+  error: UsageError,
+  { fallback, issues }: { fallback?: ReportDocument; issues?: unknown } = {},
+): void {
+  const envelope: UsageErrorEnvelope = {
+    kind: "error",
+    version: 1,
+    error: { code: error.code, message: error.message, ...(issues ? { issues } : {}) },
+    ...(fallback ? { fallback } : {}),
+  };
+  console.error(error.message);
+  console.log(JSON.stringify(envelope));
+  process.exitCode = 1;
 }
 
-function validationMessage(error: unknown): string {
-  if (error && typeof error === "object" && "issues" in error) {
-    const issues = (error as ReportValidationError).issues;
-    return issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ");
+const companionAmbiguous = () =>
+  new UsageError("COMPANION_AMBIGUOUS", "Select a Companion Repository before requesting usage");
+
+function usageFailure(error: unknown): UsageError {
+  if (error instanceof UsageError) return error;
+  if (error instanceof AmbiguousCompanionError) return companionAmbiguous();
+  if (error instanceof RepositoryNotFoundError)
+    return new UsageError(
+      "COMPANION_UNRESOLVED",
+      "No Companion Repository resolves for this directory",
+    );
+  return new UsageError("COLLECTION_FAILED", "Unable to resolve or collect companion usage");
+}
+
+const isLocalHost = (host: string) =>
+  ["localhost", "0.0.0.0", "[::]", "[::1]"].includes(host) ||
+  host.endsWith(".localhost") ||
+  /^127\.\d+\.\d+\.\d+$/.test(host);
+
+/** Public, credential-free http(s) address; local or invalid URLs fall back to the Reports locator. */
+function publicStudioUrl(raw: string): string | undefined {
+  try {
+    const url = new URL(raw);
+    if (
+      ["http:", "https:"].includes(url.protocol) &&
+      !url.username &&
+      !url.password &&
+      !isLocalHost(url.hostname)
+    )
+      return url.href;
+  } catch {
+    /* Use the Reports locator for an invalid URL. */
   }
-  return error instanceof Error ? error.message : String(error);
+  return undefined;
+}
+
+function receipt(
+  title: string,
+  delivery: ReportDeliveryReceipt["delivery"],
+  warnings: string[],
+): ReportDeliveryReceipt {
+  return { kind: "report-delivery", version: 1, title, delivery, warnings };
+}
+
+async function deliverReport(
+  document: ReportDocument,
+  deps: ReportCommandDeps,
+): Promise<ReportDeliveryReceipt> {
+  const html = renderHTML(document);
+  const warnings: string[] = [];
+  try {
+    const hosted = await (deps.publishReportToStudio ?? publishReportToStudio)(
+      document.title,
+      html,
+    );
+    if (hosted) {
+      const publicUrl = hosted.url ? publicStudioUrl(hosted.url) : undefined;
+      return receipt(
+        document.title,
+        {
+          kind: "studio",
+          id: hosted.id,
+          ...(publicUrl ? { url: publicUrl } : { surface: "reports" }),
+        },
+        warnings,
+      );
+    }
+  } catch {
+    warnings.push("Studio hosting was unavailable; report delivered locally");
+  }
+  const output = (deps.env ?? process.env).MATE_REPORT_OUTPUT;
+  if (output) {
+    const write =
+      deps.writeOutput ??
+      (async (file: string, content: string) => {
+        await mkdir(path.dirname(file), { recursive: true });
+        await writeFile(file, content, "utf8");
+      });
+    await write(output, html);
+    return receipt(document.title, { kind: "runner-output" }, warnings);
+  }
+  const file = await (deps.writeTemporaryReport ?? writeTemporaryReport)(html);
+  return receipt(document.title, { kind: "temporary-file", path: file }, warnings);
 }
 
 /**
  * @command mate report [--days N] [--input FILE|-] [--json]
- * @description Generates a usage report from built-in collectors or a validated JSON document.
+ * @description Returns usage JSON or an explicit report's delivery receipt. Never opens a browser.
  */
 export async function runReportCommand(
   argv: string[] = [],
@@ -104,146 +191,55 @@ export async function runReportCommand(
   try {
     options = parseOptions(argv);
   } catch (error) {
-    console.error(`Invalid report options: ${validationMessage(error)}`);
-    process.exitCode = 1;
+    fail(error as UsageError);
     return;
   }
 
-  const ensureCompanion = deps.ensureUnambiguousCompanion ?? ensureUnambiguousCompanion;
-  if (!(await ensureCompanion(process.cwd()))) {
-    process.exitCode = 1;
-    return;
-  }
-
-  let reportDocument: ReportDocument;
   if (options.input !== undefined) {
+    let document: ReportDocument;
     try {
-      reportDocument = parseReportDocument(await readStructuredInput(options.input, deps));
+      document = parseReportDocument(await (deps.readInput ?? readStructuredInput)(options.input));
     } catch (error) {
-      console.error(`Invalid report input: ${validationMessage(error)}`);
-      process.exitCode = 1;
+      const issues =
+        error && typeof error === "object" && "issues" in error ? error.issues : undefined;
+      fail(new UsageError("INVALID_REPORT_INPUT", "Invalid report input"), { issues });
       return;
     }
-  } else {
-    const resolveCtx = deps.resolveFrameworkContext ?? resolveFrameworkContext;
-    const { companionPath, configStore, workingRepoStore, repository, contextKind } =
-      await resolveCtx(process.cwd());
-    const config = await configStore.load();
-    const working =
-      repository || contextKind === "companion-root" ? null : await workingRepoStore.load();
-
-    const workingRepoPath = repository?.path ?? working?.repos[0]?.path ?? process.cwd();
-    const capabilities = config.capabilities ?? [];
-    const enabledCapabilities = capabilities.map((c) => c.name);
-    const activeAgents = process.env.MATE_ALLOWED_AGENTS
-      ? process.env.MATE_ALLOWED_AGENTS.split(",")
-          .map((a) => a.trim())
-          .filter(Boolean)
-      : [];
-    const reportNow = new Date();
-    const collectorDeps: CollectorDeps = {
-      spawn: deps.spawn,
-      now: deps.now ?? (() => reportNow),
-    };
-
-    const tokensaveEnabled = enabledCapabilities.includes("tokensave");
-    const rtkEnabled = enabledCapabilities.includes("rtk");
-
-    const ccusageResult = await collectCcusageSpending(options.days, collectorDeps);
-    if (ccusageResult.friendlyError) console.warn(ccusageResult.friendlyError);
-
-    let tokensaveWorking: Awaited<ReturnType<typeof collectTokenSaveSavings>> = {
-      entry: null,
-      status: { name: "tokensave (savings)", enabled: false, status: "not enabled" },
-    };
-    let tokensaveCompanion: Awaited<ReturnType<typeof collectTokenSaveSavings>> = {
-      entry: null,
-      status: { name: "tokensave (savings)", enabled: false, status: "not enabled" },
-    };
-    let rtkResult: Awaited<ReturnType<typeof collectRTKSavings>> = {
-      entry: null,
-      status: { name: "rtk", enabled: false, status: "not enabled" },
-    };
-
-    if (tokensaveEnabled) {
-      [tokensaveWorking, tokensaveCompanion] = await Promise.all([
-        collectTokenSaveSavings(workingRepoPath, options.days, collectorDeps),
-        collectTokenSaveSavings(companionPath, options.days, collectorDeps),
-      ]);
-    }
-    if (rtkEnabled)
-      rtkResult = await collectRTKSavings(workingRepoPath, options.days, collectorDeps);
-
-    const merged = mergeResults(
-      ccusageResult.entries,
-      tokensaveWorking.entry,
-      tokensaveCompanion.entry,
-      rtkResult.entry,
-    );
-    const reportData: ReportData = {
-      days: options.days,
-      generatedAt: new Date().toISOString(),
-      workingRepoPath,
-      companionRepoPath: companionPath,
-      activeAgents,
-      enabledCapabilities,
-      spending: merged.spending,
-      savings: merged.savings,
-      toolStatus: [ccusageResult.status, tokensaveWorking.status, rtkResult.status],
-      totalSpending: merged.totalSpending,
-      totalSavings: merged.totalSavings,
-      netSpend: merged.netSpend,
-    };
-    reportDocument = reportDataToDocument(reportData);
-  }
-
-  if (options.json) {
-    console.log(renderJSON(reportDocument));
-    return;
-  }
-
-  const html = renderHTML(reportDocument);
-  try {
-    const hosted = await (deps.publishReportToStudio ?? publishReportToStudio)(
-      reportDocument.title,
-      html,
-    );
-    if (hosted) {
-      console.log(
-        hosted.url
-          ? `Report hosted in Studio: ${hosted.url}`
-          : `Report hosted in Studio: open Studio → Reports (report ${hosted.id})`,
-      );
+    if (options.json) {
+      console.log(renderJSON(document));
       return;
     }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(`Unable to host the report in Studio: ${message}; opening it locally instead`);
-  }
-
-  const output = (deps.env ?? process.env)[REPORT_OUTPUT_ENV];
-  if (output) {
     try {
-      await mkdir(path.dirname(output), { recursive: true });
-      await writeFile(output, html, "utf8");
-      console.log("Report saved for Studio; it appears in the Factory once the run ends");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn(`Unable to save the report: ${message}`);
-      console.log(renderJSON(reportDocument));
+      console.log(JSON.stringify(await deliverReport(document, deps)));
+    } catch {
+      fail(new UsageError("REPORT_DELIVERY_FAILED", "Unable to deliver the report"), {
+        fallback: document,
+      });
     }
     return;
   }
 
-  let reportPath: string | undefined;
   try {
-    reportPath = await (deps.writeTemporaryReport ?? writeTemporaryReport)(html);
-    await (deps.openReportInBrowser ?? openReportInBrowser)(reportPath);
-    console.log(`Report opened from ${reportPath}`);
+    const now = deps.now?.() ?? new Date();
+    const window = usageWindow(options.days, now);
+    // Pins an env or projected choice; JSON callers get an error envelope, never a picker.
+    const pinned = await (
+      deps.ensureUnambiguousCompanion ??
+      ((cwd: string) => ensureUnambiguousCompanion(cwd, { interactive: false }))
+    )(process.cwd());
+    if (!pinned) throw companionAmbiguous();
+    const { companionPath } = await (deps.resolveFrameworkContext ?? resolveFrameworkContext)(
+      process.cwd(),
+    );
+    const scope = await (deps.resolveUsageScope ?? resolveUsageScope)(companionPath);
+    console.log(
+      JSON.stringify(
+        await (deps.collectCompanionUsage ?? collectCompanionUsage)(scope, window, {
+          now: () => now,
+        }),
+      ),
+    );
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const location = reportPath ? ` at ${reportPath}` : "";
-    console.warn(`Unable to open HTML report${location}: ${message}`);
-    console.log(renderJSON(reportDocument));
+    fail(usageFailure(error));
   }
 }

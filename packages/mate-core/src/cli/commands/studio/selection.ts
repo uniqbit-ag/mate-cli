@@ -11,6 +11,7 @@ export type StudioView =
   | "skills"
   | "vault"
   | "reports"
+  | "usage"
   | "graph";
 
 export const STUDIO_VIEWS: readonly StudioView[] = [
@@ -22,6 +23,7 @@ export const STUDIO_VIEWS: readonly StudioView[] = [
   "skills",
   "vault",
   "reports",
+  "usage",
   "graph",
 ];
 
@@ -38,7 +40,7 @@ export const MODE_VIEWS: Readonly<Record<StudioMode, readonly StudioView[]>> = {
 };
 
 /** Views every mode is offered, in navigation order. */
-export const SHARED_VIEWS: readonly StudioView[] = ["vault", "specs", "reports", "graph"];
+export const SHARED_VIEWS: readonly StudioView[] = ["vault", "specs", "reports", "graph", "usage"];
 
 /** Where a mode lands when its URL names no view, or one it is not offered. */
 export const LANDING_VIEW: Readonly<Record<StudioMode, StudioView>> = {

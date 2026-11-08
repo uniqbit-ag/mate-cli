@@ -17,6 +17,7 @@ import { usePalette } from "../stores/palette";
 import { changeStep, groupChanges } from "../views/overview/change-group";
 import {
   companionName,
+  insightViews,
   libraryViews,
   modeViews,
   openTerminal,
@@ -85,6 +86,7 @@ function useCommands(shell: ShellData, search: StudioSearch, open: boolean): Com
   const views: Command[] = [
     ...modeViews(shell.studioMode, shell.factoryMode),
     ...libraryViews(),
+    ...insightViews(),
   ].map((view) => ({
     id: `view-${view}`,
     label: VIEW_TITLES[view],

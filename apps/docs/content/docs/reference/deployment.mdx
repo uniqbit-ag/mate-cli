@@ -449,7 +449,7 @@ fails, no exact-version image is published and the channel tag does not move.
 Studio has two modes, chosen with the **Mode** switch at the top of its sidebar.
 **Engineering** offers the Overview of active changes, Workflow and Skills;
 **Analysis** offers an Overview of published state: specs, recently shipped
-changes and hosted reports. Vault, Specs, Reports and Graph are offered in
+changes and hosted reports. Vault, Specs, Usage, Reports and Graph are offered in
 both. Graph draws the companion's specs with their Areas and repositories, linked
 by mentions and by the archived changes they shipped in.
 
@@ -470,6 +470,33 @@ by mentions and by the archived changes they shipped in.
   bookmarks with `role=product-engineer` or `role=business-analyst` still open,
   as Engineering and Analysis. Every address passes through the profile, so an
   Engineering bookmark opens Analysis in the appliance.
+
+## Studio Usage
+
+Open **Usage** in the sidebar or command palette. It works in both modes and in
+read-only Studio. The selected Companion Repository's own activity and **all
+linked Working Repositories** appear together; Reports stays separate generic
+report history.
+
+- Choose seven/thirty UTC days or a custom 1–365-day period, including today.
+  Today's bucket remains in progress. The collection date/time stays visible.
+- Search the repository filter to narrow totals, trend, ledger and coverage
+  together. Filters live in the URL and browser Back restores them.
+- Switch daily **Tokens/Cost** or **Chart/Table**. Expand a repository row for
+  runtime/model, input/output and cache details. The table exposes exact values
+  without pointer hover.
+- **Refresh** explicitly recollects local data; there is no polling. A failed
+  refresh retains the previous values/time with a stale notice and Retry.
+- Inspect **Sources and coverage** before interpreting totals. Missing,
+  unsupported or unreadable sources mean partial/unavailable data, not zero.
+  An em dash means unknown. Cost identifies reported/estimated provenance;
+  estimated savings are separate, not deductions from a bill.
+
+Collection reads local usage metadata and enabled savings ledgers, not transcript
+content, and installs nothing. Shared Working Repository activity can appear in
+several companions; this is repository usage, not exclusive companion billing.
+Technical callers use [`mate report`](/docs/reference/commands#usage-and-reports),
+which returns JSON and never opens the browser.
 
 ## Saving, and the conflict you will meet
 

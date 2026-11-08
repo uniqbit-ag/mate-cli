@@ -20,7 +20,7 @@ import { useAppearance } from "../stores/appearance";
 import { usePageUi } from "../stores/page-ui";
 import { factoryHome } from "../views/factory/outcome";
 import { groupChanges } from "../views/overview/change-group";
-import { libraryViews, modeViews, VIEW_ICONS } from "./frame";
+import { insightViews, libraryViews, modeViews, VIEW_ICONS } from "./frame";
 import { MODE_TITLES, VIEW_PATHS, VIEW_TITLES } from "./views";
 
 interface SidebarProps {
@@ -81,6 +81,14 @@ export function Sidebar({ shell, search, view }: SidebarProps) {
             counts={counts}
             collapsed={collapsed}
           />
+          <NavGroup
+            label="Insights"
+            views={insightViews()}
+            search={search}
+            current={view}
+            counts={counts}
+            collapsed={collapsed}
+          />
         </>
       ) : null}
       <div className="sidebar-footer mt-auto grid gap-1 border-t border-rule-soft pt-2 max-[900px]:mt-0 max-[900px]:ml-auto max-[900px]:flex max-[900px]:border-0 max-[900px]:pt-0">
@@ -115,7 +123,7 @@ function NavGroup(props: {
   if (props.views.length === 0) return null;
   return (
     <div
-      className="grid gap-px max-[900px]:flex max-[900px]:items-center"
+      className="grid gap-px max-[900px]:flex max-[900px]:min-w-0 max-[900px]:max-w-full max-[900px]:flex-wrap max-[900px]:items-center"
       role="group"
       aria-label={props.label}
       data-studio-nav-section={props.label}
@@ -159,6 +167,7 @@ function NavLink({
     <Tooltip label={title} disabled={!collapsed}>
       <Link
         to={VIEW_PATHS[view]}
+        preload={view === "usage" ? false : undefined}
         search={search}
         className={cn(
           "sidebar-nav-link relative flex h-8 items-center gap-2.5 rounded-[6px] px-2.5 text-sm whitespace-nowrap text-[color-mix(in_srgb,var(--text)_82%,var(--muted))] no-underline hover:bg-surface hover:text-text rail-min:justify-center rail-min:px-0",

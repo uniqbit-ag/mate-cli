@@ -10,6 +10,7 @@ export const VIEW_PATHS: Record<StudioView, string> = {
   vault: "/vault",
   specs: "/specs",
   reports: "/reports",
+  usage: "/usage",
   graph: "/graph",
 };
 
@@ -23,6 +24,7 @@ export const VIEW_TITLES: Record<StudioView, string> = {
   vault: "Vault",
   specs: "Specs",
   reports: "Reports",
+  usage: "Usage",
   graph: "Graph",
 };
 
@@ -49,6 +51,7 @@ export const VIEW_DESCRIPTIONS: Record<StudioMode, Record<StudioView, string>> =
     vault: "Every file in the Companion Repository.",
     specs: "Capabilities by Area, with their requirements.",
     reports: "Reports agents published for this companion.",
+    usage: "Token usage across this companion and every linked Working Repository.",
     graph: "Capabilities, Areas and repositories, and how they connect.",
   },
   analysis: {
@@ -60,6 +63,7 @@ export const VIEW_DESCRIPTIONS: Record<StudioMode, Record<StudioView, string>> =
     vault: "Every file in the Companion Repository.",
     specs: "Capabilities by Area, with their requirements.",
     reports: "Reports agents published for this companion.",
+    usage: "Token usage across this companion and every linked Working Repository.",
     graph: "Capabilities, Areas and repositories, and how they connect.",
   },
 };

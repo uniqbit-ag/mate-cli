@@ -123,6 +123,31 @@
 
 /* Layout and third-party surfaces that utilities cannot reach: the frame grid, the terminal. */
 @layer components {
+  .usage-table th,
+  .usage-table td {
+    border-bottom: 1px solid var(--border-soft);
+    padding: 10px 8px;
+    vertical-align: top;
+  }
+  .usage-table th {
+    text-align: left;
+    font-weight: 500;
+  }
+  .usage-table thead th {
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .usage-table td,
+  .usage-table thead th:not(:first-child) {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .usage-table td {
+    font-family: var(--font-mono);
+  }
+  .usage-ledger th:first-child {
+    padding-left: 0;
+  }
   /* Top bar across the sidebar and main view; the terminal takes the right edge at full height. */
   .studio-frame {
     --rail-w: 196px;

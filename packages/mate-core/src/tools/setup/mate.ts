@@ -125,11 +125,11 @@ To mark mermaid nodes, apply the theme classes \`added\`, \`changed\`, and \`rem
 
 1. Serialize the complete document to a temporary file or pipe it to stdin.
 2. Run \`mate report --input <file-or->\`.
-3. Add \`--json\` when the caller needs normalized JSON instead of browser delivery.
+3. Parse the version 1 \`report-delivery\` JSON receipt. Add \`--json\` only to validate and return the document without HTML delivery.
 
-The CLI chooses the delivery surface; deliver only through \`mate report\`, never a hand-written file, server, or browser launch. Inside a Studio terminal it hosts the report in Studio and prints a full link only when Studio has a public address, otherwise it tells the operator to open Studio → Reports; relay that output. Elsewhere, or when Studio is unreachable, it writes self-contained HTML to a unique OS temporary directory and opens it in the default browser. The report header carries an icon-only print control, named "Print / Save as PDF", that calls the browser's native print dialog. If HTML delivery fails, the CLI warns on stderr and emits the complete report document as JSON on stdout.
+The CLI chooses the delivery surface and never launches a browser. Deliver only through \`mate report --input\`, never a hand-written HTML file or server. For \`delivery.kind: studio\`, present its public \`url\` when supplied; otherwise tell the person to open Studio → Reports and name \`delivery.id\`. For \`temporary-file\`, present \`delivery.path\` as the HTML report locator. For \`runner-output\`, say the report was saved for the runner; no local path is returned. Do not present raw JSON receipts as the human-facing report. The report header retains an icon-only print control, named "Print / Save as PDF", that calls the browser's native print dialog. A final delivery failure exits nonzero and returns an error envelope with the validated document as fallback data; do not claim successful report delivery.
 
-The built-in \`mate report\` path collects Mate usage data and adapts it to the same contract and renderer.
+Without \`--input\`, \`mate report\` returns a version 1 \`companion-usage\` JSON snapshot for technical callers, not a ReportDocument or HTML report. Human-facing usage belongs in Studio Usage.
 `;
 
 async function deployMateSkillDir(src: string, dest: string): Promise<void> {

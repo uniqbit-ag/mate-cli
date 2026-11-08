@@ -118,5 +118,6 @@ describe("usePrefetchViews", () => {
     expect(keys).toContainEqual(vaultQuery(search.companion, {}).queryKey);
     expect(keys).toContainEqual(reportsQuery(search.companion).queryKey);
     expect(keys).not.toContainEqual(factoryQuery(search.companion).queryKey);
+    expect(keys).not.toContainEqual([search.companion, "usage", 7]);
   });
 });

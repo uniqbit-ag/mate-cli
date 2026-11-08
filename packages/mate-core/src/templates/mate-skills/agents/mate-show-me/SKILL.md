@@ -28,7 +28,7 @@ Explain the current topic visually in a browser-rendered Mate report. Skip the p
 
 ## Mate Workflow
 
-- Explanation only. Never write or edit source code, tests, documentation, OpenSpec artifacts, context files, or ADRs. The only file this skill produces is the report document handed to `mate report --input`; the CLI hosts or opens the rendered report.
+- Explanation only. Never write or edit source code, tests, documentation, OpenSpec artifacts, context files, or ADRs. The only file this skill produces is the report document handed to `mate report --input`; the CLI delivers the rendered report and prints a JSON delivery receipt.
 - Draw from the repositories, not from memory. Every diagram and every diff line comes from the inspected repository state, never from recollection of the conversation. Use the available code-graph tools before broad source scans.
 - Code lives in the Working Repository; the Companion Repository holds only artifacts. Run `git diff` in the Working Repository.
 - Never put an absolute local path, home directory, username, machine name, temporary report path, Companion Repository path, or raw path-valued environment variable in the report. Use repository-relative paths or neutral labels such as `Working Repository` and `Companion Repository`.
@@ -44,7 +44,7 @@ never invokes.
 
 ## Browser Report Required
 
-Always assemble and open a Mate report, even when a small inline sketch would be sufficient. Do not answer with an inline-only visual or paste the complete diagram or diff into the conversation. The final response should briefly state what the report shows, relaying the link or Studio instruction `mate report` printed, without repeating any temporary file path.
+Always assemble and open a Mate report, even when a small inline sketch would be sufficient. Do not answer with an inline-only visual or paste the complete diagram or diff into the conversation. The final response should briefly state what the report shows and where to open it, taken from the delivery receipt `mate report` printed; see Browser Delivery.
 
 ## Report Contents
 
@@ -124,9 +124,15 @@ A proposed change has no code yet; the report shows its plan so a person can rev
 
 ## Browser Delivery
 
-The report is mandatory. Prefer `mate report --input <temporary-json-file>` without `--json` so the CLI reads the complete document reliably and renders self-contained HTML. The CLI chooses the surface: inside a Studio terminal it hosts the report in Studio, elsewhere it opens it in the default browser. The CLI also supports `mate report --input -` when JSON is piped to stdin; if stdin delivery reports empty or truncated JSON, switch to a temporary JSON file rather than retrying the same transport. If validation fails, fix the report document and retry; do not fall back to an inline explanation or JSON-only delivery.
+The report is mandatory. Prefer `mate report --input <temporary-json-file>` without `--json` so the CLI reads the complete document reliably and renders self-contained HTML. The CLI chooses the surface and never launches a browser: inside a Studio terminal it hosts the report in Studio, elsewhere it writes the HTML to a unique OS temporary directory. Either way it prints a version 1 `report-delivery` JSON receipt on stdout. The CLI also supports `mate report --input -` when JSON is piped to stdin; if stdin delivery reports empty or truncated JSON, switch to a temporary JSON file rather than retrying the same transport. If validation fails, fix the report document and retry; do not fall back to an inline explanation or JSON-only delivery.
 
-Deliver only through `mate report --input`. Never hand-write an HTML file, start a server, or open a browser yourself. Relay what the CLI prints: a full link when it prints one, otherwise its instruction to open Studio → Reports. Do not invent a link, and do not repeat any loopback address or credential.
+Deliver only through `mate report --input`. Never hand-write an HTML file, start a server, or open a browser yourself. Relay the receipt's `delivery`, never the raw JSON:
+
+- `studio`: give its `url` when present; otherwise tell the user to open Studio → Reports and name `delivery.id`.
+- `temporary-file`: give `delivery.path` as the report locator to open in a browser. This is the only way to reach the report.
+- `runner-output`: say the report was saved for the runner.
+
+When the CLI exits nonzero with an error envelope, say delivery failed; never claim the report was delivered. Do not invent a link, and do not repeat any loopback address or credential.
 
 ## Assembling The Report
 

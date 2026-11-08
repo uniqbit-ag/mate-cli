@@ -20,6 +20,7 @@ import {
   toHref,
   toSearchParams,
   withMode,
+  viewsFor,
 } from "./selection";
 
 const inventory: StudioInventory = {
@@ -28,6 +29,16 @@ const inventory: StudioInventory = {
     { path: "/home/dev/.mate/companions/beta-companion", health: "ready", pairings: [] },
   ],
 };
+
+it("offers Usage in both modes without changing the factory gate", () => {
+  for (const mode of ["engineering", "analysis"] as const) {
+    expect(viewsFor(mode)).toContain("usage");
+    expect(
+      parse(new URL(`http://studio.local/?view=usage&studioMode=${mode}`), modePolicy("standard"))
+        .view,
+    ).toBe("usage");
+  }
+});
 
 describe("companionDigest", () => {
   it("is short, stable, and does not carry the path", () => {

@@ -56,6 +56,7 @@ async function loadViewCode(
   const routes = router.routesByPath as unknown as Record<string, unknown>;
   for (const view of views) {
     if (cancelled()) return;
+    if (view === "usage") continue;
     const route = routes[VIEW_PATHS[view]];
     if (!route) continue;
     // oxlint-disable-next-line no-await-in-loop -- one chunk at a time

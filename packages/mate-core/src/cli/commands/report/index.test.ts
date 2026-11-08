@@ -1,482 +1,257 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import type { spawnSync } from "node:child_process";
-import fs from "node:fs/promises";
+import { afterEach, beforeEach, describe, expect, spyOn } from "bun:test";
+import { test } from "bun:test";
+
+import { RepositoryNotFoundError } from "../../../lib/orchestrator/types";
+import { aggregateUsage } from "../../../lib/usage/aggregate";
+import type { UsageScope } from "../../../lib/usage/scope";
+import { sourceResult } from "../../../lib/usage/source";
+import { UsageError } from "../../../lib/usage/types";
 import { runReportCommand } from "./index";
-import { REPORT_DOCUMENT_VERSION } from "./types";
 
-const COMPANION_PATH = "/tmp/test-companion";
-const REPORT_NOW = new Date("2026-08-31T12:00:00Z");
-
-beforeEach(async () => {
-  await fs.mkdir(COMPANION_PATH, { recursive: true });
+const scope: UsageScope = {
+  companionPath: "/acme/companion",
+  companionId: "companion",
+  fingerprint: "acme",
+  capabilities: [],
+  repositories: [
+    {
+      id: "companion",
+      kind: "companion",
+      label: "Companion Repository",
+      path: "/acme/companion",
+      aliases: ["/acme/companion"],
+      available: true,
+    },
+  ],
+};
+const document = {
+  version: 1,
+  title: "Acme report",
+  generatedAt: "2026-11-07T12:00:00Z",
+  metadata: [],
+  summary: [],
+  sections: [{ id: "notes", title: "Notes", type: "text", content: "Acme" }],
+};
+const now = () => new Date("2026-11-07T12:00:00Z");
+let log: ReturnType<typeof spyOn<typeof console, "log">>;
+let errors: ReturnType<typeof spyOn<typeof console, "error">>;
+beforeEach(() => {
+  log = spyOn(console, "log").mockImplementation(() => {});
+  errors = spyOn(console, "error").mockImplementation(() => {});
 });
-
-// Failure-path cases set process.exitCode = 1; `= undefined` does not reset it under Bun.
 afterEach(() => {
+  log.mockRestore();
+  errors.mockRestore();
   process.exitCode = 0;
 });
+const output = () => {
+  expect(log.mock.calls).toHaveLength(1);
+  return JSON.parse(String(log.mock.calls[0]![0]));
+};
 
-const makeResolveContext = () => ({
-  configStore: {
-    load: async () => ({
-      capabilities: [{ name: "tokensave" }, { name: "graphify" }],
-    }),
-  },
-  workingRepoStore: {
-    load: async () => ({
-      repos: [{ id: "test", path: "/tmp/test-work" }],
-    }),
-  },
-  companionPath: "/tmp/test-companion",
-});
+function deps(): NonNullable<Parameters<typeof runReportCommand>[1]> {
+  return {
+    now,
+    env: {},
+    ensureUnambiguousCompanion: async () => true,
+    resolveFrameworkContext: async () => ({ companionPath: scope.companionPath }),
+    resolveUsageScope: async () => scope,
+    collectCompanionUsage: async (selected, window) =>
+      aggregateUsage(
+        selected,
+        window,
+        [sourceResult(selected, "claude", "unavailable")],
+        now().toISOString(),
+      ),
+    readInput: async () => JSON.stringify(document),
+    publishReportToStudio: async () => null,
+    writeTemporaryReport: async () => "/acme/temp/report.html",
+  };
+}
 
-const makeSpawn =
-  (stdout: string, status = 0) =>
-  () =>
-    ({ stdout, status, error: null }) as ReturnType<typeof spawnSync>;
+describe("technical usage output", () => {
+  test.each([[], ["--json"], ["--days", "30"]].map((args) => ({ args })))(
+    "prints one usage snapshot: %j",
+    async ({ args }) => {
+      const options = deps();
+      options.env = { MATE_REPORT_OUTPUT: "/acme/should-not-write.html" };
+      options.writeTemporaryReport = async () => {
+        throw new Error("must not write");
+      };
+      options.publishReportToStudio = async () => {
+        throw new Error("must not host");
+      };
+      await runReportCommand(args, options);
+      expect(output()).toMatchObject({
+        kind: "companion-usage",
+        version: 1,
+        window: { days: args.includes("30") ? 30 : 7 },
+      });
+      expect(errors).not.toHaveBeenCalled();
+    },
+  );
 
-const makeDelivery = () => ({
-  publishReportToStudio: async () => null,
-  writeTemporaryReport: async () => "/tmp/mate-report/report.html",
-  openReportInBrowser: async () => {},
-});
-
-describe("runReportCommand", () => {
-  const structuredDocument = JSON.stringify({
-    version: REPORT_DOCUMENT_VERSION,
-    title: "Structured report",
-    generatedAt: "2026-01-01T00:00:00Z",
-    metadata: [{ label: "Owner", value: "acme" }],
-    summary: [{ label: "Count", value: 1 }],
-    sections: [{ id: "notes", title: "Notes", type: "text", content: "Supplied" }],
-  });
-
-  test("accepts structured JSON from a file input and preserves JSON mode", async () => {
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-    const spawn = () => {
-      throw new Error("structured input must not run collectors");
+  test.each(
+    [
+      ["--days", "7x"],
+      ["--days", "0"],
+      ["--days", "366"],
+      ["--days"],
+      ["--other"],
+      ["--days", "7", "--input", "-"],
+      ["--input"],
+    ].map((args) => ({ args })),
+  )("rejects invalid options: %j", async ({ args }) => {
+    const options = deps();
+    options.resolveFrameworkContext = async () => {
+      throw new Error("must not resolve");
     };
-    await runReportCommand(["--input", "report.json", "--json"], {
-      ensureUnambiguousCompanion: async () => true,
-      readInput: async (input) => {
-        expect(input).toBe("report.json");
-        return structuredDocument;
-      },
-      spawn,
+    await runReportCommand(args, options);
+    expect(output()).toMatchObject({
+      kind: "error",
+      version: 1,
+      error: { code: "INVALID_OPTIONS" },
     });
-    const parsed = JSON.parse(String(logSpy.mock.calls[0]?.[0]));
-    expect(parsed.title).toBe("Structured report");
-    expect(parsed.sections[0].type).toBe("text");
-    logSpy.mockRestore();
+    expect(process.exitCode).toBe(1);
   });
 
-  test("rejects invalid structured input without opening a report", async () => {
-    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-    /**
-     * Recorded rather than thrown: a throwing delivery dep is swallowed by the
-     * command's own fallback, so it cannot distinguish "never reached" from
-     * "reached and recovered".
-     */
-    let wroteReport = false;
-    let openedBrowser = false;
+  test("reports unresolved scope and fatal failures as sanitized JSON", async () => {
+    const options = deps();
+    options.resolveFrameworkContext = async () => {
+      throw new RepositoryNotFoundError("private source detail");
+    };
+    await runReportCommand([], options);
+    expect(output().error.code).toBe("COMPANION_UNRESOLVED");
+    expect(JSON.stringify(log.mock.calls)).not.toContain("private source detail");
+  });
 
+  test("reports an unpinned ambiguous companion before resolving context", async () => {
+    let resolved = false;
+    await runReportCommand([], {
+      ...deps(),
+      ensureUnambiguousCompanion: async () => false,
+      resolveFrameworkContext: async () => {
+        resolved = true;
+        return { companionPath: scope.companionPath };
+      },
+    });
+    expect(output().error.code).toBe("COMPANION_AMBIGUOUS");
+    expect(resolved).toBe(false);
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("preserves a typed ambiguity error without human stdout", async () => {
+    await runReportCommand([], {
+      ...deps(),
+      resolveUsageScope: async () => {
+        throw new UsageError("COMPANION_AMBIGUOUS", "Select a companion");
+      },
+    });
+    expect(output().error.code).toBe("COMPANION_AMBIGUOUS");
+  });
+});
+
+describe("explicit generic reports", () => {
+  test("retains document JSON without collection or delivery", async () => {
+    await runReportCommand(["--input", "-", "--json"], {
+      ...deps(),
+      collectCompanionUsage: async () => {
+        throw new Error("must not collect");
+      },
+      writeTemporaryReport: async () => {
+        throw new Error("must not deliver");
+      },
+    });
+    expect(output()).toEqual(document);
+  });
+
+  test("validates before creating a partial report", async () => {
+    let wrote = false;
+    await runReportCommand(["--input", "acme.json"], {
+      ...deps(),
+      readInput: async () => '{"version":1}',
+      writeTemporaryReport: async () => {
+        wrote = true;
+        return "unused";
+      },
+    });
+    expect(output().error.code).toBe("INVALID_REPORT_INPUT");
+    expect(wrote).toBe(false);
+  });
+
+  test("local delivery returns HTML locator, not a browser launch", async () => {
+    let html = "";
     await runReportCommand(["--input", "-"], {
-      ensureUnambiguousCompanion: async () => true,
-      readInput: async () => JSON.stringify({ version: REPORT_DOCUMENT_VERSION }),
+      ...deps(),
+      writeTemporaryReport: async (content) => {
+        html = content;
+        return "/acme/temp/report.html";
+      },
+    });
+    expect(output()).toMatchObject({
+      kind: "report-delivery",
+      version: 1,
+      delivery: { kind: "temporary-file", path: "/acme/temp/report.html" },
+    });
+    expect(html).toContain("Acme report");
+  });
+
+  test.each([
+    "https://reports.example.com/studio/reports/acme",
+    undefined,
+    "http://127.0.0.1/acme",
+  ])("hosted receipt keeps only public locators: %s", async (url) => {
+    await runReportCommand(["--input", "-"], {
+      ...deps(),
+      publishReportToStudio: async () => ({ id: "acme", ...(url ? { url } : {}) }),
       writeTemporaryReport: async () => {
-        wroteReport = true;
-        return "/tmp/mate-report/report.html";
-      },
-      openReportInBrowser: async () => {
-        openedBrowser = true;
+        throw new Error("must not write");
       },
     });
-
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("title"));
-    expect(wroteReport).toBe(false);
-    expect(openedBrowser).toBe(false);
-    expect(logSpy).not.toHaveBeenCalled();
-    errorSpy.mockRestore();
-    logSpy.mockRestore();
+    const receipt = output();
+    expect(receipt.delivery.kind).toBe("studio");
+    if (url?.startsWith("https:")) expect(receipt.delivery.url).toBe(url);
+    else expect(receipt.delivery).toEqual({ kind: "studio", id: "acme", surface: "reports" });
   });
 
-  test("rejects days and structured input mode conflicts", async () => {
-    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
-    await runReportCommand(["--days", "7", "--input", "-"], {
-      ensureUnambiguousCompanion: async () => true,
-    });
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("cannot be combined"));
-    errorSpy.mockRestore();
-  });
-
-  test("does not invoke RTK savings when RTK is disabled", async () => {
-    const calls: string[][] = [];
-    const deps = {
-      resolveFrameworkContext: makeResolveContext,
-      ...makeDelivery(),
-      spawn: (command: string, args: string[]) => {
-        calls.push([command, ...args]);
-        return {
-          stdout: JSON.stringify({ daily: [{ modelBreakdowns: [] }] }),
-          status: 0,
-          error: null,
-        } as ReturnType<typeof spawnSync>;
+  test("hosting failure falls back with no leaked error detail", async () => {
+    await runReportCommand(["--input", "-"], {
+      ...deps(),
+      publishReportToStudio: async () => {
+        throw new Error("private credential");
       },
-    };
-
-    await runReportCommand([], deps);
-
-    expect(calls.some((args) => args[0] === "rtk")).toBe(false);
-  });
-
-  test("generates report with mocked dependencies", async () => {
-    const deps = {
-      resolveFrameworkContext: makeResolveContext,
-      ...makeDelivery(),
-      spawn: makeSpawn(
-        JSON.stringify({
-          daily: [
-            {
-              modelBreakdowns: [
-                {
-                  modelName: "claude-sonnet-5",
-                  cost: 1.0,
-                  inputTokens: 1000,
-                  outputTokens: 500,
-                  cacheReadTokens: 800,
-                  cacheCreationTokens: 0,
-                },
-              ],
-            },
-          ],
-        }),
-      ),
-    };
-    await runReportCommand([], deps);
-    // Command should complete without throwing
-  });
-
-  test("uses bounded savings entries for report summary totals", async () => {
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-    const resolveFrameworkContext = () => ({
-      configStore: {
-        load: async () => ({ capabilities: [{ name: "tokensave" }, { name: "rtk" }] }),
-      },
-      workingRepoStore: {
-        load: async () => ({ repos: [{ id: "test", path: "/tmp/test-work" }] }),
-      },
-      companionPath: COMPANION_PATH,
     });
-    const spawn = (command: string) => {
-      if (command === "tokensave") {
-        return {
-          stdout: JSON.stringify([
-            { day: 1787443200, saved_tokens: 100, calls: 1, usd: 1 },
-            { day: 1787529600, saved_tokens: 200, calls: 2, usd: 2 },
-          ]),
-          status: 0,
-          error: null,
-        } as ReturnType<typeof spawnSync>;
-      }
-      if (command === "rtk") {
-        return {
-          stdout: JSON.stringify({
-            summary: { total_saved: 90000, total_commands: 90 },
-            daily: [{ date: "2026-08-24", saved_tokens: 300, commands: 3 }],
-          }),
-          status: 0,
-          error: null,
-        } as ReturnType<typeof spawnSync>;
-      }
-      return {
-        stdout: JSON.stringify({
-          daily: [
-            {
-              modelBreakdowns: [
-                {
-                  modelName: "claude-sonnet-5",
-                  cost: 1,
-                  inputTokens: 100,
-                  outputTokens: 50,
-                  cacheReadTokens: 0,
-                  cacheCreationTokens: 0,
-                },
-              ],
-            },
-          ],
-        }),
-        status: 0,
-        error: null,
-      } as ReturnType<typeof spawnSync>;
-    };
-
-    await runReportCommand(["--days", "7", "--json"], {
-      ensureUnambiguousCompanion: async () => true,
-      resolveFrameworkContext,
-      spawn,
-      now: () => REPORT_NOW,
-    });
-
-    const document = JSON.parse(String(logSpy.mock.calls[0]?.[0]));
-    expect(document.summary).toEqual([
-      { label: "Total spending", value: "$1.00" },
-      { label: "Total savings", value: "$4.00" },
-      { label: "Net spend", value: "$-3.00" },
-    ]);
-    expect(
-      document.sections.find((section: { id: string }) => section.id === "savings").rows,
-    ).toEqual([
-      ["tokensave", "400", "4", "$4.00", "100/call"],
-      ["rtk", "300", "3", "N/A", "100/call"],
-    ]);
-    logSpy.mockRestore();
+    const receipt = output();
+    expect(receipt.delivery.kind).toBe("temporary-file");
+    expect(JSON.stringify(receipt)).not.toContain("private credential");
   });
 
-  test("supports --json flag", async () => {
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-    const deps = {
-      resolveFrameworkContext: makeResolveContext,
+  test("runner receipts omit destination and hosting takes precedence", async () => {
+    let wrote = false;
+    await runReportCommand(["--input", "-"], {
+      ...deps(),
+      env: { MATE_REPORT_OUTPUT: "/acme/private/report.html" },
+      writeOutput: async () => {
+        wrote = true;
+      },
+    });
+    expect(output().delivery).toEqual({ kind: "runner-output" });
+    expect(wrote).toBe(true);
+  });
+
+  test("final delivery failure is a JSON error with document fallback", async () => {
+    await runReportCommand(["--input", "-"], {
+      ...deps(),
       writeTemporaryReport: async () => {
-        throw new Error("JSON mode must not write HTML");
+        throw new Error("private failure");
       },
-      openReportInBrowser: async () => {
-        throw new Error("JSON mode must not open a browser");
-      },
-      spawn: makeSpawn(
-        JSON.stringify({
-          daily: [{ modelBreakdowns: [] }],
-        }),
-      ),
-    };
-    await runReportCommand(["--json"], deps);
-    expect(logSpy).toHaveBeenCalledTimes(1);
-    expect(() => JSON.parse(String(logSpy.mock.calls[0]?.[0]))).not.toThrow();
-    logSpy.mockRestore();
-  });
-
-  test("supports --days flag", async () => {
-    const deps = {
-      resolveFrameworkContext: makeResolveContext,
-      ...makeDelivery(),
-      spawn: makeSpawn(
-        JSON.stringify({
-          daily: [{ modelBreakdowns: [] }],
-        }),
-      ),
-    };
-    await runReportCommand(["--days", "30"], deps);
-    // Command should complete without throwing
-  });
-
-  test("handles all tools disabled gracefully", async () => {
-    const deps = {
-      resolveFrameworkContext: () => ({
-        configStore: { load: async () => ({ capabilities: [] }) },
-        workingRepoStore: {
-          load: async () => ({
-            repos: [{ id: "test", path: "/tmp/test-work" }],
-          }),
-        },
-        companionPath: "/tmp/test-companion",
-      }),
-      ...makeDelivery(),
-      spawn: makeSpawn("", 1),
-    };
-    await runReportCommand([], deps);
-    // Command should complete without throwing
-  });
-
-  test("falls back to JSON when temporary HTML creation fails", async () => {
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
-
-    await runReportCommand([], {
-      resolveFrameworkContext: makeResolveContext,
-      writeTemporaryReport: async () => {
-        throw new Error("disk full");
-      },
-      spawn: makeSpawn(""),
     });
-
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("disk full"));
-    expect(() => JSON.parse(String(logSpy.mock.calls[0]?.[0]))).not.toThrow();
-    logSpy.mockRestore();
-    warnSpy.mockRestore();
-  });
-
-  test("falls back to JSON and reports the path when browser launch fails", async () => {
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
-    const reportPath = "/tmp/mate-report/report.html";
-
-    await runReportCommand([], {
-      resolveFrameworkContext: makeResolveContext,
-      writeTemporaryReport: async () => reportPath,
-      openReportInBrowser: async () => {
-        throw new Error("browser unavailable");
-      },
-      spawn: makeSpawn(""),
+    expect(output()).toMatchObject({
+      kind: "error",
+      error: { code: "REPORT_DELIVERY_FAILED" },
+      fallback: document,
     });
-
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(reportPath));
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("browser unavailable"));
-    expect(() => JSON.parse(String(logSpy.mock.calls[0]?.[0]))).not.toThrow();
-    logSpy.mockRestore();
-    warnSpy.mockRestore();
-  });
-
-  test("does not modify an existing REPORT.md", async () => {
-    const reportPath = `${COMPANION_PATH}/REPORT.md`;
-    await fs.writeFile(reportPath, "keep this report");
-
-    await runReportCommand([], {
-      resolveFrameworkContext: makeResolveContext,
-      ...makeDelivery(),
-      spawn: makeSpawn(""),
-    });
-
-    expect(await fs.readFile(reportPath, "utf8")).toBe("keep this report");
-  });
-
-  describe("inside a Studio session", () => {
-    const run = async (publish: () => Promise<{ id: string; url?: string } | null>) => {
-      const logSpy = spyOn(console, "log").mockImplementation(() => {});
-      const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
-      let written = 0;
-      let opened = 0;
-      await runReportCommand(["--input", "r.json"], {
-        ensureUnambiguousCompanion: async () => true,
-        readInput: async () => structuredDocument,
-        publishReportToStudio: publish,
-        writeTemporaryReport: async () => {
-          written += 1;
-          return "/tmp/mate-report/report.html";
-        },
-        openReportInBrowser: async () => {
-          opened += 1;
-        },
-      });
-      const out = { logs: logSpy.mock.calls.map(String), warns: warnSpy.mock.calls.map(String) };
-      logSpy.mockRestore();
-      warnSpy.mockRestore();
-      return { ...out, written, opened };
-    };
-
-    test("prints the public URL Studio supplied and skips the temp file and browser", async () => {
-      const result = await run(async () => ({
-        id: "abc",
-        url: "https://studio.acme.test/studio/reports/abc",
-      }));
-      expect(result.logs).toEqual([
-        "Report hosted in Studio: https://studio.acme.test/studio/reports/abc",
-      ]);
-      expect([result.written, result.opened]).toEqual([0, 0]);
-    });
-
-    test("points to Studio Reports with the id when no public origin exists", async () => {
-      const result = await run(async () => ({ id: "abc" }));
-      expect(result.logs).toEqual(["Report hosted in Studio: open Studio → Reports (report abc)"]);
-      expect(result.logs.join()).not.toContain("/tmp/");
-      expect(result.logs.join()).not.toContain("127.0.0.1");
-    });
-
-    test("falls back to the temp file and browser with a warning when Studio refuses", async () => {
-      const result = await run(async () => {
-        throw new Error("Studio refused the report (HTTP 401)");
-      });
-      expect(result.warns.join()).toContain("Studio refused the report (HTTP 401)");
-      expect([result.written, result.opened]).toEqual([1, 1]);
-      expect(result.logs.join()).toContain("Report opened from");
-    });
-
-    test("falls back when Studio is unreachable", async () => {
-      const result = await run(async () => {
-        throw new Error("Studio did not answer in time");
-      });
-      expect(result.warns.join()).toContain("did not answer");
-      expect([result.written, result.opened]).toEqual([1, 1]);
-    });
-
-    test("outside Studio (no hosting) uses the temp file and browser", async () => {
-      const result = await run(async () => null);
-      expect([result.written, result.opened]).toEqual([1, 1]);
-    });
-
-    test("--json never publishes", async () => {
-      const logSpy = spyOn(console, "log").mockImplementation(() => {});
-      await runReportCommand(["--input", "r.json", "--json"], {
-        ensureUnambiguousCompanion: async () => true,
-        readInput: async () => structuredDocument,
-        publishReportToStudio: async () => {
-          throw new Error("JSON mode must not publish");
-        },
-      });
-      expect(() => JSON.parse(String(logSpy.mock.calls[0]?.[0]))).not.toThrow();
-      logSpy.mockRestore();
-    });
-  });
-});
-
-describe("MATE_REPORT_OUTPUT", () => {
-  const document = JSON.stringify({
-    version: REPORT_DOCUMENT_VERSION,
-    title: "Review acme-login",
-    generatedAt: "2026-01-01T00:00:00Z",
-    metadata: [],
-    summary: [],
-    sections: [{ id: "notes", title: "Notes", type: "text", content: "Supplied" }],
-  });
-
-  test("writes the HTML to the file, opens no browser and prints no path", async () => {
-    const dir = await fs.mkdtemp("/tmp/mate-report-output-");
-    const output = `${dir}/nested/review.html`;
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-    let opened = 0;
-    await runReportCommand(["--input", "r.json"], {
-      ensureUnambiguousCompanion: async () => true,
-      readInput: async () => document,
-      publishReportToStudio: async () => null,
-      openReportInBrowser: async () => {
-        opened += 1;
-      },
-      env: { MATE_REPORT_OUTPUT: output },
-    });
-    const logs = logSpy.mock.calls.map(String).join();
-    logSpy.mockRestore();
-    expect(await fs.readFile(output, "utf8")).toContain("Review acme-login");
-    expect(opened).toBe(0);
-    expect(logs).toContain("Report saved");
-    expect(logs).not.toContain(dir);
-    await fs.rm(dir, { recursive: true, force: true });
-  });
-
-  test("--json writes no file", async () => {
-    const dir = await fs.mkdtemp("/tmp/mate-report-output-");
-    const output = `${dir}/review.html`;
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-    await runReportCommand(["--input", "r.json", "--json"], {
-      ensureUnambiguousCompanion: async () => true,
-      readInput: async () => document,
-      env: { MATE_REPORT_OUTPUT: output },
-    });
-    logSpy.mockRestore();
-    await expect(fs.access(output)).rejects.toThrow();
-    await fs.rm(dir, { recursive: true, force: true });
-  });
-
-  test("Studio hosting takes precedence", async () => {
-    const dir = await fs.mkdtemp("/tmp/mate-report-output-");
-    const output = `${dir}/review.html`;
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-    await runReportCommand(["--input", "r.json"], {
-      ensureUnambiguousCompanion: async () => true,
-      readInput: async () => document,
-      publishReportToStudio: async () => ({ id: "abc" }),
-      env: { MATE_REPORT_OUTPUT: output },
-    });
-    logSpy.mockRestore();
-    await expect(fs.access(output)).rejects.toThrow();
-    await fs.rm(dir, { recursive: true, force: true });
+    expect(process.exitCode).toBe(1);
+    expect(JSON.stringify(log.mock.calls)).not.toContain("private failure");
   });
 });

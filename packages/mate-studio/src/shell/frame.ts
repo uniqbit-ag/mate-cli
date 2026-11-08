@@ -23,7 +23,8 @@ const MODE_ORDER: readonly StudioView[] = [
   "skills",
   "getting-started",
 ];
-const LIBRARY_ORDER: readonly StudioView[] = ["specs", "vault", "graph", "reports"];
+const LIBRARY_ORDER: readonly StudioView[] = ["specs", "vault", "graph"];
+const INSIGHTS_ORDER: readonly StudioView[] = ["usage", "reports"];
 
 export const VIEW_ICONS: Record<StudioView, IconName> = {
   dashboard: "home",
@@ -34,6 +35,7 @@ export const VIEW_ICONS: Record<StudioView, IconName> = {
   specs: "doc",
   vault: "folder",
   reports: "chart",
+  usage: "chart",
   graph: "graph",
 };
 
@@ -49,7 +51,17 @@ export function modeViews(mode: StudioMode, factoryMode: boolean): StudioView[] 
 }
 
 export function libraryViews(): StudioView[] {
-  return inOrder(SHARED_VIEWS, LIBRARY_ORDER);
+  return inOrder(
+    SHARED_VIEWS.filter((view) => !INSIGHTS_ORDER.includes(view)),
+    LIBRARY_ORDER,
+  );
+}
+
+export function insightViews(): StudioView[] {
+  return inOrder(
+    SHARED_VIEWS.filter((view) => INSIGHTS_ORDER.includes(view)),
+    INSIGHTS_ORDER,
+  );
 }
 
 export function companionName(companionPath: string): string {

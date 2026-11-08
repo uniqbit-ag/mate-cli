@@ -16,11 +16,16 @@ workflow:
 - agent instructions and provider files
 - skills and capability-managed files
 - OpenSpec artifacts and other planning output
-- reports such as `REPORT.md`
+- durable notes and other intentionally retained artifacts
 
 Companion files are managed by `mate companion setup`, installed when selected
 by `mate companion link`, and synchronized again at launch time. A companion
 can be linked to more than one working repository.
+
+Usage collection does not write `REPORT.md` into the companion. The technical
+`mate report` command returns usage JSON for the companion and all its linked
+Working Repositories. Explicit HTML reports are hosted in Studio or delivered
+to a temporary/configured output file; see [Usage and reports](/docs/reference/commands#usage-and-reports).
 
 ## Working Repository
 
