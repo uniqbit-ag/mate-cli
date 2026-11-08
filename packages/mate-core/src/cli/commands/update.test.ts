@@ -249,6 +249,52 @@ describe("runUpdateCommand", () => {
     expect(process.exitCode).toBe(0);
   });
 
+  test("saves the fetched version when already up to date", async () => {
+    updateCommandDeps.fetchLatestVersion = mock(async () => "1.0.0");
+    const logs = captureLogs();
+
+    try {
+      await runUpdateCommand([]);
+    } finally {
+      logs.restore();
+    }
+
+    expect(updateCommandDeps.saveUpdateState).toHaveBeenCalledWith("1.0.0");
+    expect(logs.chunks.join("\n")).toContain("Already up to date.");
+  });
+
+  test("saves the fetched version with --check when up to date", async () => {
+    updateCommandDeps.fetchLatestVersion = mock(async () => "1.0.0");
+    const logs = captureLogs();
+
+    try {
+      await runUpdateCommand(["--check"]);
+    } finally {
+      logs.restore();
+    }
+
+    expect(updateCommandDeps.saveUpdateState).toHaveBeenCalledWith("1.0.0");
+    expect(logs.chunks.join("\n")).toContain("Up to date.");
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("a failed state write keeps the up-to-date result", async () => {
+    updateCommandDeps.fetchLatestVersion = mock(async () => "1.0.0");
+    updateCommandDeps.saveUpdateState = mock(async () => {
+      throw new Error("EROFS");
+    });
+    const logs = captureLogs();
+
+    try {
+      await runUpdateCommand([]);
+    } finally {
+      logs.restore();
+    }
+
+    expect(logs.chunks.join("\n")).toContain("Already up to date.");
+    expect(process.exitCode).toBe(0);
+  });
+
   test("installs through npm when the running Mate matches the npm global install", async () => {
     const logs = captureLogs();
 

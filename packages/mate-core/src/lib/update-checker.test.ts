@@ -1,5 +1,6 @@
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import {
@@ -301,7 +302,13 @@ describe("update helpers", () => {
     });
     publicNpmDeps.execFile = mock(async (command, args, options) => {
       expect(command).toBe("npm");
-      expect(args).toEqual(["view", "@uniqbit/mate@latest", "version"]);
+      expect(args).toEqual([
+        "view",
+        "@uniqbit/mate@latest",
+        "version",
+        `--registry=${PUBLIC_NPM_REGISTRY}`,
+        `--@uniqbit:registry=${PUBLIC_NPM_REGISTRY}`,
+      ]);
       expect(options).toMatchObject({ timeout: 10_000 });
 
       const userConfigPath = options?.env?.NPM_CONFIG_USERCONFIG;
@@ -328,7 +335,7 @@ describe("update helpers", () => {
     });
     publicNpmDeps.execFile = mock(async (command, args) => {
       expect(command).toBe("npm");
-      expect(args).toEqual(["view", "@uniqbit/mate@canary", "version"]);
+      expect(args?.slice(0, 3)).toEqual(["view", "@uniqbit/mate@canary", "version"]);
       return { stdout: "0.16.0-canary.1\n", stderr: "" };
     });
 
@@ -339,7 +346,7 @@ describe("update helpers", () => {
     }
   });
 
-  test("uses the distribution update package and registry", async () => {
+  test("uses the distribution update package and registry outside the caller's npm project", async () => {
     const previous = getActiveDistribution();
     setActiveDistribution({
       ...previous,
@@ -355,7 +362,17 @@ describe("update helpers", () => {
 
     publicNpmDeps.execFile = mock(async (command, args, options) => {
       expect(command).toBe("npm");
-      expect(args).toEqual(["view", "@acme/mate@canary", "version"]);
+      expect(args).toEqual([
+        "view",
+        "@acme/mate@canary",
+        "version",
+        "--registry=https://npm.acme.test/",
+        "--@acme:registry=https://npm.acme.test/",
+      ]);
+      const cwd = options?.cwd as string;
+      expect(cwd).not.toBe(process.cwd());
+      expect(fsSync.readFileSync(path.join(cwd, "package.json"), "utf8").trim()).toBe("{}");
+      expect(fsSync.existsSync(path.join(cwd, ".npmrc"))).toBe(false);
       const userConfigPath = options?.env?.NPM_CONFIG_USERCONFIG;
       expect(userConfigPath).toBeTruthy();
       await expect(fs.readFile(userConfigPath!, "utf8")).resolves.toBe(

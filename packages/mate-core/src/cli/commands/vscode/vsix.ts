@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import { packPublicPackage } from "../../../lib/public-npm";
+import { getUpdateConfig } from "../../../lib/update-checker";
 import { mateHome } from "../../../runtime/runtime-directory";
 
 const VSCODE_PACKAGE = "@uniqbit/mate-vscode";
@@ -34,17 +35,18 @@ export const vsixResolverDeps: VsixResolverDeps = {
       (stat) => stat.isFile(),
       () => false,
     ),
-  pack: (spec, destination) => packPublicPackage(spec, destination),
+  pack: (spec, destination) => packPublicPackage(spec, destination, getUpdateConfig().registry),
   extract: extractVsix,
 };
 
 function vsixCacheDir(version: string, homeDir?: string): string {
-  return path.join(mateHome(homeDir), "cache", "vscode", version);
+  // `v2`: copies cached before the download ignored repository npm config are not reused.
+  return path.join(mateHome(homeDir), "cache", "vscode", "v2", version);
 }
 
 export class VsixError extends Error {}
 
-/** `--vsix` wins; otherwise the cached copy for `version`; otherwise download it from public npm. */
+/** `--vsix` wins; otherwise the cached copy for `version`; otherwise download it from the update registry. */
 export async function resolveVsix(
   options: { vsix?: string; version: string; cacheDir?: string; cwd?: string },
   deps: VsixResolverDeps = vsixResolverDeps,

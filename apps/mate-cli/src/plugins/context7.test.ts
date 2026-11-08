@@ -23,7 +23,7 @@ describe("the context7 capability", () => {
       {
         name: "context7",
         command: "npx",
-        args: ["-y", "@upstash/context7-mcp"],
+        args: ["-y", "@upstash/context7-mcp@4.2.0"],
       },
     ]);
   });
@@ -41,7 +41,7 @@ describe("the context7 capability", () => {
       {
         name: "context7",
         command: "npx.cmd",
-        args: ["-y", "@upstash/context7-mcp"],
+        args: ["-y", "@upstash/context7-mcp@4.2.0"],
       },
     ]);
   });

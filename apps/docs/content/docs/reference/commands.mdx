@@ -310,7 +310,9 @@ after selecting a Companion Repository. This read-only view runs no commands.
 
 `mate vscode setup` downloads `@uniqbit/mate-vscode` at the version of your
 Mate CLI and installs it into every editor whose CLI (`code`, `cursor`) it
-finds. `--editor` installs into one editor only; `--vsix` installs a local
+finds. The download comes from the registry Mate updates from, wherever setup
+runs: an `.npmrc` in the current directory does not change it. Setup caches the
+VSIX under `~/.mate/cache/vscode/v2/<version>/` and reuses it for that version. `--editor` installs into one editor only; `--vsix` installs a local
 VSIX file instead of downloading. `--if-installed` installs only into editors
 that already have the extension, and does nothing when none has it. It needs no
 linked repository. `mate update` runs it with `--if-installed`, so an installed
@@ -1038,6 +1040,12 @@ before the commit step. A finding stops the publication at a `secret-scan`
 step with no commit, tag, or push, and reports each file, line, and rule id
 without the value. With `secrets.guardrails: false` the scan is skipped with a
 one-line notice.
+
+`mate update` and `mate update --check` ask the registry Mate updates from for
+the newest version on your release channel, wherever they run: an `.npmrc` in
+the current directory does not change the registry. Each successful check
+stores that version as the latest known version, also when you are up to date,
+so it replaces a wrong stored version.
 
 ## Exit And Recovery Behavior
 
