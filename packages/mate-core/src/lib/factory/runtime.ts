@@ -5,6 +5,7 @@ import { newBranchBase, resolveDeliveryBranch, worktreeAddArgs } from "../delive
 import { resolveWorksetBranch } from "../workset/record";
 
 import { type CommandOptions, type CommandResult, type CommandRunner, runCommand } from "./command";
+import type { AgentCredential } from "./credential-store";
 import { KeyedSerial } from "./keyed-serial";
 import { readWorktreeBranch } from "./worktree-branch";
 import {
@@ -28,7 +29,7 @@ import {
  *
  * Runs inside the factory broker, which alone holds the inner socket. Callers
  * name a Workset, a repository and a command; image, mounts, runtime and
- * flags are fixed here. Git runs as the unprivileged user so clones and
+ * flags and the Docker client environment are fixed here. Git runs as the unprivileged user so clones and
  * worktrees keep the uid the Workset containers share.
  */
 
@@ -60,8 +61,6 @@ export type MemorySize = "agent" | "build";
 export interface ExecRequest {
   id: string;
   command: string[];
-  /** Per-command environment; values reach only this command. */
-  env?: Record<string, string>;
   /** Working directory relative to the worktree. */
   cwd?: string;
   /** Standard input for the command, closed after it is written. */
@@ -231,8 +230,8 @@ export class WorksetRuntime {
     return path.join(this.options.stateDir, "worktrees", id);
   }
 
-  private docker(args: string[], env?: Record<string, string>): Promise<CommandResult> {
-    return this.run("docker", args, { env: { ...this.dockerEnv(), ...env } });
+  private docker(args: string[]): Promise<CommandResult> {
+    return this.run("docker", args, { env: this.dockerEnv() });
   }
 
   private git(
@@ -749,21 +748,13 @@ export class WorksetRuntime {
     });
   }
 
-  async exec(request: ExecRequest): Promise<CommandResult> {
+  async exec(request: ExecRequest, credential?: AgentCredential): Promise<CommandResult> {
     assertWorksetId(request.id);
     assertCommand(request.command, "exec");
     const worktree = this.worktree(request.id);
     const cwd = path.resolve(worktree, request.cwd ?? ".");
     if (cwd !== worktree && !cwd.startsWith(`${worktree}${path.sep}`)) {
       throw new FactoryError(`exec's working directory ${request.cwd} is outside the worktree`);
-    }
-    const env = request.env ?? {};
-    for (const name of Object.keys(env)) {
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
-        throw new FactoryError(
-          `exec's environment variable name ${JSON.stringify(name)} is invalid`,
-        );
-      }
     }
     // Counted before waiting, so an idle stop queued meanwhile sees it busy.
     const done = this.track(request.id, "commands");
@@ -781,12 +772,15 @@ export class WorksetRuntime {
           this.options.user,
           "--workdir",
           cwd,
-          ...Object.keys(env).flatMap((name) => ["--env", name]),
+          ...(credential ? ["--env", credential.name] : []),
           containerName(request.id),
           ...request.command,
         ],
         {
-          env: { ...this.dockerEnv(), ...env },
+          env: {
+            ...(credential ? { [credential.name]: credential.value } : {}),
+            ...this.dockerEnv(),
+          },
           ...(request.stdin ? { stdin: request.stdin } : {}),
         },
       );
