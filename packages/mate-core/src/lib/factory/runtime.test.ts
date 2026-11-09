@@ -536,20 +536,23 @@ describe("pause, resume and exec", () => {
 
   test("a per-command value reaches the docker client's environment, never its arguments", async () => {
     await spawnAcme();
-    await runtime.exec({
-      id: "acme-login",
-      command: ["claude"],
-      env: { CLAUDE_CODE_OAUTH_TOKEN: "acme-token" },
-    });
+    await runtime.exec(
+      { id: "acme-login", command: ["claude"] },
+      { name: "CLAUDE_CODE_OAUTH_TOKEN", value: "acme-token" },
+    );
     const exec = dockerCall("exec")!;
     expect(exec.args).toContain("CLAUDE_CODE_OAUTH_TOKEN");
     expect(exec.args.join(" ")).not.toContain("acme-token");
-    expect(exec.options.env!.CLAUDE_CODE_OAUTH_TOKEN).toBe("acme-token");
+    expect(exec.options.env).toEqual({
+      DOCKER_HOST: `unix://${root}/docker.sock`,
+      CLAUDE_CODE_OAUTH_TOKEN: "acme-token",
+    });
     expect(JSON.stringify(dockerCall("create"))).not.toContain("acme-token");
 
     state.calls.length = 0;
     await runtime.exec({ id: "acme-login", command: ["env"] });
-    expect(dockerCall("exec")!.options.env!.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    expect(dockerCall("exec")!.options.env).toEqual({ DOCKER_HOST: `unix://${root}/docker.sock` });
+    expect(dockerCall("exec")!.args).not.toContain("--env");
   });
 
   test("exec in a paused Workset fails without starting it", async () => {

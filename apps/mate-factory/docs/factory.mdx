@@ -98,7 +98,8 @@ docker run \
 - **The broker is the boundary.** Studio and agent sessions reach Worksets
   only through the broker's socket, which offers spawn, pause, resume,
   delete, exec and list, nothing else. They cannot reach the inner Docker
-  daemon, choose a mount or an image, or ask for privileges.
+  daemon, choose a mount or an image, ask for privileges, or set the broker's
+  environment.
 - **Platforms.** Docker Desktop, OrbStack and Linux hosts with kernel 5.19 or
   newer, on amd64 and arm64.
 - **Stopping.** A termination signal stops Studio and its sessions first, then

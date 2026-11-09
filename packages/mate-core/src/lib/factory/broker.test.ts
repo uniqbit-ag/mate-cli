@@ -10,7 +10,7 @@ import type { WorksetRuntime } from "./runtime";
 
 /** A runtime that records what reached it, so a refused request can be seen to stop at the broker. */
 function recordingRuntime() {
-  const received: Array<[string, unknown]> = [];
+  const received: Array<[string, unknown, unknown?]> = [];
   const runtime = {
     spawn: async (request: unknown) => (received.push(["spawn", request]), { id: "acme-login" }),
     pause: async (id: unknown) => void received.push(["pause", id]),
@@ -18,8 +18,8 @@ function recordingRuntime() {
     delete: async (id: unknown, options: unknown) =>
       void received.push(["delete", { id, options }]),
     list: async () => (received.push(["list", null]), []),
-    exec: async (request: unknown) => (
-      received.push(["exec", request]),
+    exec: async (request: unknown, credential: unknown) => (
+      received.push(["exec", request, credential]),
       { status: 0, stdout: "", stderr: "" }
     ),
     address: async (id: unknown) => (received.push(["address", id]), "172.18.0.5"),
@@ -119,20 +119,19 @@ describe("the agent credential", () => {
     const handler = brokerHandler(runtime, fixed);
     await call(handler, "exec", { id: "acme-login", command: ["claude"], agent: true });
     await call(handler, "exec", { id: "acme-login", command: ["env"] });
-    expect((received[0]![1] as { env: Record<string, string> }).env).toEqual({
-      CLAUDE_CODE_OAUTH_TOKEN: "acme-token",
-    });
-    expect((received[1]![1] as { env: Record<string, string> }).env).toEqual({});
+    expect(received[0]![2]).toEqual(credential);
+    expect(received[1]![2]).toBeUndefined();
   });
 
-  test("cannot be set by a caller", async () => {
+  test("exec refuses a caller environment", async () => {
     const { runtime, received } = recordingRuntime();
     const answer = await call(brokerHandler(runtime, fixed), "exec", {
       id: "acme-login",
       command: ["claude"],
-      env: { ANTHROPIC_API_KEY: "acme-key" },
+      env: { PATH: "/acme/bin", DOCKER_HOST: "unix:///acme/docker.sock" },
     });
     expect(answer.status).toBe(400);
+    expect(String(answer.json.error)).toContain('"env"');
     expect(received).toEqual([]);
   });
 
@@ -218,9 +217,9 @@ describe("the credential operations", () => {
       200,
     );
     await call(handler, "exec", exec);
-    expect(received.map(([, request]) => (request as { env: object }).env)).toEqual([
-      { CLAUDE_CODE_OAUTH_TOKEN: "acme-token" },
-      { ANTHROPIC_API_KEY: KEY },
+    expect(received.map(([, , credential]) => credential)).toEqual([
+      credential,
+      { name: "ANTHROPIC_API_KEY", value: KEY },
     ]);
     fs.rmSync(dir, { recursive: true, force: true });
   });
