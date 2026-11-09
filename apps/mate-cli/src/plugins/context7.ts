@@ -1,6 +1,6 @@
 import type { CapabilityPlugin } from "@uniqbit/mate-core";
 
-/** Version pinned by the appliance image. */
+/** Exact version for the workstation npx entry; must match the container image lock. */
 export const CONTEXT7_MCP_VERSION = "4.2.0";
 export const CONTEXT7_MCP_COMMAND = "context7-mcp";
 const CONTEXT7_MODE_ENV = "MATE_CONTEXT7_MODE";
@@ -20,7 +20,7 @@ export function createContext7Plugin(options: Context7Options = {}): CapabilityP
   let args: string[] = [];
   if (mode === "workstation") {
     command = (options.platform ?? process.platform) === "win32" ? "npx.cmd" : "npx";
-    args = ["-y", CONTEXT7_MCP_PACKAGE];
+    args = ["-y", `${CONTEXT7_MCP_PACKAGE}@${CONTEXT7_MCP_VERSION}`];
   }
 
   return {

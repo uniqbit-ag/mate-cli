@@ -23,6 +23,7 @@
     ],
     "after:bump": [
       "bun scripts/sync-release-versions.ts",
+      "bun ../mate-vscode/scripts/release-vsix.ts embed ${version}",
       "bun ../mate-container/scripts/sync-image-inputs.ts ${version}",
       "bun ../mate-factory/scripts/sync-image-inputs.ts ${version}"
     ]
