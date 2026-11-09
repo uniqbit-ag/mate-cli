@@ -9,7 +9,7 @@ export interface CommandResult {
 }
 
 export interface CommandOptions {
-  /** Added to the inherited environment for this command only; never part of argv. */
+  /** Inherited additions, never request values: Bun resolves bare commands through PATH. */
   env?: Record<string, string>;
   /** Run as this user (by name) through `setpriv`, with that user's home. */
   asUser?: string;
