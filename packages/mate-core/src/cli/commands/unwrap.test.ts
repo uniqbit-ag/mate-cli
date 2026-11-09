@@ -222,6 +222,7 @@ describe("runUnwrapCommand", () => {
           documents: [],
           copies: [".opencode/commands/acme.md"],
           kept: { lines: 2, keptFor: ["/acme-feature"] },
+          warnings: [],
         }),
       });
     } finally {
@@ -243,6 +244,7 @@ describe("runUnwrapCommand", () => {
           documents: [],
           copies: [],
           kept: { lines: 1, keptFor: ["/acme-feature"] },
+          warnings: [],
         }),
       });
     } finally {

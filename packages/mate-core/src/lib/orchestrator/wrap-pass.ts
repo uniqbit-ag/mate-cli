@@ -143,6 +143,7 @@ export async function runWrapPass(
     },
     warnings: [
       ...rendered.warnings,
+      ...result.warnings,
       ...result.outcomes.flatMap((outcome) => outcome.warnings ?? []),
       /** A degradable failure does not fail the pass, but it is never silent. */
       ...result.outcomes

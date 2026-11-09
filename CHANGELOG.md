@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Wraps stay inside the working repository (security)
+
+- Mate reads `.mate/runtime-documents.json` as data, not as authority over paths. It acts only on its own destinations: `.claude/settings.local.json`, `.opencode/opencode.json`, this repository's MCP servers in `~/.claude.json`, the legacy `.mcp.json`, companion copies under `.opencode/`, and skill and command links under `.claude/skills/` and `.claude/commands/`. A committed or hand-edited record naming anything else, such as `../x` or `~/.claude/settings.json`, is ignored, named in a warning, and dropped at the next write. Before, `mate unwrap` or a wrap pass could rewrite or delete such a path.
+- A destination behind a symbolic link inside the repository, such as a committed `.claude` or `.opencode` link, is skipped with a warning naming the link. Pruning empty folders stops at the repository root, also for a sibling folder whose name starts the same.
+- A symlinked `CLAUDE.md` is left alone. Before, removing the TokenSave block wrote through the link, so a `CLAUDE.md` linked to `~/.claude/CLAUDE.md` lost everything from that block onward.
+- While Git tracks `.mate/runtime-documents.json`, Mate ignores it and leaves it as committed, also when Git tracks it under another letter case on a case-insensitive file system, and warns with the fix: `git rm --cached .mate/runtime-documents.json`, then wrap again. The check needs Git; outside a Git checkout the other rules still apply.
+- `mate wrap`, `mate unwrap`, `mate session prepare`, `mate claude` and `mate working cleanup` print these warnings; none of them fails the command.
+- A repository that was moved, or reached by another path, after it was wrapped recorded its `~/.claude.json` MCP servers under its old path. That record is now ignored, so Mate no longer withdraws those servers; remove the old `projects` entry from `~/.claude.json` by hand if you no longer want it.
+
 ### OpenCode guards read OpenCode v2 tool calls
 
 - The OpenCode secret guard, artifact guard and commit-attribution check now read OpenCode v2 tool calls: the `path` argument of `read`, `write` and `edit`, the `patch` and `shell` tools, and a patch's `*** Move to:` line. Before, they read only the v1 names, so on OpenCode v2 they missed these calls. OpenCode sessions now get the refusals the guards already promised.

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { readProjectionFile } from "../../runtime/projection";
+import { repoDirectory } from "../../runtime/repo-destination";
 import { realLinkTarget, realOrResolved } from "../fs-utils";
 import {
   links,
@@ -11,6 +12,12 @@ import {
   type LinkRecord,
 } from "../../runtime/runtime-document-manifest";
 import { pruneEmptyAncestors } from "../../tools/setup/utils";
+import {
+  removalWithWarnings,
+  type ProjectionRemovalReport,
+  type ProjectionWriteReport,
+  type ProjectionWriteState,
+} from "./projection-types";
 
 /**
  * A `.claude/<dir>` folder whose companion entries Mate links one by one into
@@ -67,6 +74,14 @@ async function registeredRoots(
   return [...new Set(roots)];
 }
 
+/** The root's folder inside the repository, or the warning that refuses it. */
+function targetRootOf(
+  root: ClaudeLinkRoot,
+  repoPath: string,
+): { path: string; root: string } | { warning: string } {
+  return repoDirectory(repoPath, `.claude/${root.dir}`);
+}
+
 async function createDirectoryLink(target: string, link: string): Promise<void> {
   await fs.symlink(target, link, process.platform === "win32" ? "junction" : "dir");
 }
@@ -75,7 +90,8 @@ async function createDirectoryLink(target: string, link: string): Promise<void> 
  * Recorded link: Mate's while it resolves to its recorded target. Unrecorded:
  * adopted only when it resolves into a registered, current or projected
  * companion. Records follow the filesystem, so a partial failure re-adopts.
- * Only this root's records are read and replaced.
+ * Only this root's records are read and replaced. A refused folder is not
+ * touched at all: nothing in it is read, unlinked, created or pruned.
  */
 export async function reconcileClaudeLinks(
   root: ClaudeLinkRoot,
@@ -83,12 +99,14 @@ export async function reconcileClaudeLinks(
   companionPath: string | null,
   enabled: boolean,
   registeredCompanionPaths: string[] = [],
-): Promise<"written" | "current"> {
+): Promise<ProjectionWriteState | ProjectionWriteReport> {
+  const folder = targetRootOf(root, repoPath);
+  if ("warning" in folder) return { state: "skipped", warnings: [folder.warning] };
+  const targetRoot = folder.path;
   const scope = { prefix: keyPrefix(root) };
   const recordKey = (name: string): string => `${scope.prefix}${name}`;
   const currentRoot = companionPath ? path.resolve(companionPath, rootPath(root)) : null;
   const roots = await registeredRoots(root, repoPath, companionPath, registeredCompanionPaths);
-  const targetRoot = path.join(path.resolve(repoPath), rootPath(root));
   const recorded = links(await readManifest(repoPath), "claude", scope);
   const existing = await fs.readdir(targetRoot, { withFileTypes: true }).catch(() => []);
   const sourceNames: Set<string> =
@@ -127,7 +145,7 @@ export async function reconcileClaudeLinks(
   }
 
   if (changed || !enabled) {
-    await pruneEmptyAncestors(targetRoot, path.resolve(repoPath));
+    await pruneEmptyAncestors(targetRoot, folder.root);
   }
   if (JSON.stringify(sortedEntries(records)) !== JSON.stringify(sortedEntries(recorded))) {
     await updateManifest(repoPath, (manifest) => withLinks(manifest, "claude", records, scope));
@@ -162,7 +180,7 @@ export async function carriesClaudeLinks(root: ClaudeLinkRoot, repoPath: string)
 /**
  * `root`'s folder in the Working Repository is missing or holds only Mate's
  * links: recorded ones, or ones resolving into a registered, current or
- * projected companion.
+ * projected companion. A refused folder is not read and answers `false`.
  */
 export async function holdsOnlyMateLinks(
   root: ClaudeLinkRoot,
@@ -170,7 +188,9 @@ export async function holdsOnlyMateLinks(
   companionPath: string | null,
   registeredCompanionPaths: string[],
 ): Promise<boolean> {
-  const targetRoot = path.join(path.resolve(repoPath), rootPath(root));
+  const folder = targetRootOf(root, repoPath);
+  if ("warning" in folder) return false;
+  const targetRoot = folder.path;
   const existing = await fs.readdir(targetRoot, { withFileTypes: true }).catch(() => []);
   if (existing.length === 0) return true;
   const roots = await registeredRoots(root, repoPath, companionPath, registeredCompanionPaths);
@@ -200,7 +220,11 @@ export async function removeClaudeLinks(
   root: ClaudeLinkRoot,
   repoPath: string,
   registeredCompanionPaths: string[] = [],
-): Promise<"removed" | "absent"> {
+): Promise<"removed" | "absent" | ProjectionRemovalReport> {
   const result = await reconcileClaudeLinks(root, repoPath, null, false, registeredCompanionPaths);
-  return result === "written" ? "removed" : "absent";
+  const state = typeof result === "string" ? result : result.state;
+  return removalWithWarnings(
+    state === "written" ? "removed" : "absent",
+    typeof result === "string" ? [] : (result.warnings ?? []),
+  );
 }

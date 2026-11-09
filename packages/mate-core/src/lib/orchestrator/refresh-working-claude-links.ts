@@ -73,7 +73,9 @@ export async function refreshWorkingClaudeLinks(
         enabled,
         registered,
       );
-      const written = skills === "written" || commands === "written";
+      const written = [skills, commands].some(
+        (result) => (typeof result === "string" ? result : result.state) === "written",
+      );
       results.push({ repository, outcome: written ? "written" : "current" });
     } catch (error) {
       results.push({

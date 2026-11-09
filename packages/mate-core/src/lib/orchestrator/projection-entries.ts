@@ -14,9 +14,11 @@ import {
   repoLocalRegistryPath,
 } from "../../runtime/repo-local";
 import {
+  RUNTIME_DOCUMENTS,
   documentRuntime,
   documents as recordedDocuments,
   readManifest,
+  type RuntimeDocumentPath,
 } from "../../runtime/runtime-document-manifest";
 import { TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES } from "../../tools/setup/capabilities/tokensave-shared";
 import {
@@ -66,6 +68,7 @@ import {
   CLAUDE_MCP_DOCUMENT,
   CLAUDE_SETTINGS_DOCUMENT,
   OPENCODE_CONFIG_DOCUMENT,
+  asWrite,
   isExternalDocument,
   placeRuntimeDocument,
   removeRuntimeDocument,
@@ -78,6 +81,7 @@ import {
 } from "./repo-local-store";
 import {
   excludeRemovalReport,
+  writeWithWarnings,
   type ProjectionEntry,
   type ProjectionInput,
   type ProjectionWriteReport,
@@ -119,6 +123,13 @@ async function pathExists(candidatePath: string): Promise<boolean> {
     return false;
   }
 }
+
+/** A newly declared runtime document needs an entry id here, or the build fails. */
+const RUNTIME_DOCUMENT_ENTRY_IDS = {
+  [CLAUDE_SETTINGS_DOCUMENT]: "claude-runtime-document",
+  [CLAUDE_LOCAL_CONFIG_DOCUMENT]: "claude-local-mcp-document",
+  [OPENCODE_CONFIG_DOCUMENT]: "opencode-runtime-document",
+} as const satisfies Record<RuntimeDocumentPath, ProjectionEntry["id"]>;
 
 /** Present when Mate recorded regions for it, not merely when the file exists. */
 async function runtimeDocumentRecorded(repoPath: string, documentPath: string): Promise<boolean> {
@@ -163,21 +174,22 @@ async function writeRuntimeDocumentEntry(
   input: ProjectionInput,
   documentPath: string,
 ): Promise<ProjectionWriteState | ProjectionWriteReport> {
-  const state = await placeRuntimeDocument(input.repoPath, documentPath, input.runtimeDocuments);
+  const placed = await placeRuntimeDocument(input.repoPath, documentPath, input.runtimeDocuments);
+  const state = typeof placed === "string" ? placed : placed.state;
   const rendered = input.runtimeDocuments?.some((document) => document.path === documentPath);
-  if (state !== "written" || !rendered || isExternalDocument(documentPath)) return state;
+  if (state !== "written" || !rendered || isExternalDocument(documentPath)) return placed;
   const repositoryId = input.repository?.id ?? path.basename(path.resolve(input.repoPath));
-  return {
-    state,
-    warnings: await trackedDocumentWarnings(input.repoPath, documentPath, repositoryId),
-  };
+  return writeWithWarnings(
+    placed,
+    await trackedDocumentWarnings(input.repoPath, documentPath, repositoryId),
+  );
 }
 
 /** Links a companion `.claude/` folder's entries when the companion allows Claude. */
 async function writeClaudeLinkEntry(
   input: ProjectionInput,
   reconcile: typeof reconcileWorkingRepoClaudeSkillLinks,
-): Promise<ProjectionWriteState> {
+): Promise<ProjectionWriteState | ProjectionWriteReport> {
   if (!input.config) return "skipped";
   const registeredCompanionPaths = input.globalConfigStore
     ? await input.globalConfigStore.list()
@@ -493,23 +505,15 @@ function buildEntries(): readonly ProjectionEntry[] {
       scopes: ["launch", "wrap"],
       runtime: "claude",
       write: async (input) =>
-        (await removeRuntimeDocument(input.repoPath, CLAUDE_MCP_DOCUMENT)) === "removed"
-          ? "written"
-          : "current",
+        asWrite(await removeRuntimeDocument(input.repoPath, CLAUDE_MCP_DOCUMENT)),
       removal: {
         by: "self",
         remove: (input) => removeRuntimeDocument(input.repoPath, CLAUDE_MCP_DOCUMENT),
       },
       present: (repoPath) => runtimeDocumentRecorded(repoPath, CLAUDE_MCP_DOCUMENT),
     },
-    ...(
-      [
-        ["claude-runtime-document", CLAUDE_SETTINGS_DOCUMENT],
-        ["claude-local-mcp-document", CLAUDE_LOCAL_CONFIG_DOCUMENT],
-        ["opencode-runtime-document", OPENCODE_CONFIG_DOCUMENT],
-      ] as const
-    ).map(([id, documentPath]) => ({
-      id,
+    ...RUNTIME_DOCUMENTS.map((documentPath) => ({
+      id: RUNTIME_DOCUMENT_ENTRY_IDS[documentPath],
       kind: "merged" as const,
       path: documentPath.split("/").join(path.sep),
       scopes: ["launch", "wrap"] as const,

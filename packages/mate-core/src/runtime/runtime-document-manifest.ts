@@ -1,7 +1,10 @@
+import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 
-import { repoLocalDirPath } from "./repo-local";
+import { FRAMEWORK_NAME } from "./framework";
+import { gitTracksSync } from "./git-tracked";
+import { repoLocalDirName, repoLocalDirPath } from "./repo-local";
 import { writeAtomic } from "./write-atomic";
 
 /**
@@ -22,6 +25,20 @@ export const OPENCODE_CONFIG_DOCUMENT = ".opencode/opencode.json";
  * `~`-prefixed so the manifest stays machine-independent.
  */
 export const CLAUDE_LOCAL_CONFIG_DOCUMENT = "~/.claude.json";
+
+/**
+ * The closed set of documents a wrap places. A manifest naming any other is
+ * ignored at parse, and a surface rendering one fails to compile.
+ */
+export const RUNTIME_DOCUMENTS = [
+  CLAUDE_SETTINGS_DOCUMENT,
+  CLAUDE_LOCAL_CONFIG_DOCUMENT,
+  OPENCODE_CONFIG_DOCUMENT,
+] as const;
+export type RuntimeDocumentPath = (typeof RUNTIME_DOCUMENTS)[number];
+
+/** Recorded by earlier releases; only ever withdrawn. */
+export const LEGACY_RUNTIME_DOCUMENTS = [CLAUDE_MCP_DOCUMENT] as const;
 
 /** Where in {@link OPENCODE_CONFIG_DOCUMENT} the wrap renders its MCP servers. */
 export const OPENCODE_MCP_SERVERS_AT: readonly string[] = Object.freeze(["mcp", "servers"]);
@@ -57,8 +74,7 @@ export type ManagedRegion =
  * document, without a destination. The surface renders; the entry places.
  */
 export interface RenderedRuntimeDocument {
-  /** Repo-relative with POSIX separators, or `~/`-prefixed for a user-global target. */
-  readonly path: string;
+  readonly path: RuntimeDocumentPath;
   readonly regions: readonly ManagedRegion[];
 }
 
@@ -79,7 +95,7 @@ function nonEmpty(region: ManagedRegion): boolean {
 
 /** One rendered document of its non-empty regions, or none when every region is empty. */
 export function renderedDocument(
-  documentPath: string,
+  documentPath: RuntimeDocumentPath,
   regions: ManagedRegion[],
 ): RenderedRuntimeDocument[] {
   const kept = regions.filter(nonEmpty);
@@ -122,32 +138,164 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Never throws: an absent, unparseable or foreign manifest reads as empty — Mate can rebuild it. */
-export function parseManifest(raw: string | null): Manifest {
-  if (raw === null) return EMPTY_MANIFEST;
+/** A manifest confined to the closed destination set, and the records it dropped. */
+export interface ConfinedManifest {
+  manifest: Manifest;
+  /** Each dropped key, or `<document> region at <address>`, as recorded. */
+  rejected: string[];
+}
+
+const NO_REJECTIONS: ConfinedManifest = Object.freeze({ manifest: EMPTY_MANIFEST, rejected: [] });
+
+/**
+ * Never throws: an absent, unparseable or foreign manifest reads as empty — Mate can rebuild it.
+ * `repoRoot` pins the one `~/.claude.json` region this repository may record.
+ */
+export function parseManifest(raw: string | null, repoRoot: string): Manifest {
+  return confineManifest(raw, repoRoot).manifest;
+}
+
+/** {@link parseManifest}, also reporting what confinement dropped. */
+export function confineManifest(raw: string | null, repoRoot: string): ConfinedManifest {
+  if (raw === null) return NO_REJECTIONS;
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw) as unknown;
   } catch {
-    return EMPTY_MANIFEST;
+    return NO_REJECTIONS;
   }
-  return isRecord(parsed) ? manifestOf(parsed) : EMPTY_MANIFEST;
+  return isRecord(parsed) ? manifestOf(parsed, repoRoot) : NO_REJECTIONS;
 }
 
 /** For readers that rewrite on its strength: a manifest present but unparseable throws. */
-export function parseManifestStrict(raw: string | null): Manifest {
+export function parseManifestStrict(raw: string | null, repoRoot: string): Manifest {
   if (raw === null) return EMPTY_MANIFEST;
   const parsed = JSON.parse(raw) as unknown;
   if (!isRecord(parsed)) throw new Error("runtime document manifest is not a JSON object");
-  return manifestOf(parsed);
+  return manifestOf(parsed, repoRoot).manifest;
 }
 
-function manifestOf(parsed: Record<string, unknown>): Manifest {
+const PLACED_DOCUMENTS: ReadonlySet<string> = new Set([
+  ...RUNTIME_DOCUMENTS,
+  ...LEGACY_RUNTIME_DOCUMENTS,
+]);
+const OPENCODE_COPY_PREFIX = ".opencode/";
+const UNCOPIED_SEGMENTS: ReadonlySet<string> = new Set(["node_modules", ".DS_Store"]);
+const LINK_KEY = /^\.claude\/(?:skills|commands)\/([^/]*)$/;
+
+/** Control characters would inject exclude lines; a backslash is a separator on Windows. */
+function isPlainSegment(segment: string): boolean {
+  return (
+    segment !== "" &&
+    segment !== "." &&
+    segment !== ".." &&
+    // oxlint-disable-next-line no-control-regex -- control characters are what this rejects
+    !/[\u0000-\u001f\u007f\\]/.test(segment)
+  );
+}
+
+/** A normalized POSIX path under `.opencode/` that a companion copy may occupy. */
+export function isPlaceableCopyKey(key: string): boolean {
+  if (!key.startsWith(OPENCODE_COPY_PREFIX) || key === OPENCODE_CONFIG_DOCUMENT) return false;
+  return key
+    .slice(OPENCODE_COPY_PREFIX.length)
+    .split("/")
+    .every((segment) => isPlainSegment(segment) && !UNCOPIED_SEGMENTS.has(segment));
+}
+
+function isPlaceableLinkKey(key: string): boolean {
+  const name = LINK_KEY.exec(key)?.[1];
+  return name !== undefined && isPlainSegment(name);
+}
+
+/** Mate writes exactly one region there: this repository's MCP servers, by key. */
+function isOwnLocalConfigRegion(region: unknown, localConfigAt: readonly string[]): boolean {
+  return (
+    isRecord(region) &&
+    region.kind === "map" &&
+    isAt(region.at, localConfigAt) &&
+    isRecord(region.entries) &&
+    !Object.hasOwn(region, "stripPrefix")
+  );
+}
+
+function regionLabel(documentPath: string, region: unknown): string {
+  const at = isRecord(region) && Array.isArray(region.at) ? JSON.stringify(region.at) : "?";
+  return `${documentPath} region at ${at}`;
+}
+
+function confinedDocuments(
+  recorded: Record<string, unknown>,
+  repoRoot: string,
+  rejected: string[],
+): Record<string, ManagedRegion[]> {
+  const localConfigAt = ["projects", path.resolve(repoRoot), "mcpServers"];
+  const kept: Record<string, ManagedRegion[]> = {};
+  for (const [documentPath, regions] of Object.entries(recorded)) {
+    if (!PLACED_DOCUMENTS.has(documentPath)) {
+      rejected.push(documentPath);
+      continue;
+    }
+    if (documentPath !== CLAUDE_LOCAL_CONFIG_DOCUMENT) {
+      kept[documentPath] = regions as ManagedRegion[];
+      continue;
+    }
+    const all: unknown[] = Array.isArray(regions) ? regions : [];
+    const own: unknown[] = [];
+    for (const region of all) {
+      if (isOwnLocalConfigRegion(region, localConfigAt)) own.push(region);
+      else rejected.push(regionLabel(documentPath, region));
+    }
+    if (own.length > 0) kept[documentPath] = own as ManagedRegion[];
+    else if (all.length === 0) rejected.push(documentPath);
+  }
+  return kept;
+}
+
+function confinedRecords<T>(
+  recorded: Record<string, unknown>,
+  placeable: (key: string, record: unknown) => boolean,
+  rejected: string[],
+): Record<string, T> {
+  const kept: Record<string, T> = {};
+  for (const [key, record] of Object.entries(recorded)) {
+    if (placeable(key, record)) kept[key] = record as T;
+    else rejected.push(key);
+  }
+  return kept;
+}
+
+function manifestOf(parsed: Record<string, unknown>, repoRoot: string): ConfinedManifest {
+  const rejected: string[] = [];
+  const keptDocuments = isRecord(parsed.documents)
+    ? confinedDocuments(parsed.documents, repoRoot, rejected)
+    : {};
+  const keptRuntimes = isRecord(parsed.runtimes)
+    ? Object.fromEntries(
+        Object.entries(parsed.runtimes as Manifest["runtimes"]).filter(([documentPath]) =>
+          Object.hasOwn(keptDocuments, documentPath),
+        ),
+      )
+    : {};
+  const keptCopies = isRecord(parsed.copies)
+    ? confinedRecords<CopyRecord>(parsed.copies, isPlaceableCopyKey, rejected)
+    : {};
+  const keptLinks = isRecord(parsed.links)
+    ? confinedRecords<LinkRecord>(
+        parsed.links,
+        (key, record) =>
+          isPlaceableLinkKey(key) && isRecord(record) && typeof record.target === "string",
+        rejected,
+      )
+    : {};
   return {
-    documents: isRecord(parsed.documents) ? (parsed.documents as Manifest["documents"]) : {},
-    runtimes: isRecord(parsed.runtimes) ? (parsed.runtimes as Manifest["runtimes"]) : {},
-    copies: isRecord(parsed.copies) ? (parsed.copies as Manifest["copies"]) : {},
-    links: isRecord(parsed.links) ? (parsed.links as Manifest["links"]) : {},
+    manifest: {
+      documents: keptDocuments,
+      runtimes: keptRuntimes,
+      copies: keptCopies,
+      links: keptLinks,
+    },
+    rejected,
   };
 }
 
@@ -345,23 +493,84 @@ export function manifestPath(repoPath: string): string {
   return path.join(repoLocalDirPath(repoPath), RUNTIME_DOCUMENT_MANIFEST_FILE);
 }
 
+/** Repo-relative, POSIX separators. */
+export const MANIFEST_RELATIVE_PATH = `${repoLocalDirName()}/${RUNTIME_DOCUMENT_MANIFEST_FILE}`;
+
+/** Mate never changes tracking within a command, so one answer per repository suffices. */
+const trackedManifests = new Map<string, boolean>();
+
+/**
+ * Whether Git tracks the manifest, which then reads as absent and is never
+ * written: a committed file is the repository's, not Mate's record. Spawns Git
+ * only when the file exists; a Git failure answers untracked.
+ */
+export function manifestTracked(repoPath: string): boolean {
+  const root = path.resolve(repoPath);
+  const known = trackedManifests.get(root);
+  if (known !== undefined) return known;
+  if (!fs.existsSync(manifestPath(root))) return false;
+  const tracked = gitTracksSync(root, MANIFEST_RELATIVE_PATH);
+  trackedManifests.set(root, tracked);
+  return tracked;
+}
+
 /**
  * The runtime document manifest at the Projection Root; empty when absent. A
  * read that failed for a reason other than absence throws, so a writer never
  * replaces a manifest it could not read.
  */
 export async function readManifest(repoPath: string): Promise<Manifest> {
-  return parseManifest(await readManifestText(repoPath));
+  return parseManifest(await readManifestText(repoPath), repoPath);
 }
 
-/** `null` when absent; any other read failure throws. */
-export async function readManifestText(repoPath: string): Promise<string | null> {
+async function readManifestFile(repoPath: string): Promise<string | null> {
   try {
     return await fsp.readFile(manifestPath(repoPath), "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     return null;
   }
+}
+
+/** `null` when absent or tracked by Git; any other read failure throws. */
+export async function readManifestText(repoPath: string): Promise<string | null> {
+  const raw = await readManifestFile(repoPath);
+  return raw !== null && manifestTracked(repoPath) ? null : raw;
+}
+
+/** Lenient: `null` when absent, unreadable or tracked by Git. */
+export function readManifestTextSync(repoPath: string): string | null {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(manifestPath(repoPath), "utf8");
+  } catch {
+    return null;
+  }
+  return manifestTracked(repoPath) ? null : raw;
+}
+
+/** A key may hold a newline; quoting keeps it on one output line. */
+function shown(key: string): string {
+  // oxlint-disable-next-line no-control-regex -- control characters are what this quotes
+  return /[\u0000-\u001f\u007f]/.test(key) ? JSON.stringify(key) : key;
+}
+
+/**
+ * What a pass tells the operator about the manifest: that Git tracks it, or
+ * each record it ignored. Lenient, like the readers it explains.
+ */
+export async function readManifestNotices(repoPath: string): Promise<string[]> {
+  const raw = await readManifestFile(repoPath).catch(() => null);
+  if (raw === null) return [];
+  if (manifestTracked(repoPath)) {
+    return [
+      `${MANIFEST_RELATIVE_PATH} is tracked by Git, so its records were ignored and it is left as committed. Untrack it with \`git rm --cached ${MANIFEST_RELATIVE_PATH}\`, then wrap again.`,
+    ];
+  }
+  return confineManifest(raw, repoPath).rejected.map(
+    (key) =>
+      `${MANIFEST_RELATIVE_PATH} records ${shown(key)}, which is not a destination ${FRAMEWORK_NAME} places; it was ignored and will be dropped on the next write.`,
+  );
 }
 
 /**
@@ -374,6 +583,7 @@ export async function updateManifest(
   edit: (manifest: Manifest) => Manifest,
 ): Promise<Manifest> {
   const next = edit(await readManifest(repoPath));
+  if (manifestTracked(repoPath)) return next;
   const target = manifestPath(repoPath);
   const contents = serializeManifest(next);
   if (contents === null) {
