@@ -1,5 +1,5 @@
 import { type StudioCompanionPayload } from "@uniqbit/mate-core/studio";
-import { useState, type CSSProperties } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 
 import { CommandLine, Count, ListCard, PAGE_PAD, Pills } from "../../components/view-parts";
 import { cn } from "../../lib/cn";
@@ -50,21 +50,13 @@ export function DeliveryPathView({
       className="workflow-delivery-path @container grid content-start gap-2"
       aria-label="Delivery Path"
     >
-      <div className={cn(PAGE_PAD, "flex flex-wrap items-center gap-3")} data-workflow-schema-root>
-        <span className="text-sm text-muted">OpenSpec schema</span>
-        {plan.paths.length > 1 ? (
-          <Pills
-            label="OpenSpec schema"
-            value={schema}
-            onChange={setSchema}
-            options={plan.paths.map((entry) => ({ value: entry.schema, label: entry.label }))}
-          />
-        ) : (
-          <code className="font-mono text-sm">{path.label}</code>
-        )}
-        <span className="text-sm text-muted">{path.tagline}</span>
-      </div>
-      <PathBody key={path.schema} path={path} counts={counts} changesByStage={changesByStage} />
+      <PathBody
+        path={path}
+        paths={plan.paths}
+        onSchemaChange={setSchema}
+        counts={counts}
+        changesByStage={changesByStage}
+      />
     </section>
   );
 }
@@ -74,16 +66,28 @@ const nodeOf = (step: WorkflowStep): string => (step.kind === "human" ? "reviews
 /** The graph on the page; one stage's detail opens in the slide-over panel. */
 function PathBody({
   path,
+  paths,
+  onSchemaChange,
   counts,
   changesByStage,
 }: {
   path: WorkflowPath;
+  paths: WorkflowPath[];
+  onSchemaChange: (schema: string) => void;
   counts: StageCounts;
   changesByStage: StageChanges[];
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const step = path.steps.find((entry) => entry.id === selected) ?? null;
   const placed = changesByStage.filter((group) => group.changes.length > 0);
+  const changeSchema = (schema: string) => {
+    const next = paths.find((entry) => entry.schema === schema);
+    if (!next) return;
+    if (!next.steps.some((entry) => entry.id === selected)) {
+      setSelected(next.steps.find((entry) => entry.kind === "human")?.id ?? null);
+    }
+    onSchemaChange(schema);
+  };
   return (
     <div
       className={cn(
@@ -92,7 +96,7 @@ function PathBody({
       )}
       data-workflow-schema-panel={path.schema}
     >
-      <div className="workflow-path-graph grid min-w-0 justify-items-center gap-9 px-8">
+      <div className="workflow-path-graph grid min-w-0 justify-items-center gap-9 px-8 pt-4">
         <WorkflowGraphView path={path} selected={selected} onSelect={setSelected} counts={counts} />
         <GraphLegend />
       </div>
@@ -143,7 +147,25 @@ function PathBody({
           <StageDetail
             step={step}
             changes={changesByStage.find((group) => group.node === nodeOf(step))?.changes ?? []}
-          />
+          >
+            {step.kind === "human" ? (
+              <PanelSection title="OpenSpec schema">
+                <div className="grid gap-2" data-workflow-schema-root>
+                  {paths.length > 1 ? (
+                    <Pills
+                      label="OpenSpec schema"
+                      value={path.schema}
+                      onChange={changeSchema}
+                      options={paths.map((entry) => ({ value: entry.schema, label: entry.label }))}
+                    />
+                  ) : (
+                    <code className="font-mono text-sm">{path.label}</code>
+                  )}
+                  <span className="text-sm text-muted">{path.tagline}</span>
+                </div>
+              </PanelSection>
+            ) : null}
+          </StageDetail>
         ) : null}
       </SidePanel>
     </div>
@@ -264,7 +286,17 @@ function WorkflowGraphView({
                     node.steps.some((step) => step.id === selected) ? "true" : undefined
                   }
                 >
-                  <span className="workflow-graph-group-label">Human review</span>
+                  {plain ? (
+                    <span className="workflow-graph-group-label">Human review</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="workflow-graph-group-label cursor-pointer rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                      onClick={() => onSelect?.(node.steps[0]!.id)}
+                    >
+                      Human review
+                    </button>
+                  )}
                   <ol>
                     {node.steps.map((step) => (
                       <li key={step.id}>
@@ -409,7 +441,15 @@ function NodeLink({
 }
 
 /** One stage in the panel: what it does, how it runs, and the changes at it. */
-function StageDetail({ step, changes }: { step: WorkflowStep; changes: string[] }) {
+function StageDetail({
+  step,
+  changes,
+  children,
+}: {
+  step: WorkflowStep;
+  changes: string[];
+  children?: ReactNode;
+}) {
   return (
     <article
       className="workflow-card"
@@ -443,6 +483,7 @@ function StageDetail({ step, changes }: { step: WorkflowStep; changes: string[] 
           </p>
         ) : null}
       </PanelHead>
+      {children}
       <PanelSection title={step.kind === "human" ? "How it runs" : "Run"}>
         <StageRun step={step} />
         {step.missingSkill ? (

@@ -273,12 +273,10 @@ describe("Workflow view", () => {
     expect(markup.lastIndexOf("list-card", graph)).toBe(-1);
   });
 
-  it("offers the schema paths as one filter, showing the first", () => {
+  it("hides the schema switch until a human review opens, showing the first path", () => {
     const markup = render();
-    expect(markup).toContain("OpenSpec schema");
-    expect(markup).toContain('aria-label="OpenSpec schema"');
-    expect(markup).toContain(">mate-v1<");
-    expect(markup).toContain(">mate-minimal<");
+    expect(markup).not.toContain("OpenSpec schema");
+    expect(markup).not.toContain("data-workflow-schema-root");
     expect(markup).toContain('data-workflow-schema-panel="mate-v1"');
     expect(markup).not.toContain('data-workflow-schema-panel="mate-minimal"');
     expect(markup).not.toContain("name the change after pasting");
@@ -462,6 +460,7 @@ describe("Workflow view", () => {
     const { page, doc, open } = await mount();
     const panel = await open("review-specs");
     expect(panel.textContent).toContain("Review specs yourself — no skill, no prompt");
+    expect(panel.querySelector('[aria-label="OpenSpec schema"]')).not.toBeNull();
     expect(
       doc.querySelector('button[data-map-stage="review-specs"]')?.getAttribute("aria-current"),
     ).toBe("true");
@@ -471,10 +470,35 @@ describe("Workflow view", () => {
     page.unmount();
   });
 
+  it("opens Human review and keeps the panel open when switching away from an unavailable review", async () => {
+    const { page, doc } = await mount();
+    const human = doc.querySelector<HTMLButtonElement>("button.workflow-graph-group-label")!;
+    await act(async () => human.click());
+    await act(async () => new Promise((done) => setTimeout(done, 20)));
+    const panel = () => doc.querySelector('[data-slot="sheet-content"]')!;
+    expect(panel().textContent).toContain("Review proposal");
+    const choose = async (schema: string) => {
+      const button = Array.from(panel().querySelectorAll("button")).find(
+        (entry) => entry.textContent === schema,
+      )!;
+      await act(async () => button.click());
+      expect(doc.querySelector(`[data-workflow-schema-panel="${schema}"]`)).not.toBeNull();
+      expect(panel().querySelector('[aria-label="OpenSpec schema"]')).not.toBeNull();
+    };
+    await choose("mate-minimal");
+    expect(panel().textContent).toContain("Review specs yourself");
+    expect(doc.querySelector('[data-map-stage="review-proposal"]')).toBeNull();
+    await choose("mate-v1");
+    expect(panel().textContent).toContain("Review specs yourself");
+    expect(doc.querySelector('[data-map-stage="review-proposal"]')).not.toBeNull();
+    page.unmount();
+  });
+
   it("shows Apply change's phase, skill, new session, prompt and text, then steps to the next stage", async () => {
     const { page, doc, open } = await mount([change("acme-build", 1, 3)]);
     const panel = await open("apply");
     const text = panel.textContent!;
+    expect(panel.querySelector('[aria-label="OpenSpec schema"]')).toBeNull();
     expect(text).toContain("Build");
     expect(text).toContain("mate-apply-change");
     expect(text).toContain("New session / clean chat");
