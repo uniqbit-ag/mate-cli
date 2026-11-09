@@ -251,6 +251,16 @@ export function commandMatches(command: string): string[] {
   return targets;
 }
 
+const stringOrEmpty = (value: unknown) => (typeof value === "string" ? value : "");
+
+function replacement(edit: Record<string, unknown>) {
+  return {
+    oldText: stringOrEmpty(edit.old_string),
+    newText: stringOrEmpty(edit.new_string),
+    all: edit.replace_all === true,
+  };
+}
+
 /** Claude tool payloads in the shape the shared secret guard reads. */
 function secretToolCall(
   toolName: string,
@@ -271,19 +281,40 @@ function secretToolCall(
     case "Edit":
       return {
         kind: "write",
-        writes: [{ path: target(toolInput.file_path), content: text(toolInput.new_string) }],
+        writes: [
+          {
+            path: target(toolInput.file_path),
+            content: text(toolInput.new_string),
+            result: { kind: "replace", edits: [replacement(toolInput)] },
+          },
+        ],
       };
     case "MultiEdit": {
-      const edits = Array.isArray(toolInput.edits) ? toolInput.edits : [];
-      const content = edits
-        .map((edit) => (edit && typeof edit === "object" ? text(edit.new_string) : ""))
-        .join("\n");
-      return { kind: "write", writes: [{ path: target(toolInput.file_path), content }] };
+      const edits = (Array.isArray(toolInput.edits) ? toolInput.edits : []).map((edit) =>
+        edit && typeof edit === "object" ? (edit as Record<string, unknown>) : {},
+      );
+      const content = edits.map((edit) => text(edit.new_string)).join("\n");
+      return {
+        kind: "write",
+        writes: [
+          {
+            path: target(toolInput.file_path),
+            content,
+            result: { kind: "replace", edits: edits.map(replacement) },
+          },
+        ],
+      };
     }
     case "NotebookEdit":
       return {
         kind: "write",
-        writes: [{ path: target(toolInput.notebook_path), content: text(toolInput.new_source) }],
+        writes: [
+          {
+            path: target(toolInput.notebook_path),
+            content: text(toolInput.new_source),
+            result: { kind: "unknown" },
+          },
+        ],
       };
     case "Bash":
       return { kind: "shell", command: text(toolInput.command) };

@@ -117,6 +117,8 @@ async function runUpdate(
     process.exitCode = 1;
     return;
   }
+  // Saved even when not newer, so a wrong cached version is replaced; a failed write changes nothing.
+  await updateCommandDeps.saveUpdateState(latest).catch(() => {});
   // The version lines and the confirm prompt below own the terminal.
   releaseTerminal();
 

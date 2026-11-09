@@ -8,7 +8,7 @@ import { getClaudePluginRoot } from "../../../lib/package-paths";
 import { otherServingClaudeWrapRoot } from "../../../runtime/serving-claude-wrap";
 import { NOT_WRAPPED, readWrapStateSync, type WrapState } from "../../../runtime/wrap-state";
 import { writeAtomicThroughLink } from "../../../runtime/write-atomic";
-import { resolveSecretPolicy } from "../../../runtime/policy";
+import { companionFrameworkConfigPath, resolveSecretPolicy } from "../../../runtime/policy";
 import {
   CLAUDE_LOCAL_CONFIG_DOCUMENT,
   CLAUDE_SETTINGS_DOCUMENT,
@@ -118,6 +118,15 @@ async function removeLegacyMateHookFiles(companionPath: string): Promise<void> {
 // (only Read/Edit rules gate file tools), so no Glob entry is emitted.
 function getBaseManagedPermissionEntries(companionPath: string): string[] {
   return [`Bash(${FRAMEWORK_NAME}:*)`, `Read(${companionPath}/**)`, `Edit(${companionPath}/**)`];
+}
+
+/**
+ * The managed `permissions.ask` entries. `//` is Claude's absolute-path form;
+ * ask is checked before the companion `Edit` allow, so an agent edit of the
+ * secret policy prompts. Rendered whatever the `secrets` block says.
+ */
+function getManagedAskEntries(companionPath: string): string[] {
+  return [`Edit(/${companionFrameworkConfigPath(companionPath)})`];
 }
 
 const LEGACY_MANAGED_PERMISSION_ENTRIES = [
@@ -316,6 +325,9 @@ function renderManagedClaudeSettings(
     ...existingDeny.filter((entry) => !managedDeny.has(entry)),
     ...renderManagedClaudeDenyEntries(companionPath),
   ];
+  const managedAsk = getManagedAskEntries(companionPath);
+  const existingAsk = Array.isArray(existingPermissions.ask) ? existingPermissions.ask : [];
+  permissions.ask = [...existingAsk.filter((entry) => !managedAsk.includes(entry)), ...managedAsk];
 
   const mcpServers = { ...existing.mcpServers };
   // tokensave (and any future Mate-managed MCP server) now lives in the
@@ -423,6 +435,11 @@ function claudeSettingsRegions(
       at: ["permissions", "deny"],
       kind: "list",
       values: renderManagedClaudeDenyEntries(ctx.companionPath),
+    },
+    {
+      at: ["permissions", "ask"],
+      kind: "list",
+      values: getManagedAskEntries(ctx.companionPath),
     },
     ...claudePluginRegions(pluginFolders),
     /**

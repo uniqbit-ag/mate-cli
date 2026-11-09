@@ -1089,7 +1089,10 @@ describe("mate CLI e2e", () => {
       await fs.readFile(path.join(scenario.companion, ".mcp.json"), "utf8"),
     ) as { mcpServers?: Record<string, { command?: string; args?: string[] }> };
     expect(claudeMcp.mcpServers?.context7?.command).toBe("npx");
-    expect(claudeMcp.mcpServers?.context7?.args ?? []).toEqual(["-y", "@upstash/context7-mcp"]);
+    expect(claudeMcp.mcpServers?.context7?.args ?? []).toEqual([
+      "-y",
+      "@upstash/context7-mcp@4.2.0",
+    ]);
 
     const opencodeConfig = JSON.parse(
       await fs.readFile(path.join(scenario.companion, ".opencode", "opencode.json"), "utf8"),
@@ -1097,7 +1100,7 @@ describe("mate CLI e2e", () => {
     expect(opencodeConfig.mcp?.servers?.context7?.command).toEqual([
       "npx",
       "-y",
-      "@upstash/context7-mcp",
+      "@upstash/context7-mcp@4.2.0",
     ]);
 
     expect(

@@ -149,6 +149,12 @@ if [[ ! -f "$EXTENSION_TARBALL" ]]; then
   echo "Error: npm pack did not create $(basename "$EXTENSION_TARBALL") for $EXTENSION_NAME; nothing was published." >&2
   exit 1
 fi
+# Core carries the VSIX digest release preparation recorded; `mate vscode setup`
+# refuses any other VSIX, so a differing rebuild must never be published.
+if ! bun "$ROOT_DIR/apps/mate-vscode/scripts/release-vsix.ts" verify "$VERSION" "$EXTENSION_TARBALL" "$ROOT_DIR"; then
+  echo "Error: the packed $EXTENSION_NAME VSIX does not match the release VSIX record; nothing was published." >&2
+  exit 1
+fi
 EXTENSION_INTEGRITY="sha512-$(node -e 'process.stdout.write(require("crypto").createHash("sha512").update(require("fs").readFileSync(process.argv[1])).digest("base64"))' "$EXTENSION_TARBALL")"
 PACKAGE_NAMES=("$EXTENSION_NAME" "${PACKAGE_NAMES[@]}")
 PACKED_INTEGRITIES=("$EXTENSION_INTEGRITY" "${PACKED_INTEGRITIES[@]}")

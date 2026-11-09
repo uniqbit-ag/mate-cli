@@ -297,6 +297,10 @@ current version without changing anything:
 mate update --check
 ```
 
+If Mate stops with `update required` and names a version that does not exist,
+the stored latest version is wrong. `mate update --check` replaces it with the
+version the registry reports.
+
 If self-update reports that the installation is not npm-managed, reinstall the
 published package:
 

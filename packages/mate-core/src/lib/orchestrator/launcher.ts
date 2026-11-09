@@ -1,5 +1,11 @@
 // oxlint-disable no-underscore-dangle
 import { FRAMEWORK_NAME } from "../../framework";
+import { companionGit, GIT_QUERY_TIMEOUT_MS } from "../../runtime/companion-git";
+import { companionFrameworkConfigPath, resolveSecretPolicy } from "../../runtime/policy";
+import {
+  secretPolicyOfConfigText,
+  secretPolicyWeakenings,
+} from "../../runtime/secret-policy-weakening";
 import type { AdapterContext, LaunchAdapter } from "./adapters/base";
 import { ClaudeAdapter } from "./adapters/claude";
 import { OpenCodeAdapter } from "./adapters/opencode";
@@ -41,7 +47,33 @@ interface ResolvedLaunchState {
 
 export const launcherDeps = {
   prepareSession,
+  /** The companion's `HEAD` version of `framework.yaml`; null when Git cannot answer. Local only. */
+  readCommittedFrameworkConfig: async (companionPath: string): Promise<string | null> => {
+    const git = companionGit(companionPath, {
+      prompt: "never",
+      commandCapMs: GIT_QUERY_TIMEOUT_MS,
+    });
+    const shown = await git.run(["show", `HEAD:./.${FRAMEWORK_NAME}/config/framework.yaml`]);
+    return shown.status === 0 ? shown.stdout : null;
+  },
 };
+
+/**
+ * Warns, never blocks, when the working tree's secret policy is weaker than the
+ * committed one: a shell edit the guard does not see shows up at the next launch.
+ */
+async function warnOnLoosenedSecretPolicy(companionPath: string): Promise<void> {
+  const committedText = await launcherDeps
+    .readCommittedFrameworkConfig(companionPath)
+    .catch(() => null);
+  const committed = committedText === null ? null : secretPolicyOfConfigText(committedText);
+  if (!committed) return;
+  const weakenings = secretPolicyWeakenings(committed, resolveSecretPolicy(companionPath));
+  if (weakenings.length === 0) return;
+  console.error(
+    `${FRAMEWORK_NAME}: warning: ${companionFrameworkConfigPath(companionPath)} loosens the committed secret policy (${weakenings.join("; ")}); only the user should loosen it.`,
+  );
+}
 
 /** The wrap notice is informational: `process.stderr.write`, since Bun renders `console.error` red. */
 function report(result: PrepareResult): void {
@@ -102,6 +134,7 @@ export class FrameworkLauncher {
     });
     report(prepared);
     if (!prepared.ok) throw state.adapter.launchFailure(prepared);
+    await warnOnLoosenedSecretPolicy(state.companionPath);
     const adapterContext = await state.adapter.planLaunch(this.makeAdapterContext(state), prepared);
     await state.adapter.validateLaunch(adapterContext);
 
