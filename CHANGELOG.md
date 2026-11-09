@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### `mate companion update` runs a pinned `skills` CLI
+
+- Mate bundles one exact `skills` version for `skills-lock.json` refreshes instead of running `npx skills`. A new version arrives with a Mate release.
+- Mate now requires Node.js 22.20.0 or newer to install its dependencies.
+
 ### Wraps stay inside the working repository (security)
 
 - Mate reads `.mate/runtime-documents.json` as data, not as authority over paths. It acts only on its own destinations: `.claude/settings.local.json`, `.opencode/opencode.json`, this repository's MCP servers in `~/.claude.json`, the legacy `.mcp.json`, companion copies under `.opencode/`, and skill and command links under `.claude/skills/` and `.claude/commands/`. A committed or hand-edited record naming anything else, such as `../x` or `~/.claude/settings.json`, is ignored, named in a warning, and dropped at the next write. Before, `mate unwrap` or a wrap pass could rewrite or delete such a path.

@@ -8,6 +8,7 @@ import { parse } from "yaml";
 
 import { createStartupProgress } from "../../../lib/components/startup-progress";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
+import { skillsCliDeps } from "../../../lib/skills-cli";
 import type { GitOps } from "../artifact/finish/git";
 import { defaultGitOps } from "../artifact/finish/git";
 import { skillIgnoreEntries, untrackSkillCopies } from "../../../tools/setup/mate-skill-copies";
@@ -22,6 +23,7 @@ import {
 } from "./update";
 
 const original = { ...companionUpdateDeps };
+const originalSkillsCli = { ...skillsCliDeps };
 const COMPANION = "/tmp/acme-companion";
 const CONFIG: FrameworkConfig = { type: "companion", allowedAgents: ["claude"] };
 
@@ -177,6 +179,7 @@ beforeEach(() => {
 
 afterEach(() => {
   Object.assign(companionUpdateDeps, original);
+  Object.assign(skillsCliDeps, originalSkillsCli);
   process.exitCode = originalExitCode ?? 0;
 });
 
@@ -299,6 +302,29 @@ describe("mate companion update — version precondition", () => {
 });
 
 describe("mate companion update — regeneration", () => {
+  test.each(["js", "mjs", "missing"])("runs the bundled skills CLI: %s", async (kind) => {
+    const runCli = mock(async () => {});
+    skillsCliDeps.run = runCli;
+    skillsCliDeps.locate = () =>
+      kind === "missing"
+        ? { missing: "bundled skills CLI is missing. Reinstall Mate to restore it." }
+        : { bin: `/acme/skills/cli.${kind}`, version: "1.0.0" };
+
+    if (kind === "missing") {
+      await expect(companionUpdateDeps.runSkillsUpdate("/acme-companion")).rejects.toThrow(
+        "Reinstall Mate",
+      );
+      expect(runCli).not.toHaveBeenCalled();
+    } else {
+      await companionUpdateDeps.runSkillsUpdate("/acme-companion");
+      expect(runCli).toHaveBeenCalledWith(
+        process.execPath,
+        [`/acme/skills/cli.${kind}`, "update", "-p", "-y"],
+        { cwd: "/acme-companion" },
+      );
+    }
+  });
+
   test("a failed synchronization offers no commit and does not raise the floor", async () => {
     const { git, floor, confirm } = setup({
       sync: () => {

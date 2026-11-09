@@ -71,6 +71,7 @@
     "react": "^19.2.7",
     "react-doctor": "0.9.13",
     "semver": "^7.8.5",
+    "skills": "1.7.6",
     "smol-toml": "1.9.1",
     "yaml": "^2.9.0",
     "zod": "4.6.7"
@@ -101,7 +102,7 @@
     }
   },
   "engines": {
-    "node": ">=22.19.0"
+    "node": ">=22.20.0"
   },
   "packageManager": "bun@1.4.4"
 }
