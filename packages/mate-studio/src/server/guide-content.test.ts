@@ -25,13 +25,13 @@ describe("guide catalog", () => {
       "/docs/concepts/repositories/#umbrella-repository",
     );
   });
-  test("compiles the actual canonical sources without a second prose copy", async () => {
+  test("compiles Studio-owned summaries without public documentation sources", async () => {
     const worktrees = await readFile(
-      new URL("../../../../apps/docs/content/docs/concepts/worktrees.mdx", import.meta.url),
+      new URL("../views/getting-started/worktrees.md", import.meta.url),
       "utf8",
     );
     const vscode = await readFile(
-      new URL("../../../../apps/docs/content/docs/getting-started/vscode.mdx", import.meta.url),
+      new URL("../views/getting-started/vscode.md", import.meta.url),
       "utf8",
     );
     const start = await readFile(
@@ -43,7 +43,23 @@ describe("guide catalog", () => {
       vscode: { ...sources.vscode, source: vscode },
       start: { ...sources.start, source: start },
     });
-    expect(JSON.stringify(compiled)).toContain("working worktree");
+    expect(start).toContain("mate companion link");
+    expect(worktrees).toContain("open another terminal");
+    expect(worktrees).toContain("Workset becomes Done");
+    expect(worktrees).toContain("Dirty, locked, unpushed, or currently used");
+    expect(worktrees).toContain("does not delete the branch or close your terminals");
+    expect(worktrees).not.toMatch(/```|\bmate\s+[a-z]|`[^`]+`/);
+    expect(vscode).toContain("mate vscode setup");
+    expect(vscode).toContain("Only sidebar-started sessions");
+    expect(vscode).toContain("**Open changes**");
+    for (const source of [start, worktrees, vscode]) {
+      expect(source.split(/\s+/).length).toBeLessThan(450);
+    }
+    const imports = await readFile(new URL("./guides.server.ts", import.meta.url), "utf8");
+    expect(imports).not.toContain("apps/docs");
+    for (const topic of ["start", "worktrees", "vscode"]) {
+      expect(imports).toContain(`../views/getting-started/${topic}.md?raw`);
+    }
     expect(JSON.stringify(compiled)).not.toContain("md-frontmatter");
   });
 
