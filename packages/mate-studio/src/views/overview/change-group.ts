@@ -7,7 +7,7 @@ export const CHANGE_GROUPS: readonly ChangeGroup[] = ["needs-you", "building", "
 
 export const GROUP_TITLES: Record<ChangeGroup, string> = {
   "needs-you": "Needs you",
-  building: "Building",
+  building: "Implementation started",
   ready: "Ready to archive",
 };
 
