@@ -46,7 +46,7 @@ export const VIEW_DESCRIPTIONS: Record<StudioMode, Record<StudioView, string>> =
     dashboard: "Changes in flight, grouped by what they need next.",
     factory: "Outcomes the factory works on, and the decisions they wait for.",
     workflow: "The Delivery Path: every stage, its skill and where your changes are.",
-    "getting-started": "Set up your editor, isolate a change, and start an agent session.",
+    "getting-started": "Take your first change from an idea to delivery in your existing checkout.",
     skills: "The skills each agent can run in this companion.",
     vault: "Every file in the Companion Repository.",
     specs: "Capabilities by Area, with their requirements.",
