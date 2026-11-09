@@ -6,8 +6,37 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
+import {
+  packRelease,
+  withPublishedPackageVersions,
+  withReleaseVersions,
+  type PackageMetadata,
+  type PackedTarball,
+} from "../../../mate-container/src/image-pins";
 
 const tempRoots: string[] = [];
+
+function smokeInputs(
+  manifest: string,
+  lock: string,
+  version: string,
+  packages: PackageMetadata[],
+  packed: ReadonlyMap<string, PackedTarball>,
+): { manifest: string; lock: string } {
+  const integrities = new Map([...packed].map(([name, tarball]) => [name, tarball.integrity]));
+  const updated = JSON.parse(
+    withPublishedPackageVersions(lock, version, packages, integrities),
+  ) as {
+    packages: Record<string, { resolved?: string }>;
+  };
+  for (const [name, tarball] of packed) {
+    updated.packages[`node_modules/${name}`]!.resolved = `file:${tarball.tarball}`;
+  }
+  return {
+    manifest: withReleaseVersions(manifest, version),
+    lock: `${JSON.stringify(updated, null, 2)}\n`,
+  };
+}
 
 afterEach(async () => {
   await Promise.all(
@@ -30,6 +59,33 @@ async function packInto(packageRoot: string, destination: string): Promise<strin
 }
 
 describe("published package", () => {
+  test("rejects release dependency drift before installing", () => {
+    const manifest = JSON.stringify({ dependencies: { "@uniqbit/mate-core": "1.4.0" } });
+    const lock = JSON.stringify(
+      {
+        packages: {
+          "": { dependencies: { "@uniqbit/mate-core": "1.4.0" } },
+          "node_modules/@uniqbit/mate-core": {
+            version: "1.4.0",
+            resolved: "https://example.invalid/acme.tgz",
+            integrity: "sha512-acme",
+          },
+        },
+      },
+      null,
+      2,
+    );
+    expect(() =>
+      smokeInputs(
+        manifest,
+        lock,
+        "1.5.0",
+        [{ name: "@uniqbit/mate-core", version: "1.5.0", dependencies: { "acme-dep": "1.0.0" } }],
+        new Map([["@uniqbit/mate-core", { tarball: "/acme.tgz", integrity: "sha512-acme" }]]),
+      ),
+    ).toThrow("acme-dep");
+  });
+
   test("packs the bin bootstrap (wrappers ship in @uniqbit/mate-core)", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-package-smoke-"));
     tempRoots.push(root);
@@ -57,38 +113,54 @@ describe("published package", () => {
     tempRoots.push(root);
 
     const cliRoot = path.join(import.meta.dirname, "../..");
-    const coreRoot = path.join(cliRoot, "..", "..", "packages", "mate-core");
-    const coreTarball = await packInto(coreRoot, path.join(root, "core"));
-    const cliTarball = await packInto(cliRoot, path.join(root, "cli"));
+    const workspaceRoot = path.resolve(cliRoot, "../..");
+    const coreRoot = path.join(workspaceRoot, "packages", "mate-core");
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(cliRoot, "package.json"), "utf8"),
+    ) as PackageMetadata;
+    const coreManifest = JSON.parse(
+      await fs.readFile(path.join(coreRoot, "package.json"), "utf8"),
+    ) as PackageMetadata;
+    const packed = packRelease(manifest.version, workspaceRoot, root);
+    const locks = path.join(workspaceRoot, "apps/mate-container/locks");
+    const imageManifest = await fs.readFile(path.join(locks, "global-tools.package.json"), "utf8");
+    const imageLock = await fs.readFile(path.join(locks, "global-tools.package-lock.json"), "utf8");
+    const smoke = smokeInputs(
+      imageManifest,
+      imageLock,
+      manifest.version,
+      [coreManifest, manifest],
+      packed,
+    );
 
     const project = path.join(root, "project");
     await fs.mkdir(project, { recursive: true });
-    await fs.writeFile(
-      path.join(project, "package.json"),
-      JSON.stringify(
-        {
-          name: "mate-cli-package-smoke",
-          private: true,
-          dependencies: {
-            "@uniqbit/mate": `file:${cliTarball}`,
-          },
-          overrides: {
-            "@uniqbit/mate-core": `file:${coreTarball}`,
-          },
-        },
-        null,
-        2,
-      ),
-      "utf8",
-    );
+    await fs.writeFile(path.join(project, "package.json"), smoke.manifest, "utf8");
+    await fs.writeFile(path.join(project, "package-lock.json"), smoke.lock, "utf8");
 
-    const install = spawnSync("bun", ["install", "--production"], {
-      cwd: project,
-      env: { ...process.env, CI: "1" },
-      encoding: "utf8",
-    });
+    const install = spawnSync(
+      "npm",
+      ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"],
+      {
+        cwd: project,
+        env: { ...process.env, CI: "1" },
+        encoding: "utf8",
+      },
+    );
     expect(`${install.stderr}\n${install.stdout}`).not.toContain("error:");
     expect(install.status).toBe(0);
+    const installedLock = JSON.parse(
+      await fs.readFile(path.join(project, "node_modules/.package-lock.json"), "utf8"),
+    ) as {
+      packages: Record<string, { version?: string; integrity?: string }>;
+    };
+    const committedLock = JSON.parse(imageLock) as typeof installedLock;
+    for (const [key, entry] of Object.entries(installedLock.packages)) {
+      if (key === "node_modules/@uniqbit/mate" || key === "node_modules/@uniqbit/mate-core")
+        continue;
+      expect(entry.version).toBe(committedLock.packages[key]?.version);
+      expect(entry.integrity).toBe(committedLock.packages[key]?.integrity);
+    }
 
     const mate = path.join(project, "node_modules", ".bin", "mate");
     const installedMateRoot = path.join(project, "node_modules", "@uniqbit", "mate");
@@ -108,9 +180,6 @@ describe("published package", () => {
       encoding: "utf8",
     });
     expect(version.status).toBe(0);
-    const manifest = JSON.parse(await fs.readFile(path.join(cliRoot, "package.json"), "utf8")) as {
-      version: string;
-    };
     expect(version.stdout.trim()).toBe(manifest.version);
 
     const help = spawnSync(mate, ["--help"], {
