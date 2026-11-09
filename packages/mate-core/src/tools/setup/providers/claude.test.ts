@@ -455,6 +455,22 @@ describe("syncCompanionClaudeSettings", () => {
     expect(settings.permissions?.allow).not.toContain(`Glob(${companionPath}/**)`);
   });
 
+  test("asks before an agent edits the policy file, keeping a user ask entry", async () => {
+    const companionPath = await makeTempDir("mate-companion-ask-");
+    await seedSettings(companionPath, { permissions: { ask: ["Bash(git push:*)"] } });
+    const config = { allowedAgents: ["claude"], capabilities: [] };
+
+    await syncCompanionClaudeSettings(companionPath, config);
+    await syncCompanionClaudeSettings(companionPath, config);
+
+    const settings = await readCompanionSettings(companionPath);
+    expect(settings.permissions?.ask).toEqual([
+      "Bash(git push:*)",
+      `Edit(/${companionPath}/.mate/config/framework.yaml)`,
+    ]);
+    expect(settings.permissions?.allow).toContain(`Edit(${companionPath}/**)`);
+  });
+
   test("resync removes the legacy Glob companion permission entry", async () => {
     const companionPath = await makeTempDir("mate-companion-glob-migrate-");
     await seedSettings(companionPath, {

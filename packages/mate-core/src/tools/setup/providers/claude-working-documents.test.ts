@@ -154,4 +154,23 @@ describe("the Claude working target", () => {
 
     expect(await fs.readFile(target, "utf8")).toBe(before);
   });
+
+  test("places Mate's policy-file ask entry, and removing it keeps the user's ask entry", async () => {
+    const { companionPath, repoPath } = await fixture();
+    const target = path.join(repoPath, ".claude", "settings.local.json");
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    const before = `${JSON.stringify({ permissions: { ask: ["Bash(git push:*)"] } }, null, 2)}\n`;
+    await fs.writeFile(target, before, "utf8");
+    const documents = await renderClaudeDocuments(companionPath, repoPath);
+
+    await placeRuntimeDocument(repoPath, CLAUDE_SETTINGS_DOCUMENT, documents);
+    const placed = JSON.parse(await fs.readFile(target, "utf8"));
+    expect(placed.permissions.ask).toEqual([
+      "Bash(git push:*)",
+      `Edit(/${companionPath}/.mate/config/framework.yaml)`,
+    ]);
+    expect(await removeRuntimeDocument(repoPath, CLAUDE_SETTINGS_DOCUMENT)).toBe("removed");
+
+    expect(await fs.readFile(target, "utf8")).toBe(before);
+  });
 });

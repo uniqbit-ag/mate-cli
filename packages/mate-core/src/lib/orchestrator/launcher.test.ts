@@ -1025,3 +1025,89 @@ describe("Capability plugin folders in a launch", () => {
     }
   });
 });
+
+describe("the launch secret-policy check", () => {
+  const original = { ...launcherDeps };
+
+  afterEach(() => {
+    Object.assign(launcherDeps, original);
+  });
+
+  async function launchWith(committed: string | null, workingTree: string) {
+    const companionPath = await fs.mkdtemp(path.join(os.tmpdir(), "acme-policy-launch-"));
+    const configPath = path.join(companionPath, ".mate", "config", "framework.yaml");
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(configPath, workingTree, "utf8");
+    const adapter = new TestOpenCodeAdapter();
+    const { launcher } = createLauncher(adapter);
+    launcher.resolveConfig = async () =>
+      ({
+        companionPath,
+        launchWorkingDirectory: "/tmp/repo",
+        repositoryId: "repo",
+        configStore: {
+          load: async () => ({ allowedAgents: ["opencode"], capabilities: [] }),
+        },
+        workingRepoStore: {},
+      }) as LaunchContext;
+    spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
+      id: "repo",
+      path: "/tmp/repo",
+    });
+    launcherDeps.prepareSession = mock(async () => ({
+      ok: true,
+      mode: "attended" as const,
+      runtime: "opencode" as const,
+      runtimes: ["opencode" as const],
+      companionPath,
+      steps: [],
+      warnings: [],
+    }));
+    launcherDeps.readCommittedFrameworkConfig = async () => committed;
+    const errors = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await (await launcher.prepare(makeRequest({ tool: "opencode", args: [] }))).execute();
+      return {
+        warnings: errors.mock.calls.map((call) => String(call[0])),
+        ran: adapter.run.mock.calls.length,
+      };
+    } finally {
+      errors.mockRestore();
+      await fs.rm(companionPath, { recursive: true, force: true });
+    }
+  }
+
+  test("warns about guardrails turned off since the last commit, and launches", async () => {
+    const { warnings, ran } = await launchWith(
+      "secrets:\n  guardrails: true\n",
+      "secrets:\n  guardrails: false\n",
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toStartWith("mate: warning: ");
+    expect(warnings[0]).toContain("framework.yaml");
+    expect(warnings[0]).toContain("guardrails turned off");
+    expect(ran).toBe(1);
+  });
+
+  test("names an added allow pattern", async () => {
+    const { warnings } = await launchWith(
+      'secrets:\n  deny: ["*.acmesecret"]\n',
+      'secrets:\n  deny: ["*.acmesecret"]\n  allow: ["*.acmesecret"]\n',
+    );
+    expect(warnings.join("\n")).toContain("allow pattern added: *.acmesecret");
+  });
+
+  test("a stricter policy gives no warning", async () => {
+    const { warnings } = await launchWith(
+      'secrets:\n  deny: ["*.acmesecret"]\n',
+      'secrets:\n  deny: ["*.acmesecret", "*.acmetoken"]\n',
+    );
+    expect(warnings).toEqual([]);
+  });
+
+  test("an uncommitted policy file gives no warning, and launches", async () => {
+    const { warnings, ran } = await launchWith(null, "secrets:\n  guardrails: false\n");
+    expect(warnings).toEqual([]);
+    expect(ran).toBe(1);
+  });
+});

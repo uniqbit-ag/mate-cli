@@ -733,3 +733,122 @@ describe("validate-artifact-path secret guardrails", () => {
     expect(result.exitCode).toBe(0);
   });
 });
+
+describe("validate-artifact-path secret policy file", () => {
+  async function companionWith(config: string) {
+    const repo = await makeTempDir("mate-hook-policy-");
+    const companion = path.join(repo, "companion");
+    const configPath = path.join(companion, ".mate", "config", "framework.yaml");
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(configPath, config, "utf8");
+    await initGitRepo(repo);
+    await wrapRepo(repo, companion);
+    return { repo, configPath };
+  }
+
+  const edit = (file_path: string, old_string: string, new_string: string) => ({
+    tool_name: "Edit",
+    tool_input: { file_path, old_string, new_string },
+  });
+
+  test("refuses an Edit that turns guardrails off, and the guard stays on", async () => {
+    const { repo, configPath } = await companionWith(
+      'secrets:\n  guardrails: true\n  deny:\n    - "*.acmesecret"\n',
+    );
+    const refused = await evaluate(
+      edit(configPath, "guardrails: true", "guardrails: false"),
+      {},
+      repo,
+    );
+    expect(refused.exitCode).toBe(2);
+    expect(refused.stderr).toContain("only the user can loosen the secret policy");
+    expect(refused.stderr).toContain("change: guardrails turned off");
+
+    const read = await evaluate(
+      { tool_name: "Read", tool_input: { file_path: path.join(repo, "acme", "dummy.acmesecret") } },
+      {},
+      repo,
+    );
+    expect(read.exitCode).toBe(2);
+  });
+
+  test("refuses a Write that adds an allow pattern", async () => {
+    const { repo, configPath } = await companionWith('secrets:\n  deny: ["*.acmesecret"]\n');
+    const result = await evaluate(
+      {
+        tool_name: "Write",
+        tool_input: {
+          file_path: configPath,
+          content: 'secrets:\n  deny: ["*.acmesecret"]\n  allow: ["*.acmesecret"]\n',
+        },
+      },
+      {},
+      repo,
+    );
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("allow pattern added: *.acmesecret");
+  });
+
+  test("replays every MultiEdit edit in order", async () => {
+    const { repo, configPath } = await companionWith(
+      'secrets:\n  deny:\n    - "*.acmesecret"\n    - "*.acmetoken"\n',
+    );
+    const result = await evaluate(
+      {
+        tool_name: "MultiEdit",
+        tool_input: {
+          file_path: configPath,
+          edits: [
+            { old_string: "secrets:", new_string: "secrets: # acme" },
+            { old_string: '    - "*.acmesecret"\n', new_string: "" },
+          ],
+        },
+      },
+      {},
+      repo,
+    );
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("deny pattern removed: *.acmesecret");
+  });
+
+  test("allows an Edit of another key", async () => {
+    const { repo, configPath } = await companionWith(
+      'git: manual\nsecrets:\n  deny: ["*.acmesecret"]\n',
+    );
+    const result = await evaluate(edit(configPath, "git: manual", "git: auto"), {}, repo);
+    expect(result.exitCode).toBe(0);
+  });
+
+  test("allows a weakening Edit while guardrails are off", async () => {
+    const { repo, configPath } = await companionWith("secrets:\n  guardrails: false\n");
+    const result = await evaluate(
+      edit(configPath, "guardrails: false", 'guardrails: false\n  allow: ["*.acmesecret"]'),
+      {},
+      repo,
+    );
+    expect(result.exitCode).toBe(0);
+  });
+
+  test("refuses an Edit whose old text is not in the file", async () => {
+    const { repo, configPath } = await companionWith('secrets:\n  deny: ["*.acmesecret"]\n');
+    const result = await evaluate(edit(configPath, "git: manual", "git: auto"), {}, repo);
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("change: the result could not be checked");
+  });
+
+  test("judges a Write through a link as a write to the policy file", async () => {
+    const { repo, configPath } = await companionWith('secrets:\n  deny: ["*.acmesecret"]\n');
+    const link = path.join(repo, "acme-policy.yaml");
+    await fs.symlink(configPath, link);
+    const result = await evaluate(
+      {
+        tool_name: "Write",
+        tool_input: { file_path: link, content: "secrets:\n  guardrails: false\n" },
+      },
+      {},
+      repo,
+    );
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("change: guardrails turned off");
+  });
+});
