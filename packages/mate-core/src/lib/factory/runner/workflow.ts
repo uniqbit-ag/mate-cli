@@ -488,7 +488,11 @@ export async function applyStage(
     await commitWork(deps, id, applyMessage(pending, id));
     const clone = path.join(deps.stateDir, "repos", repoKey(repository));
     check(
-      await deps.run("git", ["-C", clone, "push", "origin", branch], deps.companionPath),
+      await deps.run(
+        "git",
+        ["-C", clone, "push", "--end-of-options", "origin", branch],
+        deps.companionPath,
+      ),
       `pushing ${branch}`,
     );
     deps.log(`\npushed ${branch}\n`);

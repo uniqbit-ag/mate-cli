@@ -449,11 +449,19 @@ async function resolveUpstreamTarget(
 ): Promise<UpstreamTarget | null> {
   const upstream = await run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
   const configured = parseRemoteRef(upstream.stdout);
-  if (upstream.status === 0 && configured) return configured;
+  if (upstream.status === 0 && configured) {
+    return configured.remote.startsWith("-") || configured.branch.startsWith("-")
+      ? null
+      : configured;
+  }
 
   const remoteHead = await run(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
   const fromRemoteHead = parseRemoteRef(remoteHead.stdout);
-  if (remoteHead.status === 0 && fromRemoteHead) return fromRemoteHead;
+  if (remoteHead.status === 0 && fromRemoteHead) {
+    return fromRemoteHead.remote.startsWith("-") || fromRemoteHead.branch.startsWith("-")
+      ? null
+      : fromRemoteHead;
+  }
 
   for (const branch of ["main", "master"]) {
     // oxlint-disable-next-line no-await-in-loop -- the steps are a decision chain

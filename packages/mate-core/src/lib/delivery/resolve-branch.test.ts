@@ -673,6 +673,7 @@ describe("worktreeAddArgs", () => {
     expect(worktreeAddArgs({ branch: "workset/acme", source: "local" }, "/wt")).toEqual([
       "worktree",
       "add",
+      "--end-of-options",
       "/wt",
       "workset/acme",
     ]);
@@ -682,6 +683,7 @@ describe("worktreeAddArgs", () => {
       "--track",
       "-b",
       "workset/acme",
+      "--end-of-options",
       "/wt",
       "origin/workset/acme",
     ]);
@@ -691,6 +693,7 @@ describe("worktreeAddArgs", () => {
       "--no-track",
       "-b",
       "workset/acme",
+      "--end-of-options",
       "/wt",
       "origin/HEAD",
     ]);
@@ -713,6 +716,15 @@ describe("newBranchBase", () => {
   test("a new branch starts from the given base", () => {
     expect(
       worktreeAddArgs({ branch: "workset/acme", source: "new" }, "/wt", "origin/main"),
-    ).toEqual(["worktree", "add", "--no-track", "-b", "workset/acme", "/wt", "origin/main"]);
+    ).toEqual([
+      "worktree",
+      "add",
+      "--no-track",
+      "-b",
+      "workset/acme",
+      "--end-of-options",
+      "/wt",
+      "origin/main",
+    ]);
   });
 });

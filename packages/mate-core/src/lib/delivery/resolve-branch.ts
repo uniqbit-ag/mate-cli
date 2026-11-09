@@ -413,9 +413,18 @@ export function worktreeAddArgs(
   target: string,
   base = "origin/HEAD",
 ): string[] {
-  if (source === "local") return ["worktree", "add", target, branch];
+  if (source === "local") return ["worktree", "add", "--end-of-options", target, branch];
   if (source === "remote") {
-    return ["worktree", "add", "--track", "-b", branch, target, `origin/${branch}`];
+    return [
+      "worktree",
+      "add",
+      "--track",
+      "-b",
+      branch,
+      "--end-of-options",
+      target,
+      `origin/${branch}`,
+    ];
   }
-  return ["worktree", "add", "--no-track", "-b", branch, target, base];
+  return ["worktree", "add", "--no-track", "-b", branch, "--end-of-options", target, base];
 }
