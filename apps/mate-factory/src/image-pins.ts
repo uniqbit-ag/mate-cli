@@ -186,7 +186,7 @@ export function withPublishedPackageVersions(
     const actualDependencies = entry.dependencies ?? {};
     if (Object.keys(actualDependencies).some((name) => expectedDependencies[name] === undefined)) {
       throw new Error(
-        `sync-image-inputs: ${packageData.name} has stale dependency metadata; regenerate its lock after publication`,
+        `sync-image-inputs: ${packageData.name} has stale dependency metadata; run \`bun scripts/image-locks/cli.ts refresh\` and commit the locks`,
       );
     }
     for (const [name, dependencyVersion] of Object.entries(expectedDependencies)) {
@@ -194,7 +194,7 @@ export function withPublishedPackageVersions(
         expectedDependencies[name] = version;
       } else if (actualDependencies[name] !== dependencyVersion) {
         throw new Error(
-          `sync-image-inputs: ${packageData.name} changed dependency ${name}; regenerate its lock after publication`,
+          `sync-image-inputs: ${packageData.name} changed dependency ${name}; run \`bun scripts/image-locks/cli.ts refresh\` and commit the locks`,
         );
       }
     }

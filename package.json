@@ -33,10 +33,13 @@
     "test:ci": "bun run --filter @uniqbit/mate test:ci",
     "test:coverage": "bun run --filter @uniqbit/mate test:coverage",
     "typecheck": "bun run --filter @uniqbit/mate --filter @uniqbit/mate-vscode typecheck",
-    "lint": "bunx oxlint apps packages --no-error-on-unmatched-pattern",
-    "lint:fix": "bunx oxlint apps packages --fix --no-error-on-unmatched-pattern",
-    "format": "oxfmt apps packages \"!**/*.generated.*\" --no-error-on-unmatched-pattern",
-    "format:check": "oxfmt apps packages \"!**/*.generated.*\" --check --no-error-on-unmatched-pattern"
+    "image-locks:check": "bun scripts/image-locks/cli.ts check",
+    "image-locks:refresh": "bun scripts/image-locks/cli.ts refresh",
+    "test:image-locks": "bun test/run-isolated.ts --suite=unit scripts/image-locks",
+    "lint": "bunx oxlint apps packages scripts/image-locks --no-error-on-unmatched-pattern",
+    "lint:fix": "bunx oxlint apps packages scripts/image-locks --fix --no-error-on-unmatched-pattern",
+    "format": "oxfmt apps packages scripts/image-locks \"!**/*.generated.*\" --no-error-on-unmatched-pattern",
+    "format:check": "oxfmt apps packages scripts/image-locks \"!**/*.generated.*\" --check --no-error-on-unmatched-pattern"
   },
   "devDependencies": {
     "oxfmt": "^0.72.0",

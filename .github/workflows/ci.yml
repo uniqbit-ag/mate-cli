@@ -61,6 +61,13 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      # Unfiltered: a manifest-only change can stale both image locks.
+      - name: Check image lock drift
+        run: bun run image-locks:check
+
+      - name: Test image lock tooling
+        run: bun run test:image-locks
+
       - name: Test mate-container
         if: steps.changes.outputs.container == 'true'
         env:
