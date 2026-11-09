@@ -24,7 +24,7 @@ describe("changeGroup", () => {
     );
   });
 
-  it("puts a partly done change under Building and a finished one under Ready", () => {
+  it("puts a partly done change under Implementation started and a finished one under Ready", () => {
     expect(changeGroup(change({ completedTasks: 12, totalTasks: 20 }))).toBe("building");
     expect(changeGroup(change({ completedTasks: 7, totalTasks: 7 }))).toBe("ready");
   });

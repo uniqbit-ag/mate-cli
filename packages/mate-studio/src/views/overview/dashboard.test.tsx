@@ -69,7 +69,7 @@ const panel = (doc: Document) => doc.querySelector('[data-slot="sheet-content"]'
 describe("Dashboard", () => {
   it("lists each change once under what it needs, in order, and no specs or skills", () => {
     const markup = staticMarkup(<Dashboard payload={payload(changes)} />);
-    const order = ["Needs you", "Building", "Ready to archive"].map((title) =>
+    const order = ["Needs you", "Implementation started", "Ready to archive"].map((title) =>
       markup.indexOf(`>${title}</h2>`),
     );
     expect(order.every((index) => index !== -1)).toBe(true);
@@ -78,7 +78,7 @@ describe("Dashboard", () => {
       expect(markup.split(`data-change="${name}"`)).toHaveLength(2);
     }
     expect(markup.indexOf('data-change="acme-review"')).toBeLessThan(
-      markup.indexOf(">Building</h2>"),
+      markup.indexOf(">Implementation started</h2>"),
     );
     expect(markup).not.toContain("Specs by Area");
     expect(markup).not.toContain("mate-apply-change");
@@ -89,6 +89,22 @@ describe("Dashboard", () => {
     expect(markup).toContain("12 of 20 tasks");
     expect(markup).toContain('role="progressbar"');
     expect(markup).toContain('aria-valuenow="60"');
+  });
+
+  it("describes task progress without claiming agent activity in the list and detail", async () => {
+    const { doc, page } = await mount([change("acme-partial", 12, 20)]);
+    expect(groups(doc)).toEqual(["Implementation started"]);
+    expect(doc.body.textContent).toContain("Some tasks are done; others remain");
+    const row = doc.querySelector<HTMLButtonElement>('[data-change="acme-partial"]')!;
+    expect(row.querySelector(".status-word")?.textContent).toBe("Implementation started");
+    await act(async () => row.click());
+    await settle();
+    expect(panel(doc)!.querySelector(".status-word")?.textContent).toBe("Implementation started");
+    expect(panel(doc)!.textContent).toContain("Apply change");
+    expect(panel(doc)!.textContent).toContain("/mate-apply-change acme-partial");
+    expect(doc.body.textContent).not.toContain("An agent is working through the tasks");
+    expect(doc.body.textContent).not.toContain("Building");
+    page.unmount();
   });
 
   it("says so when a change tracks no tasks, and lists it under Needs you", () => {
@@ -135,11 +151,11 @@ describe("Dashboard", () => {
     expect(filter.map((button) => button.textContent)).toEqual([
       "All3",
       "Needs you1",
-      "Building1",
+      "Implementation started1",
       "Ready to archive1",
     ]);
     await act(async () => filter[2]!.click());
-    expect(groups(doc)).toEqual(["Building"]);
+    expect(groups(doc)).toEqual(["Implementation started"]);
     page.unmount();
   });
 
