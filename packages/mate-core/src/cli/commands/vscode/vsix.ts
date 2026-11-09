@@ -1,4 +1,5 @@
 import { execFile as execFileCb } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -46,9 +47,25 @@ function vsixCacheDir(version: string, homeDir?: string): string {
 
 export class VsixError extends Error {}
 
-/** `--vsix` wins; otherwise the cached copy for `version`; otherwise download it from the update registry. */
+/** SRI form; must match `digestOf` in `apps/mate-vscode/scripts/release-vsix.ts`. */
+async function vsixDigest(file: string): Promise<string> {
+  return `sha512-${createHash("sha512")
+    .update(await fs.readFile(file))
+    .digest("base64")}`;
+}
+
+/**
+ * `--vsix` wins, unchecked; otherwise the cached copy for `version`; otherwise download it from the
+ * update registry. With `expectedDigest`, a cached or downloaded VSIX that differs is deleted and refused.
+ */
 export async function resolveVsix(
-  options: { vsix?: string; version: string; cacheDir?: string; cwd?: string },
+  options: {
+    vsix?: string;
+    version: string;
+    expectedDigest?: string | null;
+    cacheDir?: string;
+    cwd?: string;
+  },
   deps: VsixResolverDeps = vsixResolverDeps,
 ): Promise<string> {
   if (options.vsix) {
@@ -56,20 +73,42 @@ export async function resolveVsix(
     if (!(await deps.exists(file))) throw new VsixError(`VSIX not found: ${file}`);
     return file;
   }
+  const expected = options.expectedDigest;
   const cacheDir = options.cacheDir ?? vsixCacheDir(options.version);
   const cached = path.join(cacheDir, VSIX_FILE);
-  if (await deps.exists(cached)) return cached;
-
   const spec = `${VSCODE_PACKAGE}@${options.version}`;
+  if (await deps.exists(cached)) {
+    if (!expected || (await vsixDigest(cached)) === expected) return cached;
+    await fs.rm(cached, { force: true });
+    throw new VsixError(
+      `the cached VSIX for ${spec} does not match the digest shipped with Mate ${options.version} and was removed. ` +
+        `Nothing was installed. Run \`${FRAMEWORK_NAME} vscode setup\` again to download a fresh copy.`,
+    );
+  }
+
+  // Checked under a temporary name, so a differing download never becomes the cached copy.
+  const pending = path.join(cacheDir, `.${VSIX_FILE}.${randomUUID()}`);
   try {
     await fs.mkdir(cacheDir, { recursive: true });
     const tarball = await deps.pack(spec, cacheDir);
-    await deps.extract(tarball, cached);
+    await deps.extract(tarball, pending);
   } catch (error) {
+    await fs.rm(pending, { force: true });
     throw new VsixError(
       `could not download ${spec}: ${(error as Error).message.trim()}\n` +
         `Install a local build instead with \`${FRAMEWORK_NAME} vscode setup --vsix <path>\`.`,
     );
   }
+  if (expected) {
+    const actual = await vsixDigest(pending);
+    if (actual !== expected) {
+      await fs.rm(pending, { force: true });
+      throw new VsixError(
+        `${spec} does not match the VSIX digest shipped with Mate ${options.version} (expected ${expected}, got ${actual}). ` +
+          `Nothing was installed. Check the npm registry configured for @uniqbit, then run \`${FRAMEWORK_NAME} vscode setup\` again.`,
+      );
+    }
+  }
+  await fs.rename(pending, cached);
   return cached;
 }

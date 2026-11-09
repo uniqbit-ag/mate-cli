@@ -98,11 +98,14 @@ function packIntegrity(content: string): string {
 }
 
 const FIXTURE_INTEGRITY = packIntegrity(FIXTURE_PACK_CONTENT);
+const FIXTURE_VSIX = "acme-vsix";
+const RELEASE_VSIX_RECORD = "packages/mate-core/src/cli/commands/vscode/release-vsix.json";
 
 type PublishFixture = {
   binDir: string;
   callsPath: string;
   registryDir: string;
+  rootDir: string;
   scriptPath: string;
   version: string;
 };
@@ -136,6 +139,8 @@ async function createPublishFixture(
     "apps/mate-container/src/image-pins.ts",
     "apps/mate-factory/scripts/image-pins.ts",
     "apps/mate-factory/src/image-pins.ts",
+    "apps/mate-vscode/scripts/release-vsix.ts",
+    "apps/mate-vscode/scripts/package-vsix.ts",
   ]) {
     await fs.mkdir(path.dirname(path.join(tempDir, file)), { recursive: true });
     await fs.copyFile(path.join(repoRoot, file), path.join(tempDir, file));
@@ -163,6 +168,20 @@ async function createPublishFixture(
     `${JSON.stringify({ name: "@uniqbit/mate-vscode", version: overrides.extension ?? version })}\n`,
     "utf8",
   );
+  // A real extension tarball, so publication hashes the VSIX inside it against core's record.
+  const extensionPackage = path.join(tempDir, "extension-pack", "package");
+  await fs.mkdir(extensionPackage, { recursive: true });
+  await fs.writeFile(path.join(extensionPackage, "mate-vscode.vsix"), FIXTURE_VSIX, "utf8");
+  execFileSync("tar", [
+    "-czf",
+    path.join(tempDir, "extension.tgz"),
+    "-C",
+    path.dirname(extensionPackage),
+    "package",
+  ]);
+  await fs.mkdir(path.dirname(path.join(tempDir, RELEASE_VSIX_RECORD)), { recursive: true });
+  const fixture = { binDir, callsPath, registryDir, rootDir: tempDir, scriptPath, version };
+  await writeReleaseVsixRecord(fixture, { version, sha512: packIntegrity(FIXTURE_VSIX) });
 
   const lockEntries = (names: string[]) =>
     Object.fromEntries(
@@ -215,7 +234,11 @@ async function createPublishFixture(
       'if [ -n "$dest" ]; then',
       '  name=$(sed -n \'s/.*"name":"\\([^"]*\\)".*/\\1/p\' package.json)',
       '  file=$(printf "%s" "$name" | sed "s/^@//; s#/#-#")',
-      '  printf "%s" "$FAKE_PACK_CONTENT" > "$dest/$file-$FAKE_PACK_VERSION.tgz"',
+      '  if [ "$name" = @uniqbit/mate-vscode ]; then',
+      '    cp "$FAKE_EXTENSION_TARBALL" "$dest/$file-$FAKE_PACK_VERSION.tgz"',
+      "  else",
+      '    printf "%s" "$FAKE_PACK_CONTENT" > "$dest/$file-$FAKE_PACK_VERSION.tgz"',
+      "  fi",
       "fi",
       "",
     ].join("\n"),
@@ -223,7 +246,18 @@ async function createPublishFixture(
   );
   await fs.chmod(fakeNpmPath, 0o755);
 
-  return { binDir, callsPath, registryDir, scriptPath, version };
+  return fixture;
+}
+
+async function writeReleaseVsixRecord(
+  fixture: PublishFixture,
+  record: { version: string; sha512: string },
+) {
+  await fs.writeFile(
+    path.join(fixture.rootDir, RELEASE_VSIX_RECORD),
+    `${JSON.stringify(record, null, 2)}\n`,
+    "utf8",
+  );
 }
 
 /** Marks `name@version` as already on the fake registry with `integrity`. */
@@ -240,6 +274,7 @@ function runPublish(fixture: PublishFixture, tag: string, options: PublishOption
     FAKE_REGISTRY_DIR: fixture.registryDir,
     FAKE_PACK_CONTENT: options.packContent ?? FIXTURE_PACK_CONTENT,
     FAKE_PACK_VERSION: fixture.version,
+    FAKE_EXTENSION_TARBALL: path.join(fixture.rootDir, "extension.tgz"),
     FAKE_PUBLISH_FAIL_FOR: options.failPublishFor ?? "",
     GITHUB_REF_NAME: options.refName ?? fixture.version,
   };
@@ -477,6 +512,21 @@ describe("sync-release-versions", () => {
     expect(canaryConfig.hooks?.["after:bump"]).toContain("bun scripts/sync-release-versions.ts");
   });
 
+  test("embeds the VSIX digest after the version sync and before core is packed for the image pins", async () => {
+    for (const configPath of [stableReleaseConfigPath, canaryReleaseConfigPath]) {
+      const config = JSON.parse(await fs.readFile(configPath, "utf8")) as ReleaseConfig;
+      const steps = config.hooks?.["after:bump"] ?? [];
+      const versionSync = steps.indexOf("bun scripts/sync-release-versions.ts");
+      const embed = steps.indexOf("bun ../mate-vscode/scripts/release-vsix.ts embed ${version}");
+      const imageInputs = steps.findIndex((step) => step.includes("sync-image-inputs.ts"));
+
+      expect(versionSync).toBeGreaterThanOrEqual(0);
+      expect(embed).toBeGreaterThan(versionSync);
+      expect(imageInputs).toBeGreaterThanOrEqual(0);
+      expect(embed).toBeLessThan(imageInputs);
+    }
+  });
+
   test("propagates the bumped CLI version to core, the CLI's core pin and the mod manifest", async () => {
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-sync-versions-"));
     tempDirs.push(workspaceDir);
@@ -623,6 +673,34 @@ describe("publish.sh", () => {
     expect(result.stderr).toContain(
       `@uniqbit/mate-core@1.2.3 would publish as ${packIntegrity("acme-changed")}, but global-tools.package-lock.json, local-workspace.package-lock.json pin another tarball`,
     );
+    expect(await publishCalls(fixture)).toEqual([]);
+  });
+
+  test("publishes nothing when the packed VSIX differs from the release VSIX record", async () => {
+    const fixture = await createPublishFixture("1.2.3");
+    await writeReleaseVsixRecord(fixture, {
+      version: "1.2.3",
+      sha512: packIntegrity("acme-other"),
+    });
+    const result = runPublish(fixture, "latest");
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(packIntegrity("acme-other"));
+    expect(result.stderr).toContain(packIntegrity(FIXTURE_VSIX));
+    expect(result.stderr).toContain("nothing was published");
+    expect(await publishCalls(fixture)).toEqual([]);
+  });
+
+  test("publishes nothing when the release VSIX record names another version", async () => {
+    const fixture = await createPublishFixture("1.2.3");
+    await writeReleaseVsixRecord(fixture, {
+      version: "1.2.2",
+      sha512: packIntegrity(FIXTURE_VSIX),
+    });
+    const result = runPublish(fixture, "latest");
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("names version 1.2.2, but this release is 1.2.3");
     expect(await publishCalls(fixture)).toEqual([]);
   });
 

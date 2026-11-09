@@ -318,6 +318,13 @@ that already have the extension, and does nothing when none has it. It needs no
 linked repository. `mate update` runs it with `--if-installed`, so an installed
 extension follows the CLI to the new version.
 
+Setup installs only a VSIX that matches the digest shipped with your Mate
+release. It checks a download before caching it and a cached copy before every
+install. On a mismatch it installs into no editor and exits non-zero: a download
+is not cached, and a cached copy is removed. A `--vsix` file is not checked. A
+Mate build without a release digest for its version, such as a development
+checkout, installs without the check and prints `VSIX not verified`.
+
 For each editor it reports the extension version that editor now lists, such as
 `VS Code: installed v1.2.3`. If the editor cannot list its extensions, it reports
 the CLI version instead. When one editor fails, setup prints the error and then
