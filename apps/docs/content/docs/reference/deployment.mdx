@@ -49,6 +49,9 @@ container on a private network and reach it through one.
   It never trusts `Forwarded` or `X-Forwarded-*`. The proxy must enforce TLS,
   forward WebSocket upgrades on `/api/terminal`, pass the `Host` header
   through, and be the only route to the container's port.
+- **No framing.** Studio refuses to be shown in a frame: every response
+  carries `frame-ancestors 'none'` and `X-Frame-Options: DENY`. The proxy must
+  keep both headers, and a portal cannot embed Studio.
 
 ## What to mount
 

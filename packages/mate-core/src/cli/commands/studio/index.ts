@@ -229,10 +229,10 @@ function splitHosts(value: string): string[] {
  * browser at it. Runs in the foreground on an operating-system-assigned
  * loopback port and dies with the process: no daemon, no stop command, and no
  * state written anywhere.
- * @remarks Both invocations are read-only unless passed `--writable`.
- * `--terminal` adds the agent terminal and guards Studio with a per-start
- * access token; `serve` is always guarded. Neither invocation resolves a
- * Repository Link, so it runs from any directory.
+ * @remarks Both invocations are read-only unless passed `--writable`. Every
+ * start is guarded by a per-start access token, and `--terminal` adds the
+ * agent terminal. Neither invocation resolves a Repository Link, so it runs
+ * from any directory.
  */
 export async function runStudioCommand(
   argv: string[] = [],
