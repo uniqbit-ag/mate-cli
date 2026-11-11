@@ -488,6 +488,31 @@ describe("companionGit steps", () => {
     expect(await operation().upstreamTarget()).toBeNull();
   });
 
+  test.each([
+    {
+      name: "configured upstream",
+      commands: [
+        ["update-ref", "refs/remotes/origin/-pP", "HEAD"],
+        ["config", "branch.main.merge", "refs/heads/-pP"],
+      ],
+    },
+    {
+      name: "remote HEAD",
+      commands: [
+        ["branch", "--unset-upstream"],
+        ["update-ref", "refs/remotes/origin/--dry-run", "HEAD"],
+        ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/--dry-run"],
+      ],
+    },
+  ])("rejects option-like $name without falling back", async ({ commands }) => {
+    const h = makeHarness();
+    for (const args of commands) expect(git(h.work, ...args).status).toBe(0);
+    const operation = companionGit(h.work, { prompt: "never" }, noTerminal);
+
+    expect(await operation.upstreamTarget()).toBeNull();
+    expect(await operation.forkState()).toBeNull();
+  });
+
   test("forkState counts ahead and behind against the resolved target", async () => {
     const h = makeHarness();
     advanceRemote(h, "remote\n");

@@ -268,6 +268,7 @@ describe("spawn", () => {
       "--no-track",
       "-b",
       "workset/acme-login",
+      "--end-of-options",
       path.join(root, "state", "worktrees", "acme-login"),
       "origin/HEAD",
     ]);
