@@ -40,7 +40,7 @@ const execFileAsync = promisify(execFile);
 const n = FRAMEWORK_NAME;
 const USAGE = [
   `${n} working worktree: usage: ${n} working worktree <workset-id> [--ticket <KEY>] [--companion <path>] [--no-install] [--json]`,
-  `${n} working worktree: usage: ${n} working worktree --change <change> [--enter] [--ticket <KEY>] [--companion <path>] [--no-install] [--json]`,
+  `${n} working worktree: usage: ${n} working worktree --change <change> [--enter] [--take-branch] [--ticket <KEY>] [--companion <path>] [--no-install] [--json]`,
   `${n} working worktree: usage: ${n} working worktree prune [--companion <path>] [--json]`,
 ].join("\n");
 
@@ -127,7 +127,7 @@ type Parsed = {
   install: boolean;
   json: boolean;
   ticket?: string;
-} & ({ target: string } | { change: string; enter: boolean });
+} & ({ target: string } | { change: string; enter: boolean; takeBranch: boolean });
 
 function parse(argv: string[]): Parsed | null {
   const positional: string[] = [];
@@ -137,6 +137,7 @@ function parse(argv: string[]): Parsed | null {
   let install = true;
   let json = false;
   let enter = false;
+  let takeBranch = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]!;
     if (arg === "--companion") {
@@ -150,6 +151,7 @@ function parse(argv: string[]): Parsed | null {
       if (!ticket) return null;
     } else if (arg === "--no-install") install = false;
     else if (arg === "--enter") enter = true;
+    else if (arg === "--take-branch") takeBranch = true;
     else if (arg === "--json") json = true;
     else if (arg.startsWith("-")) return null;
     else positional.push(arg);
@@ -160,9 +162,9 @@ function parse(argv: string[]): Parsed | null {
     install,
     json,
   };
-  if (change) return positional.length === 0 ? { change, enter, ...rest } : null;
+  if (change) return positional.length === 0 ? { change, enter, takeBranch, ...rest } : null;
   const [target] = positional;
-  if (positional.length !== 1 || !target || enter) return null;
+  if (positional.length !== 1 || !target || enter || takeBranch) return null;
   if (target === "prune" && (!install || ticket)) return null;
   return { target, ...rest };
 }
@@ -443,7 +445,9 @@ function printPruned(result: PruneResult): void {
  * `mate working worktree <workset-id>` creates or reuses the Workset's worktree in each
  * Working Repository; `--change <change>` does so for the Workset the change resolves to,
  * and with `--enter` also records the current repository's branch as the change's delivery
- * and reports how the Agent Runtime enters the worktree; `mate working worktree prune`
+ * and reports how the Agent Runtime enters the worktree; with `--take-branch` a branch
+ * checked out in a main checkout without tracked changes, inherited ones included, moves to the worktree, leaving
+ * that checkout on a detached HEAD; `mate working worktree prune`
  * removes those of Done Worksets.
  */
 export async function runWorkingWorktreeCommand(
@@ -493,6 +497,7 @@ export async function runWorkingWorktreeCommand(
       install: parsed.install,
       streamInstall: !parsed.json,
       ...(ticket ? { ticket } : {}),
+      ...("change" in parsed && parsed.takeBranch ? { takeBranch: true } : {}),
     };
     const result =
       "change" in parsed

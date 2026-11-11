@@ -7,6 +7,7 @@ import {
 import { applyWarnings, type DependencyWarning } from "../../../../lib/delivery/overlap";
 import { isJiraKey, normalizeJiraKey, type MergeState } from "../../../../lib/delivery/record";
 import { attributeCurrentSession } from "../../../../lib/session-attribution";
+import { claudeSessionIsolation } from "../../../../runtime/claude-bg-isolation";
 import { type BooleanFlagSet, parseFlags, positionalArgs, stringFlag } from "../../../parse-flags";
 import {
   branchFlagsFrom,
@@ -49,8 +50,15 @@ const CONFIRMATIONS: Record<string, MergeState> = {
   "confirm-dropped": "closed-unmerged",
 };
 
-/** `warnings`: declared dependencies not implemented yet; they inform and never block. */
-export type LinkResult = DeliveryResult & { warnings: DependencyWarning[] };
+/**
+ * `warnings`: declared dependencies not implemented yet; they inform and never block.
+ * `session.isolated`: a Claude Code background session outside a linked worktree, where
+ * it may not write.
+ */
+export type LinkResult = DeliveryResult & {
+  warnings: DependencyWarning[];
+  session: { isolated: boolean };
+};
 
 function refusalMessage(refusal: DeliveryRefusal): string {
   if (refusal.reason === "unknown-change") {
@@ -96,6 +104,11 @@ function renderHuman(result: LinkResult): string[] {
  * - `--json` — emit an array of {@link LinkResult}, one per change.
  * @remarks Warns, without blocking, about each `dependsOn` change that is neither archived nor
  * fully implemented, since apply records the branch before writing code. Without an edit flag or `--refresh` it only reads the record and writes nothing.
+ * Every result reports `session.isolated`: true in a Claude Code background session
+ * (`CLAUDE_JOB_DIR`) whose isolation (the job's, else its launch `--settings`, else
+ * `worktree.bgIsolation` in the Claude settings files) is not `none`, when the Working
+ * Repository (else the current folder) lies in a Git checkout that is not a linked
+ * worktree. An isolation value other than `worktree` or `none` is ignored with a warning.
  * Network requests go only to the forge API, with `--refresh` and with `--branch` for
  * another repository's default branch, and to `origin` through `git fetch` with `--refresh`
  * in Git mode `auto` or with `--fetch`. Only `git` is started; no credential is read. The
@@ -171,13 +184,17 @@ export async function runArtifactLinkCommand(
     deps,
   );
   if ("refusal" in outcome) return refuse(refusalMessage(outcome.refusal));
+  const sessionEnv = deps.sessionEnv ?? process.env;
   // One change names the session's work; a batch link names none.
   if (changes.length === 1) {
-    await (deps.attribute ?? attributeCurrentSession)(
-      { change: changes[0]! },
-      deps.sessionEnv ?? process.env,
-    );
+    await (deps.attribute ?? attributeCurrentSession)({ change: changes[0]! }, sessionEnv);
   }
+  const isolation = claudeSessionIsolation(
+    sessionEnv,
+    environment.workingRepo?.path ?? process.cwd(),
+  );
+  for (const diagnostic of isolation.diagnostics) emitErr(`warning: ${diagnostic}`);
+  const session = { isolated: isolation.isolated };
   const results: LinkResult[] = [];
   for (const result of "results" in outcome ? outcome.results : []) {
     for (const diagnostic of result.diagnostics) emitErr(`warning: ${diagnostic}`);
@@ -186,7 +203,7 @@ export async function runArtifactLinkCommand(
     for (const entry of result.settlement.unscoped) {
       emitErr(unscopedDeliveryWarning(result.change, entry));
     }
-    results.push({ ...result, warnings });
+    results.push({ ...result, warnings, session });
   }
   if (flags.json === true) emitOut(JSON.stringify(results));
   else for (const result of results) for (const line of renderHuman(result)) emitOut(line);

@@ -159,6 +159,26 @@ cannot move, or you decline the move, it writes no code and asks you to
 continue `mate-apply-change` in a new session inside the worktree; the branch
 is already recorded, so that session does not ask about it.
 
+`--take-branch`, valid only with `--change`, moves a Delivery Branch that is
+checked out in a main checkout into the new worktree instead of stopping: the
+main checkout is left on a detached `HEAD` at the same commit, with a warning,
+and its untracked files stay there. It refuses, and changes nothing, when the
+main checkout has uncommitted changes to tracked files (it names them; commit
+or stash them first), and when the branch is protected. A branch inherited
+from a `dependsOn` change moves too. Tracked changes are checked again just
+before the main checkout is detached. A branch checked out in another linked
+worktree is never moved. When creating the worktree fails, the partial worktree
+is removed and the main checkout is switched back to the branch; a take already
+made in an earlier repository stays. In an Umbrella Repository it applies per
+child.
+
+Claude Code refuses edits in the main checkout of a background session, such
+as one `claude --bg` starts, until the session enters a worktree; sessions the
+VS Code extension starts edit in place. In an isolated session,
+`mate-apply-change` reads `session.isolated` from `mate artifact link` and
+offers only worktree options: a worktree on the Delivery Branch, the current
+branch in a worktree (with `--take-branch`), or another branch in a worktree.
+
 Each new worktree gets the companion link `mate working link` writes. When the
 main checkout is wrapped, the worktree is wrapped too, for the same agent
 runtimes, so a plain `claude` or `opencode` session started there gets the
@@ -1018,7 +1038,20 @@ that file, for active and archived changes. Options:
   different branches pass none on, with a diagnostic. Recorded branches remain unchanged
   when membership changes. With `ticketFormat` `jira`, `ticketCandidate` is the
   single Jira key in the recorded branch, else the current branch, matched in
-  any case and reported upper-case.
+  any case and reported upper-case. Each result also carries
+  `session.isolated`: `true` in a Claude Code background session
+  (`CLAUDE_JOB_DIR` is set, or `CLAUDE_CODE_SESSION_KIND` is `bg`) whose
+  isolation is not `none`, when the Working Repository (else the current
+  folder) lies in a Git checkout that is not a linked worktree; a folder
+  outside Git, such as an Umbrella Repository, is never isolated. The
+  isolation comes from `CLAUDE_BG_ISOLATION` when set, else the job's own
+  state (`none` for a session backgrounded from an interactive one), else the
+  `--settings` the job was launched with (`none` for a session the VS Code
+  extension started), else `worktree.bgIsolation` in the Working Repository's
+  `.claude/settings.local.json`, its `.claude/settings.json`, then your user
+  `settings.json`, else `worktree`; an unreadable file is skipped, and a value
+  other than `worktree` or `none` is ignored with a warning. Mate never
+  changes that setting.
 
 Without an edit option or `--refresh`, `mate artifact link` only reads the
 record and writes nothing. When the change's scopes name repositories, a

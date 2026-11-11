@@ -38,6 +38,13 @@ export type ShellRunner = (
  */
 export const EDITOR_SESSION_ENV = { MATE_SESSION_ORIGIN: "editor" } as const;
 
+/**
+ * Lets the extension's Claude background sessions edit the checkout they start in, as
+ * an interactive session does; `claude --bg` elsewhere keeps Claude's default. Mate
+ * inside the session reads it back from the job's launch flags.
+ */
+export const IN_PLACE_SETTINGS = JSON.stringify({ worktree: { bgIsolation: "none" } });
+
 const loginShell: ShellRunner = (command, cwd, env) =>
   new Promise((resolve) => {
     const shell = process.env.SHELL || "/bin/sh";
@@ -184,9 +191,9 @@ export interface BackgroundStart {
 
 /**
  * Starts a Claude session in the background through Mate (`mate claude -- --bg`,
- * with `--resume <id>` to continue one) and returns its ids. Falls back to the
- * `claude agents --json` entry that appeared in `cwd` when the launch output
- * names none.
+ * with {@link IN_PLACE_SETTINGS}, and `--resume <id>` to continue one) and returns
+ * its ids. Falls back to the `claude agents --json` entry that appeared in `cwd`
+ * when the launch output names none.
  */
 export async function startClaudeBackground(
   cwd: string,
@@ -194,7 +201,14 @@ export async function startClaudeBackground(
   run?: ShellRunner,
 ): Promise<BackgroundStart> {
   const before = new Set((await claudeAgents(cwd, run)).map((agent) => agent.sessionId));
-  const args = ["claude", "--", "--bg", ...(resumeId ? ["--resume", resumeId] : [])];
+  const args = [
+    "claude",
+    "--",
+    "--bg",
+    "--settings",
+    IN_PLACE_SETTINGS,
+    ...(resumeId ? ["--resume", resumeId] : []),
+  ];
   const result = await (run ?? loginShell)(
     ["mate", ...args.map(shellQuote)].join(" "),
     cwd,

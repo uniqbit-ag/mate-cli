@@ -94,6 +94,8 @@ describe("mate working worktree", () => {
     [["prune", "--change", "acme-form"]],
     [["acme-login", "--enter"]],
     [["prune", "--enter"]],
+    [["acme-login", "--take-branch"]],
+    [["prune", "--take-branch"]],
   ])("refuses %j with the usage", async (argv) => {
     let called = false;
     await runWorkingWorktreeCommand(
@@ -105,8 +107,23 @@ describe("mate working worktree", () => {
     );
     expect(process.exitCode).toBe(1);
     expect(err.join("\n")).toContain("usage: mate working worktree <workset-id>");
-    expect(err.join("\n")).toContain("--change <change> [--enter]");
+    expect(err.join("\n")).toContain("--change <change> [--enter] [--take-branch]");
     expect(called).toBe(false);
+  });
+
+  test("--take-branch reaches the change's worktree creation, and only when given", async () => {
+    const seen: (boolean | undefined)[] = [];
+    const createForChange = async (
+      _companion: string,
+      _change: string,
+      options: { takeBranch?: boolean },
+    ) => (seen.push(options.takeBranch), created);
+    await runWorkingWorktreeCommand(
+      ["--change", "acme-fix", "--take-branch", "--json"],
+      deps({ createForChange }),
+    );
+    await runWorkingWorktreeCommand(["--change", "acme-fix", "--json"], deps({ createForChange }));
+    expect(seen).toEqual([true, undefined]);
   });
 
   test("an ambiguous companion names both and creates nothing", async () => {

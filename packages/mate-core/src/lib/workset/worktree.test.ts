@@ -234,6 +234,186 @@ describe("createWorksetWorktrees", () => {
     expect(fs.existsSync(path.join(root, "src", "web.worktrees"))).toBe(false);
   });
 
+  describe("--take-branch", () => {
+    const take = { ...options, takeBranch: true };
+    const target = () => path.join(root, "src", "web.worktrees", "acme-login");
+    const head = (repo: string) =>
+      spawnSync("git", ["symbolic-ref", "-q", "--short", "HEAD"], {
+        cwd: repo,
+        encoding: "utf8",
+      }).stdout.trim();
+
+    function onBranch(): string {
+      const web = checkout("web", { "src/acme.ts": "export {};\n" });
+      git(web, "switch", "-q", "-c", "workset/acme-login");
+      link(web);
+      workset("acme-login", "acme/web");
+      return web;
+    }
+
+    test("a clean main checkout is detached and its branch moves to the worktree", async () => {
+      const web = onBranch();
+      fs.writeFileSync(path.join(web, "notes.txt"), "untracked\n");
+      const commit = git(web, "rev-parse", "HEAD");
+      const result = await createWorksetWorktrees(companion, "acme-login", take);
+      expect(result.ok).toBe(true);
+      expect(head(web)).toBe("");
+      expect(git(web, "rev-parse", "HEAD")).toBe(commit);
+      expect(fs.existsSync(path.join(web, "notes.txt"))).toBe(true);
+      expect(head(target())).toBe("workset/acme-login");
+      expect(result.repositories[0]).toMatchObject({ action: "created", path: target() });
+      expect(result.warnings).toContain(
+        `acme/web: ${web} is now on a detached HEAD; workset/acme-login moved to ${target()}`,
+      );
+    });
+
+    test("tracked changes are named and nothing changes", async () => {
+      const web = onBranch();
+      fs.writeFileSync(path.join(web, "src", "acme.ts"), "export const acme = 1;\n");
+      const result = await createWorksetWorktrees(companion, "acme-login", take);
+      expect(result.ok).toBe(false);
+      expect(result.diagnostics).toHaveLength(1);
+      expect(result.diagnostics[0]).toContain("(src/acme.ts)");
+      expect(head(web)).toBe("workset/acme-login");
+      expect(fs.existsSync(path.join(root, "src", "web.worktrees"))).toBe(false);
+    });
+
+    test("a failed worktree add switches the main checkout back", async () => {
+      const web = onBranch();
+      const failing: GitRunner = async (cwd, args) =>
+        args[0] === "worktree" && args[1] === "add"
+          ? { code: 1, stdout: "", stderr: "fatal: acme disk full" }
+          : realGit(cwd, args);
+      const result = await createWorksetWorktrees(companion, "acme-login", take, {
+        git: failing,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.repositories[0]?.error).toContain("acme disk full");
+      expect(head(web)).toBe("workset/acme-login");
+    });
+
+    test("a protected branch is never taken", async () => {
+      const web = onBranch();
+      fs.writeFileSync(
+        path.join(companion, ".mate", "config", "framework.yaml"),
+        'type: companion\ncapabilities:\n  - name: openspec\n    protectedBranches: ["workset/*"]\n',
+      );
+      const result = await createWorksetWorktrees(companion, "acme-login", take);
+      expect(result.ok).toBe(false);
+      expect(result.diagnostics).toEqual([
+        `acme/web: --take-branch does not take the protected branch workset/acme-login out of ${web}`,
+      ]);
+      expect(head(web)).toBe("workset/acme-login");
+    });
+
+    test("a branch in another linked worktree is left there", async () => {
+      const web = checkout("web");
+      const other = path.join(root, "src", "web.worktrees", "acme-other");
+      git(web, "worktree", "add", "-q", "-b", "workset/acme-login", other);
+      link(web);
+      workset("acme-login", "acme/web");
+      const result = await createWorksetWorktrees(companion, "acme-login", take);
+      expect(result.ok).toBe(false);
+      expect(result.diagnostics).toEqual([
+        `acme/web: workset/acme-login is already checked out at ${other}`,
+      ]);
+      expect(head(other)).toBe("workset/acme-login");
+      expect(head(web)).toBe("main");
+    });
+
+    test("changed paths are named verbatim, spaces and renames included", async () => {
+      const web = checkout("web", { "src/acme.ts": "export {};\n", "a b.md": "acme\n" });
+      git(web, "switch", "-q", "-c", "workset/acme-login");
+      link(web);
+      workset("acme-login", "acme/web");
+      fs.writeFileSync(path.join(web, "a b.md"), "changed\n");
+      git(web, "mv", "src/acme.ts", "src/acme -> b.ts");
+      const result = await createWorksetWorktrees(companion, "acme-login", take);
+      expect(result.ok).toBe(false);
+      expect(result.diagnostics[0]).toContain("(a b.md, src/acme -> b.ts)");
+    });
+
+    test("a rename only the worktree shows names its path once", async () => {
+      const web = onBranch();
+      fs.renameSync(path.join(web, "src", "acme.ts"), path.join(web, "src", "acme-b.ts"));
+      git(web, "add", "-N", "src/acme-b.ts");
+      const result = await createWorksetWorktrees(companion, "acme-login", take);
+      expect(result.ok).toBe(false);
+      expect(result.diagnostics[0]).toContain("(src/acme-b.ts)");
+    });
+
+    test("a failed rollback names the remove that left the worktree", async () => {
+      const web = onBranch();
+      const failing: GitRunner = async (cwd, args) => {
+        if (args[0] === "worktree" && args[1] === "remove") {
+          return { code: 1, stdout: "", stderr: "fatal: acme locked" };
+        }
+        if (args[0] !== "worktree" || args[1] !== "add") return realGit(cwd, args);
+        await realGit(cwd, args);
+        return { code: 1, stdout: "", stderr: "fatal: acme checkout failed" };
+      };
+      const result = await createWorksetWorktrees(companion, "acme-login", take, {
+        git: failing,
+      });
+      expect(result.repositories[0]?.error).toContain(
+        `creating the worktree failed: fatal: acme checkout failed; removing ${target()} failed: fatal: acme locked; switching ${web} back to workset/acme-login failed:`,
+      );
+    });
+
+    test("tracked changes made after planning stop the take before the detach", async () => {
+      const web = onBranch();
+      let statuses = 0;
+      const editing: GitRunner = async (cwd, args) => {
+        if (args[0] === "status" && ++statuses === 2) {
+          fs.writeFileSync(path.join(web, "src", "acme.ts"), "export const acme = 1;\n");
+        }
+        return realGit(cwd, args);
+      };
+      const result = await createWorksetWorktrees(companion, "acme-login", take, { git: editing });
+      expect(result.ok).toBe(false);
+      expect(result.repositories[0]?.error).toContain("(src/acme.ts)");
+      expect(head(web)).toBe("workset/acme-login");
+    });
+
+    test("a worktree registered by a failed add is removed before switching back", async () => {
+      const web = onBranch();
+      const failing: GitRunner = async (cwd, args) => {
+        if (args[0] !== "worktree" || args[1] !== "add") return realGit(cwd, args);
+        await realGit(cwd, args);
+        return { code: 1, stdout: "", stderr: "fatal: acme checkout failed" };
+      };
+      const result = await createWorksetWorktrees(companion, "acme-login", take, {
+        git: failing,
+      });
+      expect(result.repositories[0]?.error).toBe(
+        "creating the worktree failed: fatal: acme checkout failed",
+      );
+      expect(head(web)).toBe("workset/acme-login");
+      expect(fs.existsSync(target())).toBe(false);
+    });
+
+    test("an inherited branch in the main checkout is taken", async () => {
+      const web = checkout("web");
+      link(web);
+      git(web, "switch", "-q", "-c", "workset/acme-api");
+      change("acme-api", "acme/web");
+      record("acme-api", "deliveries:\n  - repository: acme/web\n    branch: workset/acme-api\n");
+      change("acme-worker", "acme/web");
+      fs.writeFileSync(
+        path.join(companion, "openspec", "changes", "acme-worker", "design.md"),
+        "---\nchange: acme-worker\ndependsOn: [acme-api]\n---\n",
+      );
+      const result = await createChangeWorktrees(companion, "acme-worker", take);
+      expect(result.ok).toBe(true);
+      expect(head(web)).toBe("");
+      const worker = path.join(root, "src", "web.worktrees", "acme-worker");
+      expect(result.repositories).toMatchObject([
+        { branch: "workset/acme-api", path: worker, action: "created" },
+      ]);
+      expect(head(worker)).toBe("workset/acme-api");
+    });
+  });
+
   test("a branch identity collision reports the diagnostics", async () => {
     link(checkout("web"));
     workset("acme-login", "acme/web");
@@ -1085,6 +1265,26 @@ describe("Umbrella Repository worktrees", () => {
       } as Partial<WorktreeDeps>,
     };
   }
+
+  test("--take-branch takes each child's branch out of its own main checkout", async () => {
+    const [api, web] = umbrellaOf("api", "web");
+    git(api!, "switch", "-q", "-c", "workset/acme-fix");
+    workset("acme-fix", "acme/api", "acme/web");
+    const result = await createWorksetWorktrees(companion, "acme-fix", {
+      ...options,
+      takeBranch: true,
+    });
+    expect(result.diagnostics).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(git(api!, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe("HEAD");
+    expect(git(web!, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe("main");
+    expect(git(path.join(mirror(), "api"), "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe(
+      "workset/acme-fix",
+    );
+    expect(result.warnings.filter((line) => line.includes("detached HEAD"))).toEqual([
+      `acme/api: ${api} is now on a detached HEAD; workset/acme-fix moved to ${path.join(mirror(), "api")}`,
+    ]);
+  });
 
   test("children get worktrees in one mirrored folder, linked under the umbrella's id", async () => {
     const [api, web] = umbrellaOf("api", "web");

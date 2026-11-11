@@ -4,6 +4,7 @@ import {
   backgroundedId,
   claudeAgents,
   claudeSupportsBackground,
+  IN_PLACE_SETTINGS,
   startClaudeBackground,
   stopClaude,
   stopOpenCode,
@@ -25,6 +26,9 @@ function shell(routes: Array<[string, { code?: number; stdout?: string; stderr?:
 
 const agents = (entries: unknown[]) => JSON.stringify(entries);
 
+/** The launch carries the in-place settings, so the session edits where it starts. */
+const LAUNCH = `mate 'claude' '--' '--bg' '--settings' '${IN_PLACE_SETTINGS}'`;
+
 describe("Claude background sessions", () => {
   test("reads the short id Claude prints", () => {
     expect(backgroundedId("Starting background service…\nbackgrounded · c25175db (idle)")).toBe(
@@ -35,7 +39,7 @@ describe("Claude background sessions", () => {
 
   test("starts through mate and resolves the full session id", async () => {
     const { run, calls, envs } = shell([
-      ["mate 'claude' '--' '--bg'", { stdout: "backgrounded · c25175db (idle)\n{}" }],
+      [LAUNCH, { stdout: "backgrounded · c25175db (idle)\n{}" }],
       [
         "claude agents",
         {
@@ -54,10 +58,14 @@ describe("Claude background sessions", () => {
       shortId: "c25175db",
       sessionId: "c25175db-b143-438a",
     });
-    expect(calls).toContain("mate 'claude' '--' '--bg'");
+    expect(calls).toContain(LAUNCH);
     // Only the launch is marked: a daemon `claude agents` cold-starts must not inherit it.
-    expect(envs.get("mate 'claude' '--' '--bg'")).toEqual({ MATE_SESSION_ORIGIN: "editor" });
+    expect(envs.get(LAUNCH)).toEqual({ MATE_SESSION_ORIGIN: "editor" });
     expect(envs.get("claude agents --json --all")).toBeUndefined();
+  });
+
+  test("the launch lets the session edit in place, and sets nothing its tools inherit", () => {
+    expect(JSON.parse(IN_PLACE_SETTINGS)).toEqual({ worktree: { bgIsolation: "none" } });
   });
 
   test("resumes with --resume and falls back to the new agent in the directory", async () => {
@@ -71,7 +79,7 @@ describe("Claude background sessions", () => {
             : [{ id: "aa11bb22", sessionId: "aa11bb22-0000", kind: "background", cwd: "/w/acme" }];
         return { code: 0, stdout: agents(entries), stderr: "" };
       }
-      expect(command).toBe("mate 'claude' '--' '--bg' '--resume' 'old-id'");
+      expect(command).toBe(`${LAUNCH} '--resume' 'old-id'`);
       return { code: 0, stdout: "{}", stderr: "" };
     };
     expect((await startClaudeBackground("/w/acme", "old-id", run)).sessionId).toBe("aa11bb22-0000");
