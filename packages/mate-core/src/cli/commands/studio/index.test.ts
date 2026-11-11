@@ -334,7 +334,7 @@ describe("guarded invocations", () => {
     expect(process.exitCode).toBe(1);
   });
 
-  test("the unguarded interactive command passes no token setting", async () => {
+  test("the interactive command passes no token setting", async () => {
     let options: unknown;
     const recorded = recording({
       env: { MATE_STUDIO_TOKEN: TOKEN },

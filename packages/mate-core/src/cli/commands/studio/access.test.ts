@@ -204,7 +204,7 @@ describe("save origins", () => {
     { name: "a same-site sibling", origin: `http://127.0.0.1:${PORT + 1}` },
     { name: "a missing origin", origin: undefined },
     { name: "a null origin", origin: "null" },
-  ])("$name cannot save to the unguarded interactive command", async ({ origin }) => {
+  ])("$name cannot save to the interactive command", async ({ origin }) => {
     await withFixture(async (state) => {
       const handler = serve(state, { writable: true, access: access() });
       const response = await save(handler, state, origin ? { origin } : {});
@@ -214,11 +214,13 @@ describe("save origins", () => {
     });
   });
 
-  test("a same-origin save without a token works on the unguarded interactive command", async () => {
+  test("a same-origin save needs the token cookie on the interactive command", async () => {
     await withFixture(async (state) => {
-      const handler = serve(state, { writable: true, access: access() });
-      const response = await save(handler, state, { origin: `http://localhost:${PORT}` });
-      expect(response.status).toBe(200);
+      const handler = serve(state, { writable: true, access: access({ token: TOKEN }) });
+      const origin = `http://localhost:${PORT}`;
+      expect((await save(handler, state, { origin })).status).toBe(401);
+      expect(await fs.readFile(path.join(state.root, "note.md"), "utf8")).toBe("one");
+      expect((await save(handler, state, { origin, cookie: COOKIE })).status).toBe(200);
       expect(await fs.readFile(path.join(state.root, "note.md"), "utf8")).toBe("two");
       await handler.close();
     });
@@ -243,11 +245,9 @@ describe("save origins", () => {
 });
 
 describe("token issuance", () => {
-  test("only a guarded Studio issues a token, fresh per start", () => {
-    expect(access().token).toBeNull();
-    expect(access().guarded).toBe(false);
-    const first = access({ terminal: true }).token;
-    const second = access({ terminal: true }).token;
+  test("every Studio start issues a token, fresh per start", () => {
+    const first = access().token;
+    const second = access().token;
     expect(first).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(second).not.toBe(first);
     expect(access({ invocation: "serve" }).token).toMatch(/^[A-Za-z0-9_-]{43}$/);
@@ -480,12 +480,12 @@ describe("guards by request kind", () => {
       const broker = credentialBroker();
       const handler = createStudioFetch(
         { ...state.deps, factoryClient: broker.client },
-        { access: access(), app: appFor(state) },
+        { access: access({ token: TOKEN }), app: appFor(state) },
       );
       const credential = (await handler(
         new Request(`http://localhost:${PORT}/api/factory/credential`, {
           method: "DELETE",
-          headers: { host: `localhost:${PORT}`, origin },
+          headers: { host: `localhost:${PORT}`, origin, cookie: COOKIE },
         }),
       ))!;
       expect(credential.status).toBe(403);
@@ -493,7 +493,7 @@ describe("guards by request kind", () => {
       expect(broker.sets).toEqual([]);
 
       // A server function's write path is checked by the services it calls.
-      const saved = await save(handler, state, { origin });
+      const saved = await save(handler, state, { origin, cookie: COOKIE });
       expect(await saved.text()).toContain("--writable");
       expect(await fs.readFile(path.join(state.root, "note.md"), "utf8")).toBe("one");
       await handler.close();

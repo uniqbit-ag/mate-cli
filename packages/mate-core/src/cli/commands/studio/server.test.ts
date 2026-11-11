@@ -499,6 +499,41 @@ describe("createStudioFetch", () => {
     }
   });
 
+  test("forbids framing on every response but a hosted report's", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-frame-"));
+    try {
+      const store = createReportStore({ root });
+      const { id } = await store.publish(companionDigest(ACME), {
+        title: "Acme release",
+        html: "<p>acme</p>",
+      });
+      const handler = createStudioFetch(deps({ reports: store }), {
+        app: {
+          clientDir: root,
+          fetch: async () =>
+            new Response("<p>page</p>", {
+              headers: { "content-security-policy": "default-src 'self'" },
+            }),
+        },
+      });
+
+      const page = (await handler(new Request("http://localhost/")))!;
+      expect(page.headers.get("x-frame-options")).toBe("DENY");
+      expect(page.headers.get("content-security-policy")).toBe(
+        "default-src 'self'; frame-ancestors 'none'",
+      );
+
+      const report = (await handler(new Request(`http://localhost/studio/reports/${id}`)))!;
+      expect(report.status).toBe(200);
+      expect(report.headers.get("x-frame-options")).toBeNull();
+      expect(report.headers.get("content-security-policy")).toStartWith("sandbox allow-scripts");
+      expect(report.headers.get("content-security-policy")).not.toContain("frame-ancestors");
+      await handler.close();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("refuses to delete the companion Studio was started for, through a symlink too", async () => {
     const base = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-pin-")));
     try {

@@ -44,6 +44,10 @@ beforeEach(() => {
 
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 
+const ACCESS_TOKEN = "acme-interactive-access-0123456789";
+const ACCESS_COOKIE = `mate_studio_80=${ACCESS_TOKEN}`;
+
+/** Interactive with a known token, or `serve` when the test pins its own. */
 function handlerFor(
   options: { writable?: boolean; token?: string; factory?: FactoryClient | null } = {},
 ) {
@@ -56,17 +60,13 @@ function handlerFor(
     },
     {
       writable: options.writable ?? true,
-      ...(options.token
-        ? {
-            access: createStudioAccess({
-              invocation: "serve",
-              terminal: false,
-              hostname: "localhost",
-              port: () => 80,
-              token: options.token,
-            }),
-          }
-        : {}),
+      access: createStudioAccess({
+        invocation: options.token ? "serve" : "interactive",
+        terminal: false,
+        hostname: "localhost",
+        port: () => 80,
+        token: options.token ?? ACCESS_TOKEN,
+      }),
     },
   );
 }
@@ -315,11 +315,14 @@ describe("the Agents panel's credential routes", () => {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
 
+  const owned = (method: string, route: string, body?: unknown) =>
+    call(method, route, body, { cookie: ACCESS_COOKIE });
+
   test("are not served outside factory mode", async () => {
     const handler = handlerFor();
     for (const request of [
-      call("GET", "/api/factory/credential"),
-      call("PUT", "/api/factory/credential", { kind: "api-key", value: KEY }),
+      owned("GET", "/api/factory/credential"),
+      owned("PUT", "/api/factory/credential", { kind: "api-key", value: KEY }),
     ]) {
       expect((await handler(request))!.status).toBe(404);
     }
@@ -337,31 +340,31 @@ describe("the Agents panel's credential routes", () => {
       return JSON.parse(text) as Record<string, unknown>;
     };
 
-    expect(await send(call("GET", "/api/factory/credential"))).toEqual({
+    expect(await send(owned("GET", "/api/factory/credential"))).toEqual({
       kind: null,
       source: null,
       setAt: null,
     });
     expect(
-      await send(call("PUT", "/api/factory/credential", { kind: "api-key", value: KEY })),
+      await send(owned("PUT", "/api/factory/credential", { kind: "api-key", value: KEY })),
     ).toMatchObject({ kind: "api-key", source: "studio" });
     expect(store.current()?.value).toBe(KEY);
     expect(
       (
         await send(
-          call("PUT", "/api/factory/credential", { kind: "subscription", value: KEY }),
+          owned("PUT", "/api/factory/credential", { kind: "subscription", value: KEY }),
           400,
         )
       ).reason,
     ).toContain("sk-ant-oat");
-    expect(await send(call("DELETE", "/api/factory/credential"))).toEqual({
+    expect(await send(owned("DELETE", "/api/factory/credential"))).toEqual({
       kind: null,
       source: null,
       setAt: null,
     });
 
     expect(
-      await send(call("PUT", "/api/factory/credential", { kind: "subscription", value: TOKEN })),
+      await send(owned("PUT", "/api/factory/credential", { kind: "subscription", value: TOKEN })),
     ).toMatchObject({ kind: "subscription", source: "studio" });
     expect(store.current()?.value).toBe(TOKEN);
 
@@ -395,7 +398,7 @@ describe("the Agents panel's credential routes", () => {
   test("a read-only Studio cannot set the credential", async () => {
     const handler = handlerFor({ factory: factory(), writable: false });
     const response = (await handler(
-      call("PUT", "/api/factory/credential", { kind: "api-key", value: KEY }),
+      owned("PUT", "/api/factory/credential", { kind: "api-key", value: KEY }),
     ))!;
     expect(response.status).toBe(403);
     expect(store.current()).toBeNull();
