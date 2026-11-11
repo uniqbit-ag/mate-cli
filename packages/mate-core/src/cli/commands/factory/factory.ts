@@ -13,6 +13,11 @@ import {
 import { brokerHandler, serveBroker, takeAgentCredential } from "../../../lib/factory/broker";
 import { attachSocketFor, FACTORY_BROKER_ENV } from "../../../lib/factory/client";
 import { CREDENTIAL_FILE, CredentialStore } from "../../../lib/factory/credential-store";
+import {
+  GIT_CREDENTIAL_FILE,
+  GitCredentialStore,
+  takeGitStartupToken,
+} from "../../../lib/factory/git-credential-store";
 import { WorksetRuntime } from "../../../lib/factory/runtime";
 import { usage } from "../../usage";
 
@@ -262,8 +267,13 @@ export async function runFactoryCommand(
     path.join(options["state-dir"], CREDENTIAL_FILE),
     takeAgentCredential(),
   );
+  const gitTokens = new GitCredentialStore(
+    path.join(options["state-dir"], GIT_CREDENTIAL_FILE),
+    takeGitStartupToken(),
+  );
   const runtime = new WorksetRuntime({
     dockerHost: options["docker-host"],
+    gitCredentials: gitTokens,
     stateDir: options["state-dir"],
     image: options.image,
     user: options.user,
@@ -282,7 +292,7 @@ export async function runFactoryCommand(
     ...(options.idleMinutes !== undefined ? { idleMinutes: options.idleMinutes } : {}),
   });
   fs.rmSync(options.socket, { force: true });
-  const server = serveBroker(options.socket, brokerHandler(runtime, credentials));
+  const server = serveBroker(options.socket, brokerHandler(runtime, credentials, gitTokens));
   const attach = serveAttach(attachSocketFor(options.socket), { runtime, credentials });
   process.stderr.write(
     `mate factory: broker on ${options.socket}${credentials.current() ? "" : " (no Workset agent credential)"}\n`,

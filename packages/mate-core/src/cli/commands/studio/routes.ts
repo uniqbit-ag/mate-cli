@@ -18,6 +18,12 @@ export const FACTORY_WORKSETS_ROUTE = "/api/factory/worksets";
  */
 export const FACTORY_CREDENTIAL_ROUTE = "/api/factory/credential";
 
+/**
+ * The Git access panel: `GET` the Git tokens' keys with their source and date, `PUT`
+ * `{key, token}` to set one, `DELETE` `{key}` to clear one set in Studio. Factory mode only.
+ */
+export const FACTORY_GIT_TOKENS_ROUTE = "/api/factory/git-tokens";
+
 /** `GET` a Workset's bounded run log as text. */
 export function factoryLogRoute(id: string): string {
   return `${FACTORY_WORKSETS_ROUTE}/${encodeURIComponent(id)}/log`;

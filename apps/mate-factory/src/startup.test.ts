@@ -23,6 +23,7 @@ import {
   readCompanionAudiences,
   readCompanionSelections,
   renderCredentials,
+  hostOfGitUrl,
   renderFactory,
   renderPlan,
   type StartupDeps,
@@ -380,6 +381,19 @@ describe("requirements the image carries", () => {
 });
 
 describe("startup as a whole", () => {
+  test("a companion Studio cloned before a restart is registered again with no companion repositories configured", () => {
+    makeCompanion(path.join(root, "acme-companion"));
+    const { run, calls } = recorder();
+
+    const plan = prepareStartup(config({ companionRepos: [] }), deps({ run }));
+
+    expect(plan.companions).toEqual([path.resolve(root, "acme-companion")]);
+    expect(calls.filter((call) => call[2] === "register").map((call) => call[3])).toEqual([
+      path.resolve(root, "acme-companion"),
+    ]);
+    expect(calls.some((call) => call[0] === "git")).toBe(false);
+  });
+
   test("registers every discovered companion and prepares only the selected one", () => {
     makeCompanion(path.join(root, "acme"));
     makeCompanion(path.join(root, "beta"));
@@ -947,6 +961,39 @@ describe("factory mode startup", () => {
     expect(plan).toContain("MATE_FACTORY_ENABLED=1");
     expect(plan).toContain("MATE_FACTORY_CREDENTIAL_NAME='ANTHROPIC_API_KEY'");
     expect(plan).toContain("MATE_FACTORY_CREDENTIAL_VALUE='acme-key'");
+  });
+
+  test("the supervisor's plan carries the startup Git token with only the hosts the operator named", () => {
+    const withToken = {
+      ...factoryOn(),
+      gitCloneToken: "acme-git",
+      companionRepos: [
+        { url: "https://Git.Acme.Test/acme/companion.git", directory: "companion" },
+        { url: "git@git.example.test:acme/other.git", directory: "other" },
+      ],
+      factory: { ...factoryOn().factory, repositories: ["https://git.acme.test/acme/web.git"] },
+    };
+    const plan = renderFactory(withToken);
+    expect(plan).toContain("MATE_FACTORY_GIT_TOKEN_VALUE='acme-git'");
+    expect(plan).toContain("MATE_FACTORY_GIT_TOKEN_HOSTS='git.acme.test,git.example.test'");
+  });
+
+  test("without a startup Git token the plan names no host", () => {
+    const plan = renderFactory({
+      ...factoryOn(),
+      companionRepos: [{ url: "https://git.acme.test/acme/companion.git", directory: "companion" }],
+    });
+    expect(plan).toContain("MATE_FACTORY_GIT_TOKEN_VALUE=''");
+    expect(plan).toContain("MATE_FACTORY_GIT_TOKEN_HOSTS=''");
+  });
+
+  test.each([
+    ["https://git.acme.test/acme/web.git", "git.acme.test"],
+    ["ssh://git@Git.Acme.Test:2222/acme/web.git", "git.acme.test"],
+    ["git@git.acme.test:acme/web.git", "git.acme.test"],
+    ["/srv/web", null],
+  ])("%s is on host %s", (url, host) => {
+    expect(hostOfGitUrl(url)).toBe(host);
   });
 
   test("the supervisor's plan carries the Workset resource limits for the broker", () => {

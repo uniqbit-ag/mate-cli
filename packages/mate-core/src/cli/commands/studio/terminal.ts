@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import path from "node:path";
 
-import type { LiveSessions } from "../../../lib/factory/outcomes/sessions";
+import type { LiveSessions, SessionCloseReason } from "../../../lib/factory/outcomes/sessions";
 import { tokensEqual } from "./access";
 
 export const TERMINAL_AGENTS = ["claude", "opencode"] as const;
@@ -237,6 +238,11 @@ export interface TerminalRegistryOptions {
   limits?: Partial<typeof TERMINAL_LIMITS>;
   /** Where Workset sessions are recorded, for the factory's pickup and waiting runs. */
   sessions?: LiveSessions;
+  /**
+   * A Workset session's agent exited by itself, after the session was marked ended; not
+   * called when the session was ended, evicted, expired or Studio stopped.
+   */
+  onWorksetExit?: (worksetId: string, companionPath: string) => Promise<void>;
 }
 
 interface Session {
@@ -299,6 +305,9 @@ export class TerminalRegistry {
     this.spawn = options.spawn ?? bunTerminalSpawn;
     this.signal = options.signalGroup ?? signalGroup;
     this.now = options.now ?? Date.now;
+    options.sessions?.closeWith((companionPath, worksetId, reason) =>
+      this.endWorkset(companionPath, worksetId, reason),
+    );
   }
 
   list(): TerminalSessionInfo[] {
@@ -359,6 +368,23 @@ export class TerminalRegistry {
     if (!session) return false;
     await this.finish(session, { type: "ended" });
     return true;
+  }
+
+  /**
+   * Ends the companion's live sessions for the Workset, if any: Return to automation and
+   * Delete close Claude themselves. `reason` tells the person which.
+   */
+  async endWorkset(
+    companionPath: string,
+    worksetId: string,
+    reason: SessionCloseReason,
+  ): Promise<void> {
+    const companion = path.resolve(companionPath);
+    const live = [...this.sessions.values()].filter(
+      (session) =>
+        session.workset?.id === worksetId && path.resolve(session.companionPath) === companion,
+    );
+    await Promise.all(live.map((session) => this.finish(session, { type: "ended", reason })));
   }
 
   async stopAll(): Promise<void> {
@@ -568,7 +594,16 @@ export class TerminalRegistry {
     if (session.workset) this.options.sessions?.begin(session.workset.id);
     void session.process.exited.then((status) => {
       session.exited = true;
-      if (!session.ending) void this.finish(session, { type: "exit", status });
+      if (session.ending) return;
+      const worksetId = session.workset?.id;
+      void this.finish(session, { type: "exit", status })
+        // Only a quit (0, or 130 for Ctrl-C) hands the Outcome back; a crash leaves it with the person.
+        .then(() =>
+          worksetId && (status === 0 || status === 130)
+            ? this.options.onWorksetExit?.(worksetId, session.companionPath)
+            : undefined,
+        )
+        .catch(() => {});
     });
     return session;
   }

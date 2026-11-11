@@ -115,6 +115,21 @@ export function Artifacts({
   );
 }
 
+/** A companion markdown file, rendered; says so while it loads or cannot be read. */
+export function ArtifactBody({ companion, path }: { companion: string; path: string }) {
+  const file = useQuery(vaultQuery(companion, { path }));
+  const markdown = file.data?.open?.markdown;
+  return markdown ? (
+    <div className="prose-panel">
+      <MarkdownView nodes={markdown} />
+    </div>
+  ) : (
+    <p className="m-0 text-sm text-muted">
+      {file.isPending ? "Loading…" : "The file could not be read."}
+    </p>
+  );
+}
+
 /** One artifact read in the panel, so a review needs no trip to the Vault. */
 export function ArtifactReader({
   companion,
@@ -127,8 +142,6 @@ export function ArtifactReader({
   change: StudioChange;
   onBack: () => void;
 }) {
-  const file = useQuery(vaultQuery(companion, { path }));
-  const markdown = file.data?.open?.markdown;
   const name = path.slice(changeDir(change).length + 1);
   return (
     <section className="grid content-start gap-3 px-5 py-4" aria-label={`Artifact ${name}`}>
@@ -145,15 +158,7 @@ export function ArtifactReader({
           <Icon name="external" className="size-3.5" /> Open in Vault
         </Link>
       </div>
-      {markdown ? (
-        <div className="prose-panel">
-          <MarkdownView nodes={markdown} />
-        </div>
-      ) : (
-        <p className="m-0 text-sm text-muted">
-          {file.isPending ? "Loading…" : "The file could not be read."}
-        </p>
-      )}
+      <ArtifactBody companion={companion} path={path} />
     </section>
   );
 }

@@ -2,6 +2,7 @@ import path from "node:path";
 
 import type { CommandResult } from "./command";
 import type { CredentialKind, CredentialStatus } from "./credential-store";
+import type { GitTokenStatus } from "./git-credential-store";
 import { FactoryError } from "./ids";
 import type { ExecRequest, SpawnRequest, WorksetInfo } from "./runtime";
 
@@ -25,6 +26,19 @@ export interface FactoryClient {
     status(): Promise<CredentialStatus>;
     set(kind: CredentialKind, value: string): Promise<void>;
     clear(): Promise<void>;
+  };
+  /**
+   * Clones a companion into the factory's companions directory, or reports the checkout of the
+   * same repository already there; the folder is the broker's choice.
+   */
+  cloneCompanion(url: string): Promise<{ path: string; existing: boolean }>;
+  /** Whether a Git URL answers with the stored token for it; refused with code `auth` when it needs one. */
+  checkRemote(url: string): Promise<void>;
+  /** The Git tokens by host or host and organization; no call returns a token. */
+  gitToken: {
+    list(): Promise<GitTokenStatus[]>;
+    set(key: string, token: string): Promise<void>;
+    clear(key: string): Promise<void>;
   };
 }
 
@@ -63,7 +77,7 @@ export function factoryClient(
     if (!answer.ok) {
       throw new FactoryError(
         answer.error ?? "the factory broker refused the request",
-        answer.code === "busy" ? "busy" : undefined,
+        answer.code === "busy" || answer.code === "auth" ? answer.code : undefined,
       );
     }
     return answer.result as T;
@@ -87,6 +101,13 @@ export function factoryClient(
       status: () => call("credential.status", {}),
       set: async (kind, value) => void (await call("credential.set", { kind, value })),
       clear: async () => void (await call("credential.clear", {})),
+    },
+    cloneCompanion: (url) => call("companion.clone", { url }),
+    checkRemote: async (url) => void (await call("remote.check", { url })),
+    gitToken: {
+      list: async () => (await call<{ tokens: GitTokenStatus[] }>("git.token.list", {})).tokens,
+      set: async (key, token) => void (await call("git.token.set", { key, token })),
+      clear: async (key) => void (await call("git.token.clear", { key })),
     },
   };
 }

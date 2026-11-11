@@ -1,10 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
+import { parseRemote } from "../delivery/forge";
 import { deliveryCheckout } from "../delivery/checkout";
 import { newBranchBase, resolveDeliveryBranch, worktreeAddArgs } from "../delivery/resolve-branch";
 import { resolveWorksetBranch } from "../workset/record";
 
 import { type CommandOptions, type CommandResult, type CommandRunner, runCommand } from "./command";
+import { checkedCloneUrl } from "./clone-url";
+import { authFailureMessage, gitAuthEnv, isAuthFailure, scrubToken } from "./git-auth";
+import type { GitCredentials } from "./git-credential-store";
 import { KeyedSerial } from "./keyed-serial";
 import { readWorktreeBranch } from "./worktree-branch";
 import {
@@ -87,6 +91,8 @@ export interface RuntimeOptions {
   user: string;
   /** Companions must resolve inside this directory. */
   companionsDir: string;
+  /** The Git tokens a clone or fetch of a remote may use; none when unset. */
+  gitCredentials?: GitCredentials;
   /** Unset leaves containers unlimited. */
   limits?: WorksetLimits;
   /** How many Workset containers may run at once; unset caps nothing. */
@@ -125,6 +131,10 @@ export function assertSessionMarker(session: unknown): asserts session is string
   }
 }
 const STOP_SECONDS = "10";
+/** A companion clone that takes longer is abandoned. */
+const CLONE_TIMEOUT_MS = 180_000;
+/** A reachability check that takes longer fails. */
+const REMOTE_CHECK_TIMEOUT_MS = 60_000;
 /**
  * How long after its last activity a container is safe from making room: an AFK turn
  * spawns its container, then attaches its bridge a moment later.
@@ -235,23 +245,103 @@ export class WorksetRuntime {
     return this.run("docker", args, { env: { ...this.dockerEnv(), ...env } });
   }
 
-  private git(
+  /**
+   * `remote` names the URL the command talks to: its matching token reaches this one command
+   * through its environment, output is scrubbed of it, and a refusal is reported as one.
+   */
+  private async git(
     args: string[],
-    options: Pick<CommandOptions, "env" | "stdin" | "timeoutMs"> = {},
+    options: Pick<CommandOptions, "env" | "stdin" | "timeoutMs"> & { remote?: string } = {},
   ): Promise<CommandResult> {
+    const { remote, ...commandOptions } = options;
+    const token =
+      remote === undefined ? null : (this.options.gitCredentials?.forUrl(remote) ?? null);
+    const auth = remote === undefined ? {} : gitAuthEnv(this.options.stateDir, token);
+    // A configured helper would answer before askpass and store the token it was handed.
+    const helpers = token === null ? [] : ["-c", "credential.helper="];
     // `ext::` would run a command named by the remote URL.
-    return this.run("git", ["-c", "protocol.ext.allow=never", ...args], {
-      ...options,
+    const result = await this.run("git", ["-c", "protocol.ext.allow=never", ...helpers, ...args], {
+      ...commandOptions,
+      env: { ...commandOptions.env, ...auth },
       asUser: this.options.user,
     });
+    const scrubbed = {
+      ...result,
+      stdout: scrubToken(result.stdout, token),
+      stderr: scrubToken(result.stderr, token),
+    };
+    if (remote !== undefined && result.status !== 0 && isAuthFailure(scrubbed.stderr)) {
+      return { ...scrubbed, authFailure: authFailureMessage(remote) } as CommandResult;
+    }
+    return scrubbed;
   }
 
   private async must(result: Promise<CommandResult>, what: string): Promise<CommandResult> {
     const done = await result;
     if (done.status !== 0) {
+      const refusal = (done as CommandResult & { authFailure?: string }).authFailure;
+      if (refusal) throw new FactoryError(`${what} failed: ${refusal}`, "auth");
       throw new FactoryError(`${what} failed: ${(done.stderr || done.stdout).trim()}`);
     }
     return done;
+  }
+
+  /**
+   * Clones a companion into the companions directory as the unprivileged user, with the stored
+   * token for its URL. The folder is named after the repository and derived here, never taken
+   * from a caller. A checkout of the same repository already there is reported, not cloned again.
+   */
+  cloneCompanion(url: unknown): Promise<{ path: string; existing: boolean }> {
+    const remote = checkedCloneUrl(url);
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(remote.name)) {
+      throw new FactoryError(`${remote.name} cannot name a folder in the companions directory`);
+    }
+    const target = path.join(this.options.companionsDir, remote.name);
+    return this.chains.run(`companion:${remote.name}`, async () => {
+      if (this.exists(target)) {
+        if (!this.exists(path.join(target, ".git"))) {
+          throw new FactoryError(`${target} exists and is not a Git checkout`);
+        }
+        const origin = (
+          await this.git(["-C", target, "remote", "get-url", "origin"])
+        ).stdout.trim();
+        const there = origin ? parseRemote(origin) : null;
+        if (there?.host === remote.host && `${there.owner}/${there.repo}` === remote.identity) {
+          return { path: target, existing: true };
+        }
+        throw new FactoryError(
+          `${target} already holds a different repository; remove it or add that one by its folder`,
+        );
+      }
+      try {
+        await this.must(
+          this.git(["clone", "--", remote.url, target], {
+            remote: remote.url,
+            timeoutMs: CLONE_TIMEOUT_MS,
+          }),
+          `cloning ${remote.identity}`,
+        );
+      } catch (error) {
+        fs.rmSync(target, { recursive: true, force: true });
+        throw error;
+      }
+      return { path: target, existing: false };
+    });
+  }
+
+  /**
+   * Whether a remote answers, with the stored token for its URL: `git ls-remote` on its HEAD, as
+   * the unprivileged user. A refusal for authentication carries the `auth` code.
+   */
+  async checkRemote(url: unknown): Promise<void> {
+    const remote = checkedCloneUrl(url);
+    await this.must(
+      this.git(["ls-remote", "--", remote.url, "HEAD"], {
+        remote: remote.url,
+        timeoutMs: REMOTE_CHECK_TIMEOUT_MS,
+      }),
+      `reaching ${remote.identity}`,
+    );
   }
 
   /** Factory mode is the inner daemon answering with Sysbox registered. */
@@ -345,12 +435,12 @@ export class WorksetRuntime {
 
     if (!this.exists(path.join(repoDir, ".git"))) {
       await this.must(
-        this.git(["clone", "--", request.remoteUrl, repoDir]),
+        this.git(["clone", "--", request.remoteUrl, repoDir], { remote: request.remoteUrl }),
         `cloning ${request.repository}`,
       );
     } else {
       await this.must(
-        this.git(["-C", repoDir, "fetch", "--prune", "origin"]),
+        this.git(["-C", repoDir, "fetch", "--prune", "origin"], { remote: request.remoteUrl }),
         `fetching ${request.repository}`,
       );
     }

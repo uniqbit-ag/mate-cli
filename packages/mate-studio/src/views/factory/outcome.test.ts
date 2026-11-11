@@ -11,6 +11,8 @@ import {
   factoryHome,
   milestonesOf,
   nextStepOf,
+  PATH_STEPS,
+  pathPositionOf,
   situationOf,
 } from "./outcome";
 
@@ -170,5 +172,52 @@ describe("the home model", () => {
     expect(situationOf(outcome({ stage: "apply", ...started() }), failed).text).toBe(
       "Stopped: tasks are still open",
     );
+  });
+});
+
+describe("the Delivery Path position", () => {
+  const at = (stage: StudioWorkset["stage"], run?: FactoryRunView) =>
+    pathPositionOf(outcome({ stage, ...started() }), run);
+  const idle: FactoryRunView = { state: "idle", updatedAt: "" };
+
+  it("has six steps, with clarify and explore as one", () => {
+    expect(PATH_STEPS).toEqual([
+      "Understand",
+      "Propose change",
+      "Human review",
+      "Apply change",
+      "Merge",
+      "Publish",
+    ]);
+    expect(at("clarify-intent", running("explore")).current).toBe(0);
+    expect(at("explore", running("explore")).current).toBe(0);
+  });
+
+  it("puts each stage on its step", () => {
+    expect(at("propose", running("explore")).current).toBe(1);
+    expect(at("human-review", idle).current).toBe(2);
+    expect(at("apply", running()).current).toBe(3);
+    expect(at("merge-wait", idle).current).toBe(4);
+    expect(at("publish", idle).current).toBe(5);
+  });
+
+  it("marks every step done once delivered", () => {
+    expect(at("done", idle)).toEqual({ current: PATH_STEPS.length, tone: "accent" });
+  });
+
+  it("marks no step for an Outcome saved for later", () => {
+    expect(pathPositionOf(outcome(), undefined).current).toBe(-1);
+  });
+
+  it("colours the current step by state", () => {
+    expect(at("human-review", idle).tone).toBe("why");
+    expect(at("merge-wait", idle).tone).toBe("warn");
+    expect(at("apply", waiting).tone).toBe("warn");
+    expect(at("apply", running()).tone).toBe("accent");
+    expect(at("apply", { state: "failed", stage: "apply", reason: "x", updatedAt: "" }).tone).toBe(
+      "bad",
+    );
+    const control = { state: "idle", updatedAt: "", control: { mode: "manual" } };
+    expect(at("apply", control as unknown as FactoryRunView).tone).toBe("why");
   });
 });

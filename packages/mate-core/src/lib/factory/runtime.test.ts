@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 import type { CommandOptions, CommandResult, CommandRunner } from "./command";
+import { GitCredentialStore } from "./git-credential-store";
 import { dockerSizeBytes, ROOM_GRACE_MS, WorksetRuntime } from "./runtime";
 
 /**
@@ -37,6 +38,8 @@ interface Fake {
   dirty: Set<string>;
   unpushed: Map<string, number>;
   sysbox: boolean;
+  /** The `origin` each checkout, by folder name, reports. */
+  origins: Map<string, string>;
 }
 
 const ok = (stdout = ""): CommandResult => ({ status: 0, stdout, stderr: "" });
@@ -52,14 +55,22 @@ function fake(): Fake {
     dirty: new Set(),
     unpushed: new Map(),
     sysbox: true,
+    origins: new Map(),
     run: async () => ok(),
   };
   state.run = async (command, args, options = {}) => {
     state.calls.push({ command, args, options });
     if (command === "docker") return docker(state, args);
-    return git(state, args.slice(2));
+    return git(state, withoutConfig(args));
   };
   return state;
+}
+
+/** The arguments after the leading `-c` options every broker Git command carries. */
+function withoutConfig(args: string[]): string[] {
+  let index = 0;
+  while (args[index] === "-c") index += 2;
+  return args.slice(index);
 }
 
 function docker(state: Fake, args: string[]): CommandResult {
@@ -164,6 +175,8 @@ function git(state: Fake, args: string[]): CommandResult {
       return ok();
     case "fetch":
       return ok();
+    case "ls-remote":
+      return ok("abc123\tHEAD\n");
     case "rev-parse": {
       const ref = rest.at(-1)!;
       return ref.startsWith("refs/remotes/origin/") &&
@@ -181,6 +194,10 @@ function git(state: Fake, args: string[]): CommandResult {
       fs.mkdirSync(worktree, { recursive: true });
       fs.writeFileSync(path.join(worktree, ".git"), `gitdir: ${dir}/.git/worktrees/${id}\n`);
       return ok();
+    }
+    case "remote": {
+      const origin = state.origins.get(path.basename(dir));
+      return origin ? ok(`${origin}\n`) : failed("no such remote");
     }
     case "status":
       return ok(state.dirty.has(path.basename(dir)) ? " M src/app.ts\n" : "");
@@ -229,7 +246,7 @@ const spawnAcme = (id = "acme-login") =>
   });
 
 const gitCalls = () =>
-  state.calls.filter((call) => call.command === "git").map((call) => call.args.slice(2));
+  state.calls.filter((call) => call.command === "git").map((call) => withoutConfig(call.args));
 const dockerCall = (verb: string) =>
   state.calls.find((call) => call.command === "docker" && call.args[0] === verb);
 
@@ -247,6 +264,268 @@ describe("availability", () => {
     await expect(spawnAcme()).rejects.toThrow(/sysbox-runc/);
     expect(gitCalls()).toEqual([]);
   });
+});
+
+describe("Git tokens", () => {
+  const TOKEN = "acme-git-token";
+  const clone = () =>
+    state.calls.find((call) => call.command === "git" && call.args.includes("clone"))!;
+
+  function withToken(): void {
+    const store = new GitCredentialStore(path.join(root, "git-credentials.json"), null);
+    store.set("git.acme.test/acme", TOKEN);
+    runtime = new WorksetRuntime({
+      dockerHost: `unix://${root}/docker.sock`,
+      stateDir: path.join(root, "state"),
+      image: "mate-workset:1.0.0-acme",
+      user: "mate",
+      companionsDir: path.join(root, "companions"),
+      gitCredentials: store,
+      run: state.run,
+    });
+  }
+
+  test("the Workset clone and fetch carry the matching token in their environment only, past configured helpers", async () => {
+    withToken();
+    await spawnAcme();
+    await spawnAcme("acme-signup");
+    const calls = state.calls.filter(
+      (call) =>
+        call.command === "git" && (call.args.includes("clone") || call.args.includes("fetch")),
+    );
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      expect(call.options.env?.MATE_GIT_ASKPASS_TOKEN).toBe(TOKEN);
+      expect(call.options.env?.GIT_TERMINAL_PROMPT).toBe("0");
+      expect(JSON.stringify(call.args)).not.toContain(TOKEN);
+      // No configured credential helper answers first or stores the token.
+      expect(call.args.slice(0, 4)).toEqual([
+        "-c",
+        "protocol.ext.allow=never",
+        "-c",
+        "credential.helper=",
+      ]);
+    }
+    const askpass = calls[0]!.options.env!.GIT_ASKPASS!;
+    expect(fs.statSync(askpass).mode & 0o777).toBe(0o755);
+    expect(fs.readFileSync(askpass, "utf8")).not.toContain(TOKEN);
+  });
+
+  test("commands that talk to no remote carry no token", async () => {
+    withToken();
+    await spawnAcme();
+    const others = state.calls.filter(
+      (call) => call.command === "git" && !call.args.includes("clone"),
+    );
+    expect(others.length).toBeGreaterThan(0);
+    for (const call of others) expect(call.options.env?.MATE_GIT_ASKPASS_TOKEN).toBeUndefined();
+  });
+
+  test("a remote with no matching token gets no token, and prompts stay off", async () => {
+    withToken();
+    await runtime.spawn({
+      id: "acme-other",
+      repository: "other/app",
+      remoteUrl: "https://git.example.test/other/app.git",
+      companion,
+    });
+    expect(clone().options.env?.MATE_GIT_ASKPASS_TOKEN).toBeUndefined();
+    expect(clone().options.env?.GIT_TERMINAL_PROMPT).toBe("0");
+    expect(clone().args).not.toContain("credential.helper=");
+  });
+
+  test("an SSH remote gets no token", async () => {
+    withToken();
+    await runtime.spawn({
+      id: "acme-ssh",
+      repository: "acme/app",
+      remoteUrl: "git@git.acme.test:acme/app.git",
+      companion,
+    });
+    expect(clone().options.env?.MATE_GIT_ASKPASS_TOKEN).toBeUndefined();
+  });
+
+  test("a refused clone names the host and organization and never the token", async () => {
+    const run = state.run;
+    state.run = async (command, args, options) =>
+      command === "git" && args.includes("clone")
+        ? failed(`fatal: Authentication failed for 'https://x:${TOKEN}@git.acme.test/acme/app.git'`)
+        : run(command, args, options);
+    withToken();
+    const error = await spawnAcme().catch((caught) => caught as Error & { code?: string });
+    expect(error.message).toContain("git.acme.test/acme");
+    expect(error.message).toContain("token");
+    expect(error.message).not.toContain(TOKEN);
+    expect(error.code).toBe("auth");
+  });
+});
+
+describe("cloneCompanion", () => {
+  const URL = "https://git.acme.test/acme/acme-companion.git";
+  const target = () => path.join(root, "companions", "acme-companion");
+  const clones = () => gitCalls().filter((args) => args[0] === "clone");
+
+  test("clones into a folder named after the repository, as the Git user, with prompts off", async () => {
+    expect(await runtime.cloneCompanion(URL)).toEqual({ path: target(), existing: false });
+    expect(clones()).toEqual([["clone", "--", URL, target()]]);
+    const call = state.calls.find((entry) => entry.args.includes("clone"))!;
+    expect(call.options.asUser).toBe("mate");
+    expect(call.options.env?.GIT_TERMINAL_PROMPT).toBe("0");
+    expect(call.options.timeoutMs).toBeGreaterThan(0);
+  });
+
+  test("uses the stored token for the URL and keeps it out of the arguments", async () => {
+    const store = new GitCredentialStore(path.join(root, "git-credentials.json"), null);
+    store.set("git.acme.test/acme", "acme-git-token");
+    runtime = new WorksetRuntime({
+      dockerHost: `unix://${root}/docker.sock`,
+      stateDir: path.join(root, "state"),
+      image: "mate-workset:1.0.0-acme",
+      user: "mate",
+      companionsDir: path.join(root, "companions"),
+      gitCredentials: store,
+      run: state.run,
+    });
+    await runtime.cloneCompanion(URL);
+    const call = state.calls.find((entry) => entry.args.includes("clone"))!;
+    expect(call.options.env?.MATE_GIT_ASKPASS_TOKEN).toBe("acme-git-token");
+    expect(JSON.stringify(call.args)).not.toContain("acme-git-token");
+  });
+
+  test("a checkout of the same repository is reported, not cloned again", async () => {
+    await runtime.cloneCompanion(URL);
+    state.origins.set("acme-companion", "git@git.acme.test:acme/acme-companion.git");
+    expect(await runtime.cloneCompanion(URL)).toEqual({ path: target(), existing: true });
+    expect(clones()).toHaveLength(1);
+  });
+
+  test("a folder held by another repository is refused and left alone", async () => {
+    await runtime.cloneCompanion(URL);
+    state.origins.set("acme-companion", "https://git.acme.test/other/acme-companion.git");
+    await expect(runtime.cloneCompanion(URL)).rejects.toThrow(/different repository/);
+    expect(fs.existsSync(path.join(target(), ".git"))).toBe(true);
+  });
+
+  test.each([
+    "/srv/companion",
+    "file:///srv/companion",
+    "ext::sh -c id",
+    "--upload-pack=id",
+    "https://git.acme.test/web.git",
+    "",
+  ])("%j is refused before anything runs", async (url) => {
+    await expect(Promise.resolve().then(() => runtime.cloneCompanion(url))).rejects.toThrow();
+    expect(clones()).toEqual([]);
+  });
+
+  test("a failed clone leaves no folder, and a refusal names the host and organization", async () => {
+    const run = state.run;
+    state.run = async (command, args, options) => {
+      if (command === "git" && args.includes("clone")) {
+        fs.mkdirSync(args.at(-1)!, { recursive: true });
+        return failed(
+          "fatal: Authentication failed for 'https://git.acme.test/acme/acme-companion.git'",
+        );
+      }
+      return run(command, args, options);
+    };
+    runtime = new WorksetRuntime({
+      dockerHost: `unix://${root}/docker.sock`,
+      stateDir: path.join(root, "state"),
+      image: "mate-workset:1.0.0-acme",
+      user: "mate",
+      companionsDir: path.join(root, "companions"),
+      run: state.run,
+    });
+    const error = await runtime
+      .cloneCompanion(URL)
+      .catch((caught) => caught as Error & { code?: string });
+    expect(error.code).toBe("auth");
+    expect(error.message).toContain("git.acme.test/acme");
+    expect(fs.existsSync(target())).toBe(false);
+  });
+});
+
+describe("checkRemote", () => {
+  const URL = "https://git.acme.test/acme/web.git";
+  const lsRemote = () => state.calls.find((call) => call.args.includes("ls-remote"))!;
+
+  test("asks the remote for its HEAD as the Git user, with prompts off and a time limit", async () => {
+    await runtime.checkRemote(URL);
+    expect(withoutConfig(lsRemote().args)).toEqual(["ls-remote", "--", URL, "HEAD"]);
+    expect(lsRemote().options.asUser).toBe("mate");
+    expect(lsRemote().options.env?.GIT_TERMINAL_PROMPT).toBe("0");
+    expect(lsRemote().options.timeoutMs).toBeGreaterThan(0);
+  });
+
+  test("uses the stored token and keeps it out of the arguments", async () => {
+    const store = new GitCredentialStore(path.join(root, "git-credentials.json"), null);
+    store.set("git.acme.test", "acme-git-token");
+    runtime = new WorksetRuntime({
+      dockerHost: `unix://${root}/docker.sock`,
+      stateDir: path.join(root, "state"),
+      image: "mate-workset:1.0.0-acme",
+      user: "mate",
+      companionsDir: path.join(root, "companions"),
+      gitCredentials: store,
+      run: state.run,
+    });
+    await runtime.checkRemote(URL);
+    expect(lsRemote().options.env?.MATE_GIT_ASKPASS_TOKEN).toBe("acme-git-token");
+    expect(JSON.stringify(lsRemote().args)).not.toContain("acme-git-token");
+  });
+
+  test("a refusal for authentication names the host and organization and carries its code", async () => {
+    const run = state.run;
+    state.run = async (command, args, options) =>
+      command === "git" && args.includes("ls-remote")
+        ? failed(
+            "fatal: could not read Username for 'https://git.acme.test': terminal prompts disabled",
+          )
+        : run(command, args, options);
+    runtime = new WorksetRuntime({
+      dockerHost: `unix://${root}/docker.sock`,
+      stateDir: path.join(root, "state"),
+      image: "mate-workset:1.0.0-acme",
+      user: "mate",
+      companionsDir: path.join(root, "companions"),
+      run: state.run,
+    });
+    const error = await runtime
+      .checkRemote(URL)
+      .catch((caught) => caught as Error & { code?: string });
+    expect(error.code).toBe("auth");
+    expect(error.message).toContain("git.acme.test/acme");
+  });
+
+  test("a remote that does not answer is reported with Git's words", async () => {
+    const run = state.run;
+    state.run = async (command, args, options) =>
+      command === "git" && args.includes("ls-remote")
+        ? failed("fatal: repository 'https://git.acme.test/acme/web.git/' not found")
+        : run(command, args, options);
+    runtime = new WorksetRuntime({
+      dockerHost: `unix://${root}/docker.sock`,
+      stateDir: path.join(root, "state"),
+      image: "mate-workset:1.0.0-acme",
+      user: "mate",
+      companionsDir: path.join(root, "companions"),
+      run: state.run,
+    });
+    const error = await runtime
+      .checkRemote(URL)
+      .catch((caught) => caught as Error & { code?: string });
+    expect(error.message).toContain("not found");
+    expect(error.code).toBeUndefined();
+  });
+
+  test.each(["/srv/web", "file:///srv/web", "--upload-pack=id", ""])(
+    "%j is refused before Git runs",
+    async (url) => {
+      await expect(Promise.resolve().then(() => runtime.checkRemote(url))).rejects.toThrow();
+      expect(state.calls.some((call) => call.args.includes("ls-remote"))).toBe(false);
+    },
+  );
 });
 
 describe("spawn", () => {

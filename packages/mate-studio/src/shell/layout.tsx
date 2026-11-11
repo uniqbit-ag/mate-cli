@@ -81,7 +81,11 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
               </div>
             </>
           ) : (
-            <CompanionPicker companions={shell.companions} writable={shell.writable} />
+            <CompanionPicker
+              companions={shell.companions}
+              writable={shell.writable}
+              factoryMode={shell.factoryMode}
+            />
           )}
         </main>
         {shell.terminal ? <TerminalSidebar terminal={shell.terminal} /> : null}

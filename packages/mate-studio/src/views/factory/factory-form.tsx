@@ -11,6 +11,8 @@ interface FactoryFormProps {
   id?: string;
   className?: string;
   children: ReactNode;
+  /** Runs once the action went through. */
+  onDone?: () => void;
   "data-outcome-input"?: string;
 }
 
@@ -19,7 +21,14 @@ interface FactoryFormProps {
  * through one validated server function, then the board refetches. The markup stays the form
  * the server-rendered board posted, so keyboard submission and field names are unchanged.
  */
-export function FactoryForm({ action, id, className, children, ...rest }: FactoryFormProps) {
+export function FactoryForm({
+  action,
+  id,
+  className,
+  children,
+  onDone,
+  ...rest
+}: FactoryFormProps) {
   const companion = useContext(FactoryCompanion);
   const queryClient = useQueryClient();
   const mutation = useMutation({
@@ -35,7 +44,12 @@ export function FactoryForm({ action, id, className, children, ...rest }: Factor
     for (const [name, value] of new FormData(form, submitter)) {
       if (typeof value === "string") fields[name] = value;
     }
-    mutation.mutate(fields, { onSuccess: () => form.reset() });
+    mutation.mutate(fields, {
+      onSuccess: () => {
+        form.reset();
+        onDone?.();
+      },
+    });
   };
   return (
     <form

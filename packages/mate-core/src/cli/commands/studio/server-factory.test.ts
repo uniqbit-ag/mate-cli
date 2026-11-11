@@ -11,6 +11,7 @@ import { parse } from "yaml";
 import { brokerHandler, serveBroker } from "../../../lib/factory/broker";
 import { factoryClient, type FactoryClient } from "../../../lib/factory/client";
 import { CREDENTIAL_FILE, CredentialStore } from "../../../lib/factory/credential-store";
+import { GIT_CREDENTIAL_FILE, GitCredentialStore } from "../../../lib/factory/git-credential-store";
 import type { WorksetRuntime } from "../../../lib/factory/runtime";
 import { createStudioAccess } from "./access";
 import { companionDigest } from "./selection";
@@ -399,6 +400,236 @@ describe("the Agents panel's credential routes", () => {
     ))!;
     expect(response.status).toBe(403);
     expect(store.current()).toBeNull();
+    handler.close();
+  });
+});
+
+describe("the Git access panel's token routes", () => {
+  const SECRET = "acme-git-secret";
+  let stopBroker: () => void = () => {};
+  let tokens: GitCredentialStore;
+
+  function factory(): FactoryClient {
+    const socket = path.join(root, "git-broker.sock");
+    tokens = new GitCredentialStore(path.join(root, GIT_CREDENTIAL_FILE), null);
+    stopBroker = serveBroker(
+      socket,
+      brokerHandler({} as WorksetRuntime, new CredentialStore(null, null), tokens),
+    ).stop;
+    return factoryClient(socket)!;
+  }
+
+  afterEach(() => stopBroker());
+
+  const call = (method: string, body?: unknown, headers = {}) =>
+    new Request("http://localhost/api/factory/git-tokens", {
+      method,
+      headers: { origin: "http://localhost", "content-type": "application/json", ...headers },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+
+  test("are not served outside factory mode", async () => {
+    const handler = handlerFor();
+    expect((await handler(call("GET")))!.status).toBe(404);
+    expect((await handler(call("PUT", { key: "git.acme.test", token: SECRET })))!.status).toBe(404);
+    handler.close();
+  });
+
+  test("set, list and clear keys without ever answering a token", async () => {
+    const handler = handlerFor({ factory: factory() });
+    const texts: string[] = [];
+    const send = async (request: Request, status = 200) => {
+      const response = (await handler(request))!;
+      expect(response.status).toBe(status);
+      const text = await response.text();
+      texts.push(text);
+      return JSON.parse(text) as { tokens?: { key: string; source: string }[]; reason?: string };
+    };
+
+    expect(await send(call("GET"))).toEqual({ tokens: [] });
+    expect((await send(call("PUT", { key: "git.acme.test/acme", token: SECRET }))).tokens).toEqual([
+      expect.objectContaining({ key: "git.acme.test/acme", source: "studio" }),
+    ]);
+    expect(tokens.forUrl("https://git.acme.test/acme/web.git")).toBe(SECRET);
+    expect((await send(call("PUT", { key: "a.test/one/two", token: SECRET }), 400)).reason).toMatch(
+      /host/,
+    );
+    expect(
+      (await send(call("PUT", { key: "git.acme.test", token: "has space" }), 400)).reason,
+    ).toMatch(/Git token/);
+    expect((await send(call("DELETE", { key: "git.acme.test/acme" }))).tokens).toEqual([]);
+
+    for (const text of texts) expect(text).not.toContain("acme-git");
+    handler.close();
+  });
+
+  test("a read-only Studio cannot set a token, and writes need Studio's own page and token", async () => {
+    const readOnly = handlerFor({ factory: factory(), writable: false });
+    expect((await readOnly(call("PUT", { key: "git.acme.test", token: SECRET })))!.status).toBe(
+      403,
+    );
+    readOnly.close();
+    stopBroker();
+
+    const guarded = handlerFor({ factory: factory(), token: "acme-access" });
+    const put = (headers: Record<string, string>) =>
+      call("PUT", { key: "git.acme.test", token: SECRET }, headers);
+    const cookie = "mate_studio_80=acme-access";
+    expect((await guarded(put({ origin: "http://evil.test", cookie })))!.status).toBe(403);
+    expect((await guarded(put({})))!.status).toBe(401);
+    expect((await guarded(call("GET")))!.status).toBe(401);
+    expect(tokens.status()).toEqual([]);
+    guarded.close();
+  });
+});
+
+describe("adding a companion", () => {
+  let stopBroker: () => void = () => {};
+  afterEach(() => stopBroker());
+
+  /** A broker whose runtime clones into `root/companions`, as the factory's would. */
+  function factory(clone: (url: string) => Promise<{ path: string; existing: boolean }>) {
+    const socket = path.join(root, "add-broker.sock");
+    const runtime = { cloneCompanion: clone } as unknown as WorksetRuntime;
+    stopBroker = serveBroker(socket, brokerHandler(runtime, new CredentialStore(null, null))).stop;
+    return factoryClient(socket)!;
+  }
+
+  const URL = "https://git.acme.test/acme/acme-companion.git";
+
+  test("is refused without the write path or outside factory mode, and nothing is cloned", async () => {
+    const cloned: string[] = [];
+    const client = factory(async (url) => (cloned.push(url), { path: "/x", existing: false }));
+    const readOnly = handlerFor({ factory: client, writable: false });
+    expect(await readOnly.services.addCompanion({ kind: "url", url: URL })).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("--writable"),
+    });
+    readOnly.close();
+    const plain = handlerFor({ factory: null });
+    expect(await plain.services.addCompanion({ kind: "url", url: URL })).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("factory"),
+    });
+    plain.close();
+    expect(cloned).toEqual([]);
+  });
+
+  test("a refused clone is an answer that names the Git token to set", async () => {
+    const { FactoryError } = await import("../../../lib/factory/ids");
+    const handler = handlerFor({
+      factory: factory(async () => {
+        throw new FactoryError(
+          "cloning acme/acme-companion failed: authentication to git.acme.test/acme failed",
+          "auth",
+        );
+      }),
+    });
+    expect(await handler.services.addCompanion({ kind: "url", url: URL })).toEqual({
+      ok: false,
+      reason: expect.stringContaining("authentication"),
+      tokenKey: "git.acme.test/acme",
+    });
+    handler.close();
+  });
+
+  test("a folder that is not a companion is refused by path", async () => {
+    const handler = handlerFor({ factory: factory(async () => ({ path: "/x", existing: false })) });
+    const bare = path.join(root, "bare");
+    fs.mkdirSync(bare);
+    expect(await handler.services.addCompanion({ kind: "path", path: bare })).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("nothing to register"),
+    });
+    expect(fs.readdirSync(bare)).toEqual([]);
+    handler.close();
+  });
+});
+
+describe("adding a repository", () => {
+  let stopBroker: () => void = () => {};
+  afterEach(() => stopBroker());
+
+  const WEB = "https://git.acme.test/acme/docs.git";
+  const file = () => path.join(companion, "factory.local.yaml");
+
+  /** A broker whose runtime answers the reachability check as `check` says. */
+  function factory(check: (url: string) => Promise<void>) {
+    const socket = path.join(root, "repo-broker.sock");
+    const runtime = { checkRemote: check } as unknown as WorksetRuntime;
+    stopBroker = serveBroker(socket, brokerHandler(runtime, new CredentialStore(null, null))).stop;
+    return factoryClient(socket)!;
+  }
+
+  test("is refused without the write path or outside factory mode, and nothing is checked or written", async () => {
+    const checked: string[] = [];
+    const client = factory(async (url) => void checked.push(url));
+    const readOnly = handlerFor({ factory: client, writable: false });
+    expect(await readOnly.services.addRepository(digest, { kind: "url", url: WEB })).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("--writable"),
+    });
+    expect(await readOnly.services.removeRepository(digest, "acme/docs")).toMatchObject({
+      ok: false,
+    });
+    readOnly.close();
+    const plain = handlerFor({ factory: null });
+    expect(await plain.services.addRepository(digest, { kind: "url", url: WEB })).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("factory"),
+    });
+    plain.close();
+    expect(checked).toEqual([]);
+    expect(fs.existsSync(file())).toBe(false);
+  });
+
+  test("checks the remote through the broker, lists it, and the board offers it from the list", async () => {
+    const checked: string[] = [];
+    const handler = handlerFor({ factory: factory(async (url) => void checked.push(url)) });
+    expect(await handler.services.addRepository(digest, { kind: "url", url: WEB })).toEqual({
+      ok: true,
+      identity: "acme/docs",
+      existing: false,
+    });
+    expect(checked).toEqual([WEB]);
+    expect(parse(fs.readFileSync(file(), "utf8"))).toEqual({ repositories: [WEB] });
+    const page = await handler.services.page(
+      new URL(`http://localhost/?companion=${digest}&view=factory`),
+    );
+    expect(page.payload?.linkedRepositories).toContain("acme/docs");
+    expect(page.payload?.repositorySources).toMatchObject({ "acme/docs": "list" });
+    handler.close();
+  });
+
+  test("an unreachable remote and an authentication refusal add nothing", async () => {
+    const { FactoryError } = await import("../../../lib/factory/ids");
+    let refusal: Error = new FactoryError("reaching acme/docs failed: repository not found");
+    const handler = handlerFor({
+      factory: factory(async () => {
+        throw refusal;
+      }),
+    });
+    expect(await handler.services.addRepository(digest, { kind: "url", url: WEB })).toEqual({
+      ok: false,
+      reason: expect.stringContaining("not found"),
+    });
+    refusal = new FactoryError("authentication to git.acme.test/acme failed", "auth");
+    expect(await handler.services.addRepository(digest, { kind: "url", url: WEB })).toMatchObject({
+      ok: false,
+      tokenKey: "git.acme.test/acme",
+    });
+    expect(fs.existsSync(file())).toBe(false);
+    handler.close();
+  });
+
+  test("removes a listed repository, and refuses one the list does not hold", async () => {
+    const handler = handlerFor({ factory: factory(async () => {}) });
+    await handler.services.addRepository(digest, { kind: "url", url: WEB });
+    expect(await handler.services.removeRepository(digest, "acme/docs")).toEqual({ ok: true });
+    expect(await handler.services.removeRepository(digest, "acme/docs")).toMatchObject({
+      ok: false,
+    });
+    expect(parse(fs.readFileSync(file(), "utf8"))).toEqual({ repositories: [] });
     handler.close();
   });
 });

@@ -20,6 +20,8 @@ export interface ShellCompanion {
   missing?: boolean;
   /** Linked Working Repositories by identity. */
   pairings: string[];
+  /** Removing it only unregisters it: the factory deletes folders only in its companions directory. */
+  keepsFolder?: boolean;
 }
 
 /** What the sidebar and page header show, for every view. Digests only cross to the browser. */
@@ -68,6 +70,7 @@ export const getShell = createServerFn({ method: "GET" })
       unready: companion.health !== "ready",
       missing: companion.health === "missing",
       pairings: companion.pairings.map((pairing) => pairing.repositoryId),
+      ...(context.studio.keepsFolder(companion.path) ? { keepsFolder: true } : {}),
     }));
     const payload = page.payload;
     return {

@@ -17,6 +17,7 @@ import {
   setWorksetStarted,
   worksetIdFor,
   type WorksetRecord,
+  removeWorkset,
   writeWorkset,
 } from "./record";
 
@@ -268,6 +269,18 @@ describe("linked changes", () => {
   test("writeWorkset replaces a record atomically", async () => {
     await writeWorkset(companion, record("acme-a", []));
     expect(fs.readdirSync(path.join(companion, "worksets"))).toEqual(["acme-a.yaml"]);
+  });
+
+  test("removeWorkset deletes one record, and a record already gone is no error", async () => {
+    await writeWorkset(companion, record("acme-a", []));
+    await writeWorkset(companion, record("acme-b", []));
+    await removeWorkset(companion, "acme-a");
+    await removeWorkset(companion, "acme-a");
+    expect(fs.readdirSync(path.join(companion, "worksets"))).toEqual(["acme-b.yaml"]);
+  });
+
+  test("removeWorkset refuses an identifier that is no Workset name", async () => {
+    await expect(removeWorkset(companion, "../acme-a")).rejects.toThrow("kebab-case");
   });
 });
 

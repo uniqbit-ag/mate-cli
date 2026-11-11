@@ -4,7 +4,7 @@ import type { FactoryRunView, StudioWorkset } from "@uniqbit/mate-core/studio";
 import type { FactoryPayload } from "../../server/factory";
 
 await import("../../../test/dom");
-const { act, render } = await import("@testing-library/react");
+const { act, fireEvent, render } = await import("@testing-library/react");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
 const router = await import("@tanstack/react-router");
 const { create } = await import("zustand");
@@ -177,6 +177,30 @@ describe("a review report in the panel", () => {
     view.unmount();
   });
 
+  it("opens a change's spec and tasks in place of the Outcome, with Back to the opener", async () => {
+    const { view, doc, panel, click } = await opened({
+      "acme-onboarding": reviewed({ "acme-login": "r1", "acme-signup": "r2" }),
+    });
+    for (const [doc_, title] of [
+      ["spec", "Spec"],
+      ["tasks", "Tasks"],
+    ] as const) {
+      const opener = `[aria-label="Needs you"] [data-open-doc="${doc_}:acme-signup"]`;
+      // eslint-disable-next-line no-await-in-loop -- one panel, one view at a time
+      await click(opener);
+      expect(panel().getAttribute("data-layout")).toBe("report");
+      expect(panel().querySelector("h2")?.textContent).toContain(`${title} · acme-signup`);
+      expect(panel().querySelector(`[data-outcome-doc="${doc_}"]`)).not.toBeNull();
+      expect(panel().querySelector("iframe")).toBeNull();
+      expect(doc.activeElement).toBe(panel().querySelector(".outcome-report-back"));
+      // eslint-disable-next-line no-await-in-loop
+      await click(".outcome-report-back");
+      expect(panel().getAttribute("data-layout")).toBeNull();
+      expect(doc.activeElement).toBe(panel().querySelector(opener));
+    }
+    view.unmount();
+  });
+
   it("shows the next Outcome's content when stepping away from a report", async () => {
     const { view, panel, click } = await opened(
       {
@@ -204,8 +228,9 @@ describe("a review report in the panel", () => {
     const { view, doc, panel, click } = await opened({
       "acme-onboarding": reviewed({ "acme-login": "r1", "acme-signup": "r2" }),
     });
+    await click('[aria-expanded="false"]');
     const draft = panel().querySelector<HTMLTextAreaElement>("textarea")!;
-    draft.value = "Shorter steps";
+    await act(async () => fireEvent.change(draft, { target: { value: "Shorter steps" } }));
     const opener = '[aria-label="Needs you"] [data-open-report="acme-login"]';
     await click(opener);
     expect(doc.activeElement).toBe(panel().querySelector(".outcome-report-back"));
@@ -214,6 +239,51 @@ describe("a review report in the panel", () => {
     expect(draft.value).toBe("Shorter steps");
     expect(doc.activeElement).toBe(panel().querySelector(opener));
     view.unmount();
+  });
+
+  describe("Request changes", () => {
+    const ready = () =>
+      opened({ "acme-onboarding": reviewed({ "acme-login": "r1", "acme-signup": "r2" }) });
+    const toggle = (panel: () => HTMLElement) =>
+      [...panel().querySelectorAll("button")].find((b) => b.textContent === "Request changes")!;
+    const send = (panel: () => HTMLElement) =>
+      [...panel().querySelectorAll("button")].find((b) => b.textContent === "Send changes")!;
+
+    it("opens its field in place with focus in it, Send disabled and Approve plan plain", async () => {
+      const { view, doc, panel, click } = await ready();
+      expect(panel().querySelector("textarea")).toBeNull();
+      const approve = () =>
+        [...panel().querySelectorAll("button")].find((b) => b.textContent === "Approve plan")!;
+      expect(approve().className).toContain("factory-primary");
+      await click('[aria-expanded="false"]');
+      const field = panel().querySelector<HTMLTextAreaElement>("textarea")!;
+      expect(field.getAttribute("aria-label")).toBe("What should change?");
+      expect(doc.activeElement).toBe(field);
+      expect(send(panel).disabled).toBe(true);
+      expect(approve().className).not.toContain("factory-primary");
+      await act(async () => fireEvent.change(field, { target: { value: "Split task 6" } }));
+      expect(send(panel).disabled).toBe(false);
+      view.unmount();
+    });
+
+    it("closes on Escape and on Cancel, keeping the text and returning focus", async () => {
+      const { view, doc, panel, click } = await ready();
+      await click('[aria-expanded="false"]');
+      const field = panel().querySelector<HTMLTextAreaElement>("textarea")!;
+      await act(async () => fireEvent.change(field, { target: { value: "Split task 6" } }));
+      await act(async () => fireEvent.keyDown(field, { key: "Escape" }));
+      expect(panel().querySelector("textarea")).toBeNull();
+      expect(doc.activeElement).toBe(toggle(panel));
+      await click('[aria-expanded="false"]');
+      expect(panel().querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("Split task 6");
+      const cancel = [...panel().querySelectorAll("button")].find(
+        (b) => b.textContent === "Cancel",
+      )!;
+      await act(async () => cancel.click());
+      expect(panel().querySelector("textarea")).toBeNull();
+      expect(doc.activeElement).toBe(toggle(panel));
+      view.unmount();
+    });
   });
 
   it("stays on the review when a regenerated report replaces the open one", async () => {

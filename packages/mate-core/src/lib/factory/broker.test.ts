@@ -6,6 +6,7 @@ import path from "node:path";
 
 import { brokerHandler, handleRequest, takeAgentCredential } from "./broker";
 import { CREDENTIAL_FILE, CredentialStore } from "./credential-store";
+import { GIT_CREDENTIAL_FILE, GitCredentialStore } from "./git-credential-store";
 import type { WorksetRuntime } from "./runtime";
 
 /** A runtime that records what reached it, so a refused request can be seen to stop at the broker. */
@@ -280,5 +281,115 @@ describe("the credential operations", () => {
     expect(answer.text).not.toContain("acme-studio");
     expect(store.current()).toEqual(credential);
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("the broker's Git token operations", () => {
+  const dir = () => fs.mkdtempSync(path.join(os.tmpdir(), "mate-git-tokens-"));
+
+  function handlerWith(file: string | null) {
+    const { runtime } = recordingRuntime();
+    const store = new GitCredentialStore(file, null);
+    return { handler: brokerHandler(runtime, none, store), store };
+  }
+
+  test("set, replace, list and clear, and no answer carries a token", async () => {
+    const folder = dir();
+    const { handler, store } = handlerWith(path.join(folder, GIT_CREDENTIAL_FILE));
+    const set = await call(handler, "git.token.set", { key: "Git.Acme.Test/acme", token: "one" });
+    await call(handler, "git.token.set", { key: "git.acme.test/acme", token: "two" });
+    const listed = await call(handler, "git.token.list", {});
+    const cleared = await call(handler, "git.token.clear", { key: "git.acme.test/acme" });
+    for (const answer of [set, listed, cleared]) {
+      expect(answer.text).not.toMatch(/one|two/);
+    }
+    expect(listed.json).toMatchObject({
+      ok: true,
+      result: { tokens: [{ key: "git.acme.test/acme", source: "studio" }] },
+    });
+    expect(store.status()).toEqual([]);
+    fs.rmSync(folder, { recursive: true, force: true });
+  });
+
+  test.each([
+    ["git.token.set", { key: "git.acme.test", token: "t", file: "/etc/passwd" }],
+    ["git.token.set", { key: "git.acme.test", token: "t", name: "x" }],
+    ["git.token.list", { all: true }],
+    ["git.token.clear", { key: "git.acme.test", force: true }],
+  ])("%s refuses an unexpected field and stores nothing", async (operation, body) => {
+    const { handler, store } = handlerWith(null);
+    const answer = await call(handler, operation, body);
+    expect(answer.status).toBe(400);
+    expect(String(answer.json.error)).toMatch(/does not accept/);
+    expect(store.status()).toEqual([]);
+  });
+
+  test("a bad key or token is refused without quoting the token", async () => {
+    const folder = dir();
+    const { handler, store } = handlerWith(path.join(folder, GIT_CREDENTIAL_FILE));
+    const key = await call(handler, "git.token.set", { key: "a.test/one/two", token: "secret-1" });
+    const token = await call(handler, "git.token.set", { key: "git.acme.test", token: "sec ret" });
+    expect(key.status).toBe(400);
+    expect(token.status).toBe(400);
+    expect(key.text + token.text).not.toMatch(/secret-1|sec ret/);
+    expect(store.status()).toEqual([]);
+    fs.rmSync(folder, { recursive: true, force: true });
+  });
+});
+
+describe("the broker's companion clone operation", () => {
+  const cloned: unknown[] = [];
+  const runtime = {
+    cloneCompanion: async (url: unknown) => (
+      cloned.push(url),
+      { path: "/companions/acme-companion", existing: false }
+    ),
+  } as unknown as WorksetRuntime;
+
+  test("takes the URL and answers the folder it chose", async () => {
+    const answer = await call(brokerHandler(runtime, none), "companion.clone", {
+      url: "https://git.acme.test/acme/acme-companion.git",
+    });
+    expect(answer.json).toEqual({
+      ok: true,
+      result: { path: "/companions/acme-companion", existing: false },
+    });
+    expect(cloned).toEqual(["https://git.acme.test/acme/acme-companion.git"]);
+  });
+
+  test.each([
+    { url: "https://git.acme.test/acme/acme-companion.git", destination: "/etc" },
+    { url: "https://git.acme.test/acme/acme-companion.git", directory: "x", token: "t" },
+  ])("refuses a destination or any other field and clones nothing", async (body) => {
+    cloned.length = 0;
+    const answer = await call(brokerHandler(runtime, none), "companion.clone", body);
+    expect(answer.status).toBe(400);
+    expect(String(answer.json.error)).toMatch(/does not accept/);
+    expect(cloned).toEqual([]);
+  });
+});
+
+describe("the broker's remote check operation", () => {
+  const checked: unknown[] = [];
+  const runtime = {
+    checkRemote: async (url: unknown) => void checked.push(url),
+  } as unknown as WorksetRuntime;
+
+  test("takes only the URL and answers nothing", async () => {
+    const answer = await call(brokerHandler(runtime, none), "remote.check", {
+      url: "https://git.acme.test/acme/web.git",
+    });
+    expect(answer.json).toEqual({ ok: true, result: {} });
+    expect(checked).toEqual(["https://git.acme.test/acme/web.git"]);
+  });
+
+  test("refuses any other field and checks nothing", async () => {
+    checked.length = 0;
+    const answer = await call(brokerHandler(runtime, none), "remote.check", {
+      url: "https://git.acme.test/acme/web.git",
+      token: "t",
+    });
+    expect(answer.status).toBe(400);
+    expect(checked).toEqual([]);
   });
 });

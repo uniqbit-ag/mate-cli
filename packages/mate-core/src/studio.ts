@@ -3,6 +3,10 @@
  * services contract it receives as request context and the view model types.
  */
 export type {
+  CompanionAddInput,
+  CompanionAddResult,
+  RepositoryAddInput,
+  RepositoryAddResult,
   StudioFormField,
   StudioRequestContext,
   StudioServices,
@@ -75,6 +79,7 @@ export {
 export { BRAND_SVGS } from "./brand/svg.generated";
 export {
   FACTORY_CREDENTIAL_ROUTE,
+  FACTORY_GIT_TOKENS_ROUTE,
   factoryLogRoute,
   factoryLogStreamRoute,
   REPORT_VIEW_PREFIX,
@@ -86,6 +91,7 @@ export {
   type StudioEvent,
 } from "./cli/commands/studio/routes";
 export type { CredentialKind, CredentialStatus } from "./lib/factory/credential-store";
+export type { GitTokenStatus } from "./lib/factory/git-credential-store";
 export { type AgentQuestion, questionsOf } from "./lib/factory/runner/questions";
 export {
   isOutcomeAction,

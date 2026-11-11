@@ -77,3 +77,23 @@ export function changeStep(change: StudioChange): ChangeStep {
     prompt: `/mate-archive-change ${change.name}`,
   };
 }
+
+export interface ChangeProgress {
+  done: number;
+  total: number;
+  /** What `done` and `total` count. */
+  unit: "tasks" | "artifacts";
+}
+
+/**
+ * How far the change's stage is: the plan's artifacts while it is still being written, tasks
+ * once the plan is complete and tasks are listed (so the bar never falls back at apply), and
+ * tasks when no artifact is known.
+ */
+export function changeProgress(change: StudioChange): ChangeProgress {
+  const tasks = { done: change.completedTasks ?? 0, total: change.totalTasks ?? 0 };
+  if (tasks.done > 0 || change.artifacts.length === 0) return { ...tasks, unit: "tasks" };
+  const done = change.artifacts.filter((artifact) => artifact.status === "done").length;
+  if (done === change.artifacts.length && tasks.total > 0) return { ...tasks, unit: "tasks" };
+  return { done, total: change.artifacts.length, unit: "artifacts" };
+}

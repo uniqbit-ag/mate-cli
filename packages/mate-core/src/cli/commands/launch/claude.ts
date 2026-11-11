@@ -9,6 +9,8 @@ import { makeLaunchCommand } from "./shared";
  * - `-- --no-git` — skip companion Git synchronization for this launch.
  * - `-- --companion` — launch against the Companion Repository without a Working Repository.
  * - `-- --yes` — accepted as a Mate compatibility no-op; launches are always prompt-free.
+ * - `-- --prepare-only` — prepare and index, then stop without launching Claude (Workset sessions).
+ * - `-- --prepared` — launch without progress, notices or indexing, after `--prepare-only` ran (Workset sessions).
  * @remarks When invoked via `directPassthrough` (the top-level `mate claude`
  * alias), all args before `--` are treated as agent args rather than being
  * parsed as launch options.

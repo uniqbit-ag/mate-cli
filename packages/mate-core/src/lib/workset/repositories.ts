@@ -1,17 +1,21 @@
 import fs from "node:fs";
 
 import { workingRepoGit } from "../delivery/branches";
-import { parseRemote, repositoryPath } from "../delivery/forge";
+import { repositoryPath } from "../delivery/forge";
 import { readCompanionRegistry } from "../orchestrator/repository-link";
 import { linkedCheckoutsOf } from "../orchestrator/umbrella-checkouts";
+import { gitTokenKeyOf } from "../factory/git-credential-store";
+import { readLocalRepositories, repositoryIdentityOf } from "./factory-local";
 
 /** Factory mode's configured clone URLs, comma-separated, as the appliance hands them to Studio. */
 export const FACTORY_REPOSITORIES_ENV = "MATE_FACTORY_REPOSITORIES";
 
-/** `org/repository` of a remote URL, or null when it is not a forge URL. */
-function identityOf(url: string): string | null {
-  const parsed = parseRemote(url);
-  return parsed ? repositoryPath(parsed) : null;
+/** Where a repository a Workset may name comes from; a linked origin wins over the list, the list over the environment. */
+export type RepositorySourceKind = "linked" | "list" | "environment";
+
+interface Source {
+  url: string;
+  kind: RepositorySourceKind;
 }
 
 const readOrigin = (checkout: string) => workingRepoGit(checkout).remoteUrl();
@@ -57,30 +61,42 @@ async function linkedRemotes(companionPath: string): Promise<LinkedRemote[]> {
   return linked.flat();
 }
 
-function sourcesOf(linked: LinkedRemote[], env: NodeJS.ProcessEnv): Map<string, string> {
-  const sources = new Map<string, string>();
+function sourcesOf(
+  linked: LinkedRemote[],
+  listed: string[],
+  env: NodeJS.ProcessEnv,
+): Map<string, Source> {
+  const sources = new Map<string, Source>();
   for (const { identity, remote } of linked) {
-    if (!sources.has(identity)) sources.set(identity, remote);
+    if (!sources.has(identity)) sources.set(identity, { url: remote, kind: "linked" });
   }
-  for (const url of (env[FACTORY_REPOSITORIES_ENV] ?? "").split(",")) {
+  const add = (url: string, kind: RepositorySourceKind) => {
     const trimmed = url.trim();
-    const identity = trimmed ? identityOf(trimmed) : null;
-    if (identity && !sources.has(identity)) sources.set(identity, trimmed);
-  }
+    const identity = trimmed ? repositoryIdentityOf(trimmed) : null;
+    if (identity && !sources.has(identity)) sources.set(identity, { url: trimmed, kind });
+  };
+  for (const url of listed) add(url, "list");
+  for (const url of (env[FACTORY_REPOSITORIES_ENV] ?? "").split(",")) add(url, "environment");
   return sources;
 }
 
 /**
  * Where each Working Repository a Workset may name is cloned from, by `org/repository`:
  * the `origin` of each repository linked to the companion whose path exists on this
- * machine, an Umbrella Repository's children included, then the configured factory
- * repositories. A linked origin wins.
+ * machine, an Umbrella Repository's children included, then the companion's
+ * `factory.local.yaml` list, then the configured factory repositories. The first wins.
  */
 export async function repositorySources(
   companionPath: string,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<Map<string, string>> {
-  return sourcesOf(await linkedRemotes(companionPath), env);
+  const [linked, local] = await Promise.all([
+    linkedRemotes(companionPath),
+    readLocalRepositories(companionPath),
+  ]);
+  return new Map(
+    [...sourcesOf(linked, local.urls, env)].map(([identity, source]) => [identity, source.url]),
+  );
 }
 
 /** The `org/repository` names a new Workset may name, sorted. */
@@ -96,6 +112,12 @@ export interface LinkedRepositoryCatalog {
   identities: string[];
   /** `org/repository` of each linked repository by its registry ID. */
   aliases: Map<string, string>;
+  /** Where each of `identities` comes from, so a picker offers removal only for the list's own. */
+  kinds: Map<string, RepositorySourceKind>;
+  /** `host/org` Git token key of each of `identities`' HTTP(S) clone URL; SSH and organization-less URLs take no token and are left out. */
+  keys: Map<string, string>;
+  /** Why `factory.local.yaml` is unusable, naming the file and the entry; null when it is fine. */
+  problem: string | null;
 }
 
 /**
@@ -106,9 +128,21 @@ export async function linkedRepositoryCatalog(
   companionPath: string,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<LinkedRepositoryCatalog> {
-  const linked = await linkedRemotes(companionPath);
+  const [linked, local] = await Promise.all([
+    linkedRemotes(companionPath),
+    readLocalRepositories(companionPath),
+  ]);
+  const sources = sourcesOf(linked, local.urls, env);
   return {
-    identities: [...sourcesOf(linked, env).keys()].toSorted(),
+    identities: [...sources.keys()].toSorted(),
     aliases: new Map(linked.filter(({ own }) => own).map(({ id, identity }) => [id, identity])),
+    kinds: new Map([...sources].map(([identity, source]) => [identity, source.kind])),
+    keys: new Map(
+      [...sources].flatMap(([identity, source]) => {
+        const key = gitTokenKeyOf(source.url);
+        return key ? [[identity, key] as const] : [];
+      }),
+    ),
+    problem: local.problem,
   };
 }

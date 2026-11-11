@@ -35,6 +35,7 @@ export function TopBar({ shell, search }: { shell: ShellData; search: StudioSear
         companions={shell.companions}
         selected={shell.selected}
         writable={shell.writable}
+        factoryMode={shell.factoryMode}
       />
       <div className="ml-auto flex min-w-0 flex-[0_1_auto] items-center justify-end gap-1.5">
         {shell.selected ? (

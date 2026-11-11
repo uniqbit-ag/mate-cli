@@ -17,6 +17,7 @@ export const OUTCOME_ACTIONS = [
   "regenerate",
   "start-apply",
   "publish",
+  "delete",
 ] as const;
 
 export type OutcomeAction = (typeof OUTCOME_ACTIONS)[number];
@@ -30,6 +31,8 @@ export interface OutcomeFacts {
   id: string;
   stage: WorksetStageId;
   stageLabel: string;
+  /** The changes the Workset links; Delete is only for an Outcome with none. */
+  changes: readonly string[];
 }
 
 /** What the policy reads of a Workset's run; absent while it never ran. */
@@ -103,6 +106,15 @@ export function outcomeRefusal(
       return stage === "publish"
         ? null
         : `Workset ${id} is not merged and archived; it is at ${stageLabel}`;
+    case "delete":
+      if (stage === "done") return `Workset ${id} is done`;
+      if (workset.changes.length > 0) {
+        return `Workset ${id} has a change (${workset.changes.join(", ")}); only an Outcome without one can be deleted`;
+      }
+      // A live run does not refuse: Delete stops it first.
+      return run?.control
+        ? "a person has taken over this Outcome; return it to automation first"
+        : null;
   }
 }
 

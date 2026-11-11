@@ -20,6 +20,7 @@ const servicesFor = (profile: StudioProfile) =>
   ({
     writable: false,
     factoryMode: true,
+    keepsFolder: () => false,
     modePolicy: modePolicy(profile),
     page: async (url: URL) => ({
       ...page,
