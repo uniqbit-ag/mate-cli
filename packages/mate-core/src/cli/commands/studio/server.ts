@@ -11,7 +11,11 @@ import { realpath } from "node:fs/promises";
 import path from "node:path";
 
 import { MERMAID_RUNTIME_URL } from "../report/renderer";
-import { CompanionRemovalError, deleteRegisteredCompanion } from "./companion-removal";
+import {
+  CompanionRemovalError,
+  deletableWithin,
+  deleteRegisteredCompanion,
+} from "./companion-removal";
 import { collectStudioInventory, type StudioInventory } from "./inventory";
 import {
   assembleCompanionPayload,
@@ -31,10 +35,14 @@ import {
 } from "../../../lib/factory/outcomes";
 import { LiveSessions } from "../../../lib/factory/outcomes/sessions";
 import { FACTORY_BROKER_ENV, factoryClient, type FactoryClient } from "../../../lib/factory/client";
+import { addCompanionByPath, addCompanionByUrl } from "./companion-add";
+import { addRepository, removeRepository } from "./repository-add";
 import { factoryCredentialResponse } from "./factory-credential";
+import { factoryGitTokensResponse } from "./factory-git-tokens";
 import { createWorksetResolver } from "./workset-session";
 import {
   FACTORY_CREDENTIAL_ROUTE,
+  FACTORY_GIT_TOKENS_ROUTE,
   FACTORY_WORKSETS_ROUTE,
   REPORTS_ROUTE,
   REPORT_VIEW_PREFIX,
@@ -237,6 +245,15 @@ function routeOf(url: URL, method: string, hasApp: boolean): RouteKind {
           writable: "start Studio with --writable to set the agent credential",
         };
   }
+  if (pathname === FACTORY_GIT_TOKENS_ROUTE) {
+    return method === "GET" || method === "HEAD"
+      ? { kind: "read", methods: [method] }
+      : {
+          kind: "write",
+          methods: [method],
+          writable: "start Studio with --writable to set Git tokens",
+        };
+  }
   if (pathname === TERMINAL_SOCKET_ROUTE) {
     return { kind: "terminal", methods: READS, privileged: true };
   }
@@ -383,6 +400,8 @@ export function createStudioFetch(
   // Created before the terminal and the Outcomes, so neither needs the other.
   const sessions = new LiveSessions();
   const launchCompanion = options.launchCompanion ?? null;
+  /** Where the factory keeps the companions it cloned; the only place Studio deletes a folder. */
+  const companionsDir = process.env.MATE_COMPANIONS_DIR || "/companions";
   const outcomesPorts = (companionPath: string): OutcomesPorts => ({
     stages: () => stagesOf(companionPath),
     reports: {
@@ -441,6 +460,19 @@ export function createStudioFetch(
                 // A person in control continues the factory's own conversation.
                 takenOver: async (id) => (outcomes ? outcomes.takenOver(id) : null),
               }),
+              // Quitting Claude in a person's session hands the Outcome back to automation.
+              onWorksetExit: async (id, companionPath) => {
+                // Another companion's Workset may share the id; only the factory's own returns.
+                if (
+                  !outcomes ||
+                  path.resolve(companionPath) !== path.resolve(outcomes.companionPath)
+                ) {
+                  return;
+                }
+                await outcomes.returnAfterExit(id);
+                // A return that starts no stage settles no run; the open board still has to learn of it.
+                boardChanged(companionDigest(outcomes.companionPath));
+              },
             }
           : {}),
         noGit: options.noGit === true,
@@ -534,11 +566,15 @@ export function createStudioFetch(
   const services: StudioServices = {
     writable,
     factoryMode: broker !== null,
+    keepsFolder: (companionPath) =>
+      broker !== null && !deletableWithin(companionPath, companionsDir),
     modePolicy: policy,
     page: collectPage,
     worksetAction: async (digest, id, action, field: StudioFormField) => {
       if (!writable) throw new WorksetError(NOT_WRITABLE);
-      await outcomesFor(await companionPathOf(digest)).act(id, action, field);
+      const outcomesOfCompanion = outcomesFor(await companionPathOf(digest));
+      // Return and Delete end the person's session themselves, once accepted.
+      await outcomesOfCompanion.act(id, action, field);
       boardChanged(digest);
     },
     createOutcome: async (digest, field) => {
@@ -608,8 +644,41 @@ export function createStudioFetch(
           "Studio was started for this companion; it is not deleted.",
         );
       }
-      const { deletedFolder } = await deleteRegisteredCompanion(companionPath);
+      // With the factory, only a folder in its companions directory is deleted.
+      const { deletedFolder } = await deleteRegisteredCompanion(
+        companionPath,
+        broker === null ? {} : { deleteWithin: companionsDir },
+      );
       return { deletedFolder };
+    },
+    addRepository: async (digest, input) => {
+      if (!writable)
+        return { ok: false, reason: "start Studio with --writable to add repositories" };
+      if (broker === null)
+        return { ok: false, reason: "adding repositories needs the factory's broker" };
+      const added = await addRepository(await companionPathOf(digest), input, { client: broker });
+      if (added.ok && !added.existing) boardChanged(digest);
+      return added;
+    },
+    removeRepository: async (digest, identity) => {
+      if (!writable)
+        return { ok: false, reason: "start Studio with --writable to remove repositories" };
+      const removed = await removeRepository(await companionPathOf(digest), identity);
+      if (removed.ok) boardChanged(digest);
+      return removed;
+    },
+    addCompanion: async (input) => {
+      if (!writable) return { ok: false, reason: "start Studio with --writable to add companions" };
+      if (broker === null) {
+        return { ok: false, reason: "adding companions needs the factory's broker" };
+      }
+      const added =
+        input.kind === "url"
+          ? await addCompanionByUrl(input.url, { client: broker, companionsDir })
+          : await addCompanionByPath(input.path, {});
+      return added.ok
+        ? { ok: true, digest: companionDigest(added.companionPath), existing: added.existing }
+        : added;
     },
   };
   const app = options.app ?? null;
@@ -701,6 +770,11 @@ export function createStudioFetch(
     if (url.pathname === FACTORY_CREDENTIAL_ROUTE) {
       if (broker === null) return respond(notFound());
       return respond(await factoryCredentialResponse(broker, request));
+    }
+
+    if (url.pathname === FACTORY_GIT_TOKENS_ROUTE) {
+      if (broker === null) return respond(notFound());
+      return respond(await factoryGitTokensResponse(broker, request));
     }
 
     if (app) {

@@ -107,6 +107,25 @@ describe("Dashboard", () => {
     page.unmount();
   });
 
+  it("shows a plan's artifacts done of total while no task is done", () => {
+    const markup = staticMarkup(
+      <Dashboard
+        payload={payload([
+          change("acme-plan", undefined, undefined, {
+            artifacts: [
+              { id: "proposal", status: "done" },
+              { id: "specs", status: "done" },
+              { id: "tasks", status: "blocked" },
+            ],
+          }),
+        ])}
+      />,
+    );
+    expect(markup).toContain("2 of 3 artifacts");
+    expect(markup).toContain('aria-valuenow="67"');
+    expect(markup).toContain(">Needs you</h2>");
+  });
+
   it("says so when a change tracks no tasks, and lists it under Needs you", () => {
     const markup = staticMarkup(
       <Dashboard payload={payload([change("acme-new", undefined, undefined)])} />,

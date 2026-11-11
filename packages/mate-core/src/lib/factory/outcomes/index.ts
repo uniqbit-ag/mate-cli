@@ -6,6 +6,7 @@ import {
   createOutcome,
   findWorkset,
   isWorksetId,
+  removeWorkset,
   setWorksetStarted,
   WorksetError,
 } from "../../workset/record";
@@ -85,6 +86,11 @@ export interface FactoryOutcomes extends Outcomes {
   onChanged(listener: () => void): () => void;
   /** For a Workset session: the factory conversation a person continues, `null` while automatic. */
   takenOver(id: string): Promise<{ claudeSession: string | null } | null>;
+  /**
+   * Claude exited in a person's session: Return to automation, as the button does. Does
+   * nothing unless the person has control; a failed return keeps it, with the reason recorded.
+   */
+  returnAfterExit(id: string): Promise<void>;
 }
 
 /** What the module asks of the server it runs in, given at construction. */
@@ -130,6 +136,7 @@ const outcomeFacts = (id: string, workset: WorksetWithStage) => ({
   id,
   stage: workset.derived.stage,
   stageLabel: workset.derived.label,
+  changes: workset.record.changes,
 });
 
 /**
@@ -245,6 +252,28 @@ function assemble(parts: OutcomesParts) {
       () => setWorksetStarted(companionPath, id, false),
     );
 
+  /**
+   * Stops a live run, then ends the person's open session and removes the container and
+   * worktree, the run state and, last, the record; the first failure keeps the record, so the
+   * Outcome stays on the board to retry. A refusal stops nothing.
+   */
+  const deleteOutcome = async (id: string) => {
+    const refusal = async () => {
+      const current = (await stages()).worksets.find((entry) => entry.record.id === id);
+      if (!current) return `this companion has no valid Workset ${id}`;
+      return outcomeRefusal("delete", outcomeFacts(id, current), await runFacts(id), {
+        runner: true,
+      });
+    };
+    await runner.stop(id, refusal);
+    await runner.discard(id, refusal, async () => {
+      await sessions.close(companionPath, id, "deleted");
+      if ((await client.list()).some((workset) => workset.id === id)) await client.delete(id);
+      await runs.forget(id);
+      await removeWorkset(companionPath, id);
+    });
+  };
+
   const outcomes: FactoryOutcomes = {
     companionPath,
     automated: true,
@@ -290,6 +319,8 @@ function assemble(parts: OutcomesParts) {
           return runner.request(id, "apply");
         case "publish":
           return runner.request(id, "publish");
+        case "delete":
+          return deleteOutcome(id);
       }
     },
     async create(fields) {
@@ -306,6 +337,17 @@ function assemble(parts: OutcomesParts) {
       const facts = await runs.facts(id);
       if (facts.control.mode !== "manual") return null;
       return { claudeSession: facts.claudeSession };
+    },
+    async returnAfterExit(id) {
+      await ready;
+      if (!(await outcomes.takenOver(id))) return;
+      try {
+        await runner.returnToAutomation(id);
+      } catch (error) {
+        process.stderr.write(
+          `mate studio: returning ${id} to automation after Claude exited failed: ${(error as Error).message}\n`,
+        );
+      }
     },
   };
   return { outcomes, pickUp, reclaim };
@@ -380,6 +422,7 @@ export function createFactoryOutcomes(
     },
     recordFor,
     sessionLive: (id) => ports.sessions.busy().has(id),
+    endSession: (id) => ports.sessions.close(companionPath, id, "returned"),
   });
   const { outcomes, pickUp, reclaim } = assemble({
     ...ports,

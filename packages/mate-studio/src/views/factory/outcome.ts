@@ -8,6 +8,8 @@ import {
   type WorksetStageId,
 } from "@uniqbit/mate-core/studio";
 
+import type { PathTone } from "../../components/path-steps";
+
 /**
  * The Factory home's model: Outcomes (Worksets as a person sees them), the decisions they
  * wait on, and what the factory reported. Pure, so the view stays thin.
@@ -190,6 +192,53 @@ export function situationOf(
   const reported = run?.situations?.[0];
   if (reported && !(run && OVERRIDING.has(run.state))) return reported;
   return { text: derivedSituation(workset, run) };
+}
+
+/** The Delivery Path as the panel's strip shows it; clarify and explore are one step. */
+export const PATH_STEPS = [
+  "Understand",
+  "Propose change",
+  "Human review",
+  "Apply change",
+  "Merge",
+  "Publish",
+] as const;
+
+const STEP_OF_STAGE: Record<WorksetStageId, number> = {
+  "clarify-intent": 0,
+  explore: 0,
+  propose: 1,
+  "human-review": 2,
+  apply: 3,
+  "merge-wait": 4,
+  publish: 5,
+  done: PATH_STEPS.length,
+};
+
+export interface PathPosition {
+  /** The current step; `-1` when saved for later, past the end when delivered. */
+  current: number;
+  tone: PathTone;
+}
+
+/** Where an Outcome is on the strip, and the colour its current step takes. */
+export function pathPositionOf(
+  workset: StudioWorkset,
+  run: FactoryRunView | undefined,
+): PathPosition {
+  const activity = activityOf(workset, run);
+  const current = activity === "later" ? -1 : STEP_OF_STAGE[workset.stage];
+  switch (activity) {
+    case "control":
+      return { current, tone: "why" };
+    case "stopped":
+      return { current, tone: "bad" };
+    case "needs-you":
+      // Human review is the lilac stage; any other wait is amber.
+      return { current, tone: attentionKind(workset, run) === "review" ? "why" : "warn" };
+    default:
+      return { current, tone: "accent" };
+  }
 }
 
 /** How an Outcome stands right now: its row's dot and its node on the Delivery Path map. */

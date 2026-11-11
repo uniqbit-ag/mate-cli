@@ -1,6 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
-import { CompanionRemovalError, deleteRegisteredCompanion } from "./companion-removal";
+import {
+  CompanionRemovalError,
+  deletableWithin,
+  deleteRegisteredCompanion,
+} from "./companion-removal";
 
 const COMPANION = "/home/dev/.mate/companions/acme-companion";
 const CONFIG = `${COMPANION}/.mate/config/framework.yaml`;
@@ -82,5 +86,54 @@ describe("deleteRegisteredCompanion", () => {
       CompanionRemovalError,
     );
     expect([...bare.removed, ...working.removed]).toEqual([]);
+  });
+
+  it("with deleteWithin, deletes a companion inside it and only unregisters one outside", async () => {
+    const inside = fakes({ registered: [COMPANION], dirs: [COMPANION] });
+    expect(
+      (
+        await deleteRegisteredCompanion(COMPANION, {
+          ...inside.deps,
+          deleteWithin: "/home/dev/.mate/companions",
+        })
+      ).deletedFolder,
+    ).toBe(true);
+    expect(inside.removed).toEqual([COMPANION]);
+
+    const outside = fakes({ registered: [COMPANION], dirs: [COMPANION] });
+    expect(
+      await deleteRegisteredCompanion(COMPANION, { ...outside.deps, deleteWithin: "/companions" }),
+    ).toEqual({ companionPath: COMPANION, deletedFolder: false });
+    expect(outside.removed).toEqual([]);
+    expect(outside.registry).toEqual([]);
+  });
+
+  it("with deleteWithin, never deletes the directory itself", async () => {
+    const root = fakes({
+      registered: ["/companions"],
+      dirs: ["/companions"],
+      files: { "/companions/.mate/config/framework.yaml": "type: companion\n" },
+    });
+    const result = await deleteRegisteredCompanion("/companions", {
+      ...root.deps,
+      deleteWithin: "/companions",
+    });
+    expect(result.deletedFolder).toBe(false);
+    expect(root.removed).toEqual([]);
+  });
+});
+
+describe("deletableWithin", () => {
+  it("allows a folder strictly inside the directory however the directory is spelled", () => {
+    for (const dir of ["/companions", "/companions/", "/companions/./", "/srv/../companions"]) {
+      expect(deletableWithin("/companions/acme-companion", dir)).toBe(true);
+      expect(deletableWithin("/companions", dir)).toBe(false);
+      expect(deletableWithin("/companions-other/acme-companion", dir)).toBe(false);
+      expect(deletableWithin("/companions/../srv/acme-companion", dir)).toBe(false);
+    }
+  });
+
+  it("allows any folder without a directory", () => {
+    expect(deletableWithin("/srv/acme-companion", undefined)).toBe(true);
   });
 });

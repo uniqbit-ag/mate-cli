@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { StudioChange } from "@uniqbit/mate-core/studio";
 
-import { changeGroup, changeStep, groupChanges } from "./change-group";
+import { changeGroup, changeProgress, changeStep, groupChanges } from "./change-group";
 
 const change = (overrides: Partial<StudioChange>): StudioChange => ({
   name: "acme-queue",
@@ -58,5 +58,52 @@ describe("changeStep", () => {
     const step = changeStep(change({ completedTasks: 3, totalTasks: 7 }));
     expect(step.stage).toBe("Apply change");
     expect(step.situation).toBe("4 tasks left");
+  });
+});
+
+describe("changeProgress", () => {
+  const artifacts = [
+    { id: "proposal", status: "done" },
+    { id: "specs", status: "done" },
+    { id: "design", status: "ready" },
+    { id: "tasks", status: "blocked" },
+  ];
+
+  it("counts the plan's artifacts while no task is done", () => {
+    expect(changeProgress(change({ artifacts }))).toEqual({
+      done: 2,
+      total: 4,
+      unit: "artifacts",
+    });
+    expect(changeProgress(change({ artifacts, completedTasks: 0, totalTasks: 16 })).unit).toBe(
+      "artifacts",
+    );
+  });
+
+  it("counts tasks once the plan is complete and tasks are listed", () => {
+    const planned = artifacts.map((artifact) => ({ ...artifact, status: "done" }));
+    expect(
+      changeProgress(change({ artifacts: planned, completedTasks: 0, totalTasks: 16 })),
+    ).toEqual({
+      done: 0,
+      total: 16,
+      unit: "tasks",
+    });
+  });
+
+  it("counts tasks from the first completed task on", () => {
+    expect(changeProgress(change({ artifacts, completedTasks: 12, totalTasks: 20 }))).toEqual({
+      done: 12,
+      total: 20,
+      unit: "tasks",
+    });
+  });
+
+  it("counts tasks when no artifact is known", () => {
+    expect(changeProgress(change({ completedTasks: 0, totalTasks: 16 }))).toEqual({
+      done: 0,
+      total: 16,
+      unit: "tasks",
+    });
   });
 });

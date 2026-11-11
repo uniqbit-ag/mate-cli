@@ -7,6 +7,7 @@ import { parse } from "yaml";
 import { FRAMEWORK_NAME } from "../../../framework";
 import { pathIsDirectory } from "../../../lib/fs-utils";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
+import { isWithin } from "../../../runtime/physical-path";
 
 export interface CompanionRemoval {
   companionPath: string;
@@ -20,20 +21,26 @@ export interface CompanionRemovalDeps {
   readFile?: (target: string) => Promise<string>;
   remove?: (target: string) => Promise<void>;
   home?: string;
+  /** When set, only a folder inside it is deleted; any other companion is only unregistered. */
+  deleteWithin?: string;
 }
 
 /** A refusal Studio shows as it is; nothing was deleted or unregistered. */
 export class CompanionRemovalError extends Error {}
 
-/** True when `target` is `ancestor` or lies inside it. */
-const within = (target: string, ancestor: string): boolean => {
-  const relative = path.relative(ancestor, target);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-};
+/** Whether removal may delete the folder at `companionPath` given `deleteWithin`: strictly inside it, or anywhere without it. */
+export function deletableWithin(companionPath: string, deleteWithin: string | undefined): boolean {
+  if (deleteWithin === undefined) return true;
+  const target = path.resolve(companionPath);
+  const root = path.resolve(deleteWithin);
+  return target !== root && isWithin(target, root);
+}
 
 /**
  * Deletes a registered Companion Repository's folder and drops its registry entry; not
- * recoverable. A registered path whose folder is already gone is only unregistered. The
+ * recoverable. A registered path whose folder is already gone is only unregistered, as is a
+ * companion outside `deleteWithin` when that is set: Studio never deletes a folder it did not
+ * create. The
  * folder is deleted only when it carries a companion configuration, and never when it is
  * the filesystem root, the home folder or a folder holding the home folder.
  */
@@ -53,11 +60,11 @@ export async function deleteRegisteredCompanion(
   if (!registered)
     throw new CompanionRemovalError(`${companionPath} is not a registered companion.`);
 
-  if (!(await isDirectory(companionPath))) {
+  if (!(await isDirectory(companionPath)) || !deletableWithin(companionPath, deps.deleteWithin)) {
     await store.unregister(companionPath);
     return { companionPath, deletedFolder: false };
   }
-  if (companionPath === path.parse(companionPath).root || within(home, companionPath)) {
+  if (companionPath === path.parse(companionPath).root || isWithin(home, companionPath)) {
     throw new CompanionRemovalError(`${companionPath} holds the home folder; it is never deleted.`);
   }
   const config = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");

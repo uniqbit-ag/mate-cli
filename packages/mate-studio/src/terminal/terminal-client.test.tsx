@@ -163,6 +163,65 @@ describe("the Workset session in an Outcome's dialog", () => {
     expect(socket.sent.some((message) => message.type === "end")).toBe(false);
   });
 
+  describe("the spinner", () => {
+    const open = async () => {
+      const written: string[] = [];
+      wterm.Ctor = class extends FakeTerm {
+        write(data: string) {
+          written.push(String(data));
+        }
+      };
+      const view = render(<OutcomeTerminal outcome="acme-login" companion="0123456789" />);
+      await act(async () => {});
+      FakeSocket.last.open();
+      return { view, socket: FakeSocket.last, written };
+    };
+
+    it("shows from the start until Claude's first output", async () => {
+      const { view, socket } = await open();
+      const status = view.getByRole("status");
+      expect(status.textContent).toContain("Starting the session");
+      // Readiness alone is not output: Claude has drawn nothing yet.
+      act(() => socket.receive({ type: "ready", sessionId: "acme-session" }));
+      expect(view.queryByRole("status")).not.toBeNull();
+      act(() => socket.onmessage?.({ data: new Uint8Array([0x1b]).buffer }));
+      expect(view.queryByRole("status")).toBeNull();
+      view.unmount();
+    });
+
+    it("gives way to the reason when the session is refused", async () => {
+      const { view, socket } = await open();
+      act(() =>
+        socket.receive({ type: "error", reason: "the Workset's session could not be prepared" }),
+      );
+      const alert = view.getByRole("alert");
+      expect(alert.textContent).toContain("the Workset's session could not be prepared");
+      expect(view.getByRole("button", { name: "Try again" })).toBeTruthy();
+      expect(view.queryByRole("status")).toBeNull();
+      view.unmount();
+    });
+
+    it("offers Try again when the socket closes before any output", async () => {
+      const { view, socket } = await open();
+      act(() => socket.receive({ type: "ready", sessionId: "acme-session" }));
+      act(() => socket.onclose?.());
+      expect(view.getByRole("alert").textContent).toContain("closed before the session started");
+      expect(view.getByRole("button", { name: "Try again" })).toBeTruthy();
+      view.unmount();
+    });
+
+    it("is gone once the session ended, and a later reason is only a notice", async () => {
+      const { view, socket, written } = await open();
+      act(() => socket.receive({ type: "ready", sessionId: "acme-session" }));
+      act(() => socket.receive({ type: "exit", status: 0 }));
+      expect(view.queryByRole("status")).toBeNull();
+      expect(written.join("")).toContain("Claude closed. The Outcome returns to automation");
+      act(() => socket.receive({ type: "error", reason: "late" }));
+      expect(view.queryByRole("alert")).toBeNull();
+      view.unmount();
+    });
+  });
+
   it("takes focus when ready, unless the dialog was reached by stepping", async () => {
     const focused: boolean[] = [];
     for (const focus of [true, false]) {

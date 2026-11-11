@@ -132,6 +132,46 @@ factory starts offline like the appliance.
   commands that start a Workset agent. Studio and its own sessions never
   receive it. Studio reads a copy of the configuration file without it, so the
   original can be readable by root only.
+- **Git access, set in Studio.** To clone a private repository, set a token in
+  the Factory view's **Git access**, for a host (`git.acme.test`) or for a host
+  and organization (`git.acme.test/acme`). The most specific key wins: the
+  organization's token, then the host's. A token is used only for HTTP(S) URLs
+  its key matches, and nested groups resolve to the first path segment. Like the
+  agent credential, the panel shows the key, where it came from and when, never
+  the token. The broker keeps tokens in `git-credentials.json` in the factory
+  state volume, readable by root only, and gives one to Git only in the
+  environment of the single clone or fetch that needs it, never in a URL, an
+  argument or `.git/config`. A change applies at once; no restart is needed.
+  Workset repository clones use it too.
+- **Startup Git token as a fallback.** `MATE_GIT_CLONE_TOKEN` still works. It
+  now also reaches the broker, but only for the hosts of the URLs you listed in
+  `MATE_COMPANION_REPOS` and `MATE_FACTORY_REPOSITORIES`; a token stored in
+  Studio takes precedence over it.
+- **Add companions in Studio.** The companion picker's **Add companion** takes
+  a Git URL or the absolute path of a folder Studio can read. A URL is cloned
+  by the broker into the companions directory (`MATE_COMPANIONS_DIR`, default
+  `/companions`), in a folder named after the repository, with the Git token
+  matching its host and organization; a private repository that is refused
+  offers the token form and retries. A clone that is not a companion is removed
+  again. A path is registered in place and never copied. Nothing new is stored:
+  a cloned companion is found again by startup's discovery, and a path
+  companion stays in the global registry. `MATE_COMPANION_REPOS` still clones at
+  startup, so a headless setup needs no change. Removing a companion deletes
+  its folder only inside the companions directory; any other is only
+  unregistered.
+- **Add repositories in Studio.** In the Outcome input, **Add repository** takes a
+  Git URL or the absolute path of a checkout Studio can read. The factory first
+  checks the remote answers, with the Git token matching its host and
+  organization (a refused private repository offers the token form and
+  retries), then Studio lists it in `factory.local.yaml` at the companion's
+  root. A checkout contributes only its `origin`: the factory clones from the
+  URL, so commits not pushed there are not seen. The file is machine-local:
+  the first write adds it to the companion's `.git/info/exclude`, leaving no
+  tracked change, and no Mate command commits, archives or publishes it. Only
+  entries in this file can be removed in Studio. For one repository, a linked
+  checkout's origin wins over the file, which wins over
+  `MATE_FACTORY_REPOSITORIES`; that setting is read when used and never copied
+  into the file, so it stays optional.
 - **The Workset image.** Each Workset container has Claude Code, Bun, the
   companion's capability tools (TokenSave, RTK, uv, graphify) and the Claude
   Code harness bridge, all pre-installed. Package commands inside a Workset run
@@ -284,22 +324,22 @@ factory starts offline like the appliance.
 These come on top of the [appliance settings](/docs/reference/deployment#configuration),
 from the environment or the configuration file in the same way.
 
-| Setting                        | Meaning                                                                                                                                                                                                                                                      | Default                | Required |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | -------- |
-| `MATE_FACTORY`                 | Factory mode: Sysbox and an inner Docker daemon run Workset containers. On in this image, which starts as root; it needs a privileged container with volumes at `/var/lib/docker`, `/var/lib/sysbox` and `/var/lib/mate-factory`. `false` runs Studio alone. | `true`                 | no       |
-| `CLAUDE_CODE_OAUTH_TOKEN`      | A Claude subscription token (from `claude setup-token`) for Workset agents. Handed only to the factory broker, never to Studio or its sessions. Set this or `ANTHROPIC_API_KEY`, not both.                                                                   | —                      | no       |
-| `ANTHROPIC_API_KEY`            | An Anthropic API key for Workset agents. Handed only to the factory broker, never to Studio or its sessions. Set this or `CLAUDE_CODE_OAUTH_TOKEN`, not both.                                                                                                | —                      | no       |
-| `MATE_FACTORY_REPOSITORIES`    | Git URLs of Working Repositories Worksets may be created for and cloned from, one per line or comma-separated. Studio offers each by its `org/repository` name, besides the repositories linked to the companion.                                            | —                      | no       |
-| `MATE_FACTORY_PARALLEL_RUNS`   | How many AFK runs work at once; others wait in order. Workset containers follow from it: the parallel runs plus one, so one stays free for your session.                                                                                                     | `2`                    | no       |
-| `MATE_FACTORY_PARALLEL_BUILDS` | How many of the parallel runs may be in a build stage (apply) at once; a build waits for a build slot while agent stages go ahead. At most `MATE_FACTORY_PARALLEL_RUNS`.                                                                                     | `2`                    | no       |
-| `MATE_FACTORY_STAGE_MINUTES`   | The time budget of one stage of a Workset run, in minutes; a stage past it fails.                                                                                                                                                                            | `60`                   | no       |
-| `MATE_FACTORY_IDLE_MINUTES`    | Minutes a Workset container may sit with no session and no command before it is stopped; its worktree and home are kept. `0` never stops one.                                                                                                                | `15`                   | no       |
-| `MATE_FACTORY_WORKSET_MEMORY`  | Each Workset container's memory limit, swap included, as a Docker size such as `4g` or `512m`. Covers everything the agent starts in it, nested containers too.                                                                                              | `4g`                   | no       |
-| `MATE_FACTORY_AGENT_MEMORY`    | A Workset container's memory limit during an agent stage (clarify, explore, propose, revise, publish), swap included; builds and sessions get `MATE_FACTORY_WORKSET_MEMORY`. At most that.                                                                   | `1536m`                | no       |
-| `MATE_FACTORY_WORKSET_PIDS`    | Each Workset container's process limit.                                                                                                                                                                                                                      | `1024`                 | no       |
-| `MATE_FACTORY_WORKSET_CPUS`    | Each Workset container's CPU limit, such as `2` or `1.5`. Unset sets none.                                                                                                                                                                                   | —                      | no       |
-| `MATE_FACTORY_GIT_NAME`        | The author and committer name of every commit the factory makes, its Workset commits and publications.                                                                                                                                                       | `Mate factory`         | no       |
-| `MATE_FACTORY_GIT_EMAIL`       | The author and committer email of every commit the factory makes.                                                                                                                                                                                            | `factory@mate.invalid` | no       |
+| Setting                        | Meaning                                                                                                                                                                                                                                                                                                                                                                                          | Default                | Required |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | -------- |
+| `MATE_FACTORY`                 | Factory mode: Sysbox and an inner Docker daemon run Workset containers. On in this image, which starts as root; it needs a privileged container with volumes at `/var/lib/docker`, `/var/lib/sysbox` and `/var/lib/mate-factory`. `false` runs Studio alone.                                                                                                                                     | `true`                 | no       |
+| `CLAUDE_CODE_OAUTH_TOKEN`      | A Claude subscription token (from `claude setup-token`) for Workset agents. Handed only to the factory broker, never to Studio or its sessions. Set this or `ANTHROPIC_API_KEY`, not both.                                                                                                                                                                                                       | —                      | no       |
+| `ANTHROPIC_API_KEY`            | An Anthropic API key for Workset agents. Handed only to the factory broker, never to Studio or its sessions. Set this or `CLAUDE_CODE_OAUTH_TOKEN`, not both.                                                                                                                                                                                                                                    | —                      | no       |
+| `MATE_FACTORY_REPOSITORIES`    | Git URLs of Working Repositories Worksets may be created for and cloned from, one per line or comma-separated. Optional: repositories can also be added in Studio, to the companion's `factory.local.yaml`. Studio offers each by its `org/repository` name, besides the repositories linked to the companion; a linked repository wins over `factory.local.yaml`, which wins over this setting. | —                      | no       |
+| `MATE_FACTORY_PARALLEL_RUNS`   | How many AFK runs work at once; others wait in order. Workset containers follow from it: the parallel runs plus one, so one stays free for your session.                                                                                                                                                                                                                                         | `2`                    | no       |
+| `MATE_FACTORY_PARALLEL_BUILDS` | How many of the parallel runs may be in a build stage (apply) at once; a build waits for a build slot while agent stages go ahead. At most `MATE_FACTORY_PARALLEL_RUNS`.                                                                                                                                                                                                                         | `2`                    | no       |
+| `MATE_FACTORY_STAGE_MINUTES`   | The time budget of one stage of a Workset run, in minutes; a stage past it fails.                                                                                                                                                                                                                                                                                                                | `60`                   | no       |
+| `MATE_FACTORY_IDLE_MINUTES`    | Minutes a Workset container may sit with no session and no command before it is stopped; its worktree and home are kept. `0` never stops one.                                                                                                                                                                                                                                                    | `15`                   | no       |
+| `MATE_FACTORY_WORKSET_MEMORY`  | Each Workset container's memory limit, swap included, as a Docker size such as `4g` or `512m`. Covers everything the agent starts in it, nested containers too.                                                                                                                                                                                                                                  | `4g`                   | no       |
+| `MATE_FACTORY_AGENT_MEMORY`    | A Workset container's memory limit during an agent stage (clarify, explore, propose, revise, publish), swap included; builds and sessions get `MATE_FACTORY_WORKSET_MEMORY`. At most that.                                                                                                                                                                                                       | `1536m`                | no       |
+| `MATE_FACTORY_WORKSET_PIDS`    | Each Workset container's process limit.                                                                                                                                                                                                                                                                                                                                                          | `1024`                 | no       |
+| `MATE_FACTORY_WORKSET_CPUS`    | Each Workset container's CPU limit, such as `2` or `1.5`. Unset sets none.                                                                                                                                                                                                                                                                                                                       | —                      | no       |
+| `MATE_FACTORY_GIT_NAME`        | The author and committer name of every commit the factory makes, its Workset commits and publications.                                                                                                                                                                                                                                                                                           | `Mate factory`         | no       |
+| `MATE_FACTORY_GIT_EMAIL`       | The author and committer email of every commit the factory makes.                                                                                                                                                                                                                                                                                                                                | `factory@mate.invalid` | no       |
 
 ### Advanced settings
 

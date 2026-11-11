@@ -22,18 +22,32 @@ export interface ParsedLaunchArgs {
   agentArgs: string[];
   skipGit?: boolean;
   scope?: LaunchScope;
+  /** Only prepare and index, then stop; a Workset session runs this before it attaches. */
+  prepareOnly?: boolean;
+  /** The preparation ran already: no progress, notices or index, straight to the agent. */
+  prepared?: boolean;
 }
 
-const MATE_LAUNCH_OPTIONS = new Set(["--no-git", "--companion", "--yes"]);
+const MATE_LAUNCH_OPTIONS = new Set([
+  "--no-git",
+  "--companion",
+  "--yes",
+  "--prepare-only",
+  "--prepared",
+]);
 
 function parseMateLaunchArgs(agentArgs: string[]): ParsedLaunchArgs {
   const skipGit = agentArgs.includes("--no-git");
   const companion = agentArgs.includes("--companion");
+  const prepareOnly = agentArgs.includes("--prepare-only");
+  const prepared = agentArgs.includes("--prepared");
 
   return {
     agentArgs: agentArgs.filter((arg) => !MATE_LAUNCH_OPTIONS.has(arg)),
     ...(skipGit ? { skipGit: true } : {}),
     ...(companion ? { scope: "companion" as const } : {}),
+    ...(prepareOnly ? { prepareOnly: true } : {}),
+    ...(prepared ? { prepared: true } : {}),
   };
 }
 
@@ -93,12 +107,15 @@ export async function runLaunchToolCommand(
   options: {
     skipGit?: boolean;
     scope?: LaunchScope;
+    prepareOnly?: boolean;
+    prepared?: boolean;
   } = {},
 ): Promise<void> {
   const interactiveGit = !!(process.stdin.isTTY && process.stdout.isTTY);
-  const progress = interactiveGit
-    ? launchCommandDeps.createProgress(`Starting ${tool}`)
-    : undefined;
+  const progress =
+    interactiveGit && !options.prepared
+      ? launchCommandDeps.createProgress(`Starting ${tool}`)
+      : undefined;
 
   try {
     // Git may ask for credentials and graphify/tokensave write straight to the
@@ -107,13 +124,15 @@ export async function runLaunchToolCommand(
     const prepared = await launchCommandDeps.createLauncher().prepare({
       tool,
       args,
-      skipGit: options.skipGit,
+      // The `--prepare-only` run before it synced already.
+      skipGit: options.skipGit || options.prepared,
       scope: options.scope,
       interactiveGit,
+      ...(options.prepared ? { quiet: true } : {}),
     });
     progress?.succeed("sync");
 
-    if (options.scope !== "companion") {
+    if (options.scope !== "companion" && !options.prepared) {
       const indexSteps: SyncCapDeps = progress
         ? {
             onStepStart: (step) => progress.handOver(step, STEP_LABELS[step]),
@@ -127,6 +146,12 @@ export async function runLaunchToolCommand(
       await launchCommandDeps.runIndexCapCommand([], indexSteps);
     }
     progress?.stop();
+
+    if (options.prepareOnly) {
+      // As at an ordinary launch, an index that fails never keeps the agent from starting.
+      process.exitCode = 0;
+      return;
+    }
 
     const result = await prepared.execute();
     /**
@@ -190,6 +215,8 @@ export function makeLaunchCommand(tool: LaunchTarget) {
     await runLaunchToolCommand(tool, parsed.agentArgs, {
       skipGit: parsed.skipGit,
       scope: parsed.scope,
+      prepareOnly: parsed.prepareOnly,
+      prepared: parsed.prepared,
     });
   };
 }

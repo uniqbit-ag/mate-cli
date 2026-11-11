@@ -1,16 +1,22 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import type { StudioView } from "@uniqbit/mate-core/studio";
+import type { CompanionAddInput, CompanionAddResult, StudioView } from "@uniqbit/mate-core/studio";
 
 import type { ShellCompanion, ShellData } from "../server/shell";
 
 await import("../../test/dom");
 
-/** Companions the fake server deleted. */
+/** Companions the fake server deleted, what it was asked to add, and what it answers next. */
 const deleted: string[] = [];
+const asked: CompanionAddInput[] = [];
+let answers: CompanionAddResult[] = [];
 mock.module("../server/companions", () => ({
   deleteCompanion: async ({ data }: { data: { companion: string } }) => {
     deleted.push(data.companion);
     return { deletedFolder: true };
+  },
+  addCompanion: async ({ data }: { data: CompanionAddInput }) => {
+    asked.push(data);
+    return answers.shift() ?? { ok: true, digest: "abcdef0123", existing: false };
   },
 }));
 const { act, render } = await import("@testing-library/react");
@@ -71,7 +77,7 @@ const viewLinks = (markup: string) =>
   );
 
 /** `element` at `path` inside a router whose views are the paths it may navigate to. */
-async function mount(element: () => React.ReactNode, path: string) {
+async function mount(element: () => React.ReactNode, path = "/") {
   const root = router.createRootRoute({
     component: () => <TooltipProvider>{element()}</TooltipProvider>,
   });
@@ -456,5 +462,181 @@ describe("the top bar", () => {
     );
     expect(without).not.toContain('id="terminal-drawer-open"');
     expect(withTerminal).toContain('id="terminal-drawer-open"');
+  });
+});
+
+const COMPANION_URL = "https://git.acme.test/acme/acme-companion.git";
+const SECRET = "acme-dom-git-secret";
+
+/** Types into a controlled input the way a browser does. */
+async function typeInto(input: HTMLInputElement, text: string) {
+  await act(async () => {
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    set.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+const addDialog = (doc: Document) => doc.querySelector('[data-slot="dialog-content"]');
+const submitAdd = async (doc: Document) => {
+  await act(async () =>
+    addDialog(doc)!
+      .querySelector<HTMLFormElement>("form:not([data-git-token-form])")!
+      .requestSubmit(),
+  );
+  await settle();
+};
+const openAdd = async (doc: Document) => {
+  await act(async () => doc.querySelector<HTMLButtonElement>("[data-add-companion]")!.click());
+  await settle();
+};
+
+afterEach(() => {
+  asked.length = 0;
+  answers = [];
+});
+
+describe("Add companion", () => {
+  it("is offered only in factory mode with the write path", async () => {
+    for (const [factoryMode, writable] of [
+      [false, true],
+      [true, false],
+      [false, false],
+    ] as const) {
+      // oxlint-disable-next-line no-await-in-loop -- one page at a time
+      const { page, doc } = await mount(
+        () => <CompanionPicker companions={[acme]} writable={writable} factoryMode={factoryMode} />,
+        "/",
+      );
+      expect(doc.querySelector("[data-add-companion]")).toBeNull();
+      page.unmount();
+    }
+    const { page, doc } = await mount(
+      () => <CompanionPicker companions={[acme]} writable factoryMode />,
+      "/",
+    );
+    expect(doc.querySelector("[data-add-companion]")).not.toBeNull();
+    page.unmount();
+  });
+
+  it("adds by Git URL and selects the new companion", async () => {
+    const { doc, instance } = await mount(
+      () => <CompanionPicker companions={[acme]} writable factoryMode />,
+      "/",
+    );
+    await openAdd(doc);
+    await typeInto(addDialog(doc)!.querySelector<HTMLInputElement>("input")!, COMPANION_URL);
+    await submitAdd(doc);
+    expect(asked).toEqual([{ kind: "url", url: COMPANION_URL }]);
+    expect(instance.state.location.search).toMatchObject({ companion: "abcdef0123" });
+  });
+
+  it("adds by local path in its own mode", async () => {
+    const { doc } = await mount(() => <CompanionPicker companions={[]} writable factoryMode />);
+    await openAdd(doc);
+    const tabs = [...addDialog(doc)!.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Git URL", "Local path"]);
+    await act(async () => tabs[1]!.click());
+    await typeInto(
+      addDialog(doc)!.querySelector<HTMLInputElement>("input")!,
+      "/srv/acme-companion",
+    );
+    await submitAdd(doc);
+    expect(asked).toEqual([{ kind: "path", path: "/srv/acme-companion" }]);
+  });
+
+  it("shows a refusal in place and selects nothing", async () => {
+    answers = [{ ok: false, reason: "That repository is not a companion: nothing to register." }];
+    const { doc, instance } = await mount(
+      () => <CompanionPicker companions={[acme]} writable factoryMode />,
+      "/",
+    );
+    await openAdd(doc);
+    await typeInto(addDialog(doc)!.querySelector<HTMLInputElement>("input")!, COMPANION_URL);
+    await submitAdd(doc);
+    expect(addDialog(doc)!.querySelector('[role="alert"]')!.textContent).toContain(
+      "not a companion",
+    );
+    expect(instance.state.location.search).not.toMatchObject({ companion: "abcdef0123" });
+  });
+
+  it("offers the token form for the refused host and organization, then retries", async () => {
+    answers = [
+      {
+        ok: false,
+        reason: "authentication to git.acme.test/acme failed",
+        tokenKey: "git.acme.test/acme",
+      },
+    ];
+    const calls: Array<{ method: string; body: string | null }> = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({
+        method: init?.method ?? "GET",
+        body: typeof init?.body === "string" ? init.body : null,
+      });
+      return Response.json({ tokens: [] });
+    }) as typeof fetch;
+    try {
+      const { doc, instance } = await mount(() => (
+        <CompanionPicker companions={[acme]} writable factoryMode />
+      ));
+      await openAdd(doc);
+      await typeInto(addDialog(doc)!.querySelector<HTMLInputElement>("input")!, COMPANION_URL);
+      await submitAdd(doc);
+      const token = addDialog(doc)!.querySelector<HTMLFormElement>("[data-git-token-form]")!;
+      expect(token.querySelector<HTMLInputElement>('[name="key"]')!.value).toBe(
+        "git.acme.test/acme",
+      );
+
+      token.querySelector<HTMLInputElement>('[name="token"]')!.value = SECRET;
+      await act(async () => token.requestSubmit());
+      await settle();
+      expect(calls.find((call) => call.method === "PUT")!.body).toBe(
+        JSON.stringify({ key: "git.acme.test/acme", token: SECRET }),
+      );
+      expect(asked).toEqual([
+        { kind: "url", url: COMPANION_URL },
+        { kind: "url", url: COMPANION_URL },
+      ]);
+      expect(instance.state.location.search).toMatchObject({ companion: "abcdef0123" });
+      expect(doc.body.innerHTML).not.toContain(SECRET);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("is offered in the switcher too", async () => {
+    const { doc } = await mount(
+      () => <CompanionSwitcher companions={[acme]} selected={acme} writable factoryMode />,
+      `/?companion=${acme.digest}`,
+    );
+    await act(async () => doc.querySelector<HTMLButtonElement>("#studio-companion")!.click());
+    await settle();
+    expect(doc.querySelector("[data-add-companion]")?.textContent).toContain("Add companion");
+  });
+});
+
+describe("removing a companion in the factory", () => {
+  it("says a companion outside the companions directory is only unregistered", async () => {
+    const outside: ShellCompanion = { ...acme, path: "/srv/acme-companion", keepsFolder: true };
+    const { doc } = await mount(() => (
+      <CompanionPicker companions={[outside]} writable factoryMode />
+    ));
+    await act(async () =>
+      doc.querySelector<HTMLButtonElement>('[aria-label="Actions for acme-companion"]')!.click(),
+    );
+    await settle();
+    const remove = [
+      ...doc.querySelectorAll<HTMLButtonElement>('[data-slot="popover-content"] button'),
+    ].find((item) => item.textContent === "Remove from list…")!;
+    await act(async () => remove.click());
+    await settle();
+    expect(addDialog(doc)!.textContent).toContain("left where it is");
+    expect(addDialog(doc)!.querySelector("input")).toBeNull();
+    const confirm = [...addDialog(doc)!.querySelectorAll("button")].find(
+      (button) => button.textContent === "Remove",
+    )!;
+    expect(confirm.disabled).toBe(false);
   });
 });

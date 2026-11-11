@@ -4,6 +4,7 @@ import {
   type CredentialStore,
   NO_CREDENTIAL,
 } from "./credential-store";
+import { checkedGitKey, checkedGitToken, GitCredentialStore } from "./git-credential-store";
 import { FactoryError } from "./ids";
 import type { WorksetRuntime } from "./runtime";
 
@@ -11,7 +12,7 @@ export { AGENT_CREDENTIAL_NAMES, takeAgentCredential } from "./credential-store"
 
 /**
  * The factory broker's API: the Workset operations and the Workset agent
- * credential, over HTTP on a Unix socket, and nothing else. It is the boundary
+ * credential and Git tokens, over HTTP on a Unix socket, and nothing else. It is the boundary
  * between processes running as the unprivileged user and the inner Docker
  * daemon, so every request is checked field by field and an unexpected field is
  * refused: callers cannot choose a mount, image, privilege or environment.
@@ -37,6 +38,7 @@ export interface BrokerHandler {
 export function brokerHandler(
   runtime: WorksetRuntime,
   credentials: CredentialStore,
+  gitTokens: GitCredentialStore = new GitCredentialStore(null, null),
 ): BrokerHandler {
   return async (operation, body) => {
     switch (operation) {
@@ -80,6 +82,24 @@ export function brokerHandler(
       case "credential.clear":
         only(body, []);
         credentials.clear();
+        return {};
+      case "companion.clone":
+        only(body, ["url"]);
+        return runtime.cloneCompanion(body.url);
+      case "remote.check":
+        only(body, ["url"]);
+        await runtime.checkRemote(body.url);
+        return {};
+      case "git.token.list":
+        only(body, []);
+        return { tokens: gitTokens.status() };
+      case "git.token.set":
+        only(body, ["key", "token"]);
+        gitTokens.set(checkedGitKey(body.key), checkedGitToken(body.token));
+        return {};
+      case "git.token.clear":
+        only(body, ["key"]);
+        gitTokens.clear(checkedGitKey(body.key));
         return {};
       case "exec": {
         only(body, ["id", "command", "cwd", "agent", "stdin"]);

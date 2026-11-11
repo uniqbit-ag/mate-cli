@@ -5,12 +5,17 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { addWorktree, initBareRepo, initRepo } from "../../test/git-checkouts";
-import { servingClaudeWrapRoot } from "./serving-claude-wrap";
+import { otherServingClaudeWrapRoot, servingClaudeWrapRoot } from "./serving-claude-wrap";
 
+// Root ignores mode bits, so an unwritable folder cannot be made.
+const asRoot = process.getuid?.() === 0;
 const roots: string[] = [];
 
 afterEach(() => {
-  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
+  for (const root of roots.splice(0)) {
+    fs.chmodSync(root, 0o755);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 function tempRoot(): string {
@@ -63,5 +68,27 @@ describe("servingClaudeWrapRoot", () => {
     addWorktree(initRepo(path.join(root, "acme", "api")), path.join(mirrored, "api"));
 
     expect(servingClaudeWrapRoot(mirrored, "darwin")).toBe(mirrored);
+  });
+
+  test.skipIf(asRoot)("a main worktree Mate cannot write does not serve", () => {
+    const root = tempRoot();
+    const main = initRepo(path.join(root, "acme"));
+    const sibling = addWorktree(main, path.join(root, "acme-fix"));
+    fs.chmodSync(main, 0o555);
+
+    try {
+      expect(otherServingClaudeWrapRoot(sibling, "darwin")).toBeNull();
+      expect(servingClaudeWrapRoot(sibling, "darwin")).toBe(sibling);
+    } finally {
+      fs.chmodSync(main, 0o755);
+    }
+  });
+
+  test("a writable main worktree serves", () => {
+    const root = tempRoot();
+    const main = initRepo(path.join(root, "acme"));
+    const sibling = addWorktree(main, path.join(root, "acme-fix"));
+
+    expect(otherServingClaudeWrapRoot(sibling, "darwin")).toBe(main);
   });
 });

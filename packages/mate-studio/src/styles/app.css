@@ -301,6 +301,30 @@
     background: none;
     padding: 0;
   }
+  /* Over the terminal until the session's first output, or with why it did not start. */
+  .outcome-terminal-frame {
+    position: relative;
+  }
+  .outcome-terminal-cover {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 12px;
+    padding: 24px;
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 0.875rem;
+    text-align: center;
+  }
+  .outcome-terminal-cover p {
+    margin: 0;
+  }
+  .outcome-terminal-cover[data-terminal-phase="refused"] {
+    color: var(--bad);
+  }
   /* wterm styles itself as a floating card; here it is the view's plain surface. */
   .terminal-view.wterm,
   .terminal-view .wterm,
@@ -730,13 +754,13 @@
     display: flex;
     align-items: flex-start;
     gap: 12px;
-    padding: 16px 20px 14px;
+    padding: 16px 24px 12px;
     border-bottom: 1px solid var(--border);
   }
   .outcome-dialog-heading {
     display: grid;
     flex: 1;
-    gap: 6px;
+    gap: 8px;
     min-width: 0;
   }
   .outcome-dialog-heading h2 {
@@ -758,7 +782,7 @@
   .outcome-dialog-main > * {
     min-width: 0;
     margin: 0;
-    padding: 16px 20px;
+    padding: 16px 24px;
     border-bottom: 1px solid var(--border-soft);
   }
   .outcome-dialog-main h3 {
@@ -766,52 +790,180 @@
     font-size: 0.8125rem;
     font-weight: 600;
   }
-  .outcome-dialog-attention {
+  /* The focus block: what is happening or asked of the person; needs-you kinds take a soft tint. */
+  .outcome-focus {
     display: grid;
-    gap: 10px;
-    background: var(--warn-soft);
+    gap: 12px;
   }
-  .outcome-dialog-attention h3 {
+  .outcome-focus[data-kind] {
+    background: color-mix(in srgb, var(--warn) 6%, var(--panel));
+  }
+  .outcome-focus[data-kind] h3 {
+    margin: 0;
     color: var(--warn);
-    font-size: 0.92rem;
+    font-size: 0.875rem;
   }
-  .outcome-dialog-attention[data-kind="problem"] {
+  .outcome-focus[data-kind="problem"] {
     background: var(--bad-soft);
   }
-  .outcome-dialog-attention[data-kind="problem"] h3 {
+  .outcome-focus[data-kind="problem"] h3 {
     color: var(--bad);
   }
-  .outcome-dialog-attention[data-kind="control"] {
+  .outcome-focus[data-kind="control"] {
     background: var(--why-soft);
   }
-  .outcome-dialog-attention[data-kind="control"] h3 {
+  .outcome-focus[data-kind="control"] h3 {
     color: var(--why);
+  }
+  .outcome-focus[data-kind] button:not(.factory-primary) {
+    border-color: color-mix(in srgb, var(--border) 60%, var(--text));
+    background: var(--bg);
   }
   .outcome-attention-hint {
     margin: 0;
     color: var(--muted);
     font-size: 0.8125rem;
   }
-  .outcome-dialog-status {
-    display: grid;
-    gap: 8px;
-  }
   .outcome-situation {
     margin: 0;
-    font-size: 0.92rem;
+    font-size: 0.9375rem;
   }
   .outcome-next {
-    margin: 0;
+    margin-left: 8px;
+    color: var(--muted);
     font-size: 0.875rem;
   }
-  .outcome-next .muted {
-    margin-right: 6px;
+  /* Fixed, so the panel does not jump as the output or progress comes and goes: it holds the
+     step (2 lines), progress and the last 3 output lines (2 lines each). */
+  .outcome-working {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    align-content: start;
+    height: 15rem;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+  }
+  .outcome-working-step {
+    display: -webkit-box;
+    margin: 0;
+    overflow: hidden;
+    font-weight: 600;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .outcome-tail {
+    display: grid;
+    grid-row: 3;
+    align-content: start;
+    gap: 4px;
+    min-height: 0;
+    margin: 0;
+    overflow: hidden;
+    padding: 0;
+    list-style: none;
     color: var(--muted);
+    font: 0.75rem / 1.5 var(--font-mono);
+  }
+  /* A line of agent output can be a whole question; two lines, then an ellipsis. */
+  .outcome-tail li {
+    display: -webkit-box;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .outcome-plan,
+  .outcome-request {
+    display: grid;
+    gap: 12px;
+  }
+  .outcome-read {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 0.8125rem;
+  }
+  .outcome-read .muted {
+    color: var(--muted);
+  }
+  .outcome-control-note {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+  }
+  .outcome-dialog-state[data-activity="control"] {
+    color: var(--why);
+  }
+  /* Activity, Request and Details: one line until opened. */
+  .outcome-dialog-main > .outcome-row-fold {
+    padding-block: 12px;
+  }
+  .outcome-row-fold > summary {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    cursor: pointer;
+    list-style: none;
+  }
+  .outcome-row-fold > summary::-webkit-details-marker {
+    display: none;
+  }
+  .outcome-row-fold-label {
+    flex: none;
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+  .outcome-row-fold-summary {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 0.8125rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .outcome-row-fold > summary::after {
+    content: "›";
+    color: var(--muted);
+    transition: transform 150ms;
+  }
+  .outcome-row-fold[open] > summary::after {
+    transform: rotate(90deg);
+  }
+  .outcome-row-fold-body {
+    display: grid;
+    gap: 16px;
+    padding-top: 12px;
+  }
+  .outcome-dialog-foot {
+    display: grid;
+    gap: 8px;
+    border-bottom: 0 !important;
+  }
+  .outcome-dialog-foot button:not(.factory-primary) {
+    min-height: 28px;
+    border-color: transparent;
+    background: transparent;
+    color: var(--muted);
+  }
+  .outcome-dialog-foot button:not(.factory-primary):hover {
+    color: var(--text);
+  }
+  .outcome-dialog-foot .outcome-actions {
+    gap: 4px 8px;
   }
   .outcome-checks {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 14px;
+    gap: 4px 16px;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -827,12 +979,11 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px 16px;
+    gap: 8px 16px;
     font-size: 0.875rem;
   }
   .outcome-actions,
-  .factory-sheet-actions,
-  .outcome-control-bar {
+  .factory-sheet-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -841,13 +992,9 @@
   .outcome-actions:empty {
     display: none;
   }
-  .outcome-control-offer {
-    display: grid;
-    gap: 6px;
-  }
   .factory-sheet {
     display: grid;
-    gap: 10px;
+    gap: 12px;
   }
   .factory-action {
     display: grid;
@@ -856,6 +1003,24 @@
   }
   .outcome-actions .factory-action {
     display: contents;
+  }
+  .outcome-actions .factory-confirm {
+    display: grid;
+    flex-basis: 100%;
+  }
+  .factory-confirm-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .factory-home button.factory-delete,
+  .outcome-dialog .factory-delete {
+    color: var(--bad);
+  }
+  .factory-home button.factory-delete:hover,
+  .outcome-dialog .factory-delete:hover {
+    border-color: var(--bad);
+    background: var(--bad-soft);
+    color: var(--bad);
   }
   .factory-problems {
     margin: 0;
@@ -871,7 +1036,7 @@
   }
   .factory-options {
     display: grid;
-    gap: 6px;
+    gap: 8px;
   }
   .factory-option button {
     width: 100%;
@@ -909,7 +1074,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 10px;
+    padding: 8px 12px;
     border: 1px solid var(--border);
     border-radius: 6px;
     font-size: 0.875rem;
@@ -922,6 +1087,10 @@
     font-size: 0.75rem;
   }
   .factory-review-reports {
+    display: grid;
+    gap: 8px;
+  }
+  .factory-review-docs {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -947,10 +1116,24 @@
   .outcome-report-head a {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     margin-left: auto;
     font-size: 0.8125rem;
     white-space: nowrap;
+  }
+  .outcome-doc {
+    display: grid;
+    flex: 1;
+    gap: 16px;
+    align-content: start;
+    min-height: 0;
+    padding: 16px 24px;
+    overflow: auto;
+  }
+  .outcome-doc h3 {
+    margin: 0 0 8px;
+    font-size: 0.8125rem;
+    font-weight: 600;
   }
   .outcome-report-frame {
     flex: 1;
@@ -965,7 +1148,7 @@
   }
   .outcome-history {
     display: grid;
-    gap: 6px;
+    gap: 8px;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -974,7 +1157,7 @@
   .outcome-history li {
     display: grid;
     grid-template-columns: 3.5rem minmax(0, 1fr);
-    gap: 10px;
+    gap: 12px;
   }
   .factory-age {
     color: var(--muted);
@@ -993,7 +1176,7 @@
   .outcome-section-head {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     margin-bottom: 8px;
   }
   .outcome-section-head h3 {
@@ -1049,16 +1232,6 @@
     bottom: 10px;
     border-color: var(--accent) !important;
   }
-  .outcome-dialog-rail summary {
-    color: var(--muted);
-    font-size: 0.8125rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .outcome-dialog-rail[open] {
-    display: grid;
-    gap: 20px;
-  }
   .outcome-facts {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
@@ -1082,6 +1255,19 @@
     display: grid;
     gap: 14px;
     padding: 16px 20px;
+  }
+  .git-access-keys {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .git-access-keys li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
   }
   .agents-tabs {
     display: inline-flex;

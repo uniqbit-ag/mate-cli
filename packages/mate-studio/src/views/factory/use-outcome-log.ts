@@ -93,10 +93,10 @@ export function logReducer(state: LogState, event: LogEvent): LogState {
 }
 
 /**
- * Follows one Outcome's run log for as long as its dialog is open. The stream keeps going
+ * Follows one Outcome's run log for as long as its dialog is open; `null` follows none. The stream keeps going
  * across stages; when a stage ends the board's own update shows the new state in place.
  */
-export function useOutcomeLog(url: string): { pieces: LogPiece[]; ended: boolean } {
+export function useOutcomeLog(url: string | null): { pieces: LogPiece[]; ended: boolean } {
   const [state, dispatch] = useReducer(
     (current: LogState & { ended: boolean }, event: LogEvent | { type: "reset" }) =>
       event.type === "reset"
@@ -105,8 +105,8 @@ export function useOutcomeLog(url: string): { pieces: LogPiece[]; ended: boolean
     { ...EMPTY_LOG, ended: false },
   );
   useEffect(() => {
-    if (typeof EventSource === "undefined") return;
     dispatch({ type: "reset" });
+    if (!url || typeof EventSource === "undefined") return;
     const source = new EventSource(url);
     source.addEventListener("message", (message) => {
       try {

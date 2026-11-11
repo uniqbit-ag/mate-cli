@@ -23,13 +23,23 @@ export interface AgentLaunchOptions {
 /** A Claude session id; anything else never reaches the command line. */
 export const CLAUDE_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** The managed launch's command and its Mate options; the agent's own arguments follow. */
+function managedLaunch(mode: "--prepare-only" | "--prepared", noGit?: boolean): string[] {
+  return ["mate", "claude", "--", "--yes", mode, ...(noGit ? ["--no-git"] : [])];
+}
+
+/** The launch's preparation (wrap, index) run through exec, so the attached terminal shows none of it. */
+export function prepareCommand(options: Pick<AgentLaunchOptions, "noGit"> = {}): string[] {
+  return managedLaunch("--prepare-only", options.noGit);
+}
+
 /** The managed launch inside the Workset container, with the server-built first turn. */
 export function agentCommand(
   start: AttachStart,
   intent: string,
   options: AgentLaunchOptions = {},
 ): string[] {
-  const launch = ["mate", "claude", "--", "--yes", ...(options.noGit ? ["--no-git"] : [])];
+  const launch = managedLaunch("--prepared", options.noGit);
   if (start === "continue") return [...launch, "--continue"];
   if (start === "resume") {
     if (!options.resumeSession || !CLAUDE_SESSION_ID.test(options.resumeSession)) {

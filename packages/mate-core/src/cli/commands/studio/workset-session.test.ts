@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -29,6 +30,7 @@ function fakeClient(
     credential?: string | null;
     conversation?: boolean;
     linkFails?: boolean;
+    prepareFails?: string;
     warnings?: string[];
   } = {},
 ) {
@@ -44,6 +46,11 @@ function fakeClient(
     exec: async (request: { command: string[] }) => {
       calls.push(["exec", request.command]);
       if (request.command[0] === "node") return { status: 0, stdout: "", stderr: "" };
+      if (request.command[1] === "claude") {
+        return options.prepareFails
+          ? { status: 1, stdout: "", stderr: `${options.prepareFails}\nstack line` }
+          : { status: 0, stdout: "wrapped acme/web for Claude\nSyncing tokensave...", stderr: "" };
+      }
       if (request.command[1] === "working") {
         return options.linkFails
           ? { status: 1, stdout: "", stderr: "acme link broke" }
@@ -135,6 +142,8 @@ describe("resolving a Workset session", () => {
     ]);
     // Interactive Claude would otherwise open on its login screen.
     expect(calls[2]![1]).toEqual(["node", "-e", expect.stringContaining("hasCompletedOnboarding")]);
+    // The wrap and the index run here, not in the terminal.
+    expect(calls[3]![1]).toEqual(["mate", "claude", "--", "--yes", "--prepare-only"]);
     expect(result).toEqual({
       companionPath: companion,
       workset: { id: "acme-login", title: "Login with SSO" },
@@ -195,6 +204,87 @@ describe("resolving a Workset session", () => {
       SESSION,
     );
     expect(result).toEqual({ reason: "linking the worktree failed: acme link broke" });
+  });
+
+  test("the preparation's output is not in the terminal's argv or notice", async () => {
+    record("acme-login", "repositories: [acme/web]\n");
+    const result = await resolver(fakeClient().client)("acme-login", null, SESSION);
+    expect(JSON.stringify(result)).not.toContain("wrapped");
+    expect(JSON.stringify(result)).not.toContain("Syncing");
+    expect("notice" in result).toBe(false);
+    expect("argv" in result && result.argv).not.toContain("--prepare-only");
+  });
+
+  test("a failed preparation is refused with its first line and starts no terminal", async () => {
+    record("acme-login", "repositories: [acme/web]\nstage: explore\n");
+    const result = await resolver(fakeClient({ prepareFails: "acme wrap broke" }).client)(
+      "acme-login",
+      null,
+      SESSION,
+    );
+    expect(result).toEqual({
+      reason: "the Workset's session could not be prepared: acme wrap broke",
+    });
+    // Explore change is not recorded as started by a session that never opened.
+    const saved = parse(
+      fs.readFileSync(path.join(companion, "worksets", "acme-login.yaml"), "utf8"),
+    );
+    expect(saved.exploreStartedAt).toBeUndefined();
+  });
+
+  test("the settings script trusts only the worktree it runs in and keeps every other key", async () => {
+    record("acme-login", "repositories: [acme/web]\n");
+    const { client, calls } = fakeClient();
+    await resolver(client)("acme-login", null, SESSION);
+    const script = (calls[2]![1] as string[])[2]!;
+
+    const home = path.join(root, "home");
+    const worktree = path.join(root, "worktree");
+    fs.mkdirSync(home);
+    fs.mkdirSync(worktree);
+    const file = path.join(home, ".claude.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        theme: "dark",
+        projects: { "/elsewhere": { hasTrustDialogAccepted: false, allowedTools: ["Read"] } },
+      }),
+    );
+    const run = () =>
+      spawnSync("node", ["-e", script], { cwd: worktree, env: { ...process.env, HOME: home } });
+
+    expect(run().status).toBe(0);
+    const merged = JSON.parse(fs.readFileSync(file, "utf8"));
+    expect(merged).toEqual({
+      theme: "dark",
+      hasCompletedOnboarding: true,
+      projects: {
+        "/elsewhere": { hasTrustDialogAccepted: false, allowedTools: ["Read"] },
+        [fs.realpathSync(worktree)]: { hasTrustDialogAccepted: true },
+      },
+    });
+    // Already prepared: a second run changes nothing.
+    const before = fs.readFileSync(file, "utf8");
+    expect(run().status).toBe(0);
+    expect(fs.readFileSync(file, "utf8")).toBe(before);
+
+    // A blank file is empty config; a damaged one is kept beside it and replaced.
+    fs.writeFileSync(file, "");
+    expect(run().status).toBe(0);
+    expect(JSON.parse(fs.readFileSync(file, "utf8")).hasCompletedOnboarding).toBe(true);
+    for (const damaged of ["{ truncated", "[1]"]) {
+      for (const entry of fs.readdirSync(home)) {
+        if (entry.includes(".damaged-")) fs.rmSync(path.join(home, entry));
+      }
+      fs.writeFileSync(file, damaged);
+      const result = run();
+      expect(result.status).toBe(0);
+      expect(result.stderr.toString()).toContain("no JSON object");
+      expect(JSON.parse(fs.readFileSync(file, "utf8")).hasCompletedOnboarding).toBe(true);
+      const kept = fs.readdirSync(home).filter((entry) => entry.includes(".damaged-"));
+      expect(kept).toHaveLength(1);
+      expect(fs.readFileSync(path.join(home, kept[0]!), "utf8")).toBe(damaged);
+    }
   });
 
   test("a Studio without companion Git sync starts the session without it", async () => {

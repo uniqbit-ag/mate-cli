@@ -85,7 +85,13 @@ function deps(overrides: Partial<CompanionPayloadDeps> = {}): CompanionPayloadDe
     canonicalSpecsFor: async () => [],
     hasArchivedProposal: async () => true,
     readWorksets: async () => ({ worksets: [], problems: [] }),
-    linkedRepositoryCatalog: async () => ({ identities: [], aliases: new Map() }),
+    linkedRepositoryCatalog: async () => ({
+      identities: [],
+      aliases: new Map(),
+      kinds: new Map(),
+      keys: new Map(),
+      problem: null,
+    }),
     ticketFormat: async () => "none",
     ...overrides,
   };
@@ -214,6 +220,9 @@ describe("assembleCompanionPayload", () => {
         linkedRepositoryCatalog: async () => ({
           identities: ["acme-org/acme"],
           aliases: new Map([["acme", "acme-org/acme"]]),
+          kinds: new Map(),
+          keys: new Map(),
+          problem: null,
         }),
       }),
     );
@@ -487,7 +496,13 @@ describe("Worksets in the payload", () => {
         archiveAnchors: async () => ["2026-10-01-acme-shipped", "2026-10-02-acme-unmerged"],
         discoverArchives: async () => [archive("2026-10-01-acme-shipped")],
         archiveMergeSettled: async (_companion, anchor) => anchor === "2026-10-01-acme-shipped",
-        linkedRepositoryCatalog: async () => ({ identities: ["acme/web"], aliases: new Map() }),
+        linkedRepositoryCatalog: async () => ({
+          identities: ["acme/web"],
+          aliases: new Map(),
+          kinds: new Map([["acme/web", "linked" as const]]),
+          keys: new Map([["acme/web", "git.acme.test/acme"]]),
+          problem: null,
+        }),
         ticketFormat: async () => "jira",
       }),
     );
@@ -505,6 +520,7 @@ describe("Worksets in the payload", () => {
       { path: "worksets/acme-bad.yaml", reason: "is not a mapping" },
     ]);
     expect(payload.linkedRepositories).toEqual(["acme/web"]);
+    expect(payload.repositoryKeys).toEqual({ "acme/web": "git.acme.test/acme" });
   });
 
   test("Worksets reuse the change list and archives the payload collected", async () => {
