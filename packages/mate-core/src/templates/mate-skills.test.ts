@@ -1267,6 +1267,34 @@ describe("bundled Delivery Path stage skills", () => {
     expect(source).not.toContain("ask once whether this change is delivered through it");
   });
 
+  test("apply in an isolated session offers only worktree options in the main checkout", async () => {
+    const flat = (source: string) => source.replace(/\s+/g, " ");
+    for (const root of [skillsRoot, claudeSkillsRoot]) {
+      const source = flat(await readSkillFrom(root, "mate-apply-change"));
+      const start = source.indexOf("**Isolated session.**");
+      expect(start).toBeGreaterThan(source.indexOf("hence the menu below."));
+      const block = source.slice(start, source.indexOf("- **A branch is already recorded**"));
+      expect(block).toContain(
+        "When the link result's `session.isolated` is `true` (a Claude Code background session outside a linked worktree)",
+      );
+      expect(block).not.toContain("rev-parse");
+      expect(block).toContain("this block overrides the rules below. Write nothing here;");
+      expect(block).toContain("never switch branch in place or offer a direct delivery");
+      expect(block).toContain("An Umbrella Repository keeps its Step 1 handoff");
+      expect(block).toContain("1. **Create a worktree on `defaultBranch`**");
+      expect(block).toContain(
+        '2. **Use the current branch in a worktree** (only when it is not protected): record it with `mate artifact link "<change-name>" --branch "<current>" --json`, then run `mate working worktree --change "<change-name>" --take-branch --enter --json`',
+      );
+      expect(block).toContain("3. **Use another branch in a worktree**");
+      expect(block).not.toContain("4.");
+      expect(block).not.toContain("--direct");
+      expect(block).toContain("git log --oneline HEAD --not --remotes");
+      expect(block).toContain(
+        "report the paths it names, write no code, and ask the developer to commit or stash them",
+      );
+    }
+  });
+
   test("apply in an Umbrella Repository settles the branch per scoped child", async () => {
     const flat = (source: string) => source.replace(/\s+/g, " ");
     for (const root of [skillsRoot, claudeSkillsRoot]) {

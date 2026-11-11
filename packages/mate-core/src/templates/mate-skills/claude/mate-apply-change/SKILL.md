@@ -71,6 +71,34 @@ protected pattern; `mate artifact link` refuses a
 protected branch unless it is recorded as a direct delivery. Mate never asks the forge,
 so a branch only the forge protects looks unprotected; hence the menu below.
 
+**Isolated session.** When the link result's `session.isolated` is `true` (a Claude
+Code background session outside a linked worktree), Claude Code refuses writes here, so
+this block overrides the rules below. Write nothing here; never switch branch in place
+or offer a direct delivery. An Umbrella Repository keeps its Step 1 handoff.
+
+- Where a rule below continues here without asking (the recorded branch is current, on
+  `defaultBranch`, a fresh ticket branch), record that branch when it is not recorded
+  yet, then run `mate working worktree --change "<change-name>" --take-branch --enter --json`.
+  A protected branch recorded as a direct delivery cannot move to a worktree: write
+  nothing, and ask the developer to continue the change in an interactive session (or
+  one the VS Code extension starts) in this checkout.
+- Otherwise name every local commit not on the remote
+  (`git log --oneline HEAD --not --remotes`), say uncommitted edits stay in this
+  checkout, and offer only these worktree options; option 1 is recommended, except
+  option 2 when the current branch is not protected and `ticketCandidate` is set:
+  1. **Create a worktree on `defaultBranch`**: option 2 below, with its ticket rule. When
+     `defaultBranch` is null and nothing is recorded, ask for a branch name and use
+     option 3 with it.
+  2. **Use the current branch in a worktree** (only when it is not protected): record it
+     with `mate artifact link "<change-name>" --branch "<current>" --json`, then run
+     `mate working worktree --change "<change-name>" --take-branch --enter --json`.
+  3. **Use another branch in a worktree**: the user names it, as in option 4 below.
+     Record it with `mate artifact link "<change-name>" --branch "<name>" --json` without
+     switching, then run `mate working worktree --change "<change-name>" --enter --json`.
+- Follow `enter` as option 2 below says. When `mate working worktree` refuses because
+  this checkout has uncommitted changes to tracked files, report the paths it names,
+  write no code, and ask the developer to commit or stash them before answering again.
+
 - **A branch is already recorded** and it is the current branch → continue. When the
   current branch differs and `git worktree list --porcelain` shows the recorded branch
   checked out in a linked worktree, run

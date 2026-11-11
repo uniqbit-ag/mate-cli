@@ -105,6 +105,13 @@ runs in a terminal and stops when that terminal closes. A Claude session
 running in its own terminal outside the service has neither Attach nor Stop
 in the sidebar; return to its terminal.
 
+A Claude session started from the sidebar edits the checkout it starts in, the
+main checkout included, like an interactive session. Claude Code otherwise
+keeps a background session out of the main checkout until it enters a
+[worktree](/docs/concepts/worktrees); the sidebar turns that isolation off for
+its own sessions only (`--settings` with `worktree.bgIsolation` `none`). A
+`claude --bg` session you start in a terminal keeps your Claude Code setting.
+
 OpenCode 2.x uses a Mate-managed server shared by the repository and its
 worktrees. Closing the client terminal does not stop its running turn. After
 an hour without a running turn, the server shuts down; the conversation stays
@@ -138,5 +145,6 @@ parallel edits to those files.
 - **VSIX does not match the digest:** nothing was installed. A cached copy was already removed; rerun `mate vscode setup` to download a fresh one. If a fresh download does not match, check the npm registry configured for `@uniqbit`, then rerun. Do not install the rejected file with `--vsix`.
 - **CLI older than extension:** update Mate, then rerun `mate vscode setup` so versions match.
 - **Session missing:** only sidebar-started sessions are listed; also check Older, whether the worktree still exists, and whether its branch was merged.
+- **"Error writing file" in a Claude session:** the session was started outside the sidebar (or by an extension older than this behavior) in the main checkout, where Claude Code blocks background sessions from writing. Start it from the sidebar, or from a worktree.
 - **Agent keeps working after closing terminal:** attach again, or explicitly Stop it; closing a background attachment is not cancellation.
 - **Worktree lacks Mate guidance:** run `mate opencode` or `mate wrap` there before using plain OpenCode.
