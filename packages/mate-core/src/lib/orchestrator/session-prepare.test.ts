@@ -343,6 +343,25 @@ describe("attended Claude", () => {
     ]);
   });
 
+  test("a Claude launch reports the launch pass's manifest warnings once", async () => {
+    sessionPrepareDeps.projectLaunch = mock(async () => ({
+      root: "",
+      scope: "launch" as const,
+      outcomes: [],
+      warnings: ["acme ignored record", "acme shadowed"],
+    }));
+
+    const result = await prepareSession({
+      runtime: "claude",
+      companionPath,
+      repository,
+      mode: "attended",
+      config,
+    });
+
+    expect(result.warnings).toEqual(["acme ignored record", "acme shadowed"]);
+  });
+
   test("a non-degradable projection failure fails the prepare", async () => {
     sessionPrepareDeps.projectLaunch = mock(async () => ({
       root: "",

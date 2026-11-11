@@ -104,6 +104,7 @@ When Git auto mode is enabled, Mate fetches the configured upstream and merges
 it before syncing managed companion files. Resolve unfinished operations or
 conflicts in the companion repository, then retry the launch.
 `mate companion sync` runs the same synchronization without launching an agent.
+Mate does not synchronize an upstream whose remote or branch name starts with `-`; set another upstream with `git branch --set-upstream-to <remote>/<branch>`.
 
 To bypass synchronization for one launch:
 
@@ -202,6 +203,48 @@ in the background, fast-forward only, and cannot prompt. A diverged history, a
 local edit the update would overwrite, or an unreachable remote leaves the session
 on the current companion with this warning. Restart with the managed launch the
 warning names (`mate opencode` or `mate claude`); its attended sync can resolve it.
+
+## Warnings About `.mate/runtime-documents.json`
+
+`.mate/runtime-documents.json` is Mate's record of what a wrap placed. Mate reads
+it as data and acts only on its own destinations inside the working repository.
+`mate wrap`, `mate unwrap`, `mate session prepare`, `mate claude` and
+`mate working cleanup` warn in three cases. None of them fails the command.
+
+### A record was ignored
+
+```text
+mate: warning: .mate/runtime-documents.json records ../acme.json, which is not a destination mate places; it was ignored and will be dropped on the next write.
+```
+
+The record names a path Mate never places, such as one outside the repository.
+Mate leaves that path alone, and the next wrap rewrites the record without it.
+If you did not edit the file yourself, check where it came from, for example a
+commit in the repository.
+
+### A destination behind a symbolic link was skipped
+
+```text
+mate: warning: .claude/settings.local.json was skipped: .claude is a symbolic link. mate does not follow it out of the Working Repository.
+```
+
+Mate never reads, writes, deletes or prunes through a symbolic link below the
+repository root, so a committed `.claude` or `.opencode` link cannot point its
+changes elsewhere. A symlinked repository root is fine. To wrap the repository,
+replace the link with a real folder and run `mate wrap` again.
+
+### The record is tracked by Git
+
+```text
+mate: warning: .mate/runtime-documents.json is tracked by Git, so its records were ignored and it is left as committed. Untrack it with `git rm --cached .mate/runtime-documents.json`, then wrap again.
+```
+
+While Git tracks the file, Mate reads it as absent and never rewrites or
+deletes it. A wrap still places the documents but records nothing, so
+`mate unwrap` has nothing to withdraw. Run
+`git rm --cached .mate/runtime-documents.json`, commit, and run `mate wrap`
+again. This check needs Git: outside a Git checkout Mate skips it, and the
+other rules still apply.
 
 ## Artifact Write Blocked By The Guardrail
 

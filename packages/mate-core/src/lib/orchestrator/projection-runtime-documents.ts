@@ -1,12 +1,12 @@
-import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 
 import { FRAMEWORK_NAME } from "../../framework";
-import { gitEnvironment } from "../../runtime/companion-git";
+import { gitTracks } from "../../runtime/git-tracked";
+import { repoDestination } from "../../runtime/repo-destination";
 import {
+  CLAUDE_LOCAL_CONFIG_DOCUMENT,
   documentRegions,
   readManifest,
   updateManifest,
@@ -17,6 +17,13 @@ import {
 } from "../../runtime/runtime-document-manifest";
 import { writeAtomic } from "../../runtime/write-atomic";
 import { pruneEmptyAncestors } from "../../tools/setup/utils";
+import {
+  removalWithWarnings,
+  writeWithWarnings,
+  type ProjectionRemovalReport,
+  type ProjectionWriteReport,
+  type ProjectionWriteState,
+} from "./projection-types";
 
 export {
   CLAUDE_LOCAL_CONFIG_DOCUMENT,
@@ -41,23 +48,7 @@ export {
  * else in it belongs to Claude Code.
  */
 export function isExternalDocument(documentPath: string): boolean {
-  return documentPath.startsWith("~/");
-}
-
-const execFileAsync = promisify(execFile);
-
-/** Whether Git tracks the repo-relative path; any `ls-files` failure reads as untracked. */
-async function gitTracks(repoPath: string, relativePath: string): Promise<boolean> {
-  try {
-    const { stdout } = await execFileAsync("git", ["ls-files", "-z", "--", relativePath], {
-      cwd: path.resolve(repoPath),
-      encoding: "utf8",
-      env: gitEnvironment(),
-    });
-    return stdout.split("\0").includes(relativePath);
-  } catch {
-    return false;
-  }
+  return documentPath === CLAUDE_LOCAL_CONFIG_DOCUMENT;
 }
 
 /**
@@ -85,11 +76,19 @@ export const runtimeDocumentDeps = {
   homeDir: (): string => os.homedir(),
 };
 
-function documentPathIn(repoPath: string, documentPath: string): string {
+/** Where a recorded document lives; `root` bounds pruning and is absent for the external one. */
+type DocumentTarget =
+  | { kind: "inside"; path: string; root?: string }
+  | { kind: "refused"; warning: string };
+
+function documentPathIn(repoPath: string, documentPath: string): DocumentTarget {
   if (isExternalDocument(documentPath)) {
-    return path.join(runtimeDocumentDeps.homeDir(), ...documentPath.slice("~/".length).split("/"));
+    return {
+      kind: "inside",
+      path: path.join(runtimeDocumentDeps.homeDir(), ...documentPath.slice("~/".length).split("/")),
+    };
   }
-  return path.join(path.resolve(repoPath), ...documentPath.split("/"));
+  return repoDestination(repoPath, documentPath);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -257,7 +256,7 @@ export async function placeRuntimeDocument(
   repoPath: string,
   documentPath: string,
   documents?: readonly RenderedRuntimeDocument[],
-): Promise<"written" | "current" | "skipped"> {
+): Promise<ProjectionWriteState | ProjectionWriteReport> {
   /**
    * No render at all is not an empty render: a scope that supplies no documents
    * — a launch, which projects this entry without rendering for it — is claiming
@@ -266,13 +265,12 @@ export async function placeRuntimeDocument(
   if (!documents) return "skipped";
 
   const rendered = documents.find((candidate) => candidate.path === documentPath);
-  if (!rendered) {
-    return (await removeRuntimeDocument(repoPath, documentPath)) === "removed"
-      ? "written"
-      : "current";
-  }
+  if (!rendered) return asWrite(await removeRuntimeDocument(repoPath, documentPath));
 
-  const target = documentPathIn(repoPath, documentPath);
+  const destination = documentPathIn(repoPath, documentPath);
+  /** Refused: the record stays, so nothing Mate placed earlier is forgotten. */
+  if (destination.kind === "refused") return { state: "skipped", warnings: [destination.warning] };
+  const target = destination.path;
   const raw = await readRaw(target);
   const document = parseDocument(raw, target);
 
@@ -295,18 +293,31 @@ export async function placeRuntimeDocument(
   return "written";
 }
 
+/** A removal as the write of an entry whose write is that removal. */
+export function asWrite(
+  removed: "removed" | "absent" | ProjectionRemovalReport,
+): ProjectionWriteState | ProjectionWriteReport {
+  if (typeof removed === "string") return removed === "removed" ? "written" : "current";
+  return writeWithWarnings(
+    removed.state === "removed" ? "written" : "current",
+    removed.warnings ?? [],
+  );
+}
+
 /**
  * Strips the recorded regions and leaves the document Mate found; a document
  * left empty is deleted along with any directory Mate created to hold it.
+ * A refused destination keeps its record and warns.
  */
 export async function removeRuntimeDocument(
   repoPath: string,
   documentPath: string,
-): Promise<"removed" | "absent"> {
+): Promise<"removed" | "absent" | ProjectionRemovalReport> {
   const regions = documentRegions(await readManifest(repoPath), documentPath);
   if (!regions) return "absent";
 
-  await revertDocumentOnDisk(repoPath, documentPath, regions);
+  const reverted = await revertDocumentOnDisk(repoPath, documentPath, regions);
+  if (reverted !== null) return removalWithWarnings("absent", [reverted]);
   await updateManifest(repoPath, (manifest) => withoutDocuments(manifest, [documentPath]));
   return "removed";
 }
@@ -315,28 +326,29 @@ export async function removeRuntimeDocument(
  * One document's regions, taken back out of the file that holds them. Knows
  * nothing of the manifest, which is what lets several destinations be reverted
  * at once: every document is a distinct file, while the manifest recording them
- * all is not.
+ * all is not. Answers the refusal warning when the destination is refused.
  */
 async function revertDocumentOnDisk(
   repoPath: string,
   documentPath: string,
   regions: readonly ManagedRegion[],
-): Promise<void> {
-  const target = documentPathIn(repoPath, documentPath);
+): Promise<string | null> {
+  const destination = documentPathIn(repoPath, documentPath);
+  if (destination.kind === "refused") return destination.warning;
+  const target = destination.path;
   const raw = await readRaw(target);
-  if (raw === null) return;
+  if (raw === null) return null;
 
   const document = parseDocument(raw, target);
   for (const region of regions) revertRegion(document, region);
-  if (Object.keys(document).length === 0 && !isExternalDocument(documentPath)) {
+  if (Object.keys(document).length === 0 && destination.root !== undefined) {
     await fs.unlink(target);
     const holder = path.dirname(target);
-    if (holder !== path.resolve(repoPath)) {
-      await pruneEmptyAncestors(holder, path.resolve(repoPath));
-    }
+    if (holder !== destination.root) await pruneEmptyAncestors(holder, destination.root);
   } else {
     await writeAtomic(target, serialize(document));
   }
+  return null;
 }
 
 /**
@@ -355,11 +367,16 @@ async function revertDocumentOnDisk(
 export async function removeRuntimeDocuments(
   repoPath: string,
   documentPaths: readonly string[],
-): Promise<{ removed: string[]; absent: string[]; error?: { document: string; error: Error } }> {
+): Promise<{
+  removed: string[];
+  absent: string[];
+  warnings: string[];
+  error?: { document: string; error: Error };
+}> {
   const manifest = await readManifest(repoPath);
   const recorded = documentPaths.filter((candidate) => documentRegions(manifest, candidate));
   const absent = documentPaths.filter((candidate) => !documentRegions(manifest, candidate));
-  if (recorded.length === 0) return { removed: [], absent };
+  if (recorded.length === 0) return { removed: [], absent, warnings: [] };
 
   const settled = await Promise.allSettled(
     recorded.map((documentPath) =>
@@ -368,6 +385,7 @@ export async function removeRuntimeDocuments(
   );
 
   const removed: string[] = [];
+  const warnings: string[] = [];
   let failure: { document: string; error: Error } | undefined;
   for (const [index, result] of settled.entries()) {
     const documentPath = recorded[index]!;
@@ -378,9 +396,14 @@ export async function removeRuntimeDocuments(
       };
       continue;
     }
+    /** Refused: not a failure, and the record stays. */
+    if (result.value !== null) {
+      warnings.push(result.value);
+      continue;
+    }
     removed.push(documentPath);
   }
 
   await updateManifest(repoPath, (current) => withoutDocuments(current, removed));
-  return { removed, absent, ...(failure ? { error: failure } : {}) };
+  return { removed, absent, warnings, ...(failure ? { error: failure } : {}) };
 }

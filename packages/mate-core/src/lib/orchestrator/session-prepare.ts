@@ -318,6 +318,11 @@ async function projectClaude(
     companionPath: input.companionPath,
     config,
   });
+  // The launch pass rewrites the manifest, so the wrap pass below no longer sees what it dropped.
+  run.warnings.push(
+    ...(result.warnings ?? []),
+    ...result.outcomes.flatMap((outcome) => outcome.warnings ?? []),
+  );
   for (const outcome of result.outcomes) {
     if (outcome.state === "failed" && outcome.degradable) {
       run.warnings.push(entryFailureMessage(outcome, repository.id));
@@ -464,7 +469,7 @@ export async function prepareSession(input: PrepareSessionInput): Promise<Prepar
     ...(input.repository ? { repositoryId: input.repository.id } : {}),
     companionPath: input.companionPath,
     steps: run.steps,
-    warnings: run.warnings,
+    warnings: [...new Set(run.warnings)],
     ...(run.companionChanged ? { companionChanged: true as const } : {}),
     ...(run.failure === undefined ? {} : { failure: run.failure }),
     ...(run.wrapState ? { wrapState: run.wrapState } : {}),

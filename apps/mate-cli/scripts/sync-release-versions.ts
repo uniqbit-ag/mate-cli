@@ -5,9 +5,8 @@
  *
  * Runs from apps/mate-cli as release-it's `after:bump` hook. release-it bumps
  * only the CLI package.json; this script propagates the new version to the
- * other public packages and to every inter-package dependency pin, refreshes
- * the lockfile, and stages the touched files so they land in the release
- * commit.
+ * other public packages and dependency pins, updates and checks the lockfile,
+ * and stages the touched files for the release commit.
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
@@ -68,9 +67,37 @@ const modManifest = JSON.parse(await fs.readFile(modManifestPath, "utf8")) as Re
 modManifest.version = version;
 await fs.writeFile(modManifestPath, JSON.stringify(modManifest, null, 2) + "\n", "utf8");
 
-const install = spawnSync("bun", ["install"], { cwd: workspaceRoot, stdio: "inherit" });
+const lockPath = path.join(workspaceRoot, "bun.lock");
+let lock = await fs.readFile(lockPath, "utf8");
+for (const workspace of ["apps/mate-cli", "apps/mate-vscode", "packages/mate-core"]) {
+  const blockPattern = new RegExp(`^    "${workspace}": \\{[\\s\\S]*?^    \\},`, "m");
+  const block = lock.match(blockPattern)?.[0];
+  if (!block) throw new Error(`bun.lock missing workspace ${workspace}`);
+  const replaceField = (source: string, pattern: RegExp, field: string): string => {
+    if (!pattern.test(source)) throw new Error(`bun.lock missing ${workspace} ${field}`);
+    return source.replace(
+      pattern,
+      (_match, prefix: string) => `${prefix}${JSON.stringify(version)}`,
+    );
+  };
+  let updated = replaceField(block, /^(      "version": )"[^"]*"/m, "version");
+  if (workspace === "apps/mate-cli") {
+    updated = replaceField(
+      updated,
+      /^(        "@uniqbit\/mate-core": )"[^"]*"/m,
+      "@uniqbit/mate-core dependency",
+    );
+  }
+  lock = lock.replace(block, updated);
+}
+await fs.writeFile(lockPath, lock, "utf8");
+
+const install = spawnSync("bun", ["install", "--frozen-lockfile"], {
+  cwd: workspaceRoot,
+  stdio: "inherit",
+});
 if (install.status !== 0) {
-  console.error("sync-release-versions: bun install failed after version sync");
+  console.error("sync-release-versions: bun.lock does not match the bumped manifests");
   process.exit(install.status ?? 1);
 }
 

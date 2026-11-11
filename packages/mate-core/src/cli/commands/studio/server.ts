@@ -170,7 +170,7 @@ export interface StudioServerOptions {
   terminal?: boolean;
   allowedHosts?: string[];
   publicOrigin?: string | null;
-  /** Operator-pinned token; generated per start when absent and Studio is guarded. */
+  /** Operator-pinned token; generated per start when absent. */
   token?: string | null;
   detachMinutes?: number;
   /** Pins every terminal launch to this registered companion. */
@@ -714,7 +714,7 @@ export function createStudioFetch(
     return null;
   };
 
-  const handler = async (
+  const dispatch = async (
     request: Request,
     server?: StudioUpgrader,
   ): Promise<Response | undefined> => {
@@ -866,6 +866,16 @@ export function createStudioFetch(
     return respond(notFound());
   };
 
+  // One place for every response, so refusals and the app's documents cannot miss it.
+  const handler = async (
+    request: Request,
+    server?: StudioUpgrader,
+  ): Promise<Response | undefined> => {
+    const response = await dispatch(request, server);
+    if (!response || new URL(request.url).pathname.startsWith(REPORT_VIEW_PREFIX)) return response;
+    return forbidFraming(response);
+  };
+
   handler.terminal = terminal;
   handler.services = services;
   handler.close = async () => {
@@ -873,6 +883,22 @@ export function createStudioFetch(
     await terminal?.stopAll();
   };
   return handler;
+}
+
+/** A copy, because an app response such as `Response.redirect` has immutable headers. */
+function forbidFraming(response: Response): Response {
+  const headers = new Headers(response.headers);
+  headers.set("x-frame-options", "DENY");
+  const policy = headers.get("content-security-policy")?.replace(/[;\s]+$/, "");
+  headers.set(
+    "content-security-policy",
+    policy ? `${policy}; frame-ancestors 'none'` : "frame-ancestors 'none'",
+  );
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 async function selectedCompanion(

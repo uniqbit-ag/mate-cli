@@ -38,12 +38,12 @@ export async function cleanupWorkingRepository(
   repoPath: string,
   registeredCompanionPaths: string[] = [],
 ): Promise<WorkingRepoCleanupResult> {
-  const { outcomes } = await unproject({ repoPath, registeredCompanionPaths });
+  const { outcomes, warnings: notices } = await unproject({ repoPath, registeredCompanionPaths });
   const removed: string[] = [];
   const updated: string[] = [];
   const retained: string[] = [];
   const kept: WorkingRepoCleanupResult["kept"] = [];
-  const warnings = outcomes.flatMap((entry) => entry.warnings ?? []);
+  const warnings = [...notices, ...outcomes.flatMap((entry) => entry.warnings ?? [])];
   /** A kept entry that still removed some of its lines changed the file. */
   let partlyKept = false;
 

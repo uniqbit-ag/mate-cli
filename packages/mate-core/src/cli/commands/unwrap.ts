@@ -78,6 +78,9 @@ export async function runUnwrapCommand(
     return;
   }
 
+  for (const warning of result.warnings) {
+    console.error(`${FRAMEWORK_NAME}: warning: ${warning}`);
+  }
   const reportKept = () => {
     if (!result.kept) return;
     console.log(

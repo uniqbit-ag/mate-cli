@@ -132,6 +132,16 @@ describe("pruneEmptyAncestors", () => {
 
     await fs.access(root);
   });
+
+  test("stops at the repository boundary, not at a sibling sharing its prefix", async () => {
+    const parent = await makeTempDir("mate-prune-sibling-");
+    const sibling = path.join(parent, "acme-old");
+    await fs.mkdir(path.join(sibling, "empty"), { recursive: true });
+
+    await pruneEmptyAncestors(path.join(sibling, "empty"), path.join(parent, "acme"));
+
+    await fs.access(sibling);
+  });
 });
 
 describe("isCommandOnPath", () => {

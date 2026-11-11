@@ -10,6 +10,7 @@ import {
   copies as recordedCopies,
   documents as recordedDocuments,
   readManifest,
+  readManifestNotices,
 } from "../../runtime/runtime-document-manifest";
 import { removeRuntimeDocuments } from "./projection-runtime-documents";
 import {
@@ -103,6 +104,8 @@ export async function project(
   input: ProjectionInput,
 ): Promise<ProjectionResult> {
   const outcomes: ProjectionEntryOutcome[] = [];
+  /** Read before any entry rewrites the manifest and drops what it ignored. */
+  const warnings = await readManifestNotices(input.repoPath);
   const runtimes = input.runtimes ? new Set(input.runtimes) : null;
   for (const entry of projectionEntries()) {
     if (!entry.scopes.includes(scope)) continue;
@@ -114,7 +117,7 @@ export async function project(
       outcomes.push(outcome(entry, "failed", toError(error)));
     }
   }
-  return { root: repoLocalDirPath(input.repoPath), scope, outcomes };
+  return { root: repoLocalDirPath(input.repoPath), scope, outcomes, warnings };
 }
 
 /**
@@ -124,6 +127,8 @@ export async function project(
  */
 export async function unproject(input: ProjectionRemovalInput): Promise<ProjectionRemovalResult> {
   const outcomes: ProjectionEntryOutcome[] = [];
+  /** Read before the Projection Root, manifest included, is removed. */
+  const warnings = await readManifestNotices(input.repoPath);
   for (const entry of projectionEntries().toReversed()) {
     const { removal } = entry;
     if (removal.by === "entry") {
@@ -142,7 +147,7 @@ export async function unproject(input: ProjectionRemovalInput): Promise<Projecti
       outcomes.push(outcome(entry, "failed", toError(error)));
     }
   }
-  return { root: repoLocalDirPath(input.repoPath), outcomes };
+  return { root: repoLocalDirPath(input.repoPath), outcomes, warnings };
 }
 
 /**
@@ -231,6 +236,8 @@ export type UnwrapResult =
       documents: string[];
       copies: string[];
       kept?: UnwrapKeptLines;
+      /** Ignored manifest records and refused destinations, for the caller to present. */
+      warnings: string[];
     }
   | { kind: "failed"; document: string; error: Error };
 
@@ -262,8 +269,14 @@ export async function unwrapWorkingRuntimeDocuments(
   repoPath: string,
   globalConfigStore: GlobalConfigStore = new GlobalConfigStore(),
 ): Promise<UnwrapResult> {
+  const notices = await readManifestNotices(repoPath);
   const manifest = await readManifest(repoPath);
   const documents = recordedDocuments(manifest);
+  const warningsOf = (outcomes: ProjectionEntryOutcome[], refused: string[] = []): string[] => [
+    ...notices,
+    ...refused,
+    ...outcomes.flatMap((entry) => entry.warnings ?? []),
+  ];
   const copies = Object.keys(recordedCopies(manifest));
   const removeWrapEntries = async (): Promise<ProjectionEntryOutcome[]> =>
     removeWorkingRepositoryUnwrapEntries(repoPath, await globalConfigStore.list());
@@ -283,6 +296,7 @@ export async function unwrapWorkingRuntimeDocuments(
       documents: [],
       copies: removedAny ? copies : [],
       ...keptLines(outcomes),
+      warnings: warningsOf(outcomes),
     };
   }
 
@@ -293,7 +307,7 @@ export async function unwrapWorkingRuntimeDocuments(
    * a surviving key reads back as still wrapped — leaving a launch refused after
    * a successful unwrap.
    */
-  const { removed, error } = await removeRuntimeDocuments(repoPath, documents);
+  const { removed, warnings: refused, error } = await removeRuntimeDocuments(repoPath, documents);
   /** Reported after the successful withdrawals are already durable. */
   if (error) return { kind: "failed", document: error.document, error: error.error };
   const outcomes = await removeWrapEntries();
@@ -305,7 +319,13 @@ export async function unwrapWorkingRuntimeDocuments(
       error: failure.error ?? new Error("wrap entry removal failed"),
     };
   }
-  return { kind: "unwrapped", documents: removed, copies, ...keptLines(outcomes) };
+  return {
+    kind: "unwrapped",
+    documents: removed,
+    copies,
+    ...keptLines(outcomes),
+    warnings: warningsOf(outcomes, refused),
+  };
 }
 
 /**

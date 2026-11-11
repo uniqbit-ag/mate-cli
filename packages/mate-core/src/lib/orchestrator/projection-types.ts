@@ -86,9 +86,10 @@ export interface ProjectionWriteReport {
  * What a `self` removal may return instead of a bare state, when it kept
  * shared exclude lines another Checkout of the clone still needs: `retained`
  * when it kept everything it would have removed, `removed` when only part.
+ * Also how a removal that has only warnings reports them.
  */
 export interface ProjectionRemovalReport {
-  state: "removed" | "retained";
+  state: "removed" | "retained" | "absent";
   /** The kept lines. */
   kept: string[];
   /** Paths of the Checkouts that still need them. */
@@ -98,6 +99,28 @@ export interface ProjectionRemovalReport {
 
 /** What a `self` removal returns. */
 export type ProjectionSelfRemoval = "removed" | "absent" | ProjectionRemovalReport;
+
+/** A write state carrying warnings; the bare state when there are none. */
+export function writeWithWarnings(
+  written: ProjectionWriteState | ProjectionWriteReport,
+  warnings: readonly string[],
+): ProjectionWriteState | ProjectionWriteReport {
+  if (warnings.length === 0) return written;
+  if (typeof written === "string") return { state: written, warnings: [...warnings] };
+  return { ...written, warnings: [...(written.warnings ?? []), ...warnings] };
+}
+
+/** A removal state carrying warnings; the bare state when there are none. */
+export function removalWithWarnings(
+  removed: ProjectionSelfRemoval,
+  warnings: readonly string[],
+): ProjectionSelfRemoval {
+  if (warnings.length === 0) return removed;
+  if (typeof removed === "string") {
+    return { state: removed, kept: [], keptFor: [], warnings: [...warnings] };
+  }
+  return { ...removed, warnings: [...(removed.warnings ?? []), ...warnings] };
+}
 
 /** A shared exclude-file edit as a removal outcome. */
 export function excludeRemovalReport(result: ExcludeEditResult): ProjectionSelfRemoval {
@@ -177,11 +200,15 @@ export interface ProjectionResult {
   root: string;
   scope: ProjectionScope;
   outcomes: ProjectionEntryOutcome[];
+  /** About the pass rather than one entry, such as records the manifest had ignored. */
+  warnings: string[];
 }
 
 export interface ProjectionRemovalResult {
   root: string;
   outcomes: ProjectionEntryOutcome[];
+  /** About the pass rather than one entry, such as records the manifest had ignored. */
+  warnings: string[];
 }
 
 export interface ProjectionEntryPresence {

@@ -1,5 +1,4 @@
 import {
-  AGENT_CREDENTIAL_NAMES,
   checkedCredential,
   credentialKind,
   type CredentialStore,
@@ -16,8 +15,8 @@ export { AGENT_CREDENTIAL_NAMES, takeAgentCredential } from "./credential-store"
  * credential and Git tokens, over HTTP on a Unix socket, and nothing else. It is the boundary
  * between processes running as the unprivileged user and the inner Docker
  * daemon, so every request is checked field by field and an unexpected field is
- * refused rather than ignored: a caller cannot ask for a mount, an image or a
- * privilege. No answer carries the credential's value.
+ * refused: callers cannot choose a mount, image, privilege or environment.
+ * No answer carries the credential's value.
  */
 
 type Body = Record<string, unknown>;
@@ -30,19 +29,6 @@ function only(body: Body, allowed: string[]): void {
       `the broker does not accept ${extra.map((key) => `"${key}"`).join(", ")}`,
     );
   }
-}
-
-function stringRecord(value: unknown, what: string): Record<string, string> | undefined {
-  if (value === undefined) return undefined;
-  if (
-    value === null ||
-    typeof value !== "object" ||
-    Array.isArray(value) ||
-    !Object.values(value).every((entry) => typeof entry === "string")
-  ) {
-    throw new FactoryError(`${what} must map names to strings`);
-  }
-  return value as Record<string, string>;
 }
 
 export interface BrokerHandler {
@@ -116,17 +102,9 @@ export function brokerHandler(
         gitTokens.clear(checkedGitKey(body.key));
         return {};
       case "exec": {
-        only(body, ["id", "command", "env", "cwd", "agent", "stdin"]);
+        only(body, ["id", "command", "cwd", "agent", "stdin"]);
         if (body.stdin !== undefined && typeof body.stdin !== "string") {
           throw new FactoryError("stdin must be base64 text");
-        }
-        const env = { ...stringRecord(body.env, "exec's environment") };
-        for (const name of AGENT_CREDENTIAL_NAMES) {
-          if (name in env) {
-            throw new FactoryError(
-              `${name} is set by the broker for agent commands, not by callers`,
-            );
-          }
         }
         if (body.agent !== undefined && typeof body.agent !== "boolean") {
           throw new FactoryError("agent must be true or false");
@@ -134,20 +112,19 @@ export function brokerHandler(
         if (body.cwd !== undefined && typeof body.cwd !== "string") {
           throw new FactoryError("cwd must be a path relative to the worktree");
         }
-        if (body.agent === true) {
-          const credential = credentials.current();
-          if (credential === null) throw new FactoryError(NO_CREDENTIAL);
-          env[credential.name] = credential.value;
-        }
-        const result = await runtime.exec({
-          id: body.id as string,
-          command: body.command as string[],
-          env,
-          cwd: body.cwd as string | undefined,
-          ...(typeof body.stdin === "string"
-            ? { stdin: new Uint8Array(Buffer.from(body.stdin, "base64")) }
-            : {}),
-        });
+        const credential = body.agent === true ? credentials.current() : undefined;
+        if (credential === null) throw new FactoryError(NO_CREDENTIAL);
+        const result = await runtime.exec(
+          {
+            id: body.id as string,
+            command: body.command as string[],
+            cwd: body.cwd as string | undefined,
+            ...(typeof body.stdin === "string"
+              ? { stdin: new Uint8Array(Buffer.from(body.stdin, "base64")) }
+              : {}),
+          },
+          credential,
+        );
         return result;
       }
       default:

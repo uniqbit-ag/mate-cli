@@ -46,7 +46,7 @@ export async function reconcileWorkingRepoClaudeSkillLinks(
   companionPath: string | null,
   enabled: boolean,
   registeredCompanionPaths: string[] = [],
-): Promise<"written" | "current"> {
+): ReturnType<typeof reconcileClaudeLinks> {
   const placed =
     enabled && !(await servedByMainWorktree(repoPath, companionPath, registeredCompanionPaths));
   return reconcileClaudeLinks(SKILLS, repoPath, companionPath, placed, registeredCompanionPaths);
@@ -55,6 +55,6 @@ export async function reconcileWorkingRepoClaudeSkillLinks(
 export function removeWorkingRepoClaudeSkillLinks(
   repoPath: string,
   registeredCompanionPaths: string[] = [],
-): Promise<"removed" | "absent"> {
+): ReturnType<typeof removeClaudeLinks> {
   return removeClaudeLinks(SKILLS, repoPath, registeredCompanionPaths);
 }

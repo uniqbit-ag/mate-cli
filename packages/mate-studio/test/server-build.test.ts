@@ -116,23 +116,25 @@ describe("built server", () => {
     }
     expect(asked).toBe(0);
   });
-  test("serves both guides from a relocated bundle without the docs checkout or network", async () => {
+  test("serves all guides from a relocated bundle without the docs checkout or network", async () => {
     const folder = await mkdtemp(path.join(tmpdir(), "acme-studio-offline-"));
     try {
       await cp(path.dirname(SERVER), folder, { recursive: true });
       const { default: handler } = await import(path.join(folder, "server.js"));
-      for (const topic of ["worktrees", "vscode"]) {
+      for (const [topic, expected] of [
+        ["", "Your first change"],
+        ["/worktrees", "Work in an isolated checkout"],
+        ["/vscode", "Install the extension"],
+      ]) {
         const response = await handler.fetch(
           new Request(
-            `http://127.0.0.1/getting-started/${topic}?companion=${acmeDigest}&studioMode=engineering`,
+            `http://127.0.0.1/getting-started${topic}?companion=${acmeDigest}&studioMode=engineering`,
           ),
           { context: { studio: selecting(services) } },
         );
         expect(response.status).toBe(200);
         const html = await response.text();
-        expect(html).toContain(
-          topic === "worktrees" ? "What is isolated" : "Install the extension",
-        );
+        expect(html).toContain(expected!);
       }
     } finally {
       await rm(folder, { recursive: true, force: true });
@@ -141,8 +143,8 @@ describe("built server", () => {
   test("renders bundled developer guides with the initial response and native links", async () => {
     const selected = { ...selecting(services), factoryMode: false };
     for (const [topic, expected] of [
-      ["", "Your first isolated change"],
-      ["/worktrees", "What is isolated"],
+      ["", "Your first change"],
+      ["/worktrees", "Work in an isolated checkout"],
       ["/vscode", "Install the extension"],
     ]) {
       const { response } = await follow(
@@ -153,7 +155,7 @@ describe("built server", () => {
       const html = await response.text();
       const main = html.slice(html.indexOf('id="studio-main"'), html.indexOf("</main>"));
       expect(main).toContain(expected!);
-      expect(main).toContain("mate");
+      expect(main).toContain("Mate");
       expect(main).toContain('aria-current="page"');
       expect(
         main.slice(main.indexOf("<nav"), main.indexOf("</nav>")).match(/aria-current="page"/g),
@@ -162,6 +164,99 @@ describe("built server", () => {
       expect(main).not.toContain("md-frontmatter");
       expect(html).not.toContain('href="/factory');
       expect(main).toContain(`/getting-started/worktrees?companion=${acmeDigest}`);
+    }
+  });
+
+  test("Start here teaches the existing-checkout workflow without optional setup steps", async () => {
+    const { response } = await follow(
+      `/getting-started?companion=${acmeDigest}&studioMode=engineering`,
+      { ...selecting(services), factoryMode: false },
+    );
+    const html = await response.text();
+    expect(html).toContain(
+      "Take your first change from an idea to delivery in your existing checkout.",
+    );
+    const article = html.match(/<article\b[^>]*>[\s\S]*?<\/article>/)?.[0];
+    expect(article).toBeDefined();
+    const content = article!;
+    const text = content.replace(/<[^>]*>/g, "");
+    const headings = [...content.matchAll(/<h3\b[^>]*>(.*?)<\/h3>/g)].map((match) =>
+      match[1]!.replace(/<a\b[^>]*>.*?<\/a>/g, ""),
+    );
+    expect(headings).toEqual([
+      "1. Link your project",
+      "2. Start an agent",
+      "3. Plan, review, then apply",
+      "4. Review and deliver",
+    ]);
+    for (const expected of [
+      "mate doctor",
+      "mate companion link",
+      "mate opencode",
+      "mate claude",
+      "@mate-explore-change acme-fix",
+      "@mate-propose-change acme-fix",
+      "@mate-apply-change acme-fix",
+      "agent conversation, not your terminal",
+      "Validation is evidence, not approval",
+      "Confirm the delivery branch in this checkout",
+      "publication requires archival and a merged delivery branch",
+      "your confirmation of the companion commit",
+      "writes no files",
+    ]) {
+      expect(text).toContain(expected);
+    }
+    for (const topic of ["worktrees", "vscode"]) {
+      expect(content).toContain(`/getting-started/${topic}?companion=${acmeDigest}`);
+    }
+    for (const excluded of [
+      "mate vscode setup",
+      "Open workspace",
+      "mate working worktree",
+      "acme.worktrees",
+      "prune",
+      "Factory",
+    ]) {
+      expect(text).not.toContain(excluded);
+    }
+  });
+
+  test("optional summaries render the worktree journey and essential editor setup", async () => {
+    for (const [topic, expected] of [
+      [
+        "worktrees",
+        [
+          "Create a worktree",
+          "resume apply",
+          "open another terminal",
+          "Workset becomes Done",
+          "checkouts are kept",
+          "does not delete the branch",
+        ],
+      ],
+      [
+        "vscode",
+        [
+          "mate vscode setup",
+          "Open workspace",
+          "Only sidebar-started sessions",
+          "Open changes",
+          "Ready to publish",
+        ],
+      ],
+    ] as const) {
+      const { response } = await follow(
+        `/getting-started/${topic}?companion=${acmeDigest}&studioMode=engineering`,
+        selecting(services),
+      );
+      const html = await response.text();
+      const article = html.match(/<article\b[^>]*>[\s\S]*?<\/article>/)?.[0];
+      expect(article).toBeDefined();
+      const text = article!.replace(/<[^>]*>/g, "");
+      for (const phrase of expected) expect(text).toContain(phrase);
+      if (topic === "worktrees") {
+        expect(article).not.toMatch(/<pre|<code|\bmate\s+[a-z]/);
+      }
     }
   });
 

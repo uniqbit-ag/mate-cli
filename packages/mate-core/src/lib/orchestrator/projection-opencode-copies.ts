@@ -3,8 +3,10 @@ import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { refusedDestinationWarning, repoDestination } from "../../runtime/repo-destination";
 import {
   copies,
+  isPlaceableCopyKey,
   readManifest,
   updateManifest,
   withCopies,
@@ -15,6 +17,7 @@ import { pruneEmptyAncestors } from "../../tools/setup/utils";
 import { reconcileWorkingRepoCopyExcludes } from "../../tools/setup/working-repo-local-state";
 import {
   excludeRemovalReport,
+  removalWithWarnings,
   type ProjectionSelfRemoval,
   type ProjectionWriteReport,
 } from "./projection-types";
@@ -75,8 +78,15 @@ async function companionSources(companionPath: string): Promise<Map<string, Copy
   return sources;
 }
 
-function destination(repoPath: string, relativePath: string): string {
-  return path.join(path.resolve(repoPath), ...relativePath.split("/"));
+/** Inside the repository with no symlinked parent, or the warning that refuses it. */
+function destination(
+  repoPath: string,
+  relativePath: string,
+): { path: string; root: string } | { warning: string } {
+  if (!isPlaceableCopyKey(relativePath)) {
+    return { warning: refusedDestinationWarning(relativePath, "it is not a valid copy path") };
+  }
+  return repoDestination(repoPath, relativePath);
 }
 
 /** `null` when absent; a directory or other non-file reads as a foreign entry. */
@@ -92,16 +102,21 @@ async function writeCopy(target: string, content: Buffer): Promise<void> {
   await writeAtomic(target, content);
 }
 
-async function deleteCopy(repoPath: string, relativePath: string): Promise<void> {
+/** The refusal warning when the copy may not be touched; it is then left as it is. */
+async function deleteCopy(repoPath: string, relativePath: string): Promise<string | null> {
   const target = destination(repoPath, relativePath);
-  await fs.rm(target, { force: true });
-  await pruneEmptyAncestors(path.dirname(target), path.resolve(repoPath));
+  if ("warning" in target) return target.warning;
+  await fs.rm(target.path, { force: true });
+  await pruneEmptyAncestors(path.dirname(target.path), target.root);
+  return null;
 }
 
 interface CopyPlan {
-  write: Array<{ relativePath: string; source: CopySource; warning?: string }>;
+  write: Array<{ relativePath: string; target: string; source: CopySource; warning?: string }>;
   remove: string[];
   shadowed: Array<{ relativePath: string; source: CopySource }>;
+  /** Refusal warnings; a refused copy is neither written nor deleted, and its record is dropped. */
+  refused: string[];
   records: Record<string, CopyRecord>;
   previous: Record<string, CopyRecord>;
 }
@@ -109,12 +124,24 @@ interface CopyPlan {
 async function planCopies(repoPath: string, companionPath: string): Promise<CopyPlan> {
   const previous = copies(await readManifest(repoPath), "opencode");
   const sources = await companionSources(companionPath);
-  const plan: CopyPlan = { write: [], remove: [], shadowed: [], records: {}, previous };
+  const plan: CopyPlan = {
+    write: [],
+    remove: [],
+    shadowed: [],
+    refused: [],
+    records: {},
+    previous,
+  };
 
   for (const [relativePath, source] of sources) {
     const owned = previous[relativePath];
+    const target = destination(repoPath, relativePath);
+    if ("warning" in target) {
+      plan.refused.push(target.warning);
+      continue;
+    }
     // oxlint-disable-next-line no-await-in-loop -- one stat per file
-    const current = await readDestination(destination(repoPath, relativePath));
+    const current = await readDestination(target.path);
     if (current === "foreign" || (!owned && current !== null)) {
       plan.shadowed.push({ relativePath, source });
       continue;
@@ -126,6 +153,7 @@ async function planCopies(repoPath: string, companionPath: string): Promise<Copy
     if (currentSha !== source.sha256 && !keepEdit) {
       plan.write.push({
         relativePath,
+        target: target.path,
         source,
         warning: edited
           ? `${relativePath} was edited locally; the edit was replaced from the companion. Edit ${source.absolute} instead.`
@@ -135,7 +163,10 @@ async function planCopies(repoPath: string, companionPath: string): Promise<Copy
     plan.records[relativePath] = { runtime: "opencode", sha256: source.sha256 };
   }
   for (const relativePath of Object.keys(previous)) {
-    if (!sources.has(relativePath)) plan.remove.push(relativePath);
+    if (sources.has(relativePath)) continue;
+    const target = destination(repoPath, relativePath);
+    if ("warning" in target) plan.refused.push(target.warning);
+    else plan.remove.push(relativePath);
   }
   return plan;
 }
@@ -163,9 +194,10 @@ export async function reconcileCompanionCopies(
   companionPath: string,
 ): Promise<ProjectionWriteReport> {
   const plan = await planCopies(repoPath, companionPath);
-  const warnings = plan.shadowed.map(({ relativePath, source }) =>
-    shadowWarning(relativePath, source),
-  );
+  const warnings = [
+    ...plan.shadowed.map(({ relativePath, source }) => shadowWarning(relativePath, source)),
+    ...plan.refused,
+  ];
 
   const covering = [...new Set([...Object.keys(plan.previous), ...Object.keys(plan.records)])];
   const excludesWidened = (
@@ -177,9 +209,9 @@ export async function reconcileCompanionCopies(
     await updateManifest(repoPath, (manifest) => withCopies(manifest, "opencode", interim));
   }
 
-  for (const { relativePath, source, warning } of plan.write) {
+  for (const { target, source, warning } of plan.write) {
     // oxlint-disable-next-line no-await-in-loop -- bounded by the companion folder
-    await writeCopy(destination(repoPath, relativePath), source.content);
+    await writeCopy(target, source.content);
     if (warning) warnings.push(warning);
   }
   for (const relativePath of plan.remove) {
@@ -216,29 +248,41 @@ export async function reconcileCompanionCopies(
  * without the line that hides it.
  */
 async function withdraw(repoPath: string) {
-  const owned = await recordedCopiesOf(repoPath);
-  for (const relativePath of owned) {
+  const recorded = await recordedCopiesOf(repoPath);
+  const owned: string[] = [];
+  const warnings: string[] = [];
+  for (const relativePath of recorded) {
     // oxlint-disable-next-line no-await-in-loop
-    await deleteCopy(repoPath, relativePath);
+    const refused = await deleteCopy(repoPath, relativePath);
+    if (refused === null) owned.push(relativePath);
+    else warnings.push(refused);
   }
-  if (owned.length > 0) {
+  /** A refused copy's record goes too: it was never provably Mate's to keep. */
+  if (recorded.length > 0) {
     await updateManifest(repoPath, (manifest) => withCopies(manifest, "opencode", {}));
   }
   const excludes = await reconcileWorkingRepoCopyExcludes(repoPath, [], recordedCopiesOf);
   /** Deleted copies count as a change too: kept lines make a removal `retained` only when nothing else went. */
-  return { ...excludes, owned, changed: owned.length > 0 || excludes.changed };
+  return {
+    ...excludes,
+    owned,
+    warnings,
+    changed: recorded.length > 0 || excludes.changed,
+  };
 }
 
 export async function withdrawCompanionCopies(repoPath: string): Promise<ProjectionWriteReport> {
-  const { owned, changed } = await withdraw(repoPath);
+  const { owned, changed, warnings } = await withdraw(repoPath);
   return {
     state: changed ? "written" : "current",
+    ...(warnings.length > 0 ? { warnings } : {}),
     changed: { written: [], removed: owned },
   };
 }
 
 export async function removeCompanionCopies(repoPath: string): Promise<ProjectionSelfRemoval> {
-  return excludeRemovalReport(await withdraw(repoPath));
+  const withdrawn = await withdraw(repoPath);
+  return removalWithWarnings(excludeRemovalReport(withdrawn), withdrawn.warnings);
 }
 
 /** Whether any owned copy is recorded. */

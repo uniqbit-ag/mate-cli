@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { createStudioAccess } from "./access";
+import { createStudioAccess, type StudioAccess } from "./access";
 import { createStudioFetch } from "./server";
 import type { StudioRequestContext } from "./services";
 import type { StudioApp } from "./studio-app";
@@ -30,14 +30,14 @@ const app = (): StudioApp => ({
   },
 });
 
-function handlerFor(withApp: StudioApp | null) {
+function handlerFor(withApp: StudioApp | null, access?: StudioAccess) {
   return createStudioFetch(
     {
       collectStudioInventory: async () => ({
         companions: [{ path: "/companions/acme", health: "ready", pairings: [] }],
       }),
     },
-    { app: withApp },
+    { app: withApp, ...(access ? { access } : {}) },
   );
 }
 
@@ -116,10 +116,24 @@ describe("Studio's application behind the server", () => {
     expect(response?.status).toBe(404);
   });
 
-  test("accepts application calls only from its own page", async () => {
+  test("accepts application calls only from its own page, holding the token", async () => {
+    const token = "acme-token-0123456789abcdef";
+    const handler = handlerFor(
+      app(),
+      createStudioAccess({
+        invocation: "interactive",
+        terminal: false,
+        hostname: "localhost",
+        port: () => 80,
+        token,
+      }),
+    );
     const call = (origin: string) =>
-      handlerFor(app())(
-        new Request("http://localhost/_serverFn/abc", { method: "POST", headers: { origin } }),
+      handler(
+        new Request("http://localhost/_serverFn/abc", {
+          method: "POST",
+          headers: { origin, cookie: `mate_studio_80=${token}` },
+        }),
       );
     expect((await call("http://evil.example"))?.status).toBe(403);
     expect((await call("http://localhost"))?.status).toBe(200);

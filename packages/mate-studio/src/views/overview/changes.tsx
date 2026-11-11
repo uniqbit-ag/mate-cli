@@ -34,7 +34,7 @@ type Filter = "all" | ChangeGroup;
 
 const GROUP_HINTS: Record<ChangeGroup, string> = {
   "needs-you": "Review or fix before the build goes on",
-  building: "An agent is working through the tasks",
+  building: "Some tasks are done; others remain",
   ready: "Every task is done",
 };
 
@@ -48,7 +48,7 @@ function status(change: StudioChange): { marker: Marker; word: string } {
       ? { marker: "warn", word: "No tasks" }
       : { marker: "review", word: "Review" };
   }
-  if (group === "building") return { marker: "build", word: "Building" };
+  if (group === "building") return { marker: "build", word: GROUP_TITLES.building };
   return { marker: "done", word: "Ready" };
 }
 
@@ -141,7 +141,7 @@ function ChangeRow({
         type="button"
         className={cn(
           ROW,
-          "grid grid-cols-[minmax(0,1fr)_120px_150px_72px] @max-[640px]:grid-cols-[minmax(0,1fr)_auto]",
+          "grid grid-cols-[minmax(0,1fr)_max-content_150px_72px] @max-[640px]:grid-cols-[minmax(0,1fr)_auto]",
         )}
         aria-current={current ? "true" : undefined}
         data-change={change.name}
