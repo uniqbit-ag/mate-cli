@@ -1,8 +1,8 @@
 import { describe, expect, test } from "claude-code/testing";
 import type { Engine, Plugin } from "claude-code/testing";
 import type { PromptAutocompleteInput, PromptAutocompleteResult } from "claude-code";
-import { contextReply, policyJson } from "./policy.ts";
-import { world } from "./world.ts";
+import { contextReply, policyJson } from "./policy";
+import { world } from "./world";
 
 /** Each test has a companion of its own, so none sees a file list the mod kept for another. */
 

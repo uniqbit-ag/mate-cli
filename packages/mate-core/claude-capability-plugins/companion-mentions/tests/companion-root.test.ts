@@ -1,8 +1,8 @@
 import { describe, expect, test } from "claude-code/testing";
 import type { Engine } from "claude-code/testing";
 import type { PromptAutocompleteInput, PromptAutocompleteResult } from "claude-code";
-import { RULES, contextReply, policyJson } from "./policy.ts";
-import { LAUNCHER, world, type MateAnswer } from "./world.ts";
+import { RULES, contextReply, policyJson } from "./policy";
+import { LAUNCHER, world, type MateAnswer } from "./world";
 
 /** Each test has its own session folder and companion, so none sees what the mod kept for another. */
 
