@@ -548,6 +548,88 @@ describe("createWorksetWorktrees", () => {
     expect(fs.existsSync(path.join(target, ".env"))).toBe(false);
     expect(fs.existsSync(path.join(target, "apps", "acme", ".env.local"))).toBe(false);
     expect(JSON.stringify(result)).not.toContain("fake-value");
+    expect(result.repositories[0]!.include).toEqual({ sources: [], copied: [], failed: [] });
+  });
+
+  describe("include files", () => {
+    const target = () => path.join(root, "src", "web.worktrees", "acme-login");
+
+    /** A linked `acme/web` whose committed `.worktreeinclude` holds `patterns`. */
+    function included(patterns: string): string {
+      const web = checkout("web", {
+        ".gitignore": ".env*\n.npmrc\n",
+        ".worktreeinclude": patterns,
+        "bun.lock": "",
+        "apps/acme/.keep": "",
+      });
+      fs.writeFileSync(path.join(web, ".env"), "ACME_TOKEN=fake-value\n");
+      fs.writeFileSync(path.join(web, ".npmrc"), "//registry.acme.test/:_authToken=fake-value\n");
+      fs.writeFileSync(path.join(web, "apps", "acme", ".env.local"), "ACME_TOKEN=fake-value\n");
+      link(web);
+      workset("acme-login", "acme/web");
+      return web;
+    }
+
+    test("copies selected files before install; copied env files are not reported missing", async () => {
+      included(".env\n.npmrc\n");
+      let npmrcAtInstall = false;
+      const result = await createWorksetWorktrees(companion, "acme-login", options, {
+        install: async (cwd) => ((npmrcAtInstall = fs.existsSync(path.join(cwd, ".npmrc"))), true),
+      });
+      const entry = result.repositories[0]!;
+      expect(result.ok).toBe(true);
+      expect(npmrcAtInstall).toBe(true);
+      expect(entry.include).toEqual({
+        sources: [".worktreeinclude"],
+        copied: [".env", ".npmrc"],
+        failed: [],
+      });
+      expect(entry.missingEnv).toEqual(["apps/acme/.env.local"]);
+      expect(fs.readFileSync(path.join(target(), ".env"), "utf8")).toBe("ACME_TOKEN=fake-value\n");
+      expect(JSON.stringify(result)).not.toContain("fake-value");
+    });
+
+    test("a reused worktree gets only missing files and keeps its own", async () => {
+      const web = included(".env\n");
+      await createWorksetWorktrees(companion, "acme-login", options, {
+        install: installs().install,
+      });
+      fs.writeFileSync(path.join(target(), ".env"), "ACME_TOKEN=worktree\n");
+      fs.writeFileSync(path.join(web, ".worktreeinclude"), ".env\n.npmrc\n");
+      const result = await createWorksetWorktrees(companion, "acme-login", options);
+      expect(result.repositories[0]!.action).toBe("reused");
+      expect(result.repositories[0]!.include.copied).toEqual([".npmrc"]);
+      expect(fs.readFileSync(path.join(target(), ".env"), "utf8")).toBe("ACME_TOKEN=worktree\n");
+    });
+
+    test("a failed copy keeps the worktree and the other copies, still installs, and fails", async () => {
+      const web = included(".env\n.npmrc\n");
+      fs.chmodSync(path.join(web, ".env"), 0o000);
+      const run = installs();
+      const result = await createWorksetWorktrees(companion, "acme-login", options, {
+        install: run.install,
+      });
+      const entry = result.repositories[0]!;
+      expect(result.ok).toBe(false);
+      expect(entry.error).toBe("copying .env failed");
+      expect(entry.include.copied).toEqual([".npmrc"]);
+      expect(entry.include.failed).toEqual([{ path: ".env", reason: "EACCES" }]);
+      expect(run.calls).toHaveLength(1);
+      expect(fs.existsSync(target())).toBe(true);
+      expect(fs.existsSync(path.join(target(), ".env"))).toBe(false);
+    });
+
+    test("a local include file Git does not ignore is skipped with a warning", async () => {
+      const web = included(".npmrc\n");
+      fs.writeFileSync(path.join(web, ".worktreeinclude.local"), ".env\n");
+      const result = await createWorksetWorktrees(companion, "acme-login", options, {
+        install: installs().install,
+      });
+      expect(result.repositories[0]!.include.copied).toEqual([".npmrc"]);
+      expect(result.warnings).toContain(
+        "acme/web: .worktreeinclude.local skipped: Git does not ignore it",
+      );
+    });
   });
 });
 

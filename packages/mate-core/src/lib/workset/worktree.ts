@@ -40,13 +40,14 @@ import {
   type IndexOutcome,
   type TokensaveRunner,
 } from "./worktree-index";
+import { copyIncludedFiles, selectIncludedFiles, type IncludeOutcome } from "./worktree-include";
 import { findWorkset, readWorksets, resolveWorksetBranch, resolveWorksetOf } from "./record";
 
 /**
  * Workset worktrees outside the factory: one Git worktree per Working Repository at
  * `<main checkout>.worktrees/<workset-id>`, on the Workset's Delivery Branch, linked to
- * the companion, wrapped like its main checkout and installed. Env files are reported by
- * path, never opened.
+ * the companion, wrapped like its main checkout and installed. Ignored files named by the
+ * main checkout's include files are copied in; other env files are reported by path only.
  */
 
 export interface GitResult {
@@ -111,6 +112,8 @@ export interface WorktreeRepositoryResult {
   wrap: WrapOutcome;
   /** The worktree's tokensave index; a failure only warns. */
   index: IndexOutcome;
+  /** Ignored files copied from the main checkout by its include files. */
+  include: IncludeOutcome;
   /** Env files of the main checkout the worktree lacks, relative to the repository root. */
   missingEnv: string[];
   /** Set when a step for this repository failed. */
@@ -1031,6 +1034,7 @@ async function realize(
     install: { command: null, outcome: "skipped" },
     wrap: { runtimes: [], outcome: "skipped" },
     index: { outcome: "skipped" },
+    include: { sources: [], copied: [], failed: [] },
     missingEnv: [],
   };
   if (!plan.reuse) {
@@ -1061,6 +1065,13 @@ async function realize(
     result.wrap = linked.wrap;
     if (linked.error) result.error = linked.error;
     if (linked.warning) warnings.push(`${plan.repository}: ${linked.warning}`);
+  }
+  // Before install: a copied `.npmrc` may be what lets it reach a private registry.
+  const selection = await selectIncludedFiles(git, plan.checkout);
+  for (const warning of selection.warnings) warnings.push(`${plan.repository}: ${warning}`);
+  result.include = await copyIncludedFiles(plan.checkout, plan.target, selection);
+  if (result.include.failed.length > 0) {
+    result.error ??= `copying ${result.include.failed.map((entry) => entry.path).join(", ")} failed`;
   }
   const command = await installCommand(plan.target);
   result.install.command = command ? command.join(" ") : null;

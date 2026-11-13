@@ -384,6 +384,14 @@ function printCreated(result: WorktreeResult): void {
       } else if (wrap.outcome === "skipped") {
         process.stdout.write(`${prefix} wrap skipped (${wrap.reason})\n`);
       }
+      const { include } = entry;
+      if (include.sources.length > 0) {
+        const copied = include.copied.length > 0 ? include.copied.join(", ") : "nothing new";
+        process.stdout.write(`${prefix} copied from ${include.sources.join(", ")}: ${copied}\n`);
+      }
+      for (const failed of include.failed) {
+        process.stdout.write(`${prefix} copying ${failed.path} failed (${failed.reason})\n`);
+      }
       const { command, outcome, reason } = entry.install;
       process.stdout.write(
         outcome === "skipped"
