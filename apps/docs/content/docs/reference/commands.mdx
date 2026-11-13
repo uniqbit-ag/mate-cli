@@ -269,6 +269,11 @@ companion only recommends (RTK, TokenSave, Graphify, Context Mode): add
 `--with <capability>` to install one, or `--without <capability>` to decline
 it. Both flags repeat, and Mate remembers the choice per companion.
 
+In a companion that declares [audiences](/docs/reference/deployment#serving-one-audience-of-a-companion),
+`mate install` installs the base plugins plus those of the audience
+`MATE_AUDIENCE` selects, and removes the installed plugins of every other
+audience. With `MATE_AUDIENCE` unset it installs no audience plugin.
+
 For OpenSpec, `mate doctor` reports the CLI bundled with Mate, with its path
 and version, instead of looking for `openspec` on `PATH`.
 

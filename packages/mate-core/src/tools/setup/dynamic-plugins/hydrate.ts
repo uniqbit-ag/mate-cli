@@ -9,7 +9,7 @@ import type { Plugin } from "../plugin";
 import type { PluginRegistry } from "../registry";
 import {
   describeUnknownAudience,
-  effectivePluginDeclarations,
+  effectivePluginEntries,
   readAudienceSelection,
   readFrameworkRaw,
   resolveAudience,
@@ -90,12 +90,12 @@ export async function hydrateDynamicPlugins(deps: HydrateDynamicPluginsDeps = {}
     if (!audience.ok) {
       warn(`${describeUnknownAudience(audience)}; applying the base configuration only`);
     }
-    const entries = effectivePluginDeclarations(raw, audience.ok ? audience.active : null);
+    const entries = effectivePluginEntries(raw, audience.ok ? audience.active : null);
     if (entries.length === 0) return;
 
     const registry = deps.registry ?? getActiveDistribution().registry;
 
-    for (const entry of entries) {
+    for (const { entry, audience: origin } of entries) {
       const { declaration, error } = validateDeclaration(entry);
       if (!declaration) {
         if (error) warn(error);
@@ -104,7 +104,7 @@ export async function hydrateDynamicPlugins(deps: HydrateDynamicPluginsDeps = {}
       if (hydratedPackages.has(declaration.package)) continue;
 
       // oxlint-disable-next-line no-await-in-loop -- declared order is part of the contract
-      const result = await loadDynamicPlugin(companionPath, declaration, deps);
+      const result = await loadDynamicPlugin(companionPath, declaration, deps, origin);
       if (!result.ok) {
         warn(result.warning);
         continue;

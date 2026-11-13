@@ -3,7 +3,6 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { FRAMEWORK_NAME } from "../../../framework";
 import type { PluginDeclaration } from "../../../lib/orchestrator/types";
 import type { Plugin } from "../plugin";
 import { resolveEffectivePluginConfig } from "./config-resolution";
@@ -13,6 +12,7 @@ import {
   type CreatePlugin,
   type PluginHost,
 } from "./host";
+import { audienceInstallCommand } from "./audiences";
 import { dynamicPluginsWorkspaceRoot, pluginPackageRoot } from "./paths";
 
 interface PluginManifest {
@@ -32,9 +32,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Loads one declared plugin from the shared workspace: installed-presence
- * check, API version gate before import, entry-point resolution via the
- * shared workspace's own module resolver, dynamic import, factory
+ * Loads one declared plugin from the workspace of its origin (`audience`:
+ * `null` for a base plugin, else the audience declaring it): installed-presence
+ * check, API version gate before import, entry-point resolution via that
+ * workspace's own module resolver, dynamic import, factory
  * resolution, effective config, factory invocation. Every failure class
  * returns a single warning instead of throwing, so one broken plugin never
  * takes down the CLI.
@@ -43,9 +44,10 @@ export async function loadDynamicPlugin(
   companionPath: string,
   declaration: PluginDeclaration,
   deps: DynamicPluginLoadDeps = {},
+  audience: string | null = null,
 ): Promise<DynamicPluginLoadResult> {
   const name = declaration.package;
-  const packageRoot = pluginPackageRoot(companionPath, name);
+  const packageRoot = pluginPackageRoot(companionPath, name, audience);
 
   let manifest: PluginManifest;
   try {
@@ -55,7 +57,7 @@ export async function loadDynamicPlugin(
   } catch {
     return {
       ok: false,
-      warning: `plugin "${name}" is not installed; run \`${FRAMEWORK_NAME} install\`.`,
+      warning: `plugin "${name}" is not installed; run \`${audienceInstallCommand(audience)}\`.`,
     };
   }
 
@@ -79,7 +81,9 @@ export async function loadDynamicPlugin(
   let entryPath: string;
   try {
     const workspaceRequire = createRequire(
-      pathToFileURL(path.join(dynamicPluginsWorkspaceRoot(companionPath), "package.json")),
+      pathToFileURL(
+        path.join(dynamicPluginsWorkspaceRoot(companionPath, audience), "package.json"),
+      ),
     );
     entryPath = workspaceRequire.resolve(name);
   } catch (error) {

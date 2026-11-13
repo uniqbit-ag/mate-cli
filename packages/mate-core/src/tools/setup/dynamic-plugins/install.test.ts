@@ -88,7 +88,7 @@ describe("installDeclaredPlugins", () => {
     const { runner } = fakeNpmInstall(() => "1.2.0");
 
     const results = await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [declaration()],
       fakePluginInstallDeps({
         runNpmInstall: runner,
@@ -122,7 +122,7 @@ describe("installDeclaredPlugins", () => {
     const { runner, calls } = fakeNpmInstall((pkg) => (pkg === "@acme/a" ? "1.0.0" : "2.0.0"));
 
     const results = await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [declaration({ package: "@acme/b", version: "^2.0.0" }), declaration({ package: "@acme/a" })],
       fakePluginInstallDeps({ runNpmInstall: runner }),
     );
@@ -146,7 +146,7 @@ describe("installDeclaredPlugins", () => {
     const companionPath = await makeTempDir("plugin-install-unchanged-");
     const first = fakeNpmInstall(() => "1.2.0");
     await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [declaration()],
       fakePluginInstallDeps({ runNpmInstall: first.runner }),
     );
@@ -154,7 +154,7 @@ describe("installDeclaredPlugins", () => {
     // A newer version exists now, but the declared range must stay put.
     const second = fakeNpmInstall(() => "1.3.0");
     const results = await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [declaration()],
       fakePluginInstallDeps({
         runNpmInstall: second.runner,
@@ -171,7 +171,7 @@ describe("installDeclaredPlugins", () => {
     const companionPath = await makeTempDir("plugin-install-latest-");
     const decl = declaration({ version: "latest" });
     await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [decl],
       fakePluginInstallDeps({
         runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
@@ -181,7 +181,7 @@ describe("installDeclaredPlugins", () => {
     const install = fakeNpmInstall(() => "1.2.0");
     const update = fakeNpmUpdate(() => "1.3.0");
     const results = await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [decl],
       fakePluginInstallDeps({
         runNpmInstall: install.runner,
@@ -199,7 +199,7 @@ describe("installDeclaredPlugins", () => {
     const companionPath = await makeTempDir("plugin-install-canary-");
     const decl = declaration({ version: "canary" });
     await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [decl],
       fakePluginInstallDeps({
         runNpmInstall: fakeNpmInstall(() => "1.2.0-canary.0").runner,
@@ -209,7 +209,7 @@ describe("installDeclaredPlugins", () => {
     const install = fakeNpmInstall(() => "1.2.0-canary.0");
     const update = fakeNpmUpdate(() => "1.3.0-canary.0");
     const results = await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [decl],
       fakePluginInstallDeps({
         runNpmInstall: install.runner,
@@ -229,7 +229,7 @@ describe("installDeclaredPlugins", () => {
     const latest = declaration({ package: "@acme/latest", version: "latest" });
     const canary = declaration({ package: "@acme/canary", version: "canary" });
     await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [pinned, latest, canary],
       fakePluginInstallDeps({
         runNpmInstall: fakeNpmInstall(() => "1.0.0").runner,
@@ -239,7 +239,7 @@ describe("installDeclaredPlugins", () => {
     const install = fakeNpmInstall(() => "1.0.0");
     const update = fakeNpmUpdate(() => "1.1.0");
     const results = await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [pinned, latest, canary],
       fakePluginInstallDeps({
         runNpmInstall: install.runner,
@@ -258,7 +258,7 @@ describe("installDeclaredPlugins", () => {
   test("edited declared version invalidates the diff and re-resolves", async () => {
     const companionPath = await makeTempDir("plugin-install-edited-");
     await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [declaration({ version: "^1.0.0" })],
       fakePluginInstallDeps({
         runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
@@ -267,7 +267,7 @@ describe("installDeclaredPlugins", () => {
 
     const second = fakeNpmInstall(() => "2.1.0");
     const results = await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [declaration({ version: "^2.0.0" })],
       fakePluginInstallDeps({ runNpmInstall: second.runner }),
     );
@@ -279,7 +279,7 @@ describe("installDeclaredPlugins", () => {
   test("missing installed tree reinstalls even though the manifest is unchanged", async () => {
     const companionPath = await makeTempDir("plugin-install-repair-");
     await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [declaration()],
       fakePluginInstallDeps({
         runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
@@ -292,7 +292,7 @@ describe("installDeclaredPlugins", () => {
 
     const second = fakeNpmInstall(() => "1.2.0");
     const results = await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [declaration()],
       fakePluginInstallDeps({
         runNpmInstall: second.runner,
@@ -306,7 +306,7 @@ describe("installDeclaredPlugins", () => {
   test("failed install reports the failure for every declared plugin", async () => {
     const companionPath = await makeTempDir("plugin-install-failed-");
     const results = await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [declaration()],
       fakePluginInstallDeps({
         runNpmInstall: async () => ({ ok: false, detail: "registry unreachable" }),
@@ -320,7 +320,7 @@ describe("installDeclaredPlugins", () => {
   test("undeclared packages are pruned from the shared workspace on the next run", async () => {
     const companionPath = await makeTempDir("plugin-install-prune-");
     await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [declaration()],
       fakePluginInstallDeps({
         runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
@@ -329,7 +329,7 @@ describe("installDeclaredPlugins", () => {
 
     const second = fakeNpmInstall(() => "9.9.9");
     await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [],
       fakePluginInstallDeps({ runNpmInstall: second.runner }),
     );
@@ -349,7 +349,7 @@ describe("installDeclaredPlugins", () => {
     const { runner, calls } = fakeNpmInstall(() => "1.0.0");
 
     const results = await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [],
       fakePluginInstallDeps({ runNpmInstall: runner }),
     );
@@ -365,7 +365,7 @@ describe("installDeclaredPlugins npm failures", () => {
     const companionPath = await makeTempDir("plugin-install-empty-detail-");
     // A tree left by an earlier run must not mask the failure.
     await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [declaration()],
       fakePluginInstallDeps({
         runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
@@ -373,7 +373,7 @@ describe("installDeclaredPlugins npm failures", () => {
     );
 
     const results = await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [declaration(), declaration({ package: "@acme/other" })],
       fakePluginInstallDeps({ runNpmInstall: async () => ({ ok: false, detail: "" }) }),
     );
@@ -393,7 +393,7 @@ describe("installDeclaredPlugins npm failures", () => {
     const detail = "npm error code E401\nnpm error 401 Unauthorized";
 
     const results = await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [declaration()],
       fakePluginInstallDeps({
         runNpmInstall: async () => ({ ok: false, detail }),
@@ -407,7 +407,7 @@ describe("installDeclaredPlugins npm failures", () => {
     const companionPath = await makeTempDir("plugin-install-update-fail-");
     const decl = declaration({ version: "latest" });
     await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [decl],
       fakePluginInstallDeps({
         runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
@@ -415,7 +415,7 @@ describe("installDeclaredPlugins npm failures", () => {
     );
 
     const results = await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [decl],
       fakePluginInstallDeps({
         runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
@@ -439,7 +439,7 @@ describe("installDeclaredPlugins npm failures", () => {
     const companionPath = await makeTempDir("plugin-install-update-empty-");
     const decl = declaration({ version: "latest" });
     await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [decl],
       fakePluginInstallDeps({
         runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
@@ -447,7 +447,7 @@ describe("installDeclaredPlugins npm failures", () => {
     );
 
     const results = await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [decl],
       fakePluginInstallDeps({
         runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
@@ -468,7 +468,7 @@ describe("installDeclaredPlugins npm failures", () => {
     const companionPath = await makeTempDir("plugin-install-missing-tree-");
 
     const results = await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [declaration()],
       fakePluginInstallDeps({
         runNpmInstall: async () => ({ ok: true }),

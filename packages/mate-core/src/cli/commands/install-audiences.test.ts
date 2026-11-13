@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 
 import type { InstallPlan } from "../../lib/install";
 import { runInstallCommand } from "./install";
@@ -21,8 +21,12 @@ const STUBBED_INSTALLERS = {
   runPlan: async () => ({ ok: true, results: [] }),
 };
 
-const ordinaryCalls: PluginDeclaration[][] = [];
-const frozenCalls: PluginDeclaration[][] = [];
+/** One entry per workspace install: its companion-relative root and the packages it was given. */
+type WorkspaceCall = [workspace: string, packages: string[]];
+const ordinaryCalls: WorkspaceCall[] = [];
+const frozenCalls: WorkspaceCall[] = [];
+
+const packages = (declarations: PluginDeclaration[]) => declarations.map((d) => d.package);
 
 const spies: Array<{ mockRestore: () => void }> = [];
 
@@ -41,14 +45,14 @@ beforeEach(async () => {
   frozenCalls.length = 0;
   spies.push(
     spyOn(installModule, "installDeclaredPlugins").mockImplementation(
-      async (_companion: string, declarations: PluginDeclaration[]) => {
-        ordinaryCalls.push(declarations);
+      async (workspaceRoot: string, declarations: PluginDeclaration[]) => {
+        ordinaryCalls.push([path.relative(companion, workspaceRoot), packages(declarations)]);
         return [];
       },
     ),
     spyOn(frozenModule, "installDeclaredPluginsFrozen").mockImplementation(
-      async (_companion: string, declarations: PluginDeclaration[]) => {
-        frozenCalls.push(declarations);
+      async (workspaceRoot: string, declarations: PluginDeclaration[]) => {
+        frozenCalls.push([path.relative(companion, workspaceRoot), packages(declarations)]);
         return [];
       },
     ),
@@ -87,15 +91,27 @@ afterEach(async () => {
   }
 });
 
-const packages = (declarations: PluginDeclaration[]) => declarations.map((d) => d.package);
+const SHARED = path.join(".mate", "plugins");
+const audienceWorkspace = (name: string) => path.join(SHARED, "audiences", name);
 
-test("ordinary install writes the union of base and every audience with no audience selected", async () => {
+test("ordinary install with no audience installs the base plugins only", async () => {
   expect(await runInstallCommand(["--yes"], companion, STUBBED_INSTALLERS)).toBe(true);
 
-  expect(ordinaryCalls.map(packages)).toEqual([["@acme/base", "@acme/analyst", "@acme/reviewer"]]);
+  expect(ordinaryCalls).toEqual([[SHARED, ["@acme/base"]]]);
 });
 
-test("frozen install restores the same union for every valid audience and for none", async () => {
+test("ordinary install adds the selected audience's own workspace and no other", async () => {
+  process.env.MATE_AUDIENCE = "ba";
+
+  expect(await runInstallCommand(["--yes"], companion, STUBBED_INSTALLERS)).toBe(true);
+
+  expect(ordinaryCalls).toEqual([
+    [SHARED, ["@acme/base"]],
+    [audienceWorkspace("ba"), ["@acme/analyst"]],
+  ]);
+});
+
+test("frozen install restores the base and the selected audience, each from its workspace", async () => {
   for (const audience of [undefined, "ba", "qa"]) {
     if (audience) process.env.MATE_AUDIENCE = audience;
     else delete process.env.MATE_AUDIENCE;
@@ -104,11 +120,41 @@ test("frozen install restores the same union for every valid audience and for no
     ).toBe(true);
   }
 
-  expect(frozenCalls.map(packages)).toEqual([
-    ["@acme/base", "@acme/analyst", "@acme/reviewer"],
-    ["@acme/base", "@acme/analyst", "@acme/reviewer"],
-    ["@acme/base", "@acme/analyst", "@acme/reviewer"],
+  expect(frozenCalls).toEqual([
+    [SHARED, ["@acme/base"]],
+    [SHARED, ["@acme/base"]],
+    [audienceWorkspace("ba"), ["@acme/analyst"]],
+    [SHARED, ["@acme/base"]],
+    [audienceWorkspace("qa"), ["@acme/reviewer"]],
   ]);
+});
+
+test("an install names each audience whose plugins it removed and how to restore them", async () => {
+  const tree = path.join(companion, audienceWorkspace("ba"), "node_modules");
+  await fs.mkdir(tree, { recursive: true });
+  const log = spyOn(console, "log").mockImplementation(() => {});
+
+  try {
+    expect(await runInstallCommand(["--yes"], companion, STUBBED_INSTALLERS)).toBe(true);
+    const output = log.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(output).toContain('"ba"');
+    expect(output).toContain("MATE_AUDIENCE=ba mate install");
+  } finally {
+    log.mockRestore();
+  }
+
+  await expect(fs.access(tree)).rejects.toThrow();
+});
+
+test("an install with nothing to remove names no audience", async () => {
+  const log = spyOn(console, "log").mockImplementation(() => {});
+
+  try {
+    expect(await runInstallCommand(["--yes"], companion, STUBBED_INSTALLERS)).toBe(true);
+    expect(log.mock.calls.map((call) => String(call[0])).join("\n")).not.toContain("removed");
+  } finally {
+    log.mockRestore();
+  }
 });
 
 test("an unknown audience exits 1 before any install, naming requested and declared", async () => {
@@ -140,5 +186,5 @@ test("without audiences the declared base list installs unchanged", async () => 
 
   expect(await runInstallCommand(["--yes"], companion, STUBBED_INSTALLERS)).toBe(true);
 
-  expect(ordinaryCalls.map(packages)).toEqual([["@acme/base"]]);
+  expect(ordinaryCalls).toEqual([[SHARED, ["@acme/base"]]]);
 });
