@@ -1,6 +1,6 @@
 {
   "name": "@uniqbit/mate",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -38,7 +38,7 @@
     "format:check": "oxfmt src/ --check"
   },
   "dependencies": {
-    "@uniqbit/mate-core": "0.20.0",
+    "@uniqbit/mate-core": "0.21.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
