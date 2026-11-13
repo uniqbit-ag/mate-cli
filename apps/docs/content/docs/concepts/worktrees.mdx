@@ -114,10 +114,54 @@ If the main checkout has a TokenSave index and the CLI is available, Mate
 initializes or syncs the worktree's index, even with `--no-install`. An index
 failure is a warning, not removal of the checkout.
 
-Mate never reads, copies, or links environment secrets. It reports paths of
-ignored `.env` files missing from the worktree. Provide required values
-yourself through your normal secure setup; consult tracked example files for
-variable names. Do not ask an agent to copy secrets between checkouts.
+## Include files
+
+A new worktree lacks the main checkout's ignored files, such as `.env` or an
+`.npmrc` with a registry token. List the ones a worktree needs in a
+`.worktreeinclude` file at the repository root, and Mate copies them into every
+new or reused worktree. For example, a `.worktreeinclude` with:
+
+```gitignore
+.env
+apps/acme/.env.local
+.npmrc
+certs/
+```
+
+- The file uses gitignore syntax, and Git does the matching: `**/.env`, a
+  folder such as `certs/`, and `!` exclusions work as in `.gitignore`.
+- Only files that are untracked and ignored in the main checkout are copied.
+  A tracked file, or an untracked one Git does not ignore, is never copied.
+  Nothing inside a `node_modules` folder is copied, so `.env` does not match
+  files that packages ship.
+- Mate reads the include files from the main checkout, so a list you have not
+  committed yet already works.
+- A file that already exists in the worktree is kept, never overwritten. This
+  includes files Mate writes there first, such as `.claude/settings.local.json`.
+  A copy keeps the source's permissions. Symbolic links are skipped.
+- Copying runs before the install step, so a copied `.npmrc` can reach a
+  private registry.
+- The output names the copied and failed paths, never the contents. A failed
+  copy keeps the worktree and makes the command exit non-zero.
+
+Commit `.worktreeinclude`: it holds patterns, not secrets. Claude Code and
+Conductor read the same file for the worktrees they create, though edge cases
+may differ from Mate's Git-based matching.
+
+For patterns only you need, add `.worktreeinclude.local` and ignore it in
+`.gitignore`. Mate applies its patterns after the shared ones, so a
+`!.env.production` line there stops a shared pattern from copying that file.
+Only Mate reads it, and only while Git ignores it; a tracked or unignored
+`.worktreeinclude.local` is skipped with a warning.
+
+Copies do not follow later changes. After rotating a secret, delete the
+worktree's copy and run `mate working worktree` again. Pruning a worktree
+removes its copies with it.
+
+Ignored `.env` files that no include file covers are still reported by path
+only. Provide those yourself through your normal secure setup; consult tracked
+example files for variable names. Do not ask an agent to copy secrets between
+checkouts; list them in an include file instead.
 
 ## Adopt a worktree created elsewhere
 

@@ -65,11 +65,30 @@ const created: WorktreeResult = {
       install: { command: "bun install", outcome: "ok" },
       wrap: { runtimes: ["claude"], outcome: "ok" },
       index: { outcome: "ok" },
+      include: { sources: [], copied: [], failed: [] },
       missingEnv: [".env"],
     },
   ],
   diagnostics: [],
   warnings: [],
+};
+
+/** `created` with include files that copied `.env` and failed `.npmrc`. */
+const included: WorktreeResult = {
+  ...created,
+  ok: false,
+  repositories: [
+    {
+      ...created.repositories[0]!,
+      include: {
+        sources: [".worktreeinclude", ".worktreeinclude.local"],
+        copied: [".env"],
+        failed: [{ path: ".npmrc", reason: "EACCES" }],
+      },
+      missingEnv: [],
+      error: "copying .npmrc failed",
+    },
+  ],
 };
 
 function deps(overrides: Partial<WorkingWorktreeDeps> = {}): WorkingWorktreeDeps {
@@ -407,6 +426,36 @@ describe("mate working worktree", () => {
     expect(text).toContain("acme/web: tokensave index ok");
     expect(text).toContain("(not copied): .env");
     expect(text).toContain("acme/web: wrapped for claude");
+    expect(text).not.toContain("copied from");
+  });
+
+  test("text output names include files, copied and failed paths, and exits non-zero", async () => {
+    await runWorkingWorktreeCommand(["acme-login"], deps({ create: async () => included }));
+    const text = out.join("");
+    expect(text).toContain(
+      "acme/web: copied from .worktreeinclude, .worktreeinclude.local: .env\n",
+    );
+    expect(text).toContain("acme/web: copying .npmrc failed (EACCES)\n");
+    expect(text.indexOf("copied from")).toBeLessThan(text.indexOf("acme/web: install"));
+    expect(text).not.toContain("(not copied)");
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("--json carries the include result, empty without include files", async () => {
+    await runWorkingWorktreeCommand(["acme-login", "--json"], deps());
+    expect(JSON.parse(out.join("")).repositories[0].include).toEqual({
+      sources: [],
+      copied: [],
+      failed: [],
+    });
+    out.length = 0;
+    await runWorkingWorktreeCommand(
+      ["acme-login", "--json"],
+      deps({ create: async () => included }),
+    );
+    expect(JSON.parse(out.join("")).repositories[0].include).toEqual(
+      included.repositories[0]!.include,
+    );
   });
 
   test("prune passes only Done Worksets, with their changes, and exits 0 when it keeps one", async () => {

@@ -185,23 +185,27 @@ runtimes, so a plain `claude` or `opencode` session started there gets the
 artifact guardrail, hooks, skills, and MCP servers; `git status` stays clean in
 both checkouts. A failed wrap keeps the worktree and exits non-zero, unless the
 worktree is reused and still wrapped from an earlier run; then it only warns. Each
-worktree then gets the install step of its first lockfile: `bun install`,
+worktree then gets the ignored files its main checkout's include files name,
+before the install step: `.worktreeinclude` and, while Git ignores it,
+`.worktreeinclude.local`, both in gitignore syntax. Files that already exist in
+the worktree are kept, and a failed copy keeps the worktree and exits non-zero;
+see [Worktrees](/docs/concepts/worktrees#include-files). Then comes the install step of its first lockfile: `bun install`,
 `pnpm install`, `yarn install`, or `npm ci`. `--no-install` skips the install.
 A failed install keeps the worktree and exits non-zero. When the main checkout
 holds a TokenSave index and `tokensave` is on your `PATH`, the worktree gets its
 own index: `tokensave init` with the main checkout's CPU profile for a new
 worktree, `tokensave sync` for a reused one that already has one. This runs
 also with `--no-install`. A failed index step keeps the worktree and only warns.
-Env files are never
+Other env files are never
 read, copied, or linked: the command names the ignored `.env` and `.env.*`
-files of the main checkout that the worktree lacks, by path only, so you can
+files of the main checkout that the worktree still lacks, by path only, so you can
 provide them yourself. Example files such as `.env.example` are not named.
 
 In an umbrella's mirrored worktree, the folder gets the link and the wrap
 instead of its children: a repo-local link under the umbrella's repository ID,
 never the companion's registry, and a wrap for the runtimes the umbrella is
 wrapped for. The child worktrees get no `.mate/` folder, so `git status` stays
-clean in them and in the umbrella's children. Install, env files, and the
+clean in them and in the umbrella's children. Include files, install, env files, and the
 TokenSave index still run per child worktree. When the umbrella holds a
 TokenSave index, the mirrored folder gets its own index too, by the same rules.
 When the umbrella has none, that step is skipped with the reason
@@ -212,7 +216,9 @@ with several, pass `--companion <path>`. `--json` prints one object with each
 repository's path, branch, `created` or `reused`, the wrapped runtimes and the
 install command with their outcomes (`ok`, `failed`, or `skipped`), the
 TokenSave `index` step with its outcome and, when skipped or failed, its
-`reason`, and the missing env paths. With `--enter` it adds an `enter` field: `runtime`
+`reason`, the `include` step with its `sources` (the include files used),
+`copied` paths, and `failed` paths each with a `reason`, and the missing env
+paths. With `--enter` it adds an `enter` field: `runtime`
 (`claude`, `opencode`, or `unknown`), `action`, either `tool` with the `tool`
 to call or `handoff` with a `reason`, and the current repository's worktree
 `path` when it has one. When the companion selects RTK, Claude's `tool` also
