@@ -182,9 +182,11 @@ describe("Node package bootstrap", () => {
     await fs.copyFile(entry.bun, path.join(entry.bin, "bun"));
     await fs.chmod(path.join(entry.bin, "bun"), 0o755);
 
+    // As in `run`: a set BUN_INSTALL would resolve the real Bun, not the fixture's.
+    const { BUN_INSTALL: _bunInstall, ...inherited } = process.env;
     const child = spawn(process.execPath, [bootstrap], {
       env: {
-        ...process.env,
+        ...inherited,
         HOME: entry.root,
         PATH: `${entry.bin}${path.delimiter}/usr/bin:/bin`,
       },

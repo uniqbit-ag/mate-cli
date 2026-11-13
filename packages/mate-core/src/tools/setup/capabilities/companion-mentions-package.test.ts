@@ -17,7 +17,11 @@ function packedFiles(): string[] {
     { cwd: packageRoot, encoding: "utf8" },
   );
   if (result.status !== 0) throw new Error(`npm pack failed: ${result.stderr}`);
-  const [packed] = JSON.parse(result.stdout) as [{ files: { path: string }[] }];
+  // npm up to 11 prints an array of packages, npm 12 an object keyed by package name.
+  const parsed = JSON.parse(result.stdout) as
+    | { files: { path: string }[] }[]
+    | Record<string, { files: { path: string }[] }>;
+  const [packed] = Array.isArray(parsed) ? parsed : Object.values(parsed);
   return packed.files.map((file) => file.path).toSorted();
 }
 
