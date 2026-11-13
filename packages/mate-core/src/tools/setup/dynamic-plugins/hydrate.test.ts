@@ -58,6 +58,8 @@ async function writeCompanion(options: {
   pluginsYaml?: string[];
   installed?: boolean;
   source?: string;
+  /** Workspace the package is installed into; the shared one when unset. */
+  audience?: string;
 }): Promise<string> {
   const companionPath = await makeTempDir("hydrate-companion-");
   const configDir = path.join(companionPath, ".mate", "config");
@@ -68,7 +70,7 @@ async function writeCompanion(options: {
     "utf8",
   );
   if (options.installed !== false) {
-    const root = pluginPackageRoot(companionPath, PACKAGE);
+    const root = pluginPackageRoot(companionPath, PACKAGE, options.audience ?? null);
     await fs.mkdir(root, { recursive: true });
     await fs.writeFile(
       path.join(root, "package.json"),
@@ -304,7 +306,11 @@ describe("hydrateDynamicPlugins audiences", () => {
   test("an inactive audience's installed plugin is neither imported nor registered", async () => {
     const marker = path.join(await makeTempDir("hydrate-marker-"), "imported");
     const source = `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(marker)}, "ran");\n${FACTORY_SOURCE}`;
-    const companionPath = await writeCompanion({ pluginsYaml: AUDIENCE_ONLY, source });
+    const companionPath = await writeCompanion({
+      pluginsYaml: AUDIENCE_ONLY,
+      source,
+      audience: "ba",
+    });
 
     const { registry, warnings } = await hydrate(companionPath, {});
 
@@ -313,8 +319,8 @@ describe("hydrateDynamicPlugins audiences", () => {
     await expect(fs.access(marker)).rejects.toThrow();
   });
 
-  test("the active audience's plugin registers", async () => {
-    const companionPath = await writeCompanion({ pluginsYaml: AUDIENCE_ONLY });
+  test("the active audience's plugin registers from its own workspace", async () => {
+    const companionPath = await writeCompanion({ pluginsYaml: AUDIENCE_ONLY, audience: "ba" });
 
     const { registry, warnings } = await hydrate(companionPath, { MATE_AUDIENCE: "ba" });
 
@@ -325,11 +331,42 @@ describe("hydrateDynamicPlugins audiences", () => {
   test("the audience declaration's own policy applies", async () => {
     const companionPath = await writeCompanion({
       pluginsYaml: [...AUDIENCE_ONLY, "        policy: default"],
+      audience: "ba",
     });
 
     const { registry } = await hydrate(companionPath, { MATE_AUDIENCE: "ba" });
 
     expect(registry.getPolicy("acme-custom")).toBe("default");
+  });
+
+  test("an audience plugin installed only in the shared workspace is not loaded", async () => {
+    const companionPath = await writeCompanion({ pluginsYaml: AUDIENCE_ONLY });
+
+    const { registry, warnings } = await hydrate(companionPath, { MATE_AUDIENCE: "ba" });
+
+    expect(registry.getAll()).toEqual([]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("MATE_AUDIENCE=ba mate install");
+  });
+
+  test("an active audience that was never installed warns and base still hydrates", async () => {
+    const companionPath = await writeCompanion({
+      pluginsYaml: [
+        ...DECLARED,
+        "audiences:",
+        "  ba:",
+        "    plugins:",
+        '      - package: "@acme/reader"',
+        '        version: "^1.0.0"',
+      ],
+    });
+
+    const { registry, warnings } = await hydrate(companionPath, { MATE_AUDIENCE: "ba" });
+
+    expect(registry.getAll().map((plugin) => plugin.id)).toEqual(["acme-custom"]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('"@acme/reader" is not installed');
+    expect(warnings[0]).toContain("MATE_AUDIENCE=ba mate install");
   });
 
   test("an unknown audience warns once and hydrates base only", async () => {

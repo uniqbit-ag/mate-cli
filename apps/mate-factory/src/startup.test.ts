@@ -859,6 +859,43 @@ describe("serving one audience", () => {
     expect(renderPlan(plan)).toContain("MATE_PLAN_AUDIENCE='ba'");
   });
 
+  describe("the registry-override check", () => {
+    const REGISTRY = { scope: "@acme", url: "https://pkg.acme.test/", token: "t" };
+    const overrideIn = (companion: string, audience: string) => {
+      const workspace = path.join(companion, ".mate", "plugins", "audiences", audience);
+      fs.mkdirSync(workspace, { recursive: true });
+      fs.writeFileSync(path.join(workspace, ".npmrc"), "registry=https://x.test/\n");
+      return path.join(workspace, ".npmrc");
+    };
+
+    test("a conflicting file in the served audience's workspace blocks the restore, naming it", () => {
+      const companion = makeCompanion(path.join(root, "acme"), AUDIENCE_FRAMEWORK);
+      const override = overrideIn(companion, "ba");
+      const { run, calls } = recorder();
+
+      let message = "";
+      try {
+        prepareStartup(config({ audience: "ba", pluginRegistry: REGISTRY }), deps({ run }));
+      } catch (error) {
+        message = (error as Error).message;
+      }
+
+      expect(message).toContain(`${override} overrides`);
+      expect(calls.some((call) => call[0] === "bash")).toBe(false);
+    });
+
+    test("another audience's file is not inspected", () => {
+      const companion = makeCompanion(path.join(root, "acme"), AUDIENCE_FRAMEWORK);
+      overrideIn(companion, "qa");
+      const { run, calls } = recorder();
+
+      expect(() =>
+        prepareStartup(config({ audience: "ba", pluginRegistry: REGISTRY }), deps({ run })),
+      ).not.toThrow();
+      expect(calls.some((call) => call[0] === "bash")).toBe(true);
+    });
+  });
+
   test("an undeclared audience stops before setup, naming it and the declared ones", () => {
     makeCompanion(path.join(root, "acme"), AUDIENCE_FRAMEWORK);
     const { run, calls } = recorder();

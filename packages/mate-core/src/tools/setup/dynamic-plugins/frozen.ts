@@ -2,9 +2,9 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { FRAMEWORK_NAME } from "../../../framework";
 import type { PluginDeclaration } from "../../../lib/orchestrator/types";
 import type { NpmInstallRunner, PluginInstallResult } from "./install";
-import { dynamicPluginsWorkspaceRoot } from "./paths";
 
 /** Raised before anything is installed: manifest or lockfile inputs are unusable. */
 export class FrozenInstallError extends Error {}
@@ -13,6 +13,10 @@ export interface FrozenInstallDeps {
   /** Restores the exact locked tree; defaults to `npm ci`. */
   runNpmCi?: NpmInstallRunner;
   env?: Record<string, string | undefined>;
+  /** Ordinary install that writes this workspace's manifest and lockfile; named when one is missing. */
+  relockCommand?: string;
+  /** Packages declared under an audience; one recorded in this workspace marks an unmigrated companion. */
+  audiencePackages?: ReadonlySet<string>;
 }
 
 interface LockEntry {
@@ -78,7 +82,11 @@ function sameMap(a: Record<string, string>, b: Record<string, string>): string[]
  */
 async function treeMismatches(workspaceRoot: string, lock: Lockfile): Promise<string[]> {
   const hiddenText = await readText(path.join(workspaceRoot, "node_modules", ".package-lock.json"));
-  if (hiddenText === null) return ["installed tree has no install record"];
+  if (hiddenText === null) {
+    // npm leaves no tree behind for a lockfile that locks nothing.
+    const locksPackages = Object.keys(lock.packages ?? {}).some((key) => key !== "");
+    return locksPackages ? ["installed tree has no install record"] : [];
+  }
   let hidden: Lockfile;
   try {
     hidden = JSON.parse(hiddenText) as Lockfile;
@@ -105,17 +113,17 @@ async function treeMismatches(workspaceRoot: string, lock: Lockfile): Promise<st
 }
 
 /**
- * Deployment restore: installs exactly what the committed lockfile records.
+ * Deployment restore of one workspace: installs exactly what its committed lockfile records.
  * Inputs are validated before npm runs — the workspace manifest against the declarations, and the lockfile against the
  * manifest — and neither tracked file is ever rewritten. An installed tree is
  * reused only when it matches the lockfile's versions and integrity.
  */
 export async function installDeclaredPluginsFrozen(
-  companionPath: string,
+  workspaceRoot: string,
   declarations: PluginDeclaration[],
   deps: FrozenInstallDeps = {},
 ): Promise<PluginInstallResult[]> {
-  const workspaceRoot = dynamicPluginsWorkspaceRoot(companionPath);
+  const relock = deps.relockCommand ?? `${FRAMEWORK_NAME} install`;
   const sorted = declarations.toSorted((a, b) => a.package.localeCompare(b.package));
   const desired: Record<string, string> = {};
   for (const declaration of sorted) desired[declaration.package] = declaration.version;
@@ -123,22 +131,33 @@ export async function installDeclaredPluginsFrozen(
   const manifestFile = path.join(workspaceRoot, "package.json");
   const lockFile = path.join(workspaceRoot, "package-lock.json");
   const [manifestText, lockText] = await Promise.all([readText(manifestFile), readText(lockFile)]);
+  // Nothing declared and nothing recorded: there is no workspace to restore.
+  if (sorted.length === 0 && manifestText === null) return [];
   if (manifestText === null) {
     throw new FrozenInstallError(
-      `${manifestFile} is missing; commit the plugin workspace manifest in the companion's authoring flow`,
-    );
-  }
-  if (lockText === null) {
-    throw new FrozenInstallError(
-      `${lockFile} is missing; commit the plugin lockfile in the companion's authoring flow`,
+      `${manifestFile} is missing; commit the plugin workspace manifest in the companion's authoring flow (\`${relock}\` writes it)`,
     );
   }
 
   const manifest = parseJson<{ dependencies?: Record<string, string> }>(manifestText, manifestFile);
-  const manifestDrift = sameMap(desired, manifest.dependencies ?? {});
+  const recorded = manifest.dependencies ?? {};
+  const manifestDrift = sameMap(desired, recorded);
   if (manifestDrift.length > 0) {
+    const misplaced = Object.keys(recorded)
+      .filter((name) => deps.audiencePackages?.has(name))
+      .toSorted();
+    const migration =
+      misplaced.length > 0
+        ? `; ${misplaced.join(", ")} ${misplaced.length > 1 ? "are" : "is"} declared under an audience and no longer belong${misplaced.length > 1 ? "" : "s"} in ${manifestFile}: run \`${FRAMEWORK_NAME} install\` to migrate the companion, then commit the result`
+        : "";
     throw new FrozenInstallError(
-      `plugin workspace manifest disagrees with framework.yaml: ${manifestDrift.join("; ")}`,
+      `plugin workspace manifest disagrees with framework.yaml: ${manifestDrift.join("; ")}${migration}`,
+    );
+  }
+  if (lockText === null) {
+    if (sorted.length === 0) return [];
+    throw new FrozenInstallError(
+      `${lockFile} is missing; commit the plugin lockfile in the companion's authoring flow (\`${relock}\` writes it)`,
     );
   }
   const lock = parseJson<Lockfile>(lockText, lockFile);
