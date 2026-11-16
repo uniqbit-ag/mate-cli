@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { parseRemote, repositoryPath } from "./forge-remote";
-import { originUrlOf, readGitLayout } from "./git-layout";
+import { originUrlOf, readGitLayout, type GitLayout } from "./git-layout";
 import { mirroredUmbrellaOf, repoLocalRegistryPath } from "./repo-local";
 
 export { mirroredUmbrellaOf } from "./repo-local";
@@ -14,6 +14,10 @@ export { mirroredUmbrellaOf } from "./repo-local";
 
 /** Direct child folders of `folder` with a Git layout and no Repository Link of their own, in name order. */
 export function umbrellaChildFolders(folder: string): string[] {
+  return childCheckouts(folder).map((child) => child.path);
+}
+
+function childCheckouts(folder: string): { path: string; layout: GitLayout }[] {
   let listed: fs.Dirent[];
   try {
     listed = fs.readdirSync(folder, { withFileTypes: true });
@@ -23,8 +27,11 @@ export function umbrellaChildFolders(folder: string): string[] {
   return listed
     .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
     .map((entry) => path.join(folder, entry.name))
-    .filter((child) => readGitLayout(child) !== null && !isFile(repoLocalRegistryPath(child)))
-    .toSorted();
+    .toSorted()
+    .flatMap((child) => {
+      const layout = readGitLayout(child);
+      return layout && !isFile(repoLocalRegistryPath(child)) ? [{ path: child, layout }] : [];
+    });
 }
 
 /** An umbrella child named by its forge identity. */
@@ -40,10 +47,10 @@ export interface UmbrellaChild {
  */
 export function umbrellaChildIdentities(folder: string): UmbrellaChild[] {
   if (readGitLayout(folder)) return [];
-  return umbrellaChildFolders(folder).flatMap((child) => {
-    const origin = originUrlOf(child);
+  return childCheckouts(folder).flatMap((child) => {
+    const origin = originUrlOf(child.layout);
     const remote = origin ? parseRemote(origin) : null;
-    return remote ? [{ path: child, repository: repositoryPath(remote) }] : [];
+    return remote ? [{ path: child.path, repository: repositoryPath(remote) }] : [];
   });
 }
 

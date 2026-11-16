@@ -83,8 +83,10 @@ folder-name order:
 - **The block is read when the session starts.** A repository you clone into
   the folder appears in the next session, without linking again.
 - **Every runtime gets the same block**: a Claude session Mate launched, plain
-  `claude` in a wrapped umbrella, and OpenCode. A session in a Git checkout, or
-  a companion-scoped launch, gets no block.
+  `claude` in a wrapped umbrella, and OpenCode. A session whose Working
+  Repository is a Git checkout, or a companion-scoped launch, gets no block.
+  `mate claude` or `mate opencode` run inside a child that has no link of its
+  own starts the session in the umbrella, so that session gets the block.
 - **OpenCode builds the block once per folder it serves**, when it loads the
   plugin there. A repository cloned while OpenCode runs appears after OpenCode
   restarts. A session that `mate_enter_worktree` moves into the mirrored

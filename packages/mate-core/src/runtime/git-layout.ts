@@ -162,10 +162,8 @@ function coreConfig(commonDir: string): Map<string, string> {
   return configSection(commonDir, "core");
 }
 
-/** The checkout's raw `remote.origin.url` from its shared Git folder config; null without one. */
-export function originUrlOf(checkoutPath: string): string | null {
-  const layout = readGitLayout(checkoutPath);
-  if (!layout) return null;
+/** The raw `remote.origin.url` from a checkout's shared Git folder config; null without one. */
+export function originUrlOf(layout: GitLayout): string | null {
   return configSection(layout.commonDir, "remote", "origin").get("url") || null;
 }
 

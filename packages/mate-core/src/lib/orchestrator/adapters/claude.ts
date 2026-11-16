@@ -303,7 +303,8 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
   /**
    * Plan in, flags out; decides nothing. `--append-system-prompt` is
    * unconditional: no settings document can carry it. It holds the Agent
-   * Guidance alone; the Companion Instructions come from the wrap's session hook.
+   * Guidance and, in an Umbrella Repository, the children block read from the
+   * folder at each call; the Companion Instructions come from the wrap's session hook.
    * `--plugin-dir` passes the folders `launchPluginFolders` names, from the
    * running install's bundled plugin.
    */

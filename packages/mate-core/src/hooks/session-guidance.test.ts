@@ -91,6 +91,10 @@ describe("session-guidance hook module", () => {
 
     expect(context).toEndWith(`</companion-policy>\n\n${umbrellaChildrenBlock(repoRoot)}`);
     expect(context).toContain('<child repository="acme/api" folder="api" />');
+    // Claude's hook cwd follows `cd`; SessionStart runs again on clear and compact.
+    expect(additionalContext(buildSessionGuidance({}, path.join(repoRoot, "api")).stdout)).toBe(
+      context,
+    );
   });
 
   test("names the projected wrapper bin, not the running installation's", () => {

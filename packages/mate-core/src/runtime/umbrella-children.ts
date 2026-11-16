@@ -12,7 +12,7 @@ export const UMBRELLA_CHILDREN_MAX_CHARS = 2500;
 const SCOPE_SENTENCE =
   "Each child is a Working Repository of its own. The Working Repository of a piece of work is the child it concerns.";
 const COUNT_ONLY_SENTENCE =
-  "Too many to list. A child is a direct subfolder that is a Git checkout; `git -C <child> config --get remote.origin.url` gives its repository identity.";
+  "Too many to list. A child is a direct subfolder that is a Git checkout with a forge `origin` and no `.mate/config/registry.yaml` of its own; `git -C <child> config --get remote.origin.url` gives its repository identity.";
 
 /** The `umbrella-children` block; count only above either bound, since a partial list reads as whole. */
 function renderUmbrellaChildren(folder: string, children: readonly UmbrellaChild[]): string {
@@ -39,7 +39,14 @@ function renderUmbrellaChildren(folder: string, children: readonly UmbrellaChild
  */
 export function umbrellaChildrenBlock(folder: string): string {
   const resolved = path.resolve(folder);
-  if (!fs.statSync(repoLocalRegistryPath(resolved), { throwIfNoEntry: false })?.isFile()) return "";
-  const children = umbrellaChildIdentities(resolved);
-  return children.length > 0 ? renderUmbrellaChildren(resolved, children) : "";
+  try {
+    if (!fs.statSync(repoLocalRegistryPath(resolved), { throwIfNoEntry: false })?.isFile()) {
+      return "";
+    }
+    const children = umbrellaChildIdentities(resolved);
+    return children.length > 0 ? renderUmbrellaChildren(resolved, children) : "";
+  } catch {
+    // An optional block: an unreadable folder must not cost the session its whole policy.
+    return "";
+  }
 }

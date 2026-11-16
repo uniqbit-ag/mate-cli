@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { umbrellaChildrenOf } from "../lib/orchestrator/umbrella-checkouts";
+import { gitEnvironment } from "./companion-git";
 import { repositoryPath } from "./forge-remote";
 import { umbrellaChildIdentities } from "./umbrella-folder";
 
@@ -19,10 +20,15 @@ beforeEach(() => {
 
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 
+/** Without an inherited `GIT_DIR`, which would point these calls at the outer repository. */
+function git(...args: string[]): void {
+  execFileSync("git", args, { env: gitEnvironment() });
+}
+
 function repo(dir: string, origin?: string): string {
   fs.mkdirSync(dir, { recursive: true });
-  execFileSync("git", ["init", "-q", dir]);
-  if (origin) execFileSync("git", ["-C", dir, "remote", "add", "origin", origin]);
+  git("init", "-q", dir);
+  if (origin) git("-C", dir, "remote", "add", "origin", origin);
   return dir;
 }
 
@@ -42,10 +48,10 @@ describe("umbrellaChildIdentities", () => {
 
   test("reads a worktree child's origin from its shared Git folder", () => {
     const api = repo(path.join(umbrella, "api"), "git@github.com:acme/api.git");
-    execFileSync("git", ["-C", api, "commit", "-q", "--allow-empty", "-m", "init"]);
+    git("-C", api, "commit", "-q", "--allow-empty", "-m", "init");
     const mirrored = path.join(root, "acme.worktrees", "acme-login");
     fs.mkdirSync(mirrored, { recursive: true });
-    execFileSync("git", ["-C", api, "worktree", "add", "-q", path.join(mirrored, "api")]);
+    git("-C", api, "worktree", "add", "-q", path.join(mirrored, "api"));
 
     expect(umbrellaChildIdentities(mirrored)).toEqual([
       { path: path.join(mirrored, "api"), repository: "acme/api" },
