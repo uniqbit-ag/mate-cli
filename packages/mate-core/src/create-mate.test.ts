@@ -1,4 +1,11 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { afterEach, describe, expect, test } from "bun:test";
+
+import { withEnv } from "../../../test/fixtures";
+import { frictionLogDir, readEvents } from "./runtime/friction-log";
 
 let mainImpl: (argv?: string[]) => Promise<void> = async () => {};
 
@@ -99,5 +106,122 @@ describe("active distribution fallback", () => {
     expect(ids).toContain("claude");
     expect(ids).toContain("opencode");
     expect(ids).toContain("gitignore");
+  });
+});
+
+describe("createMate records a failed agent-run command as friction", () => {
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const dir of roots.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  function companionSelectingFriction(): { home: string; companion: string } {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mate-command-friction-"));
+    roots.push(root);
+    const companion = path.join(root, "companion");
+    fs.mkdirSync(path.join(companion, ".mate", "config"), { recursive: true });
+    fs.writeFileSync(
+      path.join(companion, ".mate", "config", "framework.yaml"),
+      "capabilities:\n  - name: friction\n",
+    );
+    return { home: path.join(root, "home"), companion };
+  }
+
+  /** Runs `argv` with a main that prints `printed` and exits `exitCode`; returns what was printed. */
+  async function runFailing(
+    env: Record<string, string | undefined>,
+    exitCode: number,
+    argv = ["bun", "mate", "artifact", "archive", "--bogus", "acme"],
+  ): Promise<unknown[]> {
+    const cli = createMate({
+      config: acmeConfig,
+      plugins: [],
+      main: async () => {
+        console.error("Unknown flag: --bogus");
+        process.exitCode = exitCode;
+      },
+    });
+    const printed: unknown[] = [];
+    const originalConsoleError = console.error;
+    const originalExitCode = process.exitCode;
+    console.error = (...args: unknown[]) => printed.push(...args);
+    try {
+      await withEnv(env, () => cli.run(argv));
+      expect(process.exitCode).toBe(exitCode);
+    } finally {
+      console.error = originalConsoleError;
+      // Bun keeps a non-zero exit code when it is set back to undefined.
+      process.exitCode = originalExitCode ?? 0;
+    }
+    return printed;
+  }
+
+  const noSession = { CLAUDE_CODE_SESSION_ID: undefined, OPENCODE_SESSION_ID: undefined };
+
+  test("records one event in an agent session, leaving output unchanged", async () => {
+    const { home, companion } = companionSelectingFriction();
+
+    const printed = await runFailing(
+      { ...noSession, HOME: home, MATE_ARTIFACT_PATH: companion, CLAUDE_CODE_SESSION_ID: "s1" },
+      1,
+    );
+
+    expect(printed).toEqual(["Unknown flag: --bogus"]);
+    expect(readEvents({ sinceDays: 1, homeDir: home })).toMatchObject([
+      {
+        kind: "command-failure",
+        fingerprint: "command:artifact archive:1",
+        runtime: "claude",
+        sessionId: "s1",
+        mateVersion: "1.0.0",
+        companion,
+        detail: {
+          command: "artifact",
+          subcommand: "archive",
+          flags: ["--bogus"],
+          exitCode: 1,
+          errorText: "Unknown flag: --bogus",
+        },
+      },
+    ]);
+  });
+
+  test("records nothing without an agent session id", async () => {
+    const { home, companion } = companionSelectingFriction();
+
+    await runFailing({ ...noSession, HOME: home, MATE_ARTIFACT_PATH: companion }, 1);
+
+    expect(fs.existsSync(frictionLogDir(home))).toBe(false);
+  });
+
+  test("records a command that ends with process.exit()", async () => {
+    const { home, companion } = companionSelectingFriction();
+    const cli = createMate({
+      config: acmeConfig,
+      plugins: [],
+      // What `process.exit(1)` does before the process ends, without ending the test.
+      main: async () => void process.emit("exit", 1),
+    });
+
+    process.exitCode = 0;
+    await withEnv(
+      { ...noSession, HOME: home, MATE_ARTIFACT_PATH: companion, CLAUDE_CODE_SESSION_ID: "s1" },
+      () => cli.run(["bun", "mate", "companion", "link"]),
+    );
+
+    expect(readEvents({ sinceDays: 1, homeDir: home })).toMatchObject([
+      { fingerprint: "command:companion link:1" },
+    ]);
+  });
+
+  test("records nothing for exit code zero", async () => {
+    const { home, companion } = companionSelectingFriction();
+
+    await runFailing(
+      { ...noSession, HOME: home, MATE_ARTIFACT_PATH: companion, OPENCODE_SESSION_ID: "s1" },
+      0,
+    );
+
+    expect(fs.existsSync(frictionLogDir(home))).toBe(false);
   });
 });

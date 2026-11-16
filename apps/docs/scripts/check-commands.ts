@@ -69,7 +69,11 @@ function usageCommands(source: string): UsageCommand[] {
 }
 
 /** Accepted but kept out of `usage()`. Remove an entry when the command is gone. */
-const unlisted = new Set(["artifact finish"]);
+const unlisted = new Set([
+  "artifact finish",
+  // A plugin's `cliCommands`: `usage()` adds them at run time, not in its source text.
+  "cap friction list",
+]);
 
 /**
  * `mate <words>` references with page line numbers: inline code starting with `mate`, and

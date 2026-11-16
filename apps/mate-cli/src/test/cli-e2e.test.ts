@@ -945,6 +945,26 @@ describe("mate CLI e2e", () => {
     expect(config).not.toContain("react-doctor");
   });
 
+  test("setup omits friction by default and saves it when selected", async () => {
+    const configOf = async (scenario: E2EScenario) =>
+      fs.readFile(path.join(scenario.companion, ".mate", "config", "framework.yaml"), "utf8");
+    const plain = await createScenario("mate-cli-e2e-setup-friction-default-");
+    const selected = await createScenario("mate-cli-e2e-setup-friction-");
+
+    expect((await setupCompanion(plain)).exitCode).toBe(0);
+    expect(
+      (
+        await setupCompanion(selected, [], {
+          allowedAgents: ["claude"],
+          capabilities: ["friction"],
+        })
+      ).exitCode,
+    ).toBe(0);
+
+    expect(await configOf(plain)).not.toContain("friction");
+    expect(await configOf(selected)).toContain("name: friction");
+  });
+
   test("flagged setup persists selected package managers", async () => {
     const scenario = await createScenario("mate-cli-e2e-setup-package-managers-");
     await writeUvStub(scenario);

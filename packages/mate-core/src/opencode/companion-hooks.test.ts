@@ -14,6 +14,7 @@ import {
 import { readContext, type CompanionContext } from "./companion-policy";
 import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { MATE_ENV } from "../runtime/env-names";
+import { frictionLogDir, readEvents } from "../runtime/friction-log";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
 import { ROUTE_SYNC_MARKER, TOKENSAVE_DB } from "../runtime/tokensave-route";
@@ -478,5 +479,73 @@ describe("OpenCode tokensave routing", () => {
     const fallback = search({ query: "alpha" });
     await hooks.get("tool.execute.before")!(fallback);
     expect(fallback.input).toEqual({ query: "alpha" });
+  });
+});
+
+describe("OpenCode companion hooks record refusals as friction", () => {
+  /** A wrapped repository and no launch environment, as in a plain `opencode` run. */
+  async function wrappedWithFriction(capabilities: string[]) {
+    const root = await makeTempDir("mate-opencode-friction-");
+    const repo = path.join(root, "repo");
+    const companion = path.join(root, "companion");
+    const home = path.join(root, "home");
+    await fs.mkdir(path.join(companion, ".mate", "config"), { recursive: true });
+    await fs.mkdir(repo, { recursive: true });
+    await fs.mkdir(home);
+    await fs.writeFile(
+      path.join(companion, ".mate", "config", "framework.yaml"),
+      `capabilities:\n${capabilities.map((name) => `  - name: ${name}\n`).join("")}`,
+    );
+    spawnSync("git", ["init", "-q"], { cwd: repo, stdio: "ignore" });
+    await wrapRepo(repo, companion);
+    const context = readContext(noLaunchEnvironment(), repo);
+    const { api, hooks } = fakeApi(repo);
+    await registerCompanionHooks(api, context, { HOME: home });
+    const call = async (tool: string, input: Record<string, unknown>) => {
+      try {
+        await hooks.get("tool.execute.before")!({ tool, sessionID: "s1", input });
+        return null;
+      } catch (error) {
+        return error as Error;
+      }
+    };
+    return { repo, companion, home, call };
+  }
+
+  test("records one event per check, without a launch environment", async () => {
+    const { repo, companion, home, call } = await wrappedWithFriction(["friction"]);
+    const trailer = "Co-Authored-By: Claude <noreply@anthropic.com>";
+
+    await call("read", { filePath: path.join(repo, ".env") });
+    await call("bash", { command: `git commit -m "fix: x" -m "${trailer}"` });
+    await call("write", { filePath: path.join(repo, "notes.md"), content: "line one" });
+
+    const events = readEvents({ sinceDays: 1, homeDir: home });
+    expect(events.map((event) => event.fingerprint)).toEqual([
+      "refusal:secret:read",
+      "refusal:attribution:shell",
+      "refusal:artifact:write",
+    ]);
+    for (const event of events) {
+      expect(event).toMatchObject({ runtime: "opencode", sessionId: "s1", companion });
+    }
+    expect(JSON.stringify(events)).not.toContain("line one");
+  });
+
+  test("rethrows the refusal with its message unchanged", async () => {
+    const selected = await wrappedWithFriction(["friction"]);
+    const plain = await wrappedWithFriction([]);
+
+    const recorded = await selected.call("write", {
+      filePath: path.join(selected.repo, "spec.md"),
+    });
+    const unrecorded = await plain.call("write", { filePath: path.join(plain.repo, "spec.md") });
+
+    const root = (repo: string) => path.dirname(repo);
+    expect(recorded?.message.replaceAll(root(selected.repo), "")).toBe(
+      unrecorded?.message.replaceAll(root(plain.repo), ""),
+    );
+    expect(recorded?.message).toContain(ARTIFACT_REFUSAL_HEADLINE);
+    await expect(fs.access(frictionLogDir(plain.home))).rejects.toThrow();
   });
 });

@@ -291,6 +291,48 @@ a Claude plugin. To turn it off, deselect it in `mate companion setup`. If the
 rows do not appear, see
 [`@mate:` Rows Are Missing](/docs/troubleshooting#mate-rows-are-missing).
 
+### Friction
+
+Friction (`friction`) records the difficulties Mate causes in agent sessions,
+so you can see where Mate gets in an agent's way. It is not selected by
+default: select it in `mate companion setup`, or add `- name: friction` to the
+companion's `capabilities` in `.mate/config/framework.yaml`. It installs
+nothing.
+
+While it is selected, Mate records one Friction Event:
+
+- for each tool call Mate's guard refuses, in Claude Code and in OpenCode, with
+  the check that refused: `secret`, `attribution`, `artifact` or `fork`. This
+  includes plain `claude` and `opencode` sessions in a wrapped repository.
+- for each `mate` command an agent session runs that exits with a non-zero
+  code. Mate knows an agent ran it from the session id Claude Code or OpenCode
+  sets. A command you run in your own terminal is not recorded.
+
+Refusals from hooks Mate does not own, such as TokenSave's or RTK's, are not
+recorded.
+
+The log lives on your machine only, in `~/.mate/friction/`, one
+`events-<YYYY-MM>.jsonl` file per month. Mate keeps the current month and the
+two months before it. It never writes the log into a companion or a working
+repository and never sends it anywhere.
+
+An event holds the check or the command, the tool kind, the refusal message or
+the last error text (up to 1,000 characters) and up to five paths the call
+names. A refused commit also keeps its shell command (up to 500 characters); a
+refused write keeps only its paths. It never holds:
+
+- the content a tool call would write,
+- the value of a flag (`--token abc123` is recorded as `--token`),
+- the value of an environment variable,
+- anything beyond the check and the tool kind for a refusal by the secret
+  check: no message, no command and no path.
+
+Recording never changes a refusal, a message or an exit code; when the log
+cannot be written, the event is dropped. Read the log with
+[`mate cap friction list`](/docs/reference/commands#capabilities); `mate doctor`
+shows the count of the last seven days. To stop recording, deselect the
+capability; delete `~/.mate/friction/` to remove what was recorded.
+
 ## Index Synchronization
 
 Launches automatically refresh enabled code-exploration capabilities. You can

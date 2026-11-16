@@ -11,6 +11,7 @@ import {
 } from "../runtime/companion-sync";
 import { hasLaunchEnvironment } from "../runtime/env";
 import { MATE_ENV } from "../runtime/env-names";
+import { recordRefusal, type FrictionCheck } from "../runtime/friction-recorder";
 import { resolveProjection } from "../runtime/projection";
 import { checkSecretAccess, type SecretToolCall } from "../runtime/secret-guard";
 import { isSecretPolicyFile } from "../runtime/secret-policy-weakening";
@@ -96,8 +97,20 @@ export async function refuseForkedCompanionWrite(
   if (!filePath || !isArtifactPath(filePath)) return;
   if (!isCompanionTarget(context, filePath)) return;
   const refusal = await companionForkRefusal(env, context.companionPath);
-  if (refusal) throw new Error(refusal);
+  if (refusal) throw new GuardRefusal("fork", refusal);
 }
+
+/** A guard refusal; its message is what the agent sees, `check` names the check that refused. */
+export class GuardRefusal extends Error {
+  readonly check: FrictionCheck;
+
+  constructor(check: FrictionCheck, message: string) {
+    super(message);
+    this.check = check;
+  }
+}
+
+const text = (value: unknown) => (typeof value === "string" ? value : "");
 
 /** OpenCode tool inputs in the shape the shared secret guard reads. */
 function secretToolCall(
@@ -105,7 +118,6 @@ function secretToolCall(
   tool: string,
   args: Record<string, unknown>,
 ): SecretToolCall | null {
-  const text = (value: unknown) => (typeof value === "string" ? value : "");
   const target = (value: unknown) =>
     text(value) ? resolveArtifactTarget(text(value), context.repositoryPath) : "";
   switch (tool) {
@@ -194,11 +206,11 @@ export async function guardToolInput(
       companionPath: context.companionPath,
       isCompanionPath: (filePath) => filePath.startsWith(companionRoot),
     });
-    if (refusal) throw new Error(refusal);
+    if (refusal) throw new GuardRefusal("secret", refusal);
   }
   if (tool === "bash") {
     const refusal = checkCommitAttribution(String(args.command ?? ""));
-    if (refusal) throw new Error(refusal);
+    if (refusal) throw new GuardRefusal("attribution", refusal);
   }
   const filePaths =
     tool === "write" || tool === "edit"
@@ -209,7 +221,7 @@ export async function guardToolInput(
 
   for (const filePath of filePaths) {
     if (context.repositoryPath && filePath && shouldBlockArtifactWrite(context, filePath)) {
-      throw new Error(buildArtifactError(context, filePath));
+      throw new GuardRefusal("artifact", buildArtifactError(context, filePath));
     }
     // oxlint-disable-next-line no-await-in-loop -- the first refusal wins
     await refuseForkedCompanionWrite(context, filePath, env);
@@ -233,7 +245,43 @@ export async function registerCompanionHooks(
   await repairCompanionGitOnce(context, env, api.location.directory).catch(() => []);
 
   await api.tool.hook("execute.before", async (event) => {
-    await guardToolInput(context, event.tool, event.input, env);
+    try {
+      await guardToolInput(context, event.tool, event.input, env);
+    } catch (error) {
+      if (error instanceof GuardRefusal) recordToolRefusal(error, event, context, env);
+      throw error;
+    }
+  });
+}
+
+/** Names only: the paths a call targets and the command a shell call runs, never written content. */
+function recordToolRefusal(
+  refusal: GuardRefusal,
+  event: { tool: string; sessionID: string; input: unknown },
+  context: CompanionContext,
+  env: Record<string, string | undefined>,
+): void {
+  const tool = V1_TOOL_NAMES[event.tool] ?? event.tool;
+  const args = (event.input && typeof event.input === "object" ? event.input : {}) as Record<
+    string,
+    unknown
+  >;
+  const command = tool === "bash" ? text(args.command) : "";
+  const paths =
+    tool === "apply_patch"
+      ? extractPatchPaths(text(args.patchText))
+      : [text(args.filePath) || text(args.path)];
+  recordRefusal({
+    check: refusal.check,
+    toolKind: secretToolCall(context, tool, args)?.kind ?? "other",
+    message: refusal.message,
+    command,
+    paths,
+    companionPath: context.companionPath,
+    repositoryPath: context.repositoryPath || null,
+    runtime: "opencode",
+    sessionId: event.sessionID,
+    env,
   });
 }
 

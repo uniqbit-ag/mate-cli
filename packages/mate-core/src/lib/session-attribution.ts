@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import {
   patchSession,
   type RegisteredSession,
+  type SessionRuntime,
   type WriteOptions,
 } from "../runtime/session-registry";
 
@@ -13,14 +14,23 @@ import {
  */
 
 /** Set by Claude Code and OpenCode for the processes their sessions start; undocumented. */
-const SESSION_ID_VARIABLES = ["CLAUDE_CODE_SESSION_ID", "OPENCODE_SESSION_ID"] as const;
+const SESSION_ID_VARIABLES = [
+  ["CLAUDE_CODE_SESSION_ID", "claude"],
+  ["OPENCODE_SESSION_ID", "opencode"],
+] as const satisfies readonly (readonly [string, SessionRuntime])[];
 
-export function currentSessionId(env: Record<string, string | undefined>): string | null {
-  for (const name of SESSION_ID_VARIABLES) {
+export function currentSession(
+  env: Record<string, string | undefined>,
+): { id: string; runtime: SessionRuntime } | null {
+  for (const [name, runtime] of SESSION_ID_VARIABLES) {
     const value = env[name]?.trim();
-    if (value) return value;
+    if (value) return { id: value, runtime };
   }
   return null;
+}
+
+export function currentSessionId(env: Record<string, string | undefined>): string | null {
+  return currentSession(env)?.id ?? null;
 }
 
 export interface Attribution {

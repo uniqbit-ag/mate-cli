@@ -6,6 +6,8 @@ import { parse as parseYaml } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { gitEnvironment } from "../../runtime/companion-git";
+import { readEvents } from "../../runtime/friction-log";
+import { FRICTION_CAPABILITY } from "../../runtime/friction-recorder";
 import { checkoutCommonDir, checkoutAt, sameClone } from "../../runtime/git-layout";
 import { physicalPath } from "../../runtime/physical-path";
 import { otherServingClaudeWrapRoot } from "../../runtime/serving-claude-wrap";
@@ -71,6 +73,8 @@ interface DoctorDeps {
   /** Environment `MATE_AUDIENCE` is read from; defaults to the process environment. */
   env?: Record<string, string | undefined>;
   createProgress?: typeof createStartupProgress;
+  /** Time the friction window ends at; defaults to now. */
+  now?: Date;
 }
 
 export type DoctorKind = "core" | "working" | "companion" | "hub";
@@ -130,6 +134,39 @@ export interface DoctorReport {
   resolutionFailures: Array<{ companionPath: string; message: string }>;
   /** Present inside a Git Checkout of a linked clone, or a worktree Git no longer recognizes. */
   checkout?: DoctorCheckout;
+  /** Present when the companion selects the `friction` capability. */
+  friction?: DoctorFriction;
+}
+
+export interface DoctorFriction {
+  days: number;
+  events: number;
+  top: { fingerprint: string; events: number } | null;
+}
+
+const DOCTOR_FRICTION_DAYS = 7;
+
+/** `readEvents` skips what it cannot read, so an unreadable log counts as no events. */
+function collectFriction(
+  companionPath: string,
+  env: Record<string, string | undefined>,
+  now?: Date,
+): DoctorFriction {
+  const events = readEvents({
+    sinceDays: DOCTOR_FRICTION_DAYS,
+    companion: companionPath,
+    homeDir: env.HOME,
+    now,
+  });
+  const counts = new Map<string, number>();
+  for (const event of events) {
+    counts.set(event.fingerprint, (counts.get(event.fingerprint) ?? 0) + 1);
+  }
+  let top: DoctorFriction["top"] = null;
+  for (const [fingerprint, count] of counts) {
+    if (!top || count > top.events) top = { fingerprint, events: count };
+  }
+  return { days: DOCTOR_FRICTION_DAYS, events: events.length, top };
 }
 
 export interface DoctorCheckout {
@@ -550,6 +587,13 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
     report.pluginCapabilities = inspection.capabilities;
   }
 
+  if (
+    root.rootPath &&
+    (root.config?.capabilities ?? []).some((entry) => entry.name === FRICTION_CAPABILITY)
+  ) {
+    report.friction = collectFriction(root.rootPath, env, deps.now);
+  }
+
   return report;
 }
 
@@ -778,6 +822,17 @@ function renderHumanReport(report: DoctorReport): void {
   }
 
   if (report.checkout) printSection("Checkout", renderCheckout(report.checkout));
+
+  if (report.friction) {
+    const { days, events, top } = report.friction;
+    printSection(
+      "Friction",
+      renderKeyValueTable([
+        [`Events, last ${days} days`, String(events)],
+        ["Most frequent", top ? `${top.fingerprint} (${top.events})` : "none"],
+      ]),
+    );
+  }
 
   printSection(
     "Resolution Failures",

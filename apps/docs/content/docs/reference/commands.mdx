@@ -284,6 +284,12 @@ audience. With `MATE_AUDIENCE` unset it installs no audience plugin.
 For OpenSpec, `mate doctor` reports the CLI bundled with Mate, with its path
 and version, instead of looking for `openspec` on `PATH`.
 
+When the companion selects the [`friction`](/docs/capabilities#friction)
+capability, `mate doctor` shows a Friction section: the events recorded for the
+companion in the last seven days and the most frequent fingerprint with its
+count. `--json` carries it as `friction`, with `days`, `events` and `top`
+(`null` without events). An unreadable log counts as no events.
+
 ### Progress Output
 
 Commands that take a while show which step is running instead of waiting
@@ -815,13 +821,23 @@ repository.
 
 ## Capabilities
 
-| Command                                    | Purpose                                         |
-| ------------------------------------------ | ----------------------------------------------- |
-| `mate cap openspec <subcommand> [args...]` | Run OpenSpec through the active context.        |
-| `mate cap graphify <subcommand> [args...]` | Run Graphify through the active context.        |
-| `mate cap index`                           | Refresh enabled Graphify and TokenSave indexes. |
-| `mate cap index --graphify`                | Refresh only Graphify.                          |
-| `mate cap index --tokensave`               | Refresh only TokenSave.                         |
+| Command                                      | Purpose                                         |
+| -------------------------------------------- | ----------------------------------------------- |
+| `mate cap openspec <subcommand> [args...]`   | Run OpenSpec through the active context.        |
+| `mate cap graphify <subcommand> [args...]`   | Run Graphify through the active context.        |
+| `mate cap index`                             | Refresh enabled Graphify and TokenSave indexes. |
+| `mate cap index --graphify`                  | Refresh only Graphify.                          |
+| `mate cap index --tokensave`                 | Refresh only TokenSave.                         |
+| `mate cap friction list [--days N] [--json]` | List recorded friction, grouped by fingerprint. |
+
+`mate cap friction list` needs the [`friction`](/docs/capabilities#friction)
+capability. It reads the events of the last `N` days, default 30, recorded for
+the resolved companion, and groups them by fingerprint. For each group it shows
+the event count, the number of sessions, the highest count in one session, the
+first and last time seen, and the Mate versions. Groups with the most repeats in
+one session come first, then those with the most events. With `--json` it
+prints one document with `kind` `friction-list` and `version` 1. It writes
+nothing to the log.
 
 The two index flags cannot be combined. When both Graphify and TokenSave are
 enabled, the default index flow refreshes TokenSave and then refreshes Graphify

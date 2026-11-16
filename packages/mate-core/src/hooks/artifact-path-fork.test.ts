@@ -5,10 +5,11 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { refuseForkedCompanionWrite } from "../opencode/companion-hooks";
+import { refuseForkedCompanionWrite, registerCompanionHooks } from "../opencode/companion-hooks";
 import { readContext } from "../opencode/companion-policy";
 import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { COMPANION_SYNC_COMMAND } from "../runtime/companion-sync";
+import { readEvents } from "../runtime/friction-log";
 import { mateVersion } from "../runtime/install";
 import { computeProjectionStamp, writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
@@ -341,5 +342,64 @@ describe("both runtimes return the same verdict", () => {
         unmanagedEnv(fixture),
       ),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("a forked-companion refusal is recorded as friction", () => {
+  function selectFriction(fixture: Fixture): void {
+    fs.appendFileSync(
+      path.join(fixture.companion, ".mate", "config", "framework.yaml"),
+      "capabilities:\n  - name: friction\n",
+    );
+  }
+
+  test("by the Claude guard", async () => {
+    const fixture = makeFixture();
+    forkHistory(fixture);
+    selectFriction(fixture);
+    process.env.HOME = fixture.home;
+
+    const outcome = await writeVerdict(
+      fixture,
+      path.join(fixture.companion, ARTIFACT),
+      unmanagedEnv(fixture),
+    );
+
+    expect(outcome.exitCode).toBe(2);
+    expect(readEvents({ sinceDays: 1, homeDir: fixture.home })).toMatchObject([
+      { fingerprint: "refusal:fork:write", runtime: "claude" },
+    ]);
+  });
+
+  test("by the OpenCode middleware", async () => {
+    const fixture = makeFixture();
+    forkHistory(fixture);
+    selectFriction(fixture);
+    process.env.HOME = fixture.home;
+    let before: ((event: Record<string, unknown>) => Promise<void>) | undefined;
+    const api = {
+      location: { directory: fixture.repo },
+      tool: {
+        hook: async (_name: string, callback: typeof before) => {
+          before = callback;
+        },
+      },
+    };
+    await registerCompanionHooks(
+      api as never,
+      readContext(unmanagedEnv(fixture), fixture.repo),
+      unmanagedEnv(fixture),
+    );
+
+    await expect(
+      before!({
+        tool: "write",
+        sessionID: "s1",
+        input: { filePath: path.join(fixture.companion, ARTIFACT) },
+      }),
+    ).rejects.toThrow("forked");
+    expect(readEvents({ sinceDays: 1, homeDir: fixture.home })).toMatchObject([
+      { fingerprint: "refusal:fork:write", runtime: "opencode", sessionId: "s1" },
+    ]);
   });
 });
