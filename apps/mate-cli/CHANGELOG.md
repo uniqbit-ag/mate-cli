@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.21.1](https://github.com/uniqbit-ag/mate-cli/compare/0.21.0...0.21.1) (2026-11-16)
+
+### Features
+
+- ignore root .worktreeinclude.local through Mate's managed git excludes ([6cc6b93](https://github.com/uniqbit-ag/mate-cli/commit/6cc6b931596d8cadc538efef538db6af4b3d6362))
+
 ## [0.21.0](https://github.com/uniqbit-ag/mate-cli/compare/0.20.0...0.21.0) (2026-11-13)
 
 ### ⚠ BREAKING CHANGES
