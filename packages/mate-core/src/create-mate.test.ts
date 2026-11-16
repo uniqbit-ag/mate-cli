@@ -132,24 +132,28 @@ describe("createMate records a failed agent-run command as friction", () => {
     env: Record<string, string | undefined>,
     exitCode: number,
     argv = ["bun", "mate", "artifact", "archive", "--bogus", "acme"],
+    print: () => void = () => console.error("Unknown flag: --bogus"),
   ): Promise<unknown[]> {
     const cli = createMate({
       config: acmeConfig,
       plugins: [],
       main: async () => {
-        console.error("Unknown flag: --bogus");
+        print();
         process.exitCode = exitCode;
       },
     });
     const printed: unknown[] = [];
     const originalConsoleError = console.error;
+    const originalWrite = process.stderr.write;
     const originalExitCode = process.exitCode;
     console.error = (...args: unknown[]) => printed.push(...args);
+    process.stderr.write = ((chunk: unknown) => printed.push(chunk) > 0) as typeof originalWrite;
     try {
       await withEnv(env, () => cli.run(argv));
       expect(process.exitCode).toBe(exitCode);
     } finally {
       console.error = originalConsoleError;
+      process.stderr.write = originalWrite;
       // Bun keeps a non-zero exit code when it is set back to undefined.
       process.exitCode = originalExitCode ?? 0;
     }
@@ -184,6 +188,22 @@ describe("createMate records a failed agent-run command as friction", () => {
         },
       },
     ]);
+  });
+
+  test("keeps direct stderr writes, and no echoed argument longer than the kept tail", async () => {
+    const { home, companion } = companionSelectingFriction();
+    const token = `acme${"x".repeat(1_500)}`;
+
+    const printed = await runFailing(
+      { ...noSession, HOME: home, MATE_ARTIFACT_PATH: companion, CLAUDE_CODE_SESSION_ID: "s1" },
+      1,
+      ["bun", "mate", "companion", "prepare", `--token=${token}`],
+      () => process.stderr.write(`Unsupported argument: --token=${token}\n`),
+    );
+
+    expect(printed).toEqual([`Unsupported argument: --token=${token}\n`]);
+    const [event] = readEvents({ sinceDays: 1, homeDir: home });
+    expect(event.detail.errorText).toBe("Unsupported argument: --token=…");
   });
 
   test("records nothing without an agent session id", async () => {

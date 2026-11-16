@@ -1,6 +1,5 @@
 import { resolveCompanionRuntime } from "./env";
 import { appendEvent, type FrictionRuntime } from "./friction-log";
-import { stripHeredocBodies } from "./shell-heredoc";
 import { isCapabilityEnabled, readCompanionPolicy } from "./policy";
 import type { SecretToolCall } from "./secret-guard";
 
@@ -45,11 +44,32 @@ function refusalFingerprint(check: FrictionCheck, kind: ToolKind): string {
   return `refusal:${check}:${kind}`;
 }
 
-const ASSIGNMENT = /(^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=(?:"(?:\\.|[^"\\])*"|'[^']*'|\S*)/gs;
+/** The whole shell word after `NAME=`, concatenated and escaped segments included; an unclosed quote runs to the end. */
+const ASSIGNMENT =
+  /(^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=(?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|\\[\s\S]|[^\s"'\\]|["'][\s\S]*)*/g;
+const ANY_HEREDOC_MARKER = /(?<!<)<<(?!<)-?\s*(['"]?)([\w.-]+)\1/g;
+
+/**
+ * Unlike the guards' `stripHeredocBodies`, a marker inside quotes also opens a
+ * body, as in `-m "$(cat <<'EOF'`: dropping too much is safe for evidence.
+ */
+function withoutHeredocBodies(command: string): string {
+  const kept: string[] = [];
+  const pending: string[] = [];
+  for (const line of command.split("\n")) {
+    if (pending.length > 0) {
+      if (line.trim() === pending[0]) pending.shift();
+      continue;
+    }
+    kept.push(line);
+    for (const marker of line.matchAll(ANY_HEREDOC_MARKER)) pending.push(marker[2]);
+  }
+  return kept.join("\n");
+}
 
 /** Without heredoc bodies (content) or the values of `NAME=value` assignments. */
 function shellEvidence(command: string): string {
-  return stripHeredocBodies(command.replace(ASSIGNMENT, "$1$2=…"));
+  return withoutHeredocBodies(command.replace(ASSIGNMENT, "$1$2=…"));
 }
 
 /** A secret refusal keeps only check and tool kind: its message and paths name the secret. */
@@ -115,13 +135,7 @@ interface CommandDetail {
 
 /** Command, subcommand and flag names only: a flag's value or a positional is never kept. */
 export function commandDetail(failure: CommandFailure): CommandDetail {
-  // A command word; a path or a prompt in that position is not kept.
-  const positional = (index: number) => {
-    const value = failure.args[index];
-    return value && COMMAND_WORD.test(value) ? value : null;
-  };
-  const command = positional(0);
-  const subcommand = command && !RUNTIME_LAUNCHES.has(command) ? positional(1) : null;
+  const { command, subcommand } = commandWords(failure.args);
   const end = failure.args.indexOf("--");
   const flags = (end === -1 ? failure.args : failure.args.slice(0, end))
     .filter((arg) => arg.length > 1 && arg.startsWith("-"))
@@ -131,9 +145,7 @@ export function commandDetail(failure: CommandFailure): CommandDetail {
     subcommand,
     flags: [...new Set(flags)],
     exitCode: failure.exitCode,
-    errorText: withoutArgumentValues(failure.errorText, failure.args, [command, subcommand])
-      .trim()
-      .slice(-MESSAGE_LIMIT),
+    errorText: withoutArgumentValues(failure.errorText, failure.args).trim().slice(-MESSAGE_LIMIT),
   };
 }
 
@@ -143,11 +155,24 @@ const RUNTIME_LAUNCHES = new Set(["claude", "opencode"]);
 /** Shorter values are left alone: replacing them garbles the text and leaks little. */
 const REDACTED_VALUE_MIN = 3;
 
-/** A command may echo its arguments: every flag value and positional is replaced. */
-function withoutArgumentValues(text: string, args: string[], kept: (string | null)[]): string {
+function commandWords(args: string[]): { command: string | null; subcommand: string | null } {
+  // A command word; a path or a prompt in that position is not kept.
+  const positional = (index: number) => {
+    const value = args[index];
+    return value && COMMAND_WORD.test(value) ? value : null;
+  };
+  const command = positional(0);
+  const subcommand = command && !RUNTIME_LAUNCHES.has(command) ? positional(1) : null;
+  return { command, subcommand };
+}
+
+/** A command may echo its arguments: every flag value and positional except the command words is replaced. */
+export function withoutArgumentValues(text: string, args: string[]): string {
+  const { command, subcommand } = commandWords(args);
+  const kept = new Set([command, subcommand]);
   const values = args
     .map((arg) => (arg.startsWith("-") ? arg.split("=").slice(1).join("=") : arg))
-    .filter((value) => value.length >= REDACTED_VALUE_MIN && !kept.includes(value))
+    .filter((value) => value.length >= REDACTED_VALUE_MIN && !kept.has(value))
     .toSorted((a, b) => b.length - a.length);
   return values.reduce((result, value) => result.replaceAll(value, "…"), text);
 }

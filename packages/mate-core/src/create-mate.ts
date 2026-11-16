@@ -4,7 +4,7 @@ import { main } from "./cli/main";
 import { setActiveDistribution, type DistributionConfig } from "./distribution";
 import { FRAMEWORK_NAME } from "./framework";
 import { currentSession } from "./lib/session-attribution";
-import { recordCommandFailure } from "./runtime/friction-recorder";
+import { recordCommandFailure, withoutArgumentValues } from "./runtime/friction-recorder";
 import { createBunPlugin } from "./tools/setup/package-managers/bun";
 import { createUvPlugin } from "./tools/setup/package-managers/uv";
 import type { PluginRegistration } from "./tools/setup/plugin";
@@ -45,11 +45,12 @@ export function createMate({ config, plugins, main: runMain = main }: CreateMate
     registry,
     run: async (argv = process.argv) => {
       const session = currentSession(process.env);
-      const errors = session ? captureErrorTail() : null;
+      const args = argv.slice(2);
+      const errors = session ? captureErrorTail((text) => withoutArgumentValues(text, args)) : null;
       const record = (exitCode: number) => {
         if (!session || !errors || exitCode === 0) return;
         recordCommandFailure({
-          args: argv.slice(2),
+          args,
           exitCode,
           errorText: errors.text(),
           session,
@@ -76,24 +77,53 @@ export function createMate({ config, plugins, main: runMain = main }: CreateMate
 
 const ERROR_TAIL_LIMIT = 1_000;
 
-/** Copies `console.error` text into a bounded tail; the original still prints first. */
-function captureErrorTail(): { text(): string; restore(): void } {
-  const original = console.error;
+/**
+ * Copies `console.error` and `process.stderr.write` text into a bounded tail;
+ * the original still prints first. Each piece is redacted before the tail is
+ * cut, so a cut never leaves an unmatched fragment of an argument value.
+ */
+function captureErrorTail(redact: (text: string) => string): {
+  text(): string;
+  restore(): void;
+} {
+  const originalError = console.error;
+  const originalWrite = process.stderr.write;
   let tail = "";
-  const capture = (...args: unknown[]) => {
-    original(...args);
+  // Node's console.error writes through process.stderr.write; Bun's does not.
+  let inConsoleError = false;
+  const append = (piece: () => string) => {
     try {
-      tail = `${tail}${format(...args)}\n`.slice(-ERROR_TAIL_LIMIT);
+      tail = `${tail}${redact(piece())}`.slice(-ERROR_TAIL_LIMIT);
     } catch {
       // capture never changes output
     }
   };
-  console.error = capture;
+  const error = (...args: unknown[]) => {
+    inConsoleError = true;
+    try {
+      originalError(...args);
+    } finally {
+      inConsoleError = false;
+    }
+    append(() => `${format(...args)}\n`);
+  };
+  const write = ((chunk: unknown, ...rest: unknown[]) => {
+    const written = Reflect.apply(originalWrite, process.stderr, [chunk, ...rest]) as boolean;
+    if (!inConsoleError) {
+      append(() =>
+        typeof chunk === "string" ? chunk : Buffer.from(chunk as Uint8Array).toString(),
+      );
+    }
+    return written;
+  }) as typeof process.stderr.write;
+  console.error = error;
+  process.stderr.write = write;
   return {
     text: () => tail,
-    // A command that replaced console.error itself keeps its replacement.
+    // A command that replaced either itself keeps its replacement.
     restore: () => {
-      if (console.error === capture) console.error = original;
+      if (console.error === error) console.error = originalError;
+      if (process.stderr.write === write) process.stderr.write = originalWrite;
     },
   };
 }

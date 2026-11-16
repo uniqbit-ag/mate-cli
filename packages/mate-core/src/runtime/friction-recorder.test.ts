@@ -70,6 +70,27 @@ describe("refusalDetail", () => {
     expect(detail.command).not.toContain("c123");
   });
 
+  test("keeps no heredoc body inside a command substitution", () => {
+    const detail = refusalDetail({
+      check: "attribution",
+      toolKind: "shell",
+      message: "refused",
+      command: `git commit -m "$(cat <<'EOF'\nsecret line\nEOF\n)"\ngit log`,
+    });
+    expect(detail.command).not.toContain("secret line");
+    expect(detail.command).toContain("git log");
+  });
+
+  test("keeps no segment of a concatenated assigned value", () => {
+    const detail = refusalDetail({
+      check: "attribution",
+      toolKind: "shell",
+      message: "refused",
+      command: `ACME_TOKEN="public""acme-private"'x'y\\ z git commit`,
+    });
+    expect(detail.command).toBe("ACME_TOKEN=… git commit");
+  });
+
   test("keeps no command for a refused shell write, only its paths", () => {
     const detail = refusalDetail({
       check: "artifact",
