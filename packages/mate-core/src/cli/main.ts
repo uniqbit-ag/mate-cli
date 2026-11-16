@@ -19,6 +19,7 @@ import { runReportCommand } from "./commands/report";
 import { runSessionContextCommand } from "./commands/session/context";
 import { runSessionCommand } from "./commands/session/prepare";
 import { runStudioCommand } from "./commands/studio";
+import { runTriageCommand } from "./commands/triage";
 import { runUpdateCommand } from "./commands/update";
 import { runUnwrapCommand } from "./commands/unwrap";
 import { runVscodeCommand } from "./commands/vscode/setup";
@@ -87,6 +88,12 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
    */
   if (command === "session" && subcommand === "context") {
     await runSessionContextCommand(rest);
+    return;
+  }
+
+  // Triage diagnoses a broken install, update, companion or runtime directory, so no gate may stop it.
+  if (command === "triage") {
+    await runTriageCommand(argv.slice(3));
     return;
   }
 

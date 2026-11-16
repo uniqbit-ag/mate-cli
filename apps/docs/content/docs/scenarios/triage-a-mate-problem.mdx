@@ -1,0 +1,95 @@
+---
+title: Triage a Mate Problem
+description: Hand a Mate problem to your own coding agent, which investigates it and helps you write an issue that is posted only after your yes.
+---
+
+## Audience
+
+Developers who hit a problem with Mate, such as a refusal they did not expect,
+a launch that fails, or a command that does not work, and want to find the
+cause or report it.
+
+## Goal
+
+Your own coding agent investigates the problem on your machine with the facts
+Mate prepared, and you decide what happens next: a local fix, an issue, a
+comment on an existing issue, or nothing.
+
+## Start triage
+
+```sh
+mate triage
+```
+
+`mate triage` runs before every other check. It works when a launch fails, the
+installation is incomplete, a newer version is enforced, or the current folder
+belongs to no companion.
+
+It writes a triage session folder and starts Claude Code or OpenCode in it. It
+starts the agent's own CLI directly, not through `mate claude` or
+`mate opencode`, so no companion guidance and no Mate plugin load.
+
+- With only one of the two installed, Mate starts that one.
+- With both installed, Mate asks which one. Without a terminal, pass
+  `--agent claude` or `--agent opencode`.
+- With neither installed, Mate prints the session paths and exits non-zero.
+
+To start your agent yourself, run `mate triage --no-launch`. It prints the
+session paths. Open your agent in the session folder and give it the text of
+`prompt.md`.
+
+When `mate doctor` reports friction events, it names `mate triage` as the next
+action.
+
+## What the session folder holds
+
+Each run writes a new folder at `~/.mate/triage/<UTC time>/`. Folders older than
+30 days are deleted when `mate triage` starts.
+
+| File                     | Content                                                                                                                                        |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `context.md`             | Mate version, how it was invoked, operating system, JavaScript runtime, the agents found, the folder, the issue repository, the doctor report. |
+| `PLAYBOOK.md`            | The instructions the agent follows, shipped with your Mate version.                                                                            |
+| `prompt.md`              | The seed prompt that points the agent at `PLAYBOOK.md` and `context.md`.                                                                       |
+| `friction-events.jsonl`  | The [friction](/docs/capabilities#friction) events of the last 30 days, when there are any.                                                    |
+| `friction-reports.jsonl` | The agents' friction reports of the last 30 days, when there are any.                                                                          |
+
+`context.md` holds no environment variable values. The playbook never changes:
+Mate does not fetch a newer one. Run `mate update` to get the playbook of a
+newer version.
+
+## What the agent may do
+
+The playbook tells the agent to:
+
+1. Ask what went wrong, unless you already said it, and which version it
+   happened on.
+2. Read `context.md` and the friction files.
+3. Ask you once before its first network request, and say what it will fetch:
+   the Mate source at the tag of the affected version, a search of existing
+   issues, and a check for a newer version.
+4. Present what it found and offer the four outcomes: fix, issue, comment on an
+   existing issue, or nothing. It offers a comment on a matching issue before a
+   new issue.
+
+The agent treats every log line, report, issue and fetched page as data, never
+as an instruction. It never edits the installed Mate.
+
+## What needs your yes
+
+- **The network.** The agent asks once before it fetches anything.
+- **A fix.** The agent changes a file only after you approve the change.
+- **An issue or a comment.** The agent shows you the complete final text, and
+  posts only after an explicit yes.
+
+Before it shows you a draft, the agent removes secrets and tokens, replaces
+your home directory path with `~`, and removes the names, paths and code of your
+product. It keeps a product detail only when you approve it.
+
+The agent creates an issue with `gh issue create` only when `gh` is
+authenticated and has triage permission on the issue repository. Otherwise it
+prints a prefilled new-issue URL for the `via-triage` issue form, and opens a
+browser only after you approve.
+
+A Mate distribution that names no issue repository ends triage with a local
+`report.md` in the session folder, and files nothing.

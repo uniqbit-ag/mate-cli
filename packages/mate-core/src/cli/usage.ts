@@ -45,6 +45,7 @@ export function usage(): string {
     ` ${n} artifact archive <change> [--repository <org/repo>] [--branch <b> [--direct]|--not-applicable <reason>|--skip-branch] [--json]`,
     ` ${n} artifact apply-context <change> --json [--since <digest>]`,
     ` ${n} doctor`,
+    ` ${n} triage [--agent <claude|opencode>] [--no-launch]`,
     ` ${n} report [--days N] [--input FILE|-] [--json]`,
     ` ${n} studio [--writable] [--terminal] [--detach-timeout <minutes>]`,
     ` ${n} studio serve --port <port> [--host <host>] [--writable] [--terminal]`,

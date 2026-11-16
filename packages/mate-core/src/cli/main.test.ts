@@ -19,6 +19,7 @@ import * as reportCmd from "./commands/report";
 import * as sessionCmd from "./commands/session/prepare";
 import * as sessionContextCmd from "./commands/session/context";
 import * as studioCmd from "./commands/studio";
+import * as triageCmd from "./commands/triage";
 import * as updateCmd from "./commands/update";
 import * as workingCmd from "./commands/working/working";
 import * as unwrapCmd from "./commands/unwrap";
@@ -43,6 +44,7 @@ const BUILT_IN_COMMANDS = [
   "wrap",
   "unwrap",
   "session",
+  "triage",
 ];
 
 describe("command gating", () => {
@@ -67,6 +69,7 @@ describe("command gating", () => {
       spyOn(reportCmd, "runReportCommand").mockImplementation(record("report")),
       spyOn(sessionCmd, "runSessionCommand").mockImplementation(record("session")),
       spyOn(studioCmd, "runStudioCommand").mockImplementation(record("studio")),
+      spyOn(triageCmd, "runTriageCommand").mockImplementation(record("triage")),
       spyOn(claudeCmd, "runLaunchClaudeCommand").mockImplementation(record("claude")),
       spyOn(opencodeCmd, "runLaunchOpenCodeCommand").mockImplementation(record("opencode")),
       spyOn(artifactCmd, "runArtifactCommand").mockImplementation(record("artifact")),
@@ -233,6 +236,27 @@ describe("command gating", () => {
     expect(updateChecker.scheduleBackgroundCheck).not.toHaveBeenCalled();
     expect(updateChecker.showUpdateBannerIfAvailable).not.toHaveBeenCalled();
     expect(updateChecker.enforceUpdateIfRequired).not.toHaveBeenCalled();
+  });
+
+  test("triage runs with an enforced update, a failing runtime refresh and no companion", async () => {
+    spies.push(
+      spyOn(updateChecker, "enforceUpdateIfRequired").mockImplementation(async () => true),
+    );
+    const { gateCalls, deps } = recordingDeps({
+      companion: false,
+      installOk: false,
+      runtimeDirectoryFails: true,
+    });
+    deps.hydrateDynamicPlugins = async () => {
+      gateCalls.push("hydrate");
+    };
+
+    await main(["node", "mate", "triage", "--no-launch"], deps);
+
+    expect(dispatched).toEqual(["triage"]);
+    expect(gateCalls).toEqual([]);
+    expect(updateChecker.enforceUpdateIfRequired).not.toHaveBeenCalled();
+    expect(process.exitCode || 0).toBe(0);
   });
 
   test("forwards studio subcommand arguments", async () => {

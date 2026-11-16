@@ -22,7 +22,7 @@ import { inspectClaudePluginDirectories } from "../../tools/setup";
 import { createClaudePlugin } from "../../tools/setup/providers/claude";
 import { appendEvent, frictionLogFile } from "../../runtime/friction-log";
 import { createStartupProgress } from "../../lib/components/startup-progress";
-import { runDoctorCommand, type DoctorReport } from "./doctor";
+import { collectDoctorReport, runDoctorCommand, type DoctorReport } from "./doctor";
 
 const tempRoots: string[] = [];
 let restoreEnvironment: () => void;
@@ -1396,6 +1396,7 @@ describe("doctor friction", () => {
     const text = await doctor(fixture, []);
     expect(text).toContain("Friction");
     expect(text).toContain("refusal:artifact:write (2)");
+    expect(text).toContain(`${FRAMEWORK_NAME} triage`);
   });
 
   test("reports zero events and a null top fingerprint without events", async () => {
@@ -1403,6 +1404,7 @@ describe("doctor friction", () => {
 
     const report = JSON.parse(await doctor(fixture, ["--json"])) as DoctorReport;
     expect(report.friction).toEqual({ days: 7, events: 0, top: null });
+    expect(await doctor(fixture, [])).not.toContain(`${FRAMEWORK_NAME} triage`);
   });
 
   test("an unreadable log counts as zero events", async () => {
@@ -1420,5 +1422,25 @@ describe("doctor friction", () => {
     const report = JSON.parse(await doctor(fixture, ["--json"])) as DoctorReport;
     expect(report.friction).toBeUndefined();
     expect(await doctor(fixture, [])).not.toContain("Friction");
+  });
+});
+
+describe("doctor without writes", () => {
+  test("leaves a stale repo-local companion pointer in place", async () => {
+    const root = await makeTempDir("doctor-read-only-");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(repoPath, { recursive: true });
+    const companionPath = await setupCompanion(root, repoPath);
+    const registry = path.join(repoPath, `.${FRAMEWORK_NAME}`, "config", "registry.yaml");
+    const before = await fs.readFile(registry, "utf8");
+    await fs.rm(companionPath, { recursive: true, force: true });
+
+    await collectDoctorReport({
+      cwd: repoPath,
+      globalConfigStore: new GlobalConfigStore(path.join(root, "config.yaml")),
+      write: false,
+    });
+
+    expect(await fs.readFile(registry, "utf8")).toBe(before);
   });
 });

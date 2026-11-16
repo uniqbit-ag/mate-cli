@@ -1255,6 +1255,23 @@ describe("mate CLI e2e", () => {
     await expect(fs.access(path.join(scenario.home, ".mate", "config.yaml"))).rejects.toThrow();
   });
 
+  test("triage writes a session that names the Mate issue repository", async () => {
+    const scenario = await createScenario("mate-cli-e2e-triage-");
+
+    const result = await runMate(scenario, {
+      cwd: scenario.root,
+      args: ["triage", "--no-launch"],
+      env: { PATH: `${scenario.bin}:${path.dirname(process.execPath)}:/usr/bin:/bin` },
+    });
+
+    expect(result.exitCode).toBe(0);
+    const contextPath = result.stdout.match(/context: +(\S+)/)?.[1];
+    expect(contextPath?.startsWith(path.join(scenario.home, ".mate", "triage"))).toBe(true);
+    expect(await fs.readFile(contextPath!, "utf8")).toContain(
+      "Issue repository: uniqbit-ag/mate-cli",
+    );
+  });
+
   test("linking and doctor succeed in one isolated flow", async () => {
     const scenario = await createScenario("mate-cli-e2e-repo-flow-");
 

@@ -32,6 +32,8 @@ export interface RootContext {
 
 export interface RootContextDeps {
   globalConfigStore?: GlobalConfigStore;
+  /** `false` resolves without repairing the repo-local registry. */
+  write?: boolean;
 }
 
 const emptyResolution = (): CompanionResolutionResult => ({
@@ -72,7 +74,7 @@ export async function resolveRootContext(
   }
 
   const resolver = new CompanionResolver(deps.globalConfigStore ?? new GlobalConfigStore());
-  const resolution = await resolver.resolveWithDiagnostics(resolvedCwd);
+  const resolution = await resolver.resolveWithDiagnostics(resolvedCwd, { write: deps.write });
   if (resolution.match) {
     const rootPath = resolution.match.companionPath;
     const config = await loadRootConfig(rootPath);

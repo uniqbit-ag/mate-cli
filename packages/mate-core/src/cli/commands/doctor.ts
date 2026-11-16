@@ -59,6 +59,8 @@ import { printSection, renderKeyValueTable, renderTable } from "./status";
 
 interface DoctorDeps {
   globalConfigStore?: GlobalConfigStore;
+  /** `false` reports without repairing the repo-local registry, so the evidence stays as found. */
+  write?: boolean;
   cwd?: string;
   pathValue?: string;
   /** Returns a member checkout's HEAD commit, or null when unreadable. */
@@ -825,13 +827,12 @@ function renderHumanReport(report: DoctorReport): void {
 
   if (report.friction) {
     const { days, events, top } = report.friction;
-    printSection(
-      "Friction",
-      renderKeyValueTable([
-        [`Events, last ${days} days`, String(events)],
-        ["Most frequent", top ? `${top.fingerprint} (${top.events})` : "none"],
-      ]),
-    );
+    const rows: Array<[string, string]> = [
+      [`Events, last ${days} days`, String(events)],
+      ["Most frequent", top ? `${top.fingerprint} (${top.events})` : "none"],
+    ];
+    if (top) rows.push(["Next action", `${FRAMEWORK_NAME} triage`]);
+    printSection("Friction", renderKeyValueTable(rows));
   }
 
   printSection(

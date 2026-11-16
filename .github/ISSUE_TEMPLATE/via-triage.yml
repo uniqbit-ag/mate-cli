@@ -1,0 +1,55 @@
+name: Mate problem (via triage)
+description: An issue drafted by `mate triage` with the reporter's coding agent.
+labels: ["via-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `mate triage` drafts this form with your coding agent. Check that nothing in it names your product, its paths or its code.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What went wrong, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnosis
+    attributes:
+      label: Diagnosis
+      description: The cause, with references into the source at the affected version.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+  - type: input
+    id: version
+    attributes:
+      label: Mate version
+      placeholder: "0.21.1"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, JavaScript runtime and Agent Runtimes.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Redacted Friction Events, reports, doctor output or error messages.
+      render: text
+  - type: textarea
+    id: related
+    attributes:
+      label: Related issues and releases
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workaround
+  - type: input
+    id: agent
+    attributes:
+      label: Agent and model
+      description: The agent that drafted this issue, such as "Claude Code, Claude Opus".

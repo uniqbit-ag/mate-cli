@@ -263,11 +263,12 @@ companion.
 
 ## Installation And Health
 
-| Command                  | Purpose                                                                            |
-| ------------------------ | ---------------------------------------------------------------------------------- |
-| `mate install [--yes]`   | Install and verify core requirements or refresh the active companion requirements. |
-| `mate doctor`            | Show context, policy, selected capabilities, and tool status.                      |
-| `mate config [--vscode]` | Open the global `~/.mate` configuration directory.                                 |
+| Command                                                  | Purpose                                                                            |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `mate install [--yes]`                                   | Install and verify core requirements or refresh the active companion requirements. |
+| `mate doctor`                                            | Show context, policy, selected capabilities, and tool status.                      |
+| `mate config [--vscode]`                                 | Open the global `~/.mate` configuration directory.                                 |
+| `mate triage [--agent <claude\|opencode>] [--no-launch]` | Hand a Mate problem to your coding agent in a triage session.                      |
 
 `mate install --yes` skips interactive confirmation and is required when the
 process has no TTY. It can run before a companion is linked; in that context it
@@ -289,6 +290,17 @@ capability, `mate doctor` shows a Friction section: the events recorded for the
 companion in the last seven days and the most frequent fingerprint with its
 count. `--json` carries it as `friction`, with `days`, `events` and `top`
 (`null` without events). An unreadable log counts as no events.
+With one or more events, the human-readable section names `mate triage` as the
+next action.
+
+`mate triage` writes a triage session at `~/.mate/triage/<UTC time>/` with
+`context.md` (machine facts and the doctor report), the shipped `PLAYBOOK.md`,
+`prompt.md`, and the friction of the last 30 days, then starts Claude Code or
+OpenCode in it directly, not through a Mate launch. It runs before every gate,
+so it works when the installation, an update or the companion blocks other
+commands. `--agent` picks the agent when both are installed; `--no-launch` only
+prints the session paths. It ends with the agent's exit code. See
+[Triage a Mate Problem](/docs/scenarios/triage-a-mate-problem).
 
 ### Progress Output
 
