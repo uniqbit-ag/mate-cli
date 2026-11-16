@@ -9080,6 +9080,7 @@ User notes.
 /.opencode/opencode.json
 /.agents/
 /.mcp.json
+/.worktreeinclude.local
 # mate managed: end
 .tokensave/
 "
@@ -9126,6 +9127,7 @@ User notes.
 /.opencode/opencode.json
 /.agents/
 /.mcp.json
+/.worktreeinclude.local
 # mate managed: end
 "
 ,

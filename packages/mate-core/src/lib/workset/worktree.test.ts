@@ -621,6 +621,8 @@ describe("createWorksetWorktrees", () => {
 
     test("a local include file Git does not ignore is skipped with a warning", async () => {
       const web = included(".npmrc\n");
+      // Re-included over Mate's exclude entry.
+      fs.appendFileSync(path.join(web, ".gitignore"), "!/.worktreeinclude.local\n");
       fs.writeFileSync(path.join(web, ".worktreeinclude.local"), ".env\n");
       const result = await createWorksetWorktrees(companion, "acme-login", options, {
         install: installs().install,
@@ -629,6 +631,20 @@ describe("createWorksetWorktrees", () => {
       expect(result.warnings).toContain(
         "acme/web: .worktreeinclude.local skipped: Git does not ignore it",
       );
+    });
+
+    test("an untracked local include file is used with no .gitignore entry", async () => {
+      const web = included(".npmrc\n");
+      fs.writeFileSync(path.join(web, ".worktreeinclude.local"), ".env\n");
+      const result = await createWorksetWorktrees(companion, "acme-login", options, {
+        install: installs().install,
+      });
+      expect(result.repositories[0]!.include).toEqual({
+        sources: [".worktreeinclude", ".worktreeinclude.local"],
+        copied: [".env", ".npmrc"],
+        failed: [],
+      });
+      expect(result.warnings.join("\n")).not.toContain(".worktreeinclude.local");
     });
   });
 });
