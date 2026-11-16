@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { readGitLayout } from "./git-layout";
+import { parseRemote, repositoryPath } from "./forge-remote";
+import { originUrlOf, readGitLayout } from "./git-layout";
 import { mirroredUmbrellaOf, repoLocalRegistryPath } from "./repo-local";
 
 export { mirroredUmbrellaOf } from "./repo-local";
@@ -24,6 +25,26 @@ export function umbrellaChildFolders(folder: string): string[] {
     .map((entry) => path.join(folder, entry.name))
     .filter((child) => readGitLayout(child) !== null && !isFile(repoLocalRegistryPath(child)))
     .toSorted();
+}
+
+/** An umbrella child named by its forge identity. */
+export interface UmbrellaChild {
+  path: string;
+  /** `org/repository`, from the raw `remote.origin.url`. */
+  repository: string;
+}
+
+/**
+ * `umbrellaChildrenOf` from files alone: each child folder whose `origin` names a forge
+ * repository, in name order. Does not follow config `include`s. Empty for a Git checkout.
+ */
+export function umbrellaChildIdentities(folder: string): UmbrellaChild[] {
+  if (readGitLayout(folder)) return [];
+  return umbrellaChildFolders(folder).flatMap((child) => {
+    const origin = originUrlOf(child);
+    const remote = origin ? parseRemote(origin) : null;
+    return remote ? [{ path: child, repository: repositoryPath(remote) }] : [];
+  });
 }
 
 function isFile(candidate: string): boolean {

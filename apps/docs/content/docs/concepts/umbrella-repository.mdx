@@ -3,8 +3,8 @@ title: Umbrella Repository
 description: Link one plain folder that holds several Git checkouts, and work on changes that span them.
 ---
 
-Some teams keep several repositories side by side in one plain folder. Instead
-of linking each repository, you can link that folder once:
+An _Umbrella Repository_ is where you start work that crosses repositories. It
+is one plain folder, linked once, that holds several repositories side by side:
 
 ```text
 ~/src/acme/        linked with mate companion link; no .git of its own
@@ -12,8 +12,11 @@ of linking each repository, you can link that folder once:
   web/             Git checkout, origin acme/web
 ```
 
-Such a folder is an _Umbrella Repository_. A session started in it sees every
-child, so one change can cross `acme/api` and `acme/web`.
+A session started in it is told every child by its repository identity, and
+each child is a Working Repository of its own. One change can name `acme/api`
+and `acme/web` as its scopes, and each spec it produces stays owned by one of
+them. For a walkthrough, see
+[Work Across Repositories From an Umbrella](/docs/scenarios/cross-repo-umbrella).
 
 ## Set It Up
 
@@ -55,6 +58,44 @@ folder-name order, wherever Mate looks a repository up: Workset choices,
 `~/src` that holds many clones makes each of them a linked checkout of the
 companion. Nothing is written into them, but they all appear in Workset
 choices.
+
+## What The Session Is Told
+
+A session in an umbrella, or in its mirrored worktree, gets one
+`umbrella-children` block after the companion policy. The block names the
+folder, the number of children, and each child by repository and folder, in
+folder-name order:
+
+```xml
+<umbrella-children folder="/home/dev/src/acme" count="2">
+  <child repository="acme/api" folder="api" />
+  <child repository="acme/web" folder="web" />
+  Each child is a Working Repository of its own. The Working Repository of a piece of work is the child it concerns.
+</umbrella-children>
+```
+
+- **Only children that count are named**, as [above](#which-folders-count): a
+  child without a forge `origin`, or with its own link, is left out.
+- **At most 20 children are listed.** With more than 20 children, or when the
+  list would pass 2,500 characters, the block lists none. It gives the count
+  instead and says that `git -C <child> config --get remote.origin.url` gives a
+  child's identity. A partial list would read as the whole list.
+- **The block is read when the session starts.** A repository you clone into
+  the folder appears in the next session, without linking again.
+- **Every runtime gets the same block**: a Claude session Mate launched, plain
+  `claude` in a wrapped umbrella, and OpenCode. A session in a Git checkout, or
+  a companion-scoped launch, gets no block.
+- **OpenCode builds the block once per folder it serves**, when it loads the
+  plugin there. A repository cloned while OpenCode runs appears after OpenCode
+  restarts. A session that `mate_enter_worktree` moves into the mirrored
+  worktree is served there: plain `opencode` then names the mirrored worktree
+  and its children, while a session `mate opencode` launched keeps the
+  umbrella's block, because its launch environment names the umbrella.
+
+The planning skills `mate-explore-change` and `mate-domain-modeling` use the
+block. They resolve the children the work concerns first, read the context map
+of those repositories only, and ask you when they cannot tell which child is
+meant.
 
 ## Sessions And Delivery
 

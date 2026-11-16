@@ -5,6 +5,8 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { launchPluginFolders } from "../../../runtime/claude-delivery-plan";
+import { repoLocalRegistryPath } from "../../../runtime/repo-local";
+import { umbrellaChildrenBlock } from "../../../runtime/umbrella-children";
 import {
   CLAUDE_SETTINGS_DOCUMENT,
   EMPTY_MANIFEST,
@@ -413,6 +415,47 @@ describe("Companion Instructions at launch", () => {
     for (const scope of ["repo", "companion"] as const) {
       const launch = await adapter.planLaunch(contextFor(companionPath, scope), prepared());
       expect(adapter.extendEnvironment(launch)).toEqual({});
+    }
+  });
+});
+
+describe("Umbrella children at launch", () => {
+  async function umbrellaFixture(): Promise<string> {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "acme-umbrella-")));
+    tempRoots.push(root);
+    const umbrella = path.join(root, "acme");
+    await fs.mkdir(path.dirname(repoLocalRegistryPath(umbrella)), { recursive: true });
+    await fs.writeFile(repoLocalRegistryPath(umbrella), "companions: []\n");
+    for (const name of ["api", "web"]) {
+      await fs.mkdir(path.join(umbrella, name, ".git"), { recursive: true });
+      await fs.writeFile(
+        path.join(umbrella, name, ".git", "config"),
+        `[remote "origin"]\n\turl = git@github.com:acme/${name}.git\n`,
+      );
+    }
+    return umbrella;
+  }
+
+  test("an umbrella launch appends the children block after the guidance", async () => {
+    const { companionPath } = await companionWith({});
+    const umbrella = await umbrellaFixture();
+    const adapter = new ClaudeAdapter();
+    const context = { ...contextFor(companionPath), repository: { id: "acme", path: umbrella } };
+    const launch = await adapter.planLaunch(context, prepared());
+
+    const prompt = flagValue(adapter.buildArgs(launch, []), "--append-system-prompt")!;
+
+    expect(prompt).toContain(`\n\n${umbrellaChildrenBlock(umbrella)}`);
+    expect(prompt).toContain('<child repository="acme/web" folder="web" />');
+  });
+
+  test("a checkout launch and a companion-scoped launch append none", async () => {
+    const { companionPath } = await companionWith({});
+    const adapter = new ClaudeAdapter();
+    for (const scope of ["repo", "companion"] as const) {
+      const launch = await adapter.planLaunch(contextFor(companionPath, scope), prepared());
+      const prompt = flagValue(adapter.buildArgs(launch, []), "--append-system-prompt")!;
+      expect(prompt).not.toContain("<umbrella-children");
     }
   });
 });

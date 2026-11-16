@@ -31,6 +31,15 @@ large for one change is suggested as several.
    exploration. When the map has no entry for the Area, say so instead of borrowing
    another Area's context.
 
+   **Umbrella Repository.** When the Working Repository has no `.git` of its own and its
+   direct child folders are Git checkouts, it is an Umbrella Repository: each child is a
+   Working Repository of its own. Take the children from the session's
+   `umbrella-children` block; without a list there, read each child's identity with
+   `git -C <child> config --get remote.origin.url`. Before reading code, resolve the
+   children the work concerns, read the repository-scoped map of each of them only, and
+   name one scope per concerned child and Area. When it is unclear which child the work
+   concerns, ask the user before loading any context.
+
 3. **Suggest slicing when the feature is large.** Slicing test: a feature needs
    slicing only when it holds more work than one review can hold (roughly more
    than 20 tasks or 800 changed lines) and that work splits into behaviours that

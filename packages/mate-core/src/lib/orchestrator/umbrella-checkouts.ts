@@ -2,9 +2,9 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { gitEnvironment } from "../../runtime/companion-git";
+import { parseRemote, type ForgeRepo } from "../../runtime/forge-remote";
 import { readGitLayout } from "../../runtime/git-layout";
 import { umbrellaChildFolders } from "../../runtime/umbrella-folder";
-import { parseRemote, type ForgeRepo } from "../delivery/forge";
 
 export {
   mirroredUmbrellaOf,

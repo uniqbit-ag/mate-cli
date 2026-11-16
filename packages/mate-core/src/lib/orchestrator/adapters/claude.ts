@@ -15,6 +15,7 @@ import { MATE_ENV } from "../../../runtime/env-names";
 import { SESSION_ORIGIN_ENV } from "../../../runtime/session-registry";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import { managedSessionKind } from "../../../runtime/session-kind";
+import { umbrellaChildrenBlock } from "../../../runtime/umbrella-children";
 import { NOT_WRAPPED } from "../../../runtime/wrap-state";
 import { writeAtomic } from "../../../runtime/write-atomic";
 import {
@@ -326,8 +327,12 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
       ...context,
       secretGuardrails: resolveSecretPolicy(context.companionPath).guardrails,
     });
+    const children = context.repository ? umbrellaChildrenBlock(context.repository.path) : "";
     const { args: passthrough, prompts, boundary } = liftAppendedPrompts(args);
-    const promptArgs = [APPEND_PROMPT_FLAG, [guidance, ...prompts].filter(Boolean).join("\n\n")];
+    const promptArgs = [
+      APPEND_PROMPT_FLAG,
+      [guidance, children, ...prompts].filter(Boolean).join("\n\n"),
+    ];
     const launchArgs = [...settingsArgs, ...mcpConfigArgs, ...pluginDirArgs];
 
     if (boundary === undefined) {

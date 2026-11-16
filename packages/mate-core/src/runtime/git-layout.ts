@@ -133,24 +133,40 @@ function configValue(raw: string): string {
   return value.trim();
 }
 
-/** `[core]` values from a Git config file; enough for `bare` and `worktree`. */
-function coreConfig(commonDir: string): Map<string, string> {
+/**
+ * One section's values from a Git config file, the last value of a key winning: `[name]`,
+ * or `[name "subsection"]` when `subsection` is given. Section names ignore case; subsections do not.
+ */
+function configSection(commonDir: string, name: string, subsection?: string): Map<string, string> {
   const values = new Map<string, string>();
-  let inCore = false;
+  let inSection = false;
   for (const raw of (readText(path.join(commonDir, "config")) ?? "").split(/\r?\n/)) {
     let line = raw.trim();
-    /** `[core]` only: `[core "x"]` is a subsection, and a key may follow the header. */
-    const section = /^\[\s*([A-Za-z0-9.-]+)\s*("(?:[^"\\]|\\.)*")?\s*\](.*)$/.exec(line);
+    /** A key may follow the header on its line. */
+    const section = /^\[\s*([A-Za-z0-9.-]+)\s*(?:"((?:[^"\\]|\\.)*)")?\s*\](.*)$/.exec(line);
     if (section) {
-      inCore = section[1].toLowerCase() === "core" && section[2] === undefined;
+      const sub = section[2]?.replace(/\\(.)/g, "$1");
+      inSection = section[1].toLowerCase() === name && sub === subsection;
       line = section[3].trim();
     }
-    const entry = inCore ? /^([A-Za-z][\w-]*)\s*(?:=(.*)|[#;].*)?$/.exec(line) : null;
+    const entry = inSection ? /^([A-Za-z][\w-]*)\s*(?:=(.*)|[#;].*)?$/.exec(line) : null;
     if (!entry) continue;
     /** A key with no `=` is a true boolean. */
     values.set(entry[1].toLowerCase(), entry[2] === undefined ? "true" : configValue(entry[2]));
   }
   return values;
+}
+
+/** `[core]` values; enough for `bare` and `worktree`. */
+function coreConfig(commonDir: string): Map<string, string> {
+  return configSection(commonDir, "core");
+}
+
+/** The checkout's raw `remote.origin.url` from its shared Git folder config; null without one. */
+export function originUrlOf(checkoutPath: string): string | null {
+  const layout = readGitLayout(checkoutPath);
+  if (!layout) return null;
+  return configSection(layout.commonDir, "remote", "origin").get("url") || null;
 }
 
 /** Git's spellings of true: `true`, `yes`, `on`, any non-zero number. */
