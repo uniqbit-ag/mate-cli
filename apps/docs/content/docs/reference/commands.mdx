@@ -187,7 +187,8 @@ both checkouts. A failed wrap keeps the worktree and exits non-zero, unless the
 worktree is reused and still wrapped from an earlier run; then it only warns. Each
 worktree then gets the ignored files its main checkout's include files name,
 before the install step: `.worktreeinclude` and, while Git ignores it,
-`.worktreeinclude.local`, both in gitignore syntax. Files that already exist in
+`.worktreeinclude.local`, both in gitignore syntax. Mate's managed Git excludes
+ignore a root `.worktreeinclude.local`. Files that already exist in
 the worktree are kept, and a failed copy keeps the worktree and exits non-zero;
 see [Worktrees](/docs/concepts/worktrees#include-files). Then comes the install step of its first lockfile: `bun install`,
 `pnpm install`, `yarn install`, or `npm ci`. `--no-install` skips the install.

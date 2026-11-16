@@ -148,11 +148,14 @@ Commit `.worktreeinclude`: it holds patterns, not secrets. Claude Code and
 Conductor read the same file for the worktrees they create, though edge cases
 may differ from Mate's Git-based matching.
 
-For patterns only you need, add `.worktreeinclude.local` and ignore it in
-`.gitignore`. Mate applies its patterns after the shared ones, so a
+For patterns only you need, add `.worktreeinclude.local` at the repository
+root. Mate applies its patterns after the shared ones, so a
 `!.env.production` line there stops a shared pattern from copying that file.
-Only Mate reads it, and only while Git ignores it; a tracked or unignored
-`.worktreeinclude.local` is skipped with a warning.
+Only Mate reads it, and only while Git ignores it. Mate's managed block in
+`.git/info/exclude` ignores the root file, so a linked repository needs no
+setup; in a repository Mate has not linked, or after `mate working cleanup`, ignore it in
+`.gitignore` yourself. A tracked or re-included `.worktreeinclude.local` is
+skipped with a warning.
 
 Copies do not follow later changes. After rotating a secret, delete the
 worktree's copy and run `mate working worktree` again. Pruning a worktree
