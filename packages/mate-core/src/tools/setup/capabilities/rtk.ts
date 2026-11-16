@@ -12,9 +12,9 @@ import { isDeclinedByMember, type ReadMemberChoices } from "../../../lib/member-
 import { toolVersion, warnOnVersionDrift } from "../../../lib/tool-manifest";
 
 const RTK_VERSION = toolVersion("rtk");
-const RTK_INSTALL_CMD_BREW = "brew install rtk-ai/tap/rtk";
-// The release's installer with RTK_VERSION installs that release and checks its checksum.
-const RTK_INSTALL_CMD_FALLBACK = `curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/v${RTK_VERSION}/install.sh | RTK_VERSION=v${RTK_VERSION} sh`;
+// The release's installer with RTK_VERSION installs that release and checks its checksum;
+// Homebrew would install the latest formula instead.
+const RTK_INSTALL_CMD = `curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/v${RTK_VERSION}/install.sh | RTK_VERSION=v${RTK_VERSION} sh`;
 
 const RTK_INIT_COMMANDS: Record<string, string> = {
   claude: "rtk init -g --auto-patch",
@@ -30,10 +30,6 @@ function defaultIsRtkOnPath(): boolean {
   return isCommandOnPath("rtk", process.env.PATH ?? "");
 }
 
-function defaultIsBrewAvailable(): boolean {
-  return isCommandOnPath("brew", process.env.PATH ?? "");
-}
-
 /** The first `rtk` on PATH, as PATH names it. */
 function defaultRtkBinaryPath(): string | null {
   return resolveCommandOnPath("rtk", process.env.PATH ?? "") ?? null;
@@ -42,7 +38,6 @@ function defaultRtkBinaryPath(): string | null {
 export type RtkDeps = {
   confirm?: typeof confirm;
   isRtkOnPath?: () => boolean;
-  isBrewAvailable?: () => boolean;
   runRtkInstallCmd?: (cmd: string) => Promise<void>;
   runRtkCommandSilently?: (cmd: string) => Promise<void>;
   readMemberChoices?: ReadMemberChoices;
@@ -53,15 +48,13 @@ export type RtkDeps = {
 export function createRtkPlugin(deps: RtkDeps = {}): CapabilityPlugin {
   const askConfirm = deps.confirm ?? confirm;
   const checkRtkPath = deps.isRtkOnPath ?? defaultIsRtkOnPath;
-  const checkBrew = deps.isBrewAvailable ?? defaultIsBrewAvailable;
   const runRtkInstall = deps.runRtkInstallCmd ?? runShellCommand;
   const runSilently = deps.runRtkCommandSilently ?? runShellCommandSilently;
-  /** Homebrew cannot install an older formula, so the warning always names the pinned installer. */
   const checkRtkVersion = async (): Promise<void> => {
     const binary = (deps.rtkBinaryPath ?? defaultRtkBinaryPath)();
     if (!binary) return;
     const installed = await (deps.installedRtkVersion ?? installedVersionOutput)(binary);
-    warnOnVersionDrift("rtk", installed, RTK_INSTALL_CMD_FALLBACK);
+    warnOnVersionDrift("rtk", installed, RTK_INSTALL_CMD);
   };
   const hasOtherActiveRtkProvider = (currentProviderId: string, activeProviders: string[]) =>
     Object.keys(RTK_INIT_COMMANDS).some(
@@ -80,7 +73,7 @@ export function createRtkPlugin(deps: RtkDeps = {}): CapabilityPlugin {
       return { claude: { permissionEntries: ["Bash(rtk:*)"] } };
     },
     getInstallRequirements: (): InstallRequirement[] => {
-      const command = checkBrew() ? RTK_INSTALL_CMD_BREW : RTK_INSTALL_CMD_FALLBACK;
+      const command = RTK_INSTALL_CMD;
       return [
         {
           id: "capability:rtk",
@@ -101,7 +94,7 @@ export function createRtkPlugin(deps: RtkDeps = {}): CapabilityPlugin {
       if (checkRtkPath() || ctx.mode !== "setup") return;
       if (await isDeclinedByMember(ctx.companionPath, ["rtk"], deps.readMemberChoices)) return;
 
-      const command = checkBrew() ? RTK_INSTALL_CMD_BREW : RTK_INSTALL_CMD_FALLBACK;
+      const command = RTK_INSTALL_CMD;
       process.stdout.write(`rtk binary not found. To install:\n  ${command}\n`);
       if (await askConfirm("Run this install command now?")) {
         await runRtkInstall(command);

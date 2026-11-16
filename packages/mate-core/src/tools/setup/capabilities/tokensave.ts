@@ -243,6 +243,24 @@ function getCargoRustVersionError(): string | undefined {
 function getTokensaveInstallPlan(): { command: string; run: () => Promise<void> } | undefined {
   const pathValue = tokensaveDeps.pathValue();
   const platform = tokensaveDeps.platform();
+  const cargoPlan = {
+    command: TOKENSAVE_CARGO_INSTALL_CMD,
+    run: async () => {
+      const rustVersionError = getCargoRustVersionError();
+      if (rustVersionError) throw new Error(rustVersionError);
+      await tokensaveDeps.runCommand("cargo", [
+        "install",
+        "--locked",
+        "tokensave",
+        "--version",
+        TOKENSAVE_VERSION,
+      ]);
+    },
+  };
+  const hasCargo = tokensaveDeps.isCommandOnPath("cargo", pathValue);
+
+  // Only Cargo installs the pinned version; Homebrew and Scoop install the latest.
+  if (hasCargo && !getCargoRustVersionError()) return cargoPlan;
 
   if (platform === "darwin" && tokensaveDeps.isCommandOnPath("brew", pathValue)) {
     return {
@@ -258,24 +276,7 @@ function getTokensaveInstallPlan(): { command: string; run: () => Promise<void> 
     };
   }
 
-  if (tokensaveDeps.isCommandOnPath("cargo", pathValue)) {
-    return {
-      command: TOKENSAVE_CARGO_INSTALL_CMD,
-      run: async () => {
-        const rustVersionError = getCargoRustVersionError();
-        if (rustVersionError) throw new Error(rustVersionError);
-        await tokensaveDeps.runCommand("cargo", [
-          "install",
-          "--locked",
-          "tokensave",
-          "--version",
-          TOKENSAVE_VERSION,
-        ]);
-      },
-    };
-  }
-
-  return undefined;
+  return hasCargo ? cargoPlan : undefined;
 }
 
 export async function ensureTokensaveInstalled(repoPath: string): Promise<boolean> {

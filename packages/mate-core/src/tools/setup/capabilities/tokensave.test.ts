@@ -376,6 +376,22 @@ describe("tokensavePlugin.apply", () => {
     ).toBe("cargo install --locked tokensave --version 7.15.0");
   });
 
+  test("prefers the pinned cargo install over brew when Rust is new enough", async () => {
+    const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));
+    tempRoots.push(companionDir, repoDir);
+
+    tokensaveDeps.isCommandOnPath = (command) => command === "brew" || command === "cargo";
+    tokensaveDeps.pathValue = () => "/opt/homebrew/bin:/usr/bin";
+
+    expect(
+      tokensavePlugin.getInstallRequirements?.({
+        companionPath: companionDir,
+        config: makeCtx(companionDir).config,
+      })[0]?.command,
+    ).toBe("cargo install --locked tokensave --version 7.15.0");
+  });
+
   test("rejects cargo installation when Rust is below the minimum", async () => {
     const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
     const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));

@@ -28,7 +28,6 @@ describe("createRtkPlugin", () => {
     const plugin = createRtkPlugin({
       confirm: confirmMock,
       isRtkOnPath: () => false,
-      isBrewAvailable: () => true,
       runRtkInstallCmd: runInstall,
       readMemberChoices: async () => ({ rtk: "declined" }),
     });
@@ -39,35 +38,13 @@ describe("createRtkPlugin", () => {
     expect(runInstall).not.toHaveBeenCalled();
   });
 
-  test("prompts the Homebrew installer when RTK is missing", async () => {
+  test("prompts the pinned installer when RTK is missing", async () => {
     const confirmMock = mock(async () => false);
     const stdoutSpy = spyOn(process.stdout, "write").mockImplementation(() => true);
     try {
       const plugin = createRtkPlugin({
         confirm: confirmMock,
         isRtkOnPath: () => false,
-        isBrewAvailable: () => true,
-      });
-
-      await plugin.apply(makeCtx());
-
-      expect(stdoutSpy).toHaveBeenCalledWith(
-        expect.stringContaining("brew install rtk-ai/tap/rtk"),
-      );
-      expect(confirmMock).toHaveBeenCalledTimes(1);
-    } finally {
-      stdoutSpy.mockRestore();
-    }
-  });
-
-  test("uses the pinned fallback installer without Homebrew", async () => {
-    const confirmMock = mock(async () => false);
-    const stdoutSpy = spyOn(process.stdout, "write").mockImplementation(() => true);
-    try {
-      const plugin = createRtkPlugin({
-        confirm: confirmMock,
-        isRtkOnPath: () => false,
-        isBrewAvailable: () => false,
       });
 
       await plugin.apply(makeCtx());
@@ -159,7 +136,6 @@ describe("RTK version check", () => {
     const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       const [requirement] = createRtkPlugin({
-        isBrewAvailable: () => true,
         runRtkInstallCmd: run,
         runRtkCommandSilently: run,
         rtkBinaryPath: () => "/opt/homebrew/bin/rtk",
