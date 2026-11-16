@@ -1,5 +1,56 @@
 # Changelog
 
+## [0.21.0](https://github.com/uniqbit-ag/mate-cli/compare/0.20.0...0.21.0) (2026-11-13)
+
+### ⚠ BREAKING CHANGES
+
+- **plugins:** the union lockfile is gone. Companions that declare
+  audiences commit one lockfile per audience
+  (MATE_AUDIENCE=<name> mate install) before upgrading.
+
+### Features
+
+- add companion-wide usage reporting and Studio insights ([3d344e6](https://github.com/uniqbit-ag/mate-cli/commit/3d344e60f680660d2ff9b4f07915edbc3d8f60c9))
+- add offline Studio guides for worktrees and VS Code ([f370bd5](https://github.com/uniqbit-ag/mate-cli/commit/f370bd59f27d3fd6f7855a25d5aa19227c8dc1e6))
+- **ci:** check image lock drift on every PR ([2611609](https://github.com/uniqbit-ag/mate-cli/commit/2611609da3bf279d706e0c0b72b768013b05afa1))
+- configurable Delivery Branch template via branchTemplate ([ec0e575](https://github.com/uniqbit-ag/mate-cli/commit/ec0e575f62a41e9bc11e20ebdac72a2f04221886))
+- copy files listed in .worktreeinclude into worktrees before install ([7f95a0d](https://github.com/uniqbit-ag/mate-cli/commit/7f95a0d42325278de25d46bf685c82d06b244bcb))
+- **factory:** add Git token access, companion and repository adding ([3faf6a4](https://github.com/uniqbit-ag/mate-cli/commit/3faf6a457cf3d6cb44bc19f3a752fa18416c6fd4))
+- **factory:** open review reports in the panel, Later only before work begins ([db1cb8d](https://github.com/uniqbit-ag/mate-cli/commit/db1cb8d6f4f800ec9ce1b1c190693b30b471304a))
+- link Umbrella Repositories and mirror their Workset worktrees ([d6de9ed](https://github.com/uniqbit-ag/mate-cli/commit/d6de9ed0d8ebb13e36282d6e1c9104be7d1a30ee))
+- move a background Claude session's branch into a worktree with --take-branch ([3cb1042](https://github.com/uniqbit-ag/mate-cli/commit/3cb1042db9f52e5f3bc76096d763ca2fa1303d43))
+- **opencode:** new sessions follow the last entered worktree ([d4e3dcb](https://github.com/uniqbit-ag/mate-cli/commit/d4e3dcb599efd5734d26cd5f096c8744cd95281e))
+- **plugins:** install audience plugins only for the selected audience ([7f8f285](https://github.com/uniqbit-ag/mate-cli/commit/7f8f2854762cc4f3d3767ab555f2b2ff07889bf2))
+- **rtk:** run git in entered worktrees and upgrade RTK best-effort ([e97b41a](https://github.com/uniqbit-ag/mate-cli/commit/e97b41af03d35c2ebedc0a7c2840e5520bebd21d))
+- **skills:** slice features only when large and separable, with fewer slices ([f6cdced](https://github.com/uniqbit-ag/mate-cli/commit/f6cdcedafa3d8120b035fae7406e54e9bdfa4434))
+- streamline Studio getting started guides ([f057371](https://github.com/uniqbit-ag/mate-cli/commit/f057371af400dbcbb1e5634b2da1eb3176d17f93))
+- **studio:** add spec Graph view to the Library ([1c67435](https://github.com/uniqbit-ag/mate-cli/commit/1c6743547b595ef6e8d5069d303d38dd72a729d0))
+- **studio:** search and filter specs by repository and Area ([0a0e14e](https://github.com/uniqbit-ag/mate-cli/commit/0a0e14efd62d0392c0768c50ac30bfee0ceb2219))
+- **studio:** use Studio dropdowns for spec repository and Area filters ([5ceb532](https://github.com/uniqbit-ag/mate-cli/commit/5ceb53237173e71f2a673c16688dede312f03c37))
+- umbrella session tooling and VS Code umbrella workspace ([a84ad73](https://github.com/uniqbit-ag/mate-cli/commit/a84ad739c0a9398f35c8f0fff652d616c4f997a7))
+- **vscode:** add Ready to archive section and worktree New session ([c3adf05](https://github.com/uniqbit-ag/mate-cli/commit/c3adf05cce65eab990cd274ebe76ead4c52f164e))
+- **vscode:** reload visible sections on an interval and on window focus ([55d9c3a](https://github.com/uniqbit-ag/mate-cli/commit/55d9c3a2ec82fafc9352386032be728af0ab3a51))
+- **vscode:** report installed extension version and continue past failed editor ([b796a6a](https://github.com/uniqbit-ag/mate-cli/commit/b796a6aa37ceb462516b13a8f5b01a7a63d9ea6a))
+
+### Bug Fixes
+
+- confine factory broker exec environment ([e5562e7](https://github.com/uniqbit-ag/mate-cli/commit/e5562e745ebad65e5d251c037b19d18fde571d69))
+- describe Overview task progress without implying agent activity ([f21fc4e](https://github.com/uniqbit-ag/mate-cli/commit/f21fc4e07c4061ff5b43302c6e65e99316644375))
+- lock local release gate installs ([28b8137](https://github.com/uniqbit-ag/mate-cli/commit/28b81370bdfe369e54fc14d82e37431de70533df))
+- **publish:** leave an entered worktree before publishing ([fdada37](https://github.com/uniqbit-ag/mate-cli/commit/fdada373c6cdb68d7b26f41eb15434e28a933abe))
+- **security:** bind the VSIX to its release digest ([393d5d8](https://github.com/uniqbit-ag/mate-cli/commit/393d5d85ba56729b533f3d99766d0fac04a958a1))
+- **security:** keep public npm calls away from the caller's npm config ([b35f127](https://github.com/uniqbit-ag/mate-cli/commit/b35f127c0ff5c2b094fffd67609a77450350c4ff))
+- **security:** keep wraps inside the working repository ([480968b](https://github.com/uniqbit-ag/mate-cli/commit/480968be9e56bd99bde9a458f06b6fb5ca259d24))
+- **security:** stop agents from weakening the secret policy file ([2a06732](https://github.com/uniqbit-ag/mate-cli/commit/2a06732180e9b193ab14fb342cdac606caf6b7a9))
+- **simplify:** address review of backup isolation wording ([9fb1dc4](https://github.com/uniqbit-ag/mate-cli/commit/9fb1dc43fb03fa7610dc0548edc7a170866483aa))
+- **simplify:** isolate pre-format backups per run ([26beaca](https://github.com/uniqbit-ag/mate-cli/commit/26beacaf6e73f19c8d8e02e45eab1f41c4a2e7c5))
+- **studio:** correct spec graph data and canvas behaviour ([e39134f](https://github.com/uniqbit-ag/mate-cli/commit/e39134f5cf65dd3b50c9db92a6f9eeb09086a526))
+- **studio:** issue an access token on every start and forbid framing ([6485977](https://github.com/uniqbit-ag/mate-cli/commit/6485977464da37e2d311913d44a9d2ff2ba2ed09))
+- **studio:** link unbundled docs pages from guides to the published site ([7f977c4](https://github.com/uniqbit-ag/mate-cli/commit/7f977c4098eee736a3736472f0514136a96b1cfb))
+- **studio:** move schema switch into human review ([69d25da](https://github.com/uniqbit-ag/mate-cli/commit/69d25da7de052938f9060a95333f391bacc933e1))
+- **update:** compare local test builds by their release version ([1da9f97](https://github.com/uniqbit-ag/mate-cli/commit/1da9f974b072608be8f486f46aa964d5a8258bad))
+- use extensionless imports for Claude plugin validation ([9664c7e](https://github.com/uniqbit-ag/mate-cli/commit/9664c7e931ce3cf8ff2c8642c17bfc97a0166bc0))
+
 ## [0.20.0](https://github.com/uniqbit-ag/mate-cli/compare/0.18.5...0.20.0) (2026-11-06)
 
 ## [1.0.0-canary.5](https://github.com/uniqbit-ag/mate-cli/compare/0.18.5...0.20.0) (2026-11-05)

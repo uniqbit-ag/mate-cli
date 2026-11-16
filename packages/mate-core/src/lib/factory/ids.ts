@@ -4,14 +4,24 @@ import { defaultDeliveryBranch } from "../delivery/record";
 /** Workset identifiers and the names derived from them. */
 
 export class FactoryError extends Error {
-  /** `busy`: every running Workset container is in use; retry once one frees. */
+  /**
+   * `busy`: every running Workset container is in use; retry once one frees. `auth`: a remote
+   * refused the clone for lack of a valid Git token.
+   */
   constructor(
     message: string,
-    readonly code?: "busy",
+    readonly code?: "busy" | "auth",
   ) {
     super(message);
     this.name = "FactoryError";
   }
+}
+
+/** Whether a value a person entered holds whitespace or a control character. */
+export function hasSpaceOrControl(value: string): boolean {
+  return [...value].some(
+    (char) => /\s/.test(char) || char.charCodeAt(0) < 0x20 || char.charCodeAt(0) === 0x7f,
+  );
 }
 
 export function assertWorksetId(id: unknown): asserts id is string {

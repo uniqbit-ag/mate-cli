@@ -203,10 +203,18 @@ export function StatusWord({ marker, children }: { marker: Marker; children: Rea
 }
 
 /** "N of M tasks" with its bar. */
-export function Progress({ done, total }: { done: number; total: number }) {
-  if (total === 0) return <span className="text-xs text-muted">No tasks</span>;
+export function Progress({
+  done,
+  total,
+  unit = "tasks",
+}: {
+  done: number;
+  total: number;
+  unit?: string;
+}) {
+  if (total === 0) return <span className="text-xs text-muted">No {unit}</span>;
   const percent = Math.min(100, Math.round((done / total) * 100));
-  const label = `${done} of ${total} tasks`;
+  const label = `${done} of ${total} ${unit}`;
   return (
     <span className="grid min-w-[120px] gap-1.5 text-xs text-muted">
       <span>{label}</span>

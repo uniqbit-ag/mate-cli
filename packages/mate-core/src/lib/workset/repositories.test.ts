@@ -93,6 +93,25 @@ describe("repository sources", () => {
     expect([...catalog.aliases.entries()]).toEqual([["repo-0", "acme/web"]]);
   });
 
+  test("the catalog gives each repository its host/org token key and omits one with no organization", async () => {
+    link([workingRepo("web", "https://git.acme.test/acme/web.git")]);
+    const catalog = await linkedRepositoryCatalog(companion, {
+      MATE_FACTORY_REPOSITORIES: "https://github.test/other/api.git,https://git.acme.test/solo.git",
+    });
+    expect([...catalog.keys.entries()].toSorted()).toEqual([
+      ["acme/web", "git.acme.test/acme"],
+      ["other/api", "github.test/other"],
+    ]);
+    expect(JSON.stringify([...catalog.keys])).not.toMatch(/token|secret/i);
+  });
+
+  test("the catalog gives an SSH remote no token key: a token never applies to it", async () => {
+    link([workingRepo("web", "git@git.acme.test:acme/web.git")]);
+    const catalog = await linkedRepositoryCatalog(companion, {});
+    expect(catalog.identities).toEqual(["acme/web"]);
+    expect([...catalog.keys]).toEqual([]);
+  });
+
   test("the catalog offers an Umbrella Repository's children but maps its ID to none", async () => {
     workingRepo(path.join("acme", "web"), "https://git.acme.test/acme/web.git");
     workingRepo(path.join("acme", "api"), "git@git.acme.test:acme/api.git");

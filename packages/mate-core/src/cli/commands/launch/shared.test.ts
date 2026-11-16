@@ -243,6 +243,73 @@ describe("runLaunchToolCommand", () => {
     expect(events.indexOf("progress:stop")).toBeLessThan(events.indexOf("execute"));
   });
 
+  test("a prepare-only launch indexes and stops before the agent", async () => {
+    const events: string[] = [];
+    const originalCreateLauncher = launchCommandDeps.createLauncher;
+    const originalRunIndexCapCommand = launchCommandDeps.runIndexCapCommand;
+    launchCommandDeps.createLauncher = () => ({
+      prepare: async () => {
+        events.push("prepare");
+        return {
+          execute: async () => {
+            events.push("execute");
+            return { exitCode: 0, stdout: "", stderr: "" };
+          },
+        };
+      },
+    });
+    launchCommandDeps.runIndexCapCommand = async () => {
+      events.push("index");
+      // A failed index leaves the exit code set, as `mate cap index` does.
+      process.exitCode = 1;
+    };
+    try {
+      await runLaunchToolCommand("claude", [], { prepareOnly: true });
+    } finally {
+      launchCommandDeps.createLauncher = originalCreateLauncher;
+      launchCommandDeps.runIndexCapCommand = originalRunIndexCapCommand;
+    }
+    expect(events).toEqual(["prepare", "index"]);
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("a prepared launch shows no progress, repeats no notices and skips the index", async () => {
+    process.stdin.isTTY = true;
+    process.stdout.isTTY = true;
+    const events: string[] = [];
+    const requests: LaunchRequest[] = [];
+    const originalCreateLauncher = launchCommandDeps.createLauncher;
+    const originalCreateProgress = launchCommandDeps.createProgress;
+    const originalRunIndexCapCommand = launchCommandDeps.runIndexCapCommand;
+    launchCommandDeps.createLauncher = () => ({
+      prepare: async (request) => {
+        requests.push(request);
+        return {
+          execute: async () => {
+            events.push("execute");
+            return { exitCode: 0, stdout: "", stderr: "" };
+          },
+        };
+      },
+    });
+    launchCommandDeps.createProgress = () => {
+      events.push("progress");
+      throw new Error("a prepared launch has no progress screen");
+    };
+    launchCommandDeps.runIndexCapCommand = async () => {
+      events.push("index");
+    };
+    try {
+      await runLaunchToolCommand("claude", [], { prepared: true });
+    } finally {
+      launchCommandDeps.createLauncher = originalCreateLauncher;
+      launchCommandDeps.createProgress = originalCreateProgress;
+      launchCommandDeps.runIndexCapCommand = originalRunIndexCapCommand;
+    }
+    expect(events).toEqual(["execute"]);
+    expect(requests[0]?.quiet).toBe(true);
+  });
+
   test("uses captured Git mode and blocks launch failures without a two-stream TTY", async () => {
     process.stdin.isTTY = true;
     process.stdout.isTTY = false;

@@ -443,6 +443,14 @@ export async function writeWorkset(companionPath: string, record: WorksetRecord)
   await fs.rename(temp, path.join(dir, `${record.id}.yaml`));
 }
 
+/** Deletes a Workset's record; a record already gone is no error. */
+export async function removeWorkset(companionPath: string, id: string): Promise<void> {
+  if (!isWorksetId(id)) {
+    throw new WorksetError(`Workset identifier ${JSON.stringify(id)} is not a kebab-case name`);
+  }
+  await fs.rm(path.join(worksetsDirOf(companionPath), `${id}.yaml`), { force: true });
+}
+
 const NEXT_STAGE: Partial<Record<PreProposeStage, PreProposeStage>> = {
   "clarify-intent": "explore",
   explore: "ready",

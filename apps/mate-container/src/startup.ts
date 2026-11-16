@@ -255,8 +255,8 @@ function childDetail(result: RunResult, fallback: string, secrets: Array<string 
 }
 
 /**
- * npm reads the project `.npmrc` beside `.mate/plugins/package.json`, so only
- * that file can redirect the registry or carry credentials for it.
+ * npm reads the project `.npmrc` beside a plugin workspace's `package.json`,
+ * so only that file can redirect the registry or carry credentials for it.
  */
 function overridesRegistry(npmrc: string, registry: PluginRegistry): boolean {
   if (/registry/i.test(npmrc)) return true;
@@ -279,11 +279,16 @@ function restorePlugins(
   secrets: Array<string | null>,
   audience: string | null,
 ): void {
-  const override = path.join(companion, ".mate", "plugins", ".npmrc");
-  if (fs.existsSync(override) && overridesRegistry(fs.readFileSync(override, "utf8"), registry)) {
-    throw new StartupError(
-      `${override} overrides the configured plugin registry; remove it from the companion.`,
-    );
+  // The restore runs npm in the shared workspace and in the served audience's own.
+  const workspaces = [path.join(companion, ".mate", "plugins")];
+  if (audience !== null) workspaces.push(path.join(workspaces[0], "audiences", audience));
+  for (const workspace of workspaces) {
+    const override = path.join(workspace, ".npmrc");
+    if (fs.existsSync(override) && overridesRegistry(fs.readFileSync(override, "utf8"), registry)) {
+      throw new StartupError(
+        `${override} overrides the configured plugin registry; remove it from the companion.`,
+      );
+    }
   }
   deps.log(`restoring plugins of ${companion} from ${registry.url}`);
   const restored = deps.run("bash", [deps.setupScript, companion], companion, {

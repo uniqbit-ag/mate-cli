@@ -5,7 +5,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+
+/** `bun pm pack` and a full install of the tarball outrun bun's 5s default. */
+setDefaultTimeout(60_000);
 
 const tempRoots: string[] = [];
 

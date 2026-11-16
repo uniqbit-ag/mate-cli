@@ -6,6 +6,7 @@ import path from "node:path";
 import { brokerHandler, serveBroker } from "./broker";
 import { factoryClient } from "./client";
 import { CREDENTIAL_FILE, CredentialStore } from "./credential-store";
+import { GIT_CREDENTIAL_FILE, GitCredentialStore } from "./git-credential-store";
 import type { WorksetRuntime } from "./runtime";
 
 let stop: (() => void) | null = null;
@@ -39,6 +40,42 @@ describe("the factory client", () => {
     await expect(
       client.exec({ id: "acme-login", command: ["claude"], agent: true }),
     ).rejects.toThrow(/no Workset agent credential/);
+  });
+
+  test("sets, lists and clears Git tokens through the broker and never gets one back", async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "mate-broker-"));
+    const socket = path.join(dir, "broker.sock");
+    const tokens = new GitCredentialStore(path.join(dir, GIT_CREDENTIAL_FILE), null);
+    stop = serveBroker(
+      socket,
+      brokerHandler({} as WorksetRuntime, new CredentialStore(null, null), tokens),
+    ).stop;
+    const client = factoryClient(socket)!;
+    await client.gitToken.set("git.acme.test/acme", "acme-token");
+    const listed = await client.gitToken.list();
+    expect(listed).toMatchObject([{ key: "git.acme.test/acme", source: "studio" }]);
+    expect(JSON.stringify(listed)).not.toContain("acme-token");
+    await client.gitToken.clear("git.acme.test/acme");
+    expect(await client.gitToken.list()).toEqual([]);
+  });
+
+  test("carries an authentication refusal's code to the caller", async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "mate-broker-"));
+    const socket = path.join(dir, "broker.sock");
+    const { FactoryError } = await import("./ids");
+    const runtime = {
+      spawn: async () => {
+        throw new FactoryError(
+          "cloning acme/app failed: authentication to git.acme.test/acme failed",
+          "auth",
+        );
+      },
+    } as unknown as WorksetRuntime;
+    stop = serveBroker(socket, brokerHandler(runtime, new CredentialStore(null, null))).stop;
+    const error = await factoryClient(socket)!
+      .spawn({ id: "acme-login", repository: "acme/app", remoteUrl: "x", companion: "/c" })
+      .catch((caught) => caught as { code?: string });
+    expect(error.code).toBe("auth");
   });
 
   test("carries a busy refusal's code to the caller", async () => {

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import type { PluginDeclaration } from "../../../lib/orchestrator/types";
-import { dynamicPluginsWorkspaceRoot, pluginPackageRoot } from "./paths";
+import { workspacePackageRoot } from "./paths";
 
 export type NpmInstallRunner = (
   workspaceRoot: string,
@@ -27,7 +27,7 @@ export interface PluginInstallResult {
 }
 
 /**
- * Runs `npm <command>` in the shared plugin workspace, honoring the user's ambient
+ * Runs `npm <command>` in a plugin workspace, honoring the user's ambient
  * registry/auth config. `--loglevel=error` keeps npm's own error in stderr for the report.
  */
 function runNpm(
@@ -51,7 +51,7 @@ function runNpm(
   return { ok: true };
 }
 
-/** Runs `npm install` for the shared plugin workspace. */
+/** Runs `npm install` for one plugin workspace. */
 const defaultNpmInstall: NpmInstallRunner = (workspaceRoot) => runNpm(workspaceRoot, "install");
 
 /** Version literals treated as moving targets: re-resolved via `npm update` on every run. */
@@ -72,7 +72,10 @@ async function readInstalledVersion(packageRoot: string): Promise<string | null>
   }
 }
 
-async function readWorkspaceDependencies(workspaceRoot: string): Promise<Record<string, string>> {
+/** The `dependencies` map a workspace manifest records; empty when there is no manifest. */
+export async function readWorkspaceDependencies(
+  workspaceRoot: string,
+): Promise<Record<string, string>> {
   try {
     const manifest = JSON.parse(
       await fs.readFile(path.join(workspaceRoot, "package.json"), "utf8"),
@@ -96,29 +99,28 @@ async function writeWorkspaceManifest(
 }
 
 /**
- * Installs every declared plugin into one shared workspace at
- * `.mate/plugins/`. Builds a single `dependencies` map (package
- * → declared version, sorted by name) and diffs it against the workspace's
- * current `package.json` plus each package's actual installed presence; an
- * identical, fully-installed map with no moving-tag declaration (`latest` or
- * `canary`) skips the install entirely. Otherwise the map is written and
- * `npm install` runs once for the whole workspace. Moving-tag-declared
- * plugins additionally get an `npm update` every run, regardless of whether
- * the map changed, so they re-resolve on every run. The shared, committed
- * `package-lock.json` is the sole reproducibility record; nothing else pins
- * versions. Private
- * registries are never Mate's concern: installs run through the operator's
- * own ambient npm config, or a project-local, gitignored `.npmrc` dropped
- * next to the workspace's `package.json`.
+ * Installs the declared plugins of one workspace: the shared one at
+ * `.mate/plugins/` or an audience's below it. Builds a single `dependencies`
+ * map (package → declared version, sorted by name) and diffs it against the
+ * workspace's current `package.json` plus each package's actual installed
+ * presence; an identical, fully-installed map with no moving-tag declaration
+ * (`latest` or `canary`) skips the install entirely, so an empty list writes
+ * nothing unless the manifest still lists dependencies to prune. Otherwise
+ * the map is written and `npm install` runs once for the whole workspace.
+ * Moving-tag-declared plugins additionally get an `npm update` every run,
+ * regardless of whether the map changed, so they re-resolve on every run. The
+ * workspace's committed `package-lock.json` is the sole reproducibility
+ * record; nothing else pins versions. Private registries are never Mate's
+ * concern: installs run through the operator's own ambient npm config, or a
+ * project-local, gitignored `.npmrc` in the shared workspace.
  */
 export async function installDeclaredPlugins(
-  companionPath: string,
+  workspaceRoot: string,
   declarations: PluginDeclaration[],
   deps: PluginInstallDeps = {},
 ): Promise<PluginInstallResult[]> {
   const runNpmInstall = deps.runNpmInstall ?? defaultNpmInstall;
   const runNpmUpdate = deps.runNpmUpdate ?? defaultNpmUpdate;
-  const workspaceRoot = dynamicPluginsWorkspaceRoot(companionPath);
 
   const sorted = declarations.toSorted((a, b) => a.package.localeCompare(b.package));
   const desired: Record<string, string> = {};
@@ -128,7 +130,7 @@ export async function installDeclaredPlugins(
     readWorkspaceDependencies(workspaceRoot),
     Promise.all(
       sorted.map((declaration) =>
-        readInstalledVersion(pluginPackageRoot(companionPath, declaration.package)),
+        readInstalledVersion(workspacePackageRoot(workspaceRoot, declaration.package)),
       ),
     ),
   ]);
@@ -163,7 +165,7 @@ export async function installDeclaredPlugins(
 
   const resolvedVersions = await Promise.all(
     sorted.map((declaration) =>
-      readInstalledVersion(pluginPackageRoot(companionPath, declaration.package)),
+      readInstalledVersion(workspacePackageRoot(workspaceRoot, declaration.package)),
     ),
   );
 

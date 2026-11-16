@@ -18,6 +18,7 @@ import { cn } from "../lib/cn";
 import type { StudioSearch } from "../lib/search";
 import { shellQuery } from "../lib/studio-queries";
 import { deleteCompanion } from "../server/companions";
+import { AddCompanionDialog } from "./add-companion-dialog";
 import type { ShellCompanion } from "../server/shell";
 import { copyText } from "../stores/page-ui";
 import { companionName } from "./frame";
@@ -123,7 +124,7 @@ function CompanionActions({
           }}
         >
           <Icon name="trash" />
-          {companion.missing ? "Remove from list…" : "Delete companion…"}
+          {companion.missing || companion.keepsFolder ? "Remove from list…" : "Delete companion…"}
         </button>
         {writable ? null : (
           <p
@@ -136,6 +137,35 @@ function CompanionActions({
       </PopoverContent>
     </Popover>
   );
+}
+
+/** What the confirmation says: a folder is deleted only when it exists and Studio created it. */
+function deleteCopy(companion: ShellCompanion | null, name: string) {
+  if (companion?.missing) {
+    return {
+      title: `Remove ${name} from the list?`,
+      description:
+        "Its folder is already gone; this only removes the entry from the companion list.",
+      action: "Remove",
+      needsName: false,
+    };
+  }
+  if (companion?.keepsFolder) {
+    return {
+      title: `Remove ${name} from the list?`,
+      description:
+        "This only removes it from the companion list. Its folder was not created by Studio and is left where it is.",
+      action: "Remove",
+      needsName: false,
+    };
+  }
+  return {
+    title: `Delete ${name}?`,
+    description:
+      "This deletes the folder from disk, with every spec, plan and note in it, and removes it from the companion list. It cannot be undone.",
+    action: "Delete companion",
+    needsName: true,
+  };
 }
 
 /**
@@ -161,8 +191,8 @@ function DeleteCompanionDialog({
     },
   });
   const name = companion ? companionName(companion.path) : "";
-  const stale = companion?.missing === true;
-  const confirmed = stale || typed === name;
+  const copy = deleteCopy(companion, name);
+  const confirmed = !copy.needsName || typed === name;
   return (
     <Dialog
       open={companion !== null}
@@ -175,19 +205,13 @@ function DeleteCompanionDialog({
     >
       <DialogContent className="grid w-[min(480px,calc(100vw-32px))] gap-4 p-5">
         <div className="grid gap-1.5">
-          <DialogTitle className="text-md">
-            {stale ? `Remove ${name} from the list?` : `Delete ${name}?`}
-          </DialogTitle>
-          <DialogDescription>
-            {stale
-              ? "Its folder is already gone; this only removes the entry from the companion list."
-              : "This deletes the folder from disk, with every spec, plan and note in it, and removes it from the companion list. It cannot be undone."}
-          </DialogDescription>
+          <DialogTitle className="text-md">{copy.title}</DialogTitle>
+          <DialogDescription>{copy.description}</DialogDescription>
         </div>
         <code className="truncate rounded-control border border-rule bg-page px-2.5 py-1.5 font-mono text-xs">
           {companion?.path}
         </code>
-        {stale ? null : (
+        {copy.needsName ? (
           <label className="grid gap-1.5 text-sm">
             <span>
               Type <b className="font-mono">{name}</b> to confirm
@@ -200,7 +224,7 @@ function DeleteCompanionDialog({
               aria-label={`Type ${name} to confirm`}
             />
           </label>
-        )}
+        ) : null}
         {remove.isError ? (
           <p className="m-0 text-sm text-bad" role="alert">
             {remove.error instanceof Error
@@ -216,7 +240,7 @@ function DeleteCompanionDialog({
             onClick={() => companion && remove.mutate(companion)}
           >
             <Icon name="trash" />
-            {remove.isPending ? "Deleting…" : stale ? "Remove" : "Delete companion"}
+            {remove.isPending ? "Deleting…" : copy.action}
           </Button>
         </div>
       </DialogContent>
@@ -251,6 +275,23 @@ function useCompanionDeletion(selected: ShellCompanion | null) {
     />
   );
   return { ask: setTarget, dialog };
+}
+
+/** The Add companion dialog and what follows an add: the list reloads and the new one is chosen. */
+function useCompanionAdd() {
+  const [open, setOpen] = useState(false);
+  const select = useSelectCompanion();
+  const dialog = (
+    <AddCompanionDialog
+      open={open}
+      onClose={() => setOpen(false)}
+      onAdded={(digest) => {
+        setOpen(false);
+        select(digest);
+      }}
+    />
+  );
+  return { ask: () => setOpen(true), dialog };
 }
 
 function CompanionRow({
@@ -316,15 +357,19 @@ export function CompanionSwitcher({
   companions,
   selected,
   writable = false,
+  factoryMode = false,
 }: {
   companions: ShellCompanion[];
   selected: ShellCompanion | null;
   writable?: boolean;
+  /** The factory broker runs: only then can a companion be added from here. */
+  factoryMode?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const select = useSelectCompanion();
   const prefetch = usePrefetchCompanion();
   const deletion = useCompanionDeletion(selected);
+  const adding = useCompanionAdd();
   // The page itself lists the companions; there is nothing to switch from yet.
   if (!selected) {
     return (
@@ -381,6 +426,20 @@ export function CompanionSwitcher({
             </p>
           ) : null}
           <Separator className="my-1" />
+          {factoryMode && writable ? (
+            <button
+              type="button"
+              className="flex items-center gap-2.5 rounded-control border-0 bg-transparent px-2.5 py-2 text-left text-sm text-text hover:bg-surface-soft"
+              data-add-companion=""
+              onClick={() => {
+                setOpen(false);
+                adding.ask();
+              }}
+            >
+              <Icon name="plus" className="text-muted" />
+              Add companion…
+            </button>
+          ) : null}
           <button
             type="button"
             className="flex items-center gap-2.5 rounded-control border-0 bg-transparent px-2.5 py-2 text-left text-sm text-text hover:bg-surface-soft"
@@ -395,6 +454,7 @@ export function CompanionSwitcher({
         </PopoverContent>
       </Popover>
       {deletion.dialog}
+      {factoryMode && writable ? adding.dialog : null}
     </>
   );
 }
@@ -403,13 +463,16 @@ export function CompanionSwitcher({
 export function CompanionPicker({
   companions,
   writable = false,
+  factoryMode = false,
 }: {
   companions: ShellCompanion[];
   writable?: boolean;
+  factoryMode?: boolean;
 }) {
   const select = useSelectCompanion();
   const prefetch = usePrefetchCompanion();
   const deletion = useCompanionDeletion(null);
+  const adding = useCompanionAdd();
   return (
     <section
       className="mx-auto grid w-full max-w-[760px] gap-5 px-8 py-16 max-sm:px-4"
@@ -441,6 +504,14 @@ export function CompanionPicker({
           ))}
         </div>
       ) : null}
+      {factoryMode && writable ? (
+        <div>
+          <Button type="button" data-add-companion="" onClick={adding.ask}>
+            <Icon name="plus" />
+            Add companion…
+          </Button>
+        </div>
+      ) : null}
       <p className="m-0 text-sm text-muted">
         To add one, run{" "}
         <code className="rounded-[6px] border border-rule bg-surface px-1.5 font-mono text-xs">
@@ -449,6 +520,7 @@ export function CompanionPicker({
         in a Working Repository.
       </p>
       {deletion.dialog}
+      {factoryMode && writable ? adding.dialog : null}
     </section>
   );
 }

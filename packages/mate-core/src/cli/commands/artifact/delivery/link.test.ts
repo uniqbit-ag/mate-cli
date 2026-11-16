@@ -111,6 +111,42 @@ describe("mate artifact link", () => {
     expect(attributed).toEqual([["x", "0b7c-acme"]]);
   });
 
+  test("every result, read-only included, reports whether the session is isolated", async () => {
+    const repo = path.join(companion, "acme-app");
+    await fs.mkdir(path.join(repo, ".git"), { recursive: true });
+    const resolveContext = async () =>
+      ({
+        companionPath: companion,
+        repositoryId: "acme-app",
+        repository: { id: "acme-app", path: repo },
+      }) as unknown as LaunchContext;
+    const attribute = async () => null;
+    const config = path.join(companion, "claude-config");
+    const jobDir = path.join(config, "jobs", "acme");
+    await fs.mkdir(jobDir, { recursive: true });
+    const writeJob = (state: object) =>
+      fs.writeFile(path.join(jobDir, "state.json"), JSON.stringify(state));
+    const isolated = async (argv: string[], sessionEnv: Record<string, string>) =>
+      (await run(argv, { attribute, resolveContext, sessionEnv })).map(
+        (result) => result.session.isolated,
+      );
+    const bg = { CLAUDE_JOB_DIR: jobDir, CLAUDE_CONFIG_DIR: config };
+
+    await writeJob({});
+    const [read] = await run(["x"], { attribute, resolveContext, sessionEnv: bg });
+    expect(read.session).toEqual({ isolated: true });
+    expect(await readRaw("x").catch(() => null)).toBeNull();
+    expect(await isolated(["a", "b"], bg)).toEqual([true, true]);
+
+    // The VS Code extension launches with `--settings` that turn isolation off.
+    const inPlace = JSON.stringify({ worktree: { bgIsolation: "none" } });
+    await writeJob({ respawnFlags: ["--bg", "--settings", inPlace] });
+    expect(await isolated(["x"], bg)).toEqual([false]);
+    await writeJob({ bgIsolation: "none" });
+    expect(await isolated(["x"], bg)).toEqual([false]);
+    expect(await isolated(["x"], { CLAUDE_CONFIG_DIR: config })).toEqual([false]);
+  });
+
   test("regrouping preserves recorded delivery until an explicit branch edit", async () => {
     await run(["x", "--branch", "workset/x"]);
     await fs.mkdir(path.join(companion, "worksets"));

@@ -47,12 +47,15 @@ import type { StartupProgressController } from "../lib/components/startup-progre
 import { emitWarning } from "../lib/live-progress";
 import {
   describeUnknownAudience,
-  installPluginDeclarations,
+  pluginInstallTargets,
   readAudienceSelection,
   resolveAudience,
 } from "./setup/dynamic-plugins/audiences";
 import { hydrateDynamicPlugins } from "./setup/dynamic-plugins/hydrate";
-import { installDeclaredPlugins } from "./setup/dynamic-plugins/install";
+import {
+  describeRemovedAudience,
+  installPluginWorkspaces,
+} from "./setup/dynamic-plugins/workspaces";
 import {
   buildSetupInstallationPlan,
   collectRuntimeContributionInputs,
@@ -315,19 +318,27 @@ export async function executeSetup(
   // Declared plugin packages install and hydrate before the setup plan runs,
   // so a fresh clone reaches a fully applied state from one setup run
   // (install → load → plan).
-  const declarations = installPluginDeclarations(config);
-  if (declarations.length) {
-    await progress.step("plugins", "Installing plugins", async () => {
-      for (const result of await installDeclaredPlugins(companionPath, declarations)) {
-        if (result.status === "failed") {
-          emitWarning(
-            `${FRAMEWORK_NAME}: plugin "${result.package}" failed to install: ${result.error ?? "unknown error"}`,
-          );
-        }
+  const installPlugins = async () => {
+    const outcome = await installPluginWorkspaces(companionPath, config, audience.active);
+    for (const removed of outcome.removed) {
+      emitWarning(`${FRAMEWORK_NAME}: ${describeRemovedAudience(removed)}`);
+    }
+    for (const result of outcome.results) {
+      if (result.status === "failed") {
+        emitWarning(
+          `${FRAMEWORK_NAME}: plugin "${result.package}" failed to install: ${result.error ?? "unknown error"}`,
+        );
       }
-      await hydrateDynamicPlugins({ companionPath });
-    });
-  }
+    }
+    if (outcome.declared) await hydrateDynamicPlugins({ companionPath });
+  };
+  // Without a declaration the run still removes unselected audiences' trees
+  // and prunes a stale shared workspace, but shows no step.
+  const declaresPlugins = pluginInstallTargets(config, audience.active).some(
+    (target) => target.declarations.length > 0,
+  );
+  if (declaresPlugins) await progress.step("plugins", "Installing plugins", installPlugins);
+  else await installPlugins();
   await progress.step("capabilities", "Applying capabilities", () =>
     applySetupCompatibilities(companionPath, config, "setup"),
   );

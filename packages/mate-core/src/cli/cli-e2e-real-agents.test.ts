@@ -42,8 +42,8 @@ setDefaultTimeout(DEFAULT_TEST_TIMEOUT_MS);
 
 const DUMMY_API_KEY = "sk-ant-dummy-test-key";
 // `-m provider/model` CLI selector vs. the bare id the API request body actually carries.
-const OPENCODE_MODEL = "anthropic/claude-sonnet-4-5";
-const OPENCODE_MODEL_ID = "claude-sonnet-4-5";
+const OPENCODE_MODEL = "anthropic/claude-sonnet-5-5";
+const OPENCODE_MODEL_ID = "claude-sonnet-5-5";
 const COMPANION_GUIDANCE_MARKERS = [
   "\n<companion-policy ",
   "\n<codebase-exploration-rules",

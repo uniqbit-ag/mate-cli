@@ -10,7 +10,14 @@ import {
   type OutcomeRunFacts,
 } from "./actions";
 
-const workset = (stage: WorksetStageId) => ({ id: "acme-login", stage, stageLabel: `at ${stage}` });
+const BEFORE_PLAN = new Set<WorksetStageId>(["clarify-intent", "explore"]);
+/** From Propose change on, a Workset links the change it proposed. */
+const workset = (stage: WorksetStageId) => ({
+  id: "acme-login",
+  stage,
+  stageLabel: `at ${stage}`,
+  changes: BEFORE_PLAN.has(stage) ? [] : ["acme-login-plan"],
+});
 const run = (state: OutcomeRunFacts["state"], extra: Partial<OutcomeRunFacts> = {}) => ({
   state,
   ...extra,
@@ -21,16 +28,31 @@ const sorted = (actions: ReadonlySet<OutcomeAction>) => [...actions].toSorted();
 
 describe("the actions an Outcome accepts", () => {
   test.each<[string, WorksetStageId, OutcomeRunFacts | undefined, OutcomeAction[]]>([
-    ["Later in Clarify intent, never run", "clarify-intent", undefined, ["later", "start"]],
-    ["started, not yet run", "clarify-intent", run("idle"), ["later", "start"]],
-    ["queued in Clarify intent", "clarify-intent", run("queued"), ["cancel", "later", "start"]],
-    ["clarifying", "clarify-intent", run("running"), ["cancel", "start"]],
-    ["asking in Clarify intent", "clarify-intent", run("waiting"), ["answer", "start"]],
+    [
+      "Later in Clarify intent, never run",
+      "clarify-intent",
+      undefined,
+      ["delete", "later", "start"],
+    ],
+    ["started, not yet run", "clarify-intent", run("idle"), ["delete", "later", "start"]],
+    [
+      "queued in Clarify intent",
+      "clarify-intent",
+      run("queued"),
+      ["cancel", "delete", "later", "start"],
+    ],
+    ["clarifying", "clarify-intent", run("running"), ["cancel", "delete", "start"]],
+    ["asking in Clarify intent", "clarify-intent", run("waiting"), ["answer", "delete", "start"]],
     // A cancelled queued run is failed; nothing runs, so it can still move to Later.
-    ["clarify failed", "clarify-intent", run("failed"), ["later", "retry", "start"]],
-    ["clarify interrupted", "clarify-intent", run("interrupted"), ["later", "retry", "start"]],
-    ["asking in Explore change", "explore", run("waiting"), ["answer", "start"]],
-    ["explored", "explore", run("idle"), ["start"]],
+    ["clarify failed", "clarify-intent", run("failed"), ["delete", "later", "retry", "start"]],
+    [
+      "clarify interrupted",
+      "clarify-intent",
+      run("interrupted"),
+      ["delete", "later", "retry", "start"],
+    ],
+    ["asking in Explore change", "explore", run("waiting"), ["answer", "delete", "start"]],
+    ["explored", "explore", run("idle"), ["delete", "start"]],
     ["proposing", "propose", run("running"), ["cancel", "start"]],
     ["queued for a slot", "propose", run("queued"), ["cancel", "start"]],
     [
@@ -112,6 +134,23 @@ describe("a refusal", () => {
     );
   });
 
+  test("Delete is for an Outcome without a change, a live run or not", () => {
+    for (const state of ["idle", "queued", "running", "waiting", "failed"] as const) {
+      expect(outcomeRefusal("delete", workset("clarify-intent"), run(state), runner)).toBeNull();
+    }
+    expect(outcomeRefusal("delete", workset("apply"), run("idle"), runner)).toBe(
+      "Workset acme-login has a change (acme-login-plan); only an Outcome without one can be deleted",
+    );
+  });
+
+  test("Delete is refused once a person has taken over, until they return it", () => {
+    for (const mode of ["manual", "takeover-requested"] as const) {
+      expect(
+        outcomeRefusal("delete", workset("explore"), run("idle", { control: { mode } }), runner),
+      ).toBe("a person has taken over this Outcome; return it to automation first");
+    }
+  });
+
   test("an answer after the round closed reads as already answered", () => {
     expect(outcomeRefusal("answer", workset("explore"), run("running"), runner)).toBe(
       "this question was already answered",
@@ -153,6 +192,9 @@ describe("a companion the factory does not run", () => {
       NO_RUNNER_REFUSAL,
     );
     expect(outcomeRefusal("retry", workset("apply"), run("failed"), noRunner)).toBe(
+      NO_RUNNER_REFUSAL,
+    );
+    expect(outcomeRefusal("delete", workset("clarify-intent"), undefined, noRunner)).toBe(
       NO_RUNNER_REFUSAL,
     );
   });

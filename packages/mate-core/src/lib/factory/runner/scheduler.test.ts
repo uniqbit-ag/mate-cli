@@ -66,7 +66,7 @@ function runner(
   maxRuns = 1,
   timers: Pick<
     ConstructorParameters<typeof FactoryRunner>[0],
-    "setTimer" | "clearTimer" | "maxBuilds" | "sessionLive"
+    "setTimer" | "clearTimer" | "maxBuilds" | "sessionLive" | "endSession"
   > = {},
 ) {
   fs.mkdirSync(path.join(root, "worksets"), { recursive: true });
@@ -444,12 +444,46 @@ describe("returning to automation", () => {
     expect(prompts).toEqual([]);
   });
 
-  test("is refused while the person's session is live", async () => {
+  test("is refused while the person's session is live and cannot be ended", async () => {
     const { agent } = promptAgent();
     const { r } = runner(agent, {}, 1, { sessionLive: (id) => id === "acme-a" });
     await runs.control.take("acme-a", false, async () => []);
     await expect(r.returnToAutomation("acme-a")).rejects.toThrow("exit Claude");
     expect((await runs.facts("acme-a")).control.mode).toBe("manual");
+  });
+
+  test("ends the person's live session first, then returns", async () => {
+    const { agent } = promptAgent();
+    const live = new Set(["acme-a"]);
+    const ended: string[] = [];
+    const { r } = runner(agent, {}, 1, {
+      sessionLive: (id) => live.has(id),
+      endSession: async (id) => {
+        ended.push(id);
+        live.delete(id);
+      },
+    });
+    await runs.control.take("acme-a", false, async () => []);
+    await r.returnToAutomation("acme-a");
+    await r.idle("acme-a");
+    expect(ended).toEqual(["acme-a"]);
+    expect((await runs.facts("acme-a")).control.mode).toBe("automatic");
+  });
+
+  test("a takeover still waiting keeps the person's live session", async () => {
+    const { agent, started, release } = heldAgent();
+    const ended: string[] = [];
+    const { r } = runner(agent, {}, 1, {
+      sessionLive: (id) => id === "acme-a" && started.length > 0,
+      endSession: async (id) => void ended.push(id),
+    });
+    await r.request("acme-a", "propose", "go on");
+    while (started.length === 0) await tick();
+    await r.takeControl("acme-a");
+    await expect(r.returnToAutomation("acme-a")).rejects.toThrow("exit Claude");
+    expect(ended).toEqual([]);
+    await release();
+    await r.idle("acme-a");
   });
 
   test("racing a pickup, exactly one run starts, with the return note", async () => {
@@ -489,6 +523,31 @@ describe("returning to automation", () => {
     await release();
     await r.idle("acme-a");
     expect((await runs.facts("acme-a")).control.changesBefore).toEqual([]);
+  });
+});
+
+describe("stop", () => {
+  test("a refusal under the lock cancels nothing", async () => {
+    const { agent, started, release } = heldAgent();
+    const { r } = runner(agent, {});
+    await r.request("acme-a", "propose", "go on");
+    while (started.length === 0) await tick();
+    await expect(r.stop("acme-a", async () => "acme-a has a change")).rejects.toThrow(
+      "has a change",
+    );
+    expect(r.isActive("acme-a")).toBe(true);
+    await release();
+    await r.idle("acme-a");
+    expect((await runs.facts("acme-a")).execution.state).not.toBe("failed");
+  });
+
+  test("cancels a running run and waits for it to end", async () => {
+    const { agent, started } = heldAgent();
+    const { r } = runner(agent, {});
+    await r.request("acme-a", "propose", "go on");
+    while (started.length === 0) await tick();
+    await r.stop("acme-a");
+    expect(r.isActive("acme-a")).toBe(false);
   });
 });
 

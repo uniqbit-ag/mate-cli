@@ -11,6 +11,9 @@ interface FactoryUiState {
   /** Whether the Agents panel is open; a run refused for a missing credential opens it. */
   agentsOpen: boolean;
   setAgentsOpen(open: boolean): void;
+  /** Whether the Git access panel is open. */
+  gitAccessOpen: boolean;
+  setGitAccessOpen(open: boolean): void;
 }
 
 export const useFactoryUi = create<FactoryUiState>()(
@@ -22,6 +25,8 @@ export const useFactoryUi = create<FactoryUiState>()(
       setStepped: (stepped) => set({ stepped }),
       agentsOpen: false,
       setAgentsOpen: (agentsOpen) => set({ agentsOpen }),
+      gitAccessOpen: false,
+      setGitAccessOpen: (gitAccessOpen) => set({ gitAccessOpen }),
     }),
     {
       name: "mate.factory.filter",

@@ -91,6 +91,30 @@ describe("reconcileServingClaudeWrap", () => {
     expect(readWrapStateSync(clone.main).runtimes.has("claude")).toBe(true);
   });
 
+  test.skipIf(process.getuid?.() === 0)(
+    "writes nothing under a main worktree Mate cannot write",
+    async () => {
+      const clone = await servedClone();
+      await fs.chmod(clone.main, 0o555);
+
+      try {
+        expect(
+          await reconcileServingClaudeWrap(clone.companionPath, worktreeRepository(clone), {
+            create: true,
+          }),
+        ).toBeNull();
+        const own = await runWrapPass(clone.companionPath, worktreeRepository(clone), {
+          runtimes: ["claude"],
+        });
+        expect(own.kind).not.toBe("failed");
+        expect(JSON.stringify(await settingsHooks(clone.worktree))).toContain("session-prepare");
+        expect(await fs.exists(path.join(clone.main, ".claude"))).toBe(false);
+      } finally {
+        await fs.chmod(clone.main, 0o755);
+      }
+    },
+  );
+
   test("a main worktree serves itself", async () => {
     const clone = await servedClone();
 

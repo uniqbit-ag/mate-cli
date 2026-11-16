@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { type FormEvent, useEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
@@ -5,18 +6,31 @@ import { flushSync } from "react-dom";
 import { type FactoryAction, type FactoryPayload } from "../../server/factory";
 import { Warnings } from "../warnings";
 import { Icon } from "../../components/icon";
-import { ListCard, PAGE_PAD, Pills } from "../../components/view-parts";
+import { PathSteps } from "../../components/path-steps";
+import { ListCard, PAGE_PAD, Pills, Progress } from "../../components/view-parts";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
 import { cn } from "../../lib/cn";
+import { gitTokensQuery, hostOf, tokenCovers } from "../../lib/git-tokens";
 import { SidePanel } from "../../shell/panel";
+import { ChangeDoc, type ChangeDocKind } from "./change-doc";
 import { FactoryCompanion } from "./factory-companion";
 import { AgentsDialog } from "./agents-dialog";
+import { GitAccessDialog } from "./git-access-dialog";
+import { RepositoryDialog } from "./repository-dialog";
+import { RepositoryTokenDialog } from "./repository-token";
 import { FactoryForm } from "./factory-form";
 import { useAppearance } from "../../stores/appearance";
 import { useFactoryUi } from "../../stores/factory-ui";
 import { reportSrc } from "../reports/report-url";
 import { matchesFilter, useFactoryKeys, useNeedsYou, useNotificationOffer } from "./factory-live";
 import { ageText } from "./age";
-import { useOutcomeLog } from "./use-outcome-log";
+import { type LogPiece, useOutcomeLog } from "./use-outcome-log";
 import { OutcomeTerminal } from "../../terminal/outcome-terminal";
 import {
   type AgentQuestion,
@@ -37,6 +51,8 @@ import {
   type FactoryHome,
   milestonesOf,
   nextStepOf,
+  PATH_STEPS,
+  pathPositionOf,
   type OutcomeItem,
   situationOf,
 } from "./outcome";
@@ -66,18 +82,9 @@ const ATTENTION_LABELS: Record<AttentionKind, string> = {
   problem: "Something went wrong",
 };
 
-/** What each kind of attention expects of the person, under its heading in the dialog. */
-const ATTENTION_HINTS: Partial<Record<AttentionKind, string>> = {
-  decision:
-    "The run is paused on this. Pick an option or answer in your words; it continues on its own.",
-  review:
-    "Read each report, then approve to start building, or request a change to revise the plan.",
-  merge: "Merge the delivery branch on your forge; the board picks it up on its next refresh.",
-  publish: "Publishing commits, tags and pushes the archived specs to the companion.",
-  problem: "Retry runs the stage again; take control to fix it yourself.",
-  control:
-    "You work in the factory's own conversation. Exit Claude, then return the Outcome to automation; the factory checks what changed and continues.",
-};
+/** What being in control means, in the note card above the terminal. */
+const CONTROL_HINT =
+  "You work in the factory's own conversation. Exit Claude, then return the Outcome to automation; the factory checks what changed and continues.";
 
 /** What Take control does, beside the button. */
 const TAKE_CONTROL_HINT =
@@ -103,6 +110,8 @@ interface HomeContext {
   now: number | undefined;
   /** `jira` adds an optional Ticket field to the forms that create an Outcome. */
   ticketFormat: "none" | "jira";
+  /** Tasks done of total across the Workset's changes; `null` while none are tracked. */
+  tasksOf: (workset: StudioWorkset) => { done: number; total: number } | null;
 }
 
 /** Optional Jira key for a new Outcome; it names the Outcome's Delivery Branch. */
@@ -127,17 +136,20 @@ function ActionForm({
   id,
   action,
   label,
+  primary = PRIMARY_ACTIONS.has(action),
   children,
 }: {
   id: string;
   action: FactoryAction;
   label: string;
+  /** Whether the button is the primary one; the action decides unless this says. */
+  primary?: boolean;
   children?: ReactNode;
 }) {
   return (
     <FactoryForm id={id} action={action} className="factory-action">
       {children}
-      <button type="submit" className={PRIMARY_ACTIONS.has(action) ? "factory-primary" : undefined}>
+      <button type="submit" className={primary ? "factory-primary" : undefined}>
         {label}
       </button>
     </FactoryForm>
@@ -147,12 +159,66 @@ function ActionForm({
 /** A control for one action; none when Studio is read-only or the Outcome does not accept it. */
 function actionFor(item: OutcomeItem, context: HomeContext) {
   const accepted = outcomeActions(item.workset, item.run, context);
-  return (action: OutcomeAction, label: string, children?: ReactNode) =>
+  return (action: OutcomeAction, label: string, children?: ReactNode, primary?: boolean) =>
     context.writable && accepted.has(action) ? (
-      <ActionForm id={item.workset.id} action={action} label={label}>
+      <ActionForm id={item.workset.id} action={action} label={label} primary={primary}>
         {children}
       </ActionForm>
     ) : null;
+}
+
+const canDelete = (item: OutcomeItem, context: HomeContext): boolean =>
+  context.writable && outcomeActions(item.workset, item.run, context).has("delete");
+
+/**
+ * Delete, offered only while the factory accepts it and behind a confirm step that names the
+ * Outcome. A refusal shows in the form; `onDeleted` runs once the Outcome is gone.
+ */
+function DeleteOutcome({
+  item,
+  context,
+  onDeleted,
+}: {
+  item: OutcomeItem;
+  context: HomeContext;
+  onDeleted?: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const confirm = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (confirming) confirm.current?.focus();
+  }, [confirming]);
+  const { workset, run } = item;
+  if (!canDelete(item, context)) return null;
+  if (!confirming) {
+    return (
+      <button type="button" className="factory-delete" onClick={() => setConfirming(true)}>
+        Delete
+      </button>
+    );
+  }
+  return (
+    <FactoryForm
+      id={workset.id}
+      action="delete"
+      className="factory-action factory-confirm"
+      onDone={onDeleted}
+    >
+      <p className="note">
+        Delete “{workset.title}”?
+        {runActive(run) ? " Its run will be stopped first." : ""} Its request is removed; branches
+        stay.
+      </p>
+      <div className="factory-confirm-actions">
+        <button ref={confirm} type="submit" className="factory-delete">
+          Delete outcome
+        </button>
+        <button type="button" onClick={() => setConfirming(false)}>
+          Cancel
+        </button>
+      </div>
+    </FactoryForm>
+  );
 }
 
 /** The Outcome's state as a coloured dot; the text beside it says the same in words. */
@@ -167,8 +233,101 @@ function ActivityDot({ activity }: { activity: Activity }) {
   );
 }
 
+/** Opens the Add repository dialog and keeps the repository chosen for the next Outcome. */
+function useRepositoryChoice(
+  repositories: string[],
+  sources: FactoryPayload["repositorySources"],
+  companion: string,
+) {
+  const [open, setOpen] = useState(false);
+  const [chosen, setChosen] = useState<string | null>(null);
+  const listed = Object.entries(sources ?? {}).flatMap(([identity, kind]) =>
+    kind === "list" ? [identity] : [],
+  );
+  const dialog = (
+    <RepositoryDialog
+      open={open}
+      companion={companion}
+      listed={listed}
+      onClose={() => setOpen(false)}
+      onAdded={setChosen}
+    />
+  );
+  const value = chosen !== null && repositories.includes(chosen) ? chosen : (repositories[0] ?? "");
+  return { ask: () => setOpen(true), dialog, value, choose: setChosen };
+}
+
+const SOURCE_LABELS = { linked: "linked", list: "listed", environment: "configured" } as const;
+
+/** `acme/web · git.acme.test · listed`: the repository, the Git host it clones from and its source. */
+function repositoryText(
+  repository: string,
+  sources: FactoryPayload["repositorySources"],
+  keys: FactoryPayload["repositoryKeys"],
+): string {
+  const key = keys?.[repository];
+  const host = key ? hostOf(key) : null;
+  const source = sources?.[repository];
+  return [repository, host, source ? SOURCE_LABELS[source] : null].filter(Boolean).join(" · ");
+}
+
+/** Whether the factory holds a Git token for the chosen repository, and Set token when it can. */
+function TokenState({
+  tokenKey,
+  covered,
+  onSet,
+}: {
+  tokenKey: string;
+  covered: boolean;
+  onSet: () => void;
+}) {
+  return (
+    <p className="note" data-repository-token={covered ? "covered" : "none"}>
+      {covered
+        ? `A Git token is set for ${hostOf(tokenKey)}.`
+        : `No Git token for ${tokenKey}: only public repositories clone.`}{" "}
+      <button type="button" data-open-set-token="" onClick={onSet}>
+        Set token…
+      </button>
+    </p>
+  );
+}
+
 /** Plain-language input; Start runs it at once, Save for later keeps it unstarted. */
-function OutcomeInput({ repositories, context }: { repositories: string[]; context: HomeContext }) {
+function OutcomeInput({
+  repositories,
+  sources,
+  keys,
+  factoryMode,
+  context,
+}: {
+  repositories: string[];
+  sources: FactoryPayload["repositorySources"];
+  keys: FactoryPayload["repositoryKeys"];
+  factoryMode: boolean;
+  context: HomeContext;
+}) {
+  const choice = useRepositoryChoice(repositories, sources, context.companionDigest);
+  const [setting, setSetting] = useState(false);
+  const tokens = useQuery({ ...gitTokensQuery(), enabled: factoryMode && context.writable });
+  const options = repositories.map((repository) => ({
+    value: repository,
+    label: repositoryText(repository, sources, keys),
+  }));
+  const tokenKey = keys?.[choice.value];
+  const tokenState =
+    factoryMode && tokens.data && tokenKey ? (
+      <TokenState
+        tokenKey={tokenKey}
+        covered={tokenCovers(tokenKey, tokens.data.tokens)}
+        onSet={() => setSetting(true)}
+      />
+    ) : null;
+  const addButton = factoryMode ? (
+    <button type="button" data-open-add-repository="" onClick={choice.ask}>
+      Add repository…
+    </button>
+  ) : null;
   if (!context.writable) {
     return (
       <p className="note">Read-only mode. Start Studio with --writable to describe outcomes.</p>
@@ -176,39 +335,74 @@ function OutcomeInput({ repositories, context }: { repositories: string[]; conte
   }
   if (repositories.length === 0) {
     return (
-      <p className="note">Link a Working Repository to this companion to describe outcomes.</p>
+      <>
+        <p className="note">Link a Working Repository to this companion to describe outcomes.</p>
+        {addButton}
+        {factoryMode ? choice.dialog : null}
+      </>
     );
   }
+  // The dialog sits beside the form, not in it: a submit inside a portal bubbles through React.
   return (
-    <FactoryForm action="create" className="outcome-input" data-outcome-input="">
-      <label>
-        <span className="outcome-input-label">What should we build or improve?</span>
-        <textarea
-          name="text"
-          rows={3}
-          required
-          placeholder="Make onboarding easier: fewer signup steps, and keep authentication working."
+    <>
+      <FactoryForm action="create" className="outcome-input" data-outcome-input="">
+        <label>
+          <span className="outcome-input-label">What should we build or improve?</span>
+          <textarea
+            name="text"
+            rows={3}
+            required
+            placeholder="Make onboarding easier: fewer signup steps, and keep authentication working."
+          />
+        </label>
+        <div className="outcome-input-actions">
+          <button type="submit" name="start" value="start" className="factory-primary">
+            Start <kbd>⌘↵</kbd>
+          </button>
+          <button type="submit" name="start" value="later">
+            Save for later
+          </button>
+          <TicketField context={context} />
+          {repositories.length > 1 ? (
+            <Select
+              name="repository"
+              required
+              items={options}
+              value={choice.value}
+              onValueChange={(value) => {
+                if (value !== null) choice.choose(value);
+              }}
+            >
+              <SelectTrigger aria-label="Working Repository" className="w-auto max-w-80">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {options.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <span data-working-repository="">
+              <input type="hidden" name="repository" value={choice.value} />
+              {repositoryText(choice.value, sources, keys)}
+            </span>
+          )}
+          {addButton}
+        </div>
+        {tokenState}
+      </FactoryForm>
+      {factoryMode ? choice.dialog : null}
+      {tokenKey ? (
+        <RepositoryTokenDialog
+          open={setting}
+          tokenKey={tokenKey}
+          onClose={() => setSetting(false)}
         />
-      </label>
-      <div className="outcome-input-actions">
-        <button type="submit" name="start" value="start" className="factory-primary">
-          Start <kbd>⌘↵</kbd>
-        </button>
-        <button type="submit" name="start" value="later">
-          Save for later
-        </button>
-        <TicketField context={context} />
-        {repositories.length > 1 ? (
-          <select name="repository" required aria-label="Working Repository">
-            {repositories.map((repository) => (
-              <option key={repository} value={repository}>
-                {repository}
-              </option>
-            ))}
-          </select>
-        ) : null}
-      </div>
-    </FactoryForm>
+      ) : null}
+    </>
   );
 }
 
@@ -249,6 +443,7 @@ function Checks({ checks }: { checks?: { name: string; passed: boolean }[] | und
 
 /** Opens a linked change's review report in the panel; Back refocuses `opener`. */
 type OpenReport = (change: string, opener: HTMLElement) => void;
+type OpenDoc = (change: string, doc: ChangeDocKind, opener: HTMLElement) => void;
 
 /** Opens `change`'s report; names the change only when there are several. */
 function ReportButton({
@@ -302,31 +497,6 @@ function ResultLinks({ item, onOpenReport }: { item: OutcomeItem; onOpenReport: 
           View changes
         </a>
       ) : null}
-    </div>
-  );
-}
-
-/** A control per linked change's stored review report; missing ones are named. */
-function ReviewReports({ item, onOpenReport }: { item: OutcomeItem; onOpenReport: OpenReport }) {
-  const stored = item.run?.reviewReports ?? {};
-  const several = namesChanges(item);
-  return (
-    <div className="factory-review-reports">
-      {item.workset.changes.map((change) =>
-        stored[change] ? (
-          <ReportButton
-            key={change}
-            label="Read the report"
-            change={change}
-            several={several}
-            onOpenReport={onOpenReport}
-          />
-        ) : (
-          <p key={change} className="note" data-report-missing={change}>
-            No review report for <span className="mono">{change}</span>.
-          </p>
-        ),
-      )}
     </div>
   );
 }
@@ -398,11 +568,26 @@ function FeedbackField({ item, context }: { item: OutcomeItem; context: HomeCont
   );
 }
 
+/** The run log as the hook follows it. */
+type LogFeed = ReturnType<typeof useOutcomeLog>;
+
 const runActive = (run: FactoryRunView | undefined): boolean =>
   run?.state === "running" || run?.state === "queued";
 
-/** The run's log in its dialog; the client follows it live while the dialog is open. */
-function OutcomeLog({ item }: { item: OutcomeItem }) {
+/** The last lines the run wrote, for the running focus block. */
+function lastLines(pieces: LogPiece[], count: number): string[] {
+  const lines: string[] = [];
+  for (const piece of pieces.toReversed()) {
+    for (const line of piece.text.split("\n").toReversed()) {
+      if (line.trim() !== "") lines.unshift(line);
+      if (lines.length === count) return lines;
+    }
+  }
+  return lines;
+}
+
+/** The run's log in the Activity row; the client follows it live while the dialog is open. */
+function OutcomeLog({ item, log }: { item: OutcomeItem; log: LogFeed }) {
   const { workset, run } = item;
   const active = runActive(run);
   if (!run?.hasLog && !active) return null;
@@ -415,14 +600,14 @@ function OutcomeLog({ item }: { item: OutcomeItem }) {
           Full log
         </a>
       </header>
-      <LiveLog id={workset.id} />
+      <LiveLog id={workset.id} log={log} />
     </section>
   );
 }
 
 /** The stored log, then the running stage's text and tool activity as it arrives, by who wrote it. */
-function LiveLog({ id }: { id: string }) {
-  const { pieces, ended } = useOutcomeLog(factoryLogStreamRoute(id));
+function LiveLog({ id, log }: { id: string; log: LogFeed }) {
+  const { pieces, ended } = log;
   const ref = useRef<HTMLPreElement>(null);
   // Follow the end unless the person scrolled up to read; measured before new text arrives.
   const following = useRef(true);
@@ -476,17 +661,17 @@ function LiveLog({ id }: { id: string }) {
   );
 }
 
-/** While a person has control: the way back first, then their session on the factory's conversation. */
+/** While a person has control: a note on what that means, then their session on the factory's conversation. */
 function ControlSheet({ item, context }: { item: OutcomeItem; context: HomeContext }) {
   const { workset, run } = item;
   const stepped = useFactoryUi((state) => state.stepped);
   return (
     <div className="factory-sheet outcome-control">
-      <div className="outcome-control-bar">
+      <div className="outcome-control-note">
         {run?.control?.reason ? (
           <p className="outcome-control-reason">{run.control.reason}</p>
         ) : null}
-        {actionFor(item, context)("return", "Return to automation")}
+        <p className="note">{CONTROL_HINT}</p>
       </div>
       {context.sessions && run?.control?.mode === "manual" ? (
         <OutcomeTerminal
@@ -497,20 +682,6 @@ function ControlSheet({ item, context }: { item: OutcomeItem; context: HomeConte
       ) : (
         <p className="note">The terminal is not available in this Studio.</p>
       )}
-    </div>
-  );
-}
-
-/** Take control and what it does, for an Outcome whose conversation the factory still drives. */
-function TakeControl({ item, context }: { item: OutcomeItem; context: HomeContext }) {
-  const { workset, run } = item;
-  if (!run?.conversation || run.control || workset.stage === "done") return null;
-  const form = actionFor(item, context)("take-control", "Take control");
-  if (!form) return null;
-  return (
-    <div className="outcome-control-offer">
-      {form}
-      <p className="note">{TAKE_CONTROL_HINT}</p>
     </div>
   );
 }
@@ -527,27 +698,18 @@ function TakeoverPending({
   const stage = run.state === "running" ? run.stage : null;
   const since = run.control.updatedAt ? ageText(run.control.updatedAt, now) : "";
   return (
-    <section
-      className="outcome-dialog-attention"
-      data-kind="control"
-      data-pending=""
-      role="status"
-      aria-label="Taking control"
-    >
-      <h3>Taking control</h3>
-      <p className="outcome-attention-hint">
-        Control passes to you once{" "}
-        {stage ? (
-          <>
-            the <span className="mono">{stage}</span> stage
-          </>
-        ) : (
-          "the current stage"
-        )}{" "}
-        ends; the log below keeps following it. The terminal opens here then.
-        {since ? <span className="factory-age mono"> · asked {since} ago</span> : null}
-      </p>
-    </section>
+    <p className="outcome-attention-hint" data-pending="" role="status" aria-label="Taking control">
+      Control passes to you once{" "}
+      {stage ? (
+        <>
+          the <span className="mono">{stage}</span> stage
+        </>
+      ) : (
+        "the current stage"
+      )}{" "}
+      ends; the log below keeps following it. The terminal opens here then.
+      {since ? <span className="factory-age mono"> · asked {since} ago</span> : null}
+    </p>
   );
 }
 
@@ -558,27 +720,55 @@ function runText(run: FactoryRunView | undefined, now: number | undefined): stri
   return `${run.state} ${run.stage}${since ? ` · ${ageText(since, now)}` : ""}`;
 }
 
-const reportsMissing = ({ workset, run }: OutcomeItem): boolean =>
-  workset.changes.some((change) => !run?.reviewReports?.[change]);
-
-/** What can be done to the run itself, always in view; nothing when nothing applies. */
-function RunActions({ item, context }: { item: OutcomeItem; context: HomeContext }) {
+/**
+ * What can be done to the run itself, always in reach and quiet: Return to automation is the
+ * primary action while the person has control. Nothing renders when nothing applies.
+ */
+function OutcomeFooter({
+  item,
+  context,
+  onDeleted,
+}: {
+  item: OutcomeItem;
+  context: HomeContext;
+  onDeleted?: (() => void) | undefined;
+}) {
   const { workset, run } = item;
   const form = actionFor(item, context);
-  const active = runActive(run);
   const open = workset.stage !== "done";
-  // Retry and missing reports are offered where the problem or the review is shown.
-  // No action sets the stage: a Later Outcome moves only by Start.
+  // Retry is offered where the problem is shown. No action sets the stage: a Later Outcome
+  // moves only by Start.
+  const back = form("return", "Return to automation");
+  const start = open && !workset.queuedAt ? form("start", "Start") : null;
+  const cancel = runActive(run) ? form("cancel", "Cancel run") : null;
+  const regenerate =
+    workset.stage === "human-review" ? form("regenerate", "Regenerate reports") : null;
+  const later = open && workset.queuedAt ? form("later", "Move to later") : null;
+  const take = takeControlOf(item, context);
+  const remove = <DeleteOutcome item={item} context={context} onDeleted={onDeleted} />;
+  const offered = [back, start, cancel, regenerate, later, take].some(Boolean);
+  if (!offered && !canDelete(item, context)) return null;
   return (
-    <div className="outcome-actions" role="group" aria-label="Run actions">
-      {open && !workset.queuedAt ? form("start", "Start") : null}
-      {active ? form("cancel", "Cancel run") : null}
-      {workset.stage === "human-review" && !reportsMissing(item)
-        ? form("regenerate", "Regenerate reports")
-        : null}
-      {open && workset.queuedAt ? form("later", "Move to later") : null}
-    </div>
+    <footer className="outcome-dialog-foot">
+      <div className="outcome-actions" role="group" aria-label="Run actions">
+        {back}
+        {start}
+        {cancel}
+        {regenerate}
+        {later}
+        {take}
+        {remove}
+      </div>
+      {take ? <p className="note">{TAKE_CONTROL_HINT}</p> : null}
+    </footer>
   );
+}
+
+/** Take control, for an Outcome whose conversation the factory still drives. */
+function takeControlOf(item: OutcomeItem, context: HomeContext): ReactNode {
+  const { workset, run } = item;
+  if (!run?.conversation || run.control || workset.stage === "done") return null;
+  return actionFor(item, context)("take-control", "Take control");
 }
 
 /** The execution facts beside the map: stage, changes, run and branch. */
@@ -818,17 +1008,130 @@ function DecisionSheet({
   );
 }
 
+/** The plan under review: what to read, then Approve plan or Request changes, in place. */
+function PlanReview({
+  item,
+  context,
+  onOpenReport,
+  onOpenDoc,
+}: {
+  item: OutcomeItem;
+  context: HomeContext;
+  onOpenReport: OpenReport;
+  onOpenDoc: OpenDoc;
+}) {
+  const { workset, run } = item;
+  const stored = run?.reviewReports ?? {};
+  const several = namesChanges(item);
+  const named = (label: string, change: string) => (several ? `${label} · ${change}` : label);
+  const canRequest = context.writable && outcomeActions(workset, run, context).has("feedback");
+  // Kept here, not in the panel's state: the panel hides, never unmounts, behind a report.
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const field = useRef<HTMLTextAreaElement>(null);
+  const toggle = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (open) field.current?.focus();
+  }, [open]);
+  const close = () => {
+    flushSync(() => setOpen(false));
+    toggle.current?.focus();
+  };
+  return (
+    <div className="outcome-plan">
+      {workset.changes.map((change) => (
+        <p key={change} className="outcome-read">
+          <span className="muted">Read</span>
+          {stored[change] ? (
+            <ReportButton
+              label="Show me"
+              change={change}
+              several={several}
+              onOpenReport={onOpenReport}
+            />
+          ) : (
+            <span className="note" data-report-missing={change}>
+              No review report for <span className="mono">{change}</span>.
+            </span>
+          )}
+          {(["spec", "tasks"] as const).map((doc) => (
+            <button
+              key={doc}
+              type="button"
+              className="outcome-report-open"
+              data-open-doc={`${doc}:${change}`}
+              onClick={(event) => onOpenDoc(change, doc, event.currentTarget)}
+            >
+              {named(`Show ${doc}`, change)}
+            </button>
+          ))}
+        </p>
+      ))}
+      <div className="factory-sheet-actions">
+        {actionFor(item, context)("start-apply", "Approve plan", undefined, !open)}
+        {canRequest ? (
+          <button
+            ref={toggle}
+            type="button"
+            aria-expanded={open}
+            onClick={() => (open ? close() : setOpen(true))}
+          >
+            Request changes
+          </button>
+        ) : null}
+      </div>
+      {canRequest && open ? (
+        <FactoryForm
+          id={workset.id}
+          action="feedback"
+          className="outcome-request"
+          onDone={() => {
+            setDraft("");
+            setOpen(false);
+          }}
+        >
+          <textarea
+            ref={field}
+            name="feedback"
+            rows={3}
+            aria-label="What should change?"
+            placeholder="What should change?"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              // The panel closes on Escape; here it only closes the field.
+              event.stopPropagation();
+              close();
+            }}
+          />
+          <div className="factory-sheet-actions">
+            <button type="submit" className="factory-primary" disabled={draft.trim() === ""}>
+              Send changes
+            </button>
+            <button type="button" onClick={close}>
+              Cancel
+            </button>
+          </div>
+        </FactoryForm>
+      ) : null}
+    </div>
+  );
+}
+
 /** What a person does for one attention item, opened in place. */
-function AttentionBody({
+function FocusBody({
   item,
   kind,
   context,
   onOpenReport,
+  onOpenDoc,
 }: {
   item: OutcomeItem;
   kind: AttentionKind;
   context: HomeContext;
   onOpenReport: OpenReport;
+  onOpenDoc: OpenDoc;
 }) {
   const { run } = item;
   const form = actionFor(item, context);
@@ -848,16 +1151,8 @@ function AttentionBody({
     );
   }
   if (kind === "review") {
-    const missing = reportsMissing(item);
     return (
-      <div className="factory-sheet">
-        <ReviewReports item={item} onOpenReport={onOpenReport} />
-        <div className="factory-sheet-actions">
-          {form("start-apply", "Approve")}
-          {missing ? form("regenerate", "Regenerate") : null}
-        </div>
-        <FeedbackField item={item} context={context} />
-      </div>
+      <PlanReview item={item} context={context} onOpenReport={onOpenReport} onOpenDoc={onOpenDoc} />
     );
   }
   if (kind === "merge") {
@@ -968,31 +1263,15 @@ function OutcomeList({
 const sameText = (a: string, b: string): boolean =>
   a.replace(/\.$/, "").toLowerCase() === b.replace(/\.$/, "").toLowerCase();
 
-/** What the person is asked to do, with what it expects of them. */
-function AttentionSection({
-  item,
-  kind,
-  context,
-  onOpenReport,
-}: {
-  item: OutcomeItem;
-  kind: AttentionKind;
-  context: HomeContext;
-  onOpenReport: OpenReport;
-}) {
+/** Whether something failed or is wrong, so checks, problems and results belong in view. */
+function hasTrouble(item: OutcomeItem, situation: ReturnType<typeof situationOf>): boolean {
   return (
-    <section className="outcome-dialog-attention" data-kind={kind} aria-label="Needs you">
-      <h3>{attentionLabel(kind, item.run)}</h3>
-      {ATTENTION_HINTS[kind] ? (
-        <p className="outcome-attention-hint">{ATTENTION_HINTS[kind]}</p>
-      ) : null}
-      <AttentionBody item={item} kind={kind} context={context} onOpenReport={onOpenReport} />
-    </section>
+    item.workset.problems.length > 0 || (situation.checks?.some((check) => !check.passed) ?? false)
   );
 }
 
-/** Where the Outcome is: its situation, the next step, checks, results and problems. */
-function OutcomeStatus({
+/** Failed checks, problems and result links; in the focus block only while something is wrong. */
+function Findings({
   item,
   situation,
   onOpenReport,
@@ -1001,25 +1280,106 @@ function OutcomeStatus({
   situation: ReturnType<typeof situationOf>;
   onOpenReport: OpenReport;
 }) {
-  const { workset, run } = item;
-  const next = nextStepOf(workset, run);
   return (
-    <section className="outcome-dialog-status" aria-label="Where it is">
-      <p className="outcome-situation">{situation.text}</p>
-      {/* "Waiting for your answer." needs no "Next: Waiting for your answer". */}
-      {sameText(next, situation.text) ? null : (
-        <p className="outcome-next">
-          <span className="muted">Next</span> {next}
-        </p>
-      )}
+    <>
       <Checks checks={situation.checks} />
       <ResultLinks item={item} onOpenReport={onOpenReport} />
-      {workset.problems.length > 0 ? (
+      {item.workset.problems.length > 0 ? (
         <ul className="factory-problems">
-          {workset.problems.map((problem) => (
+          {item.workset.problems.map((problem) => (
             <li key={problem}>{problem}</li>
           ))}
         </ul>
+      ) : null}
+    </>
+  );
+}
+
+/** The step being worked on, its task progress when tracked, and the latest output. */
+function WorkingOn({
+  text,
+  tasks,
+  tail,
+}: {
+  text: string;
+  tasks: { done: number; total: number } | null;
+  tail: string[];
+}) {
+  return (
+    <div className="outcome-working" role="status" aria-label="Working on">
+      <p className="outcome-working-step">{text}</p>
+      {tasks ? <Progress done={tasks.done} total={tasks.total} /> : null}
+      {tail.length > 0 ? (
+        <ol className="outcome-tail" aria-label="Latest log">
+          {tail.map((line, index) => (
+            // The last lines shift as the log grows, so their place is their identity.
+            // oxlint-disable-next-line no-array-index-key
+            <li key={index}>{line}</li>
+          ))}
+        </ol>
+      ) : (
+        <p className="note">Waiting for output.</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The one thing the panel is about: what is happening or what is asked of the person, as one
+ * sentence, with its action. A running Outcome shows the last lines of its log.
+ */
+function FocusBlock({
+  item,
+  kind,
+  context,
+  situation,
+  log,
+  onOpenReport,
+  onOpenDoc,
+}: {
+  item: OutcomeItem;
+  kind: AttentionKind | null;
+  context: HomeContext;
+  situation: ReturnType<typeof situationOf>;
+  log: LogFeed;
+  onOpenReport: OpenReport;
+  onOpenDoc: OpenDoc;
+}) {
+  const { workset, run } = item;
+  const next = nextStepOf(workset, run);
+  const tail = run?.state === "running" ? lastLines(log.pieces, 3) : null;
+  return (
+    <section
+      className="outcome-focus"
+      data-kind={kind ?? undefined}
+      aria-label={kind ? "Needs you" : "Where it is"}
+    >
+      {kind ? <h3>{attentionLabel(kind, run)}</h3> : null}
+      {tail ? (
+        <WorkingOn text={situation.text} tasks={context.tasksOf(workset)} tail={tail} />
+      ) : (
+        <p className="outcome-situation">
+          {situation.text}
+          {/* "Waiting for your answer." needs no "Next: Waiting for your answer". */}
+          {sameText(next, situation.text) ? null : (
+            <span className="outcome-next">
+              <span className="muted">Next:</span> {next}
+            </span>
+          )}
+        </p>
+      )}
+      <TakeoverPending run={run} now={context.now} />
+      {hasTrouble(item, situation) ? (
+        <Findings item={item} situation={situation} onOpenReport={onOpenReport} />
+      ) : null}
+      {kind ? (
+        <FocusBody
+          item={item}
+          kind={kind}
+          context={context}
+          onOpenReport={onOpenReport}
+          onOpenDoc={onOpenDoc}
+        />
       ) : null}
     </section>
   );
@@ -1043,19 +1403,99 @@ function History({ run, now }: { run: FactoryRunView | undefined; now: number | 
   );
 }
 
+/** One line until opened: its name and a short summary of what it holds. */
+function Row({
+  label,
+  summary,
+  className,
+  children,
+}: {
+  label: string;
+  summary: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <details className={cn("outcome-row-fold", className)} aria-label={label}>
+      <summary>
+        <span className="outcome-row-fold-label">{label}</span>
+        <span className="outcome-row-fold-summary">{summary}</span>
+      </summary>
+      <div className="outcome-row-fold-body">{children}</div>
+    </details>
+  );
+}
+
+/** Activity, Request and Details: everything the focus block leaves out, one line each. */
+function OutcomeRows({
+  item,
+  kind,
+  context,
+  situation,
+  log,
+  onOpenReport,
+}: {
+  item: OutcomeItem;
+  kind: AttentionKind | null;
+  context: HomeContext;
+  situation: ReturnType<typeof situationOf>;
+  log: LogFeed;
+  onOpenReport: OpenReport;
+}) {
+  const { workset, run } = item;
+  const updates = run?.situations?.length ?? 0;
+  const hasLog = Boolean(run?.hasLog) || runActive(run);
+  const activity = [
+    updates > 0 ? `${updates} ${updates === 1 ? "update" : "updates"}` : "",
+    hasLog ? "log" : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const feedback = kind !== "review" ? <FeedbackField item={item} context={context} /> : null;
+  return (
+    <>
+      {activity ? (
+        <Row label="Activity" summary={activity}>
+          <History run={run} now={context.now} />
+          <OutcomeLog item={item} log={log} />
+        </Row>
+      ) : null}
+      {workset.intent || feedback ? (
+        <Row label="Request" summary={workset.intent.split("\n")[0] ?? ""}>
+          {workset.intent ? <p className="outcome-intent">{workset.intent}</p> : null}
+          {feedback}
+        </Row>
+      ) : null}
+      <Row
+        label="Details"
+        summary={`${workset.stageLabel} · ${runText(run, context.now)}`}
+        className="outcome-dialog-rail"
+      >
+        {hasTrouble(item, situation) ? null : (
+          <Findings item={item} situation={situation} onOpenReport={onOpenReport} />
+        )}
+        <Facts item={item} context={context} />
+      </Row>
+    </>
+  );
+}
+
 /**
- * Everything about one Outcome, in the slide-over panel. It leads with what needs the person,
- * then the log, status and the run's actions, and history; Details holds the execution facts.
+ * Everything about one Outcome, in the slide-over panel: the state, the Delivery Path on one
+ * line, one focus block, the Activity, Request and Details rows, and the run's actions.
  * In control the terminal takes the width. A review report opens in its place, with Back.
  */
 function OutcomePanel({
   item,
   kind,
   context,
+  onDeleted,
 }: {
   item: OutcomeItem;
   kind: AttentionKind | null;
   context: HomeContext;
+  /** Runs once the Outcome is deleted, so the panel can close. */
+  onDeleted?: () => void;
 }) {
   const { workset, run } = item;
   const situation = situationOf(workset, run);
@@ -1063,6 +1503,10 @@ function OutcomePanel({
   // How long it has been in this state: running since the turn started, else since the last change.
   const since = run?.state === "running" ? run.startedAt : run?.updatedAt || situation.at;
   const id = dialogId(workset.id);
+  // One stream feeds the focus block's last lines and the Activity row's full log.
+  const log = useOutcomeLog(
+    run?.hasLog || runActive(run) ? factoryLogStreamRoute(workset.id) : null,
+  );
   // Keyed by Workset, so stepping to another Outcome starts on its content again.
   const [openReport, setOpenReport] = useState<{ change: string; report: string } | null>(null);
   const opener = useRef<HTMLElement | null>(null);
@@ -1070,17 +1514,31 @@ function OutcomePanel({
   if (openReport && run?.reviewReports?.[openReport.change] !== openReport.report) {
     setOpenReport(null);
   }
+  const [openDoc, setOpenDoc] = useState<{ change: string; doc: ChangeDocKind } | null>(null);
+  // A doc is for the plan under review; it closes once the Outcome moves on or drops the change.
+  if (openDoc && (workset.stage !== "human-review" || !workset.changes.includes(openDoc.change))) {
+    setOpenDoc(null);
+  }
   const showReport = (change: string, from: HTMLElement) => {
     const stored = run?.reviewReports?.[change];
     if (!stored) return;
     opener.current = from;
+    setOpenDoc(null);
     setOpenReport({ change, report: stored });
   };
+  const showDoc = (change: string, doc: ChangeDocKind, from: HTMLElement) => {
+    opener.current = from;
+    setOpenReport(null);
+    setOpenDoc({ change, doc });
+  };
   const back = () => {
-    flushSync(() => setOpenReport(null));
+    flushSync(() => {
+      setOpenReport(null);
+      setOpenDoc(null);
+    });
     opener.current?.focus();
   };
-  const reportOpen = openReport !== null;
+  const reportOpen = openReport !== null || openDoc !== null;
   let layout: "report" | "control" | undefined;
   if (reportOpen) layout = "report";
   else if (kind === "control") layout = "control";
@@ -1095,11 +1553,19 @@ function OutcomePanel({
       {openReport ? (
         <OutcomeReport change={openReport.change} report={openReport.report} onBack={back} />
       ) : null}
+      {openDoc ? (
+        <ChangeDoc
+          companion={context.companionDigest}
+          change={openDoc.change}
+          doc={openDoc.doc}
+          onBack={back}
+        />
+      ) : null}
       {/* Hidden, not unmounted, behind a report: a typed draft and the log stream stay. */}
       <header className="outcome-dialog-head" hidden={reportOpen}>
         <div className="outcome-dialog-heading">
           <h2 id={`${id}-title`}>{workset.title}</h2>
-          <p className="outcome-dialog-state">
+          <p className="outcome-dialog-state" data-activity={activity}>
             <ActivityDot activity={activity} />
             {ACTIVITY_LABELS[activity]}
             {since ? (
@@ -1109,26 +1575,27 @@ function OutcomePanel({
         </div>
       </header>
       <div className="outcome-dialog-main" hidden={reportOpen}>
-        {kind ? (
-          <AttentionSection item={item} kind={kind} context={context} onOpenReport={showReport} />
-        ) : null}
-        <TakeoverPending run={run} now={context.now} />
-        <OutcomeLog item={item} />
-        <OutcomeStatus item={item} situation={situation} onOpenReport={showReport} />
-        <RunActions item={item} context={context} />
-        <TakeControl item={item} context={context} />
-        <History run={run} now={context.now} />
-        {workset.intent ? (
-          <section className="outcome-intent-section" aria-label="Request">
-            <h3>Request</h3>
-            <p className="outcome-intent">{workset.intent}</p>
-          </section>
-        ) : null}
-        {kind !== "review" ? <FeedbackField item={item} context={context} /> : null}
-        <details className="outcome-dialog-rail" aria-label="Details">
-          <summary>Details</summary>
-          <Facts item={item} context={context} />
-        </details>
+        <div className="outcome-path">
+          <PathSteps compact steps={PATH_STEPS} {...pathPositionOf(workset, run)} />
+        </div>
+        <FocusBlock
+          item={item}
+          kind={kind}
+          context={context}
+          situation={situation}
+          log={log}
+          onOpenReport={showReport}
+          onOpenDoc={showDoc}
+        />
+        <OutcomeRows
+          item={item}
+          kind={kind}
+          context={context}
+          situation={situation}
+          log={log}
+          onOpenReport={showReport}
+        />
+        <OutcomeFooter item={item} context={context} onDeleted={onDeleted} />
       </div>
     </div>
   );
@@ -1229,6 +1696,16 @@ function OpenAgents({ label }: { label: string }) {
   );
 }
 
+/** Opens the Git access panel. */
+function OpenGitAccess() {
+  const setGitAccessOpen = useFactoryUi((state) => state.setGitAccessOpen);
+  return (
+    <button type="button" data-open-git-access="" onClick={() => setGitAccessOpen(true)}>
+      Git access
+    </button>
+  );
+}
+
 /** The filter, the keys and the offer to notify, above the board. */
 function BoardToolbar({
   count,
@@ -1292,6 +1769,7 @@ function BoardToolbar({
         Notify me about decisions
       </button>
       {factoryMode && writable ? <OpenAgents label="Agents" /> : null}
+      {factoryMode && writable ? <OpenGitAccess /> : null}
       {onPass ? (
         <button type="button" className="factory-primary factory-pass" onClick={onPass}>
           Clear what needs you <span className="mono">{count}</span>
@@ -1299,6 +1777,21 @@ function BoardToolbar({
       ) : null}
     </div>
   );
+}
+
+/** Task counts summed over a Workset's changes; null when none are tracked. */
+function tasksIn(changes: FactoryPayload["changes"]): HomeContext["tasksOf"] {
+  const byName = new Map((changes ?? []).map((change) => [change.name, change]));
+  return (workset) => {
+    let done = 0;
+    let total = 0;
+    for (const name of workset.changes) {
+      const change = byName.get(name);
+      done += change?.completedTasks ?? 0;
+      total += change?.totalTasks ?? 0;
+    }
+    return total > 0 ? { done, total } : null;
+  };
 }
 
 /** The board's Outcomes and the context every row and panel reads. */
@@ -1319,6 +1812,7 @@ function contextOf({
       runner: runs !== null,
       now,
       ticketFormat: payload.ticketFormat,
+      tasksOf: tasksIn(payload.changes),
     },
   };
 }
@@ -1359,13 +1853,21 @@ export function Factory({
   const open = openId ? (ordered.find((item) => item.workset.id === openId) ?? null) : null;
   const agentsOpen = useFactoryUi((state) => state.agentsOpen);
   const setAgentsOpen = useFactoryUi((state) => state.setAgentsOpen);
+  const gitAccessOpen = useFactoryUi((state) => state.gitAccessOpen);
+  const setGitAccessOpen = useFactoryUi((state) => state.setGitAccessOpen);
   return (
     <FactoryCompanion.Provider value={companionDigest}>
       <section
         className={cn(PAGE_PAD, "view-section factory-home grid content-start gap-4 pb-10")}
         aria-label="Factory"
       >
-        <OutcomeInput repositories={payload.linkedRepositories} context={context} />
+        <OutcomeInput
+          repositories={payload.linkedRepositories}
+          sources={payload.repositorySources}
+          keys={payload.repositoryKeys}
+          factoryMode={factoryMode}
+          context={context}
+        />
         <BoardToolbar
           count={home.attention.length}
           worksets={payload.worksets.length}
@@ -1444,7 +1946,12 @@ export function Factory({
                 item={item}
                 context={context}
                 progress={false}
-                trailing={actionFor(item, context)("start", "Start")}
+                trailing={
+                  <>
+                    {actionFor(item, context)("start", "Start")}
+                    <DeleteOutcome item={item} context={context} />
+                  </>
+                }
               />
             ))}
           </OutcomeList>
@@ -1474,6 +1981,7 @@ export function Factory({
               item={open}
               kind={kinds.get(open.workset.id) ?? null}
               context={context}
+              onDeleted={address.close}
             />
           ) : null}
         </SidePanel>
@@ -1485,6 +1993,9 @@ export function Factory({
         <Warnings warnings={payload.warnings} />
         {factoryMode && writable && agentsOpen ? (
           <AgentsDialog onClose={() => setAgentsOpen(false)} />
+        ) : null}
+        {factoryMode && writable && gitAccessOpen ? (
+          <GitAccessDialog onClose={() => setGitAccessOpen(false)} />
         ) : null}
       </section>
     </FactoryCompanion.Provider>

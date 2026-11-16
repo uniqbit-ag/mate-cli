@@ -946,6 +946,124 @@ describe("Workset sessions", () => {
     expect(ended).toEqual(["acme-login"]);
   });
 
+  describe("when Claude closes", () => {
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
+    let sessions: LiveSessions;
+    const exitRegistry = (seen: Array<[string, string[]]>) => {
+      sessions = new LiveSessions();
+      return registry({
+        sessions,
+        limits: { termGraceMs: 20, reapMs: 20 },
+        resolveWorkset: async (_id, _digest, sessionId) => resolved(sessionId),
+        onWorksetExit: async (id, companionPath) => {
+          expect(companionPath).toBe(ACME);
+          seen.push([id, [...sessions.busy()]]);
+        },
+      });
+    };
+
+    test("the Outcome is returned once, after the session is marked ended", async () => {
+      const seen: Array<[string, string[]]> = [];
+      const r = exitRegistry(seen);
+      await r.registry.connect(viewer()).message(JSON.stringify(WORKSET_START));
+      r.spawned[0]!.exit(0);
+      await settle();
+      // The Workset is no longer busy, so Return to automation's live-session guard passes.
+      expect(seen).toEqual([["acme-login", []]]);
+    });
+
+    test("the Outcome is returned when no browser is attached", async () => {
+      const seen: Array<[string, string[]]> = [];
+      const r = exitRegistry(seen);
+      const connection = r.registry.connect(viewer());
+      await connection.message(JSON.stringify(WORKSET_START));
+      connection.closed();
+      r.spawned[0]!.exit(130);
+      await settle();
+      expect(seen).toEqual([["acme-login", []]]);
+    });
+
+    test("a crash leaves the Outcome with the person", async () => {
+      const seen: Array<[string, string[]]> = [];
+      const r = exitRegistry(seen);
+      const connection = r.registry.connect(viewer());
+      await connection.message(JSON.stringify(WORKSET_START));
+      connection.closed();
+      r.spawned[0]!.exit(137);
+      await settle();
+      expect(seen).toEqual([]);
+    });
+
+    test("closing the browser only detaches and returns nothing", async () => {
+      const seen: Array<[string, string[]]> = [];
+      const r = exitRegistry(seen);
+      const connection = r.registry.connect(viewer());
+      await connection.message(JSON.stringify(WORKSET_START));
+      connection.closed();
+      await settle();
+      expect(seen).toEqual([]);
+      expect(r.registry.list()).toHaveLength(1);
+      await r.registry.stopAll();
+    });
+
+    test("ending the session or stopping Studio returns nothing", async () => {
+      const seen: Array<[string, string[]]> = [];
+      const r = exitRegistry(seen);
+      const v = viewer();
+      await r.registry.connect(v).message(JSON.stringify(WORKSET_START));
+      const sessionId = v.messages.find((message) => message.type === "ready")!.sessionId as string;
+      await r.registry.end(sessionId);
+      r.spawned[0]!.exit(143);
+      await r.registry.stopAll();
+      await settle();
+      expect(seen).toEqual([]);
+    });
+
+    test("Return to automation ends the live session through the sessions, without a second return", async () => {
+      const seen: Array<[string, string[]]> = [];
+      const r = exitRegistry(seen);
+      const v = viewer();
+      await r.registry.connect(v).message(JSON.stringify(WORKSET_START));
+      await sessions.close(ACME, "acme-login", "returned");
+      expect(r.registry.list()).toEqual([]);
+      expect(v.messages).toContainEqual({ type: "ended", reason: "returned" });
+      expect(r.signals).toContainEqual([r.spawned[0]!.pid, "SIGTERM"]);
+      await sessions.close(ACME, "acme-login", "returned");
+      await settle();
+      expect(seen).toEqual([]);
+    });
+
+    test("Delete tells the person the Outcome was deleted", async () => {
+      const r = exitRegistry([]);
+      const v = viewer();
+      await r.registry.connect(v).message(JSON.stringify(WORKSET_START));
+      await r.registry.endWorkset(ACME, "acme-login", "deleted");
+      expect(v.messages).toContainEqual({ type: "ended", reason: "deleted" });
+    });
+
+    test("another companion's Workset of the same id keeps its session", async () => {
+      const r = exitRegistry([]);
+      await r.registry.connect(viewer()).message(JSON.stringify(WORKSET_START));
+      await r.registry.endWorkset(path.join(ACME, "..", "acme-other"), "acme-login", "returned");
+      expect(r.registry.list()).toHaveLength(1);
+      await r.registry.stopAll();
+    });
+
+    test("a failing return never breaks the registry", async () => {
+      const r = registry({
+        limits: { termGraceMs: 20, reapMs: 20 },
+        resolveWorkset: async (_id, _digest, sessionId) => resolved(sessionId),
+        onWorksetExit: async () => {
+          throw new Error("returning failed");
+        },
+      });
+      await r.registry.connect(viewer()).message(JSON.stringify(WORKSET_START));
+      r.spawned[0]!.exit(0);
+      await settle();
+      expect(r.registry.list()).toEqual([]);
+    });
+  });
+
   test("count toward the cap with companion sessions, and ending one ends its helper", async () => {
     const r = registry({
       limits: { termGraceMs: 20, reapMs: 20, sessions: 2 },

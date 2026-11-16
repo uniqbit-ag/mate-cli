@@ -541,6 +541,19 @@ describe("factory repositories", () => {
     expect(config.factory.repositories).toEqual(["https://git.acme.test/acme/web.git"]);
   });
 
+  test("none configured is fine: Studio adds them later", () => {
+    const config = resolveConfig({ MATE_FACTORY: "true" }, noFile);
+    expect(config.factory.enabled).toBe(true);
+    expect(config.factory.repositories).toEqual([]);
+  });
+
+  test("the setting says it is optional and where else repositories come from", () => {
+    const setting = SETTINGS.find((entry) => entry.env === "MATE_FACTORY_REPOSITORIES")!;
+    expect(setting.required).toBe(false);
+    expect(setting.meaning).toContain("Optional");
+    expect(setting.meaning).toContain("factory.local.yaml");
+  });
+
   test("an entry naming no org/repository stops startup naming it", () => {
     expect(() =>
       resolveConfig(

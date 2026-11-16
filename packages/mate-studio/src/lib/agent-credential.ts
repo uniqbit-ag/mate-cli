@@ -11,7 +11,7 @@ import {
 
 export const agentCredentialKey = ["agent-credential"] as const;
 
-async function call<T>(method: string, route: string, body?: object): Promise<T> {
+export async function call<T>(method: string, route: string, body?: object): Promise<T> {
   const response = await fetch(route, {
     method,
     credentials: "same-origin",

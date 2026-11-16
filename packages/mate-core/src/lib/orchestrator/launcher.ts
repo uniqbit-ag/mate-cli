@@ -132,7 +132,7 @@ export class FrameworkLauncher {
       config: state.config,
       skipGit: state.skipGit,
     });
-    report(prepared);
+    if (!request.quiet) report(prepared);
     if (!prepared.ok) throw state.adapter.launchFailure(prepared);
     await warnOnLoosenedSecretPolicy(state.companionPath);
     const adapterContext = await state.adapter.planLaunch(this.makeAdapterContext(state), prepared);

@@ -31,7 +31,7 @@ import {
   rowText,
   secretMatch,
   toEntries,
-} from "./companion.ts";
+} from "./companion";
 
 /** How long the menu reuses Mate's answer, and a companion's file list is kept. */
 const REFRESH_MS = 30_000;

@@ -129,7 +129,8 @@ describe("the Factory home", () => {
     expect(markup).toMatch(/value="later"[^>]*name="start"/);
     expect(await render(payload({ worksets: [outcome()] }))).toContain("The factory is idle.");
     expect(markup).not.toContain('data-section="attention"');
-    expect(markup).not.toContain('name="repository"');
+    expect(markup).not.toContain("Working Repository");
+    expect(markup).toContain('data-working-repository=""');
   });
 
   it("offers a repository choice only when several are linked", async () => {
@@ -228,14 +229,56 @@ describe("the Factory home", () => {
     expect(dialog).toContain("Ready for you to merge");
     expect(dialog).toContain("Review plan");
     expect(dialog).toContain("View changes");
-    expect(dialog).toContain('data-passed="true"');
-    // The rail holds the execution facts and no Delivery Path map.
-    const rail = dialog.slice(dialog.indexOf('class="outcome-dialog-rail"'));
+    // The line sits under the header: Merge is step 5 of 6, every step named for assistive tech.
+    expect(dialog).toContain('aria-label="Delivery Path"');
+    expect(dialog).toContain("Step 5 of 6 · Merge");
+    expect(dialog).toMatch(/aria-current="step"[^>]*><span class="sr-only">Merge</);
+    expect(dialog.indexOf('aria-label="Delivery Path"')).toBeLessThan(
+      dialog.indexOf("The three-step signup is built"),
+    );
+    expect(dialog).toMatch(
+      /Understand.*Propose change.*Human review.*Apply change.*Merge.*Publish/s,
+    );
+    // Details holds the execution facts and the passing checks, and no Delivery Path map.
+    const rail = dialog.slice(dialog.indexOf("outcome-dialog-rail"));
+    const focus = dialog.slice(0, dialog.indexOf("outcome-dialog-rail"));
     expect(dialog).not.toContain("data-map-stage");
     expect(rail).toContain("Waiting for merge");
-    expect(dialog.slice(0, dialog.indexOf('class="outcome-dialog-rail"'))).not.toContain(
-      "Waiting for merge",
+    expect(rail).toContain('data-passed="true"');
+    expect(focus).not.toContain("Waiting for merge");
+    expect(focus).not.toContain('data-passed="true"');
+    // Activity, Request and Details are one line each until opened.
+    expect(dialog).not.toContain("<details open");
+  });
+
+  it("surfaces a failed check in the focus block, and keeps passing checks in Details", async () => {
+    const markup = await render(
+      payload({
+        worksets: [outcome({ stage: "apply", stageLabel: "Apply change", ...started() })],
+      }),
+      {
+        runs: {
+          "acme-onboarding": {
+            state: "idle",
+            updatedAt: "",
+            situations: [
+              {
+                text: "Built; one check failed.",
+                at: "2026-11-02T11:00:00.000Z",
+                checks: [
+                  { name: "unit tests", passed: true },
+                  { name: "lint", passed: false },
+                ],
+              },
+            ],
+          },
+        },
+      },
     );
+    const dialog = dialogMarkup(markup, "acme-onboarding");
+    const focus = dialog.slice(0, dialog.indexOf("outcome-row-fold"));
+    expect(focus).toContain('data-passed="false"');
+    expect(focus).toContain("lint");
   });
 
   it("lists an Outcome that needs the person once, under Needs you", async () => {
@@ -343,11 +386,24 @@ describe("the Factory home", () => {
     expect(sectionMarkup(markup, "attention")).toContain("Plan ready for review");
     const dialog = dialogMarkup(markup, "acme-onboarding");
     const review = dialog.slice(dialog.indexOf('aria-label="Needs you"'));
-    expect(review).toMatch(/data-open-report="acme-a"[^>]*>Read the report · acme-a</);
+    expect(review).toMatch(/data-open-report="acme-a"[^>]*>Show me · acme-a</);
+    // Each change also offers its spec and tasks, named once there are several changes.
+    for (const change of ["acme-a", "acme-b"]) {
+      expect(review).toMatch(
+        new RegExp(`data-open-doc="spec:${change}"[^>]*>Show spec · ${change}<`),
+      );
+      expect(review).toMatch(
+        new RegExp(`data-open-doc="tasks:${change}"[^>]*>Show tasks · ${change}<`),
+      );
+    }
+    expect(review).toContain(">Read<");
     expect(dialog).toContain("start-apply");
-    expect(dialog).toContain('name="feedback"');
+    expect(dialog).toContain(">Approve plan<");
+    // Request changes opens its field in place, so none is rendered until it is pressed.
+    expect(dialog).toContain(">Request changes<");
+    expect(dialog).not.toContain('name="feedback"');
     expect(dialog).toContain('data-report-missing="acme-b"');
-    expect(dialog).toContain("Regenerate");
+    expect(dialog.slice(dialog.indexOf("outcome-dialog-foot"))).toContain("Regenerate reports");
     // Reports open in the panel on request; none is embedded and no link leaves Studio.
     expect(dialog).not.toContain("<iframe");
     expect(dialog).not.toContain("/studio/reports/r1");
@@ -370,6 +426,7 @@ describe("the Factory home", () => {
     const dialog = dialogMarkup(markup, "acme-onboarding");
     expect(dialog).not.toContain("start-apply");
     expect(dialog).not.toContain("Regenerate");
+    expect(dialog).not.toContain("data-open-doc");
     expect(dialog).toContain('name="feedback"');
   });
 
@@ -466,7 +523,7 @@ describe("the Factory home", () => {
       { runs: { "acme-onboarding": running("explore") } },
     );
     const dialog = dialogMarkup(markup, "acme-onboarding");
-    const rail = dialog.slice(dialog.indexOf('class="outcome-dialog-rail"'));
+    const rail = dialog.slice(dialog.indexOf("outcome-dialog-rail"));
     expect(rail).toContain("running explore");
     expect(dialog).toMatch(/aria-label="Run actions">.*?Cancel run/s);
     expect(sectionMarkup(markup, "active")).not.toContain("running explore");
@@ -504,7 +561,7 @@ describe("controls with and without the runner", () => {
       "at the Human Reviews",
       { stage: "human-review", stageLabel: "Human Reviews", ...started() },
       undefined,
-      ["feedback", "regenerate", "start-apply"],
+      ["regenerate", "start-apply"],
       [],
     ],
     [
@@ -561,6 +618,37 @@ describe("the live log and taking control", () => {
     ).not.toContain("data-outcome-log");
   });
 
+  it("boxes the step a running Outcome is on, with task progress only when tracked", async () => {
+    const run = {
+      ...running("explore"),
+      situations: [{ text: "Understanding what you want.", at: "2026-11-02T11:30:00.000Z" }],
+    };
+    const explore = dialogMarkup(
+      await render(payload({ worksets: [outcome(started())] }), {
+        runs: { "acme-onboarding": run },
+      }),
+      "acme-onboarding",
+    );
+    expect(explore).toMatch(/aria-label="Working on"[^>]*>.*Understanding what you want\./s);
+    expect(explore).not.toContain('role="progressbar"');
+    expect(explore).not.toContain("outcome-next");
+
+    const apply = dialogMarkup(
+      await render(
+        payload({
+          worksets: [
+            outcome({ ...started(), stage: "apply", stageLabel: "Apply change", changes: ["a"] }),
+          ],
+          changes: [{ name: "a", completedTasks: 2, totalTasks: 5, artifacts: [] }],
+        }),
+        { runs: { "acme-onboarding": { ...running("apply"), situations: run.situations } } },
+      ),
+      "acme-onboarding",
+    );
+    expect(apply).toContain("2 of 5 tasks");
+    expect(apply).toContain('aria-valuenow="40"');
+  });
+
   it("leads with the log for a running Outcome, and puts it under a waiting question", async () => {
     const runningDialog = dialogMarkup(
       await render(payload({ worksets: [outcome(started())] }), {
@@ -569,11 +657,12 @@ describe("the live log and taking control", () => {
       "acme-onboarding",
     );
     const main = runningDialog.slice(runningDialog.indexOf('class="outcome-dialog-main"'));
-    expect(main).toMatch(/^class="outcome-dialog-main"><section class="outcome-log-section"/);
-    expect(main.indexOf("outcome-log-section")).toBeLessThan(main.indexOf("outcome-dialog-status"));
-    expect(main.indexOf("outcome-dialog-status")).toBeLessThan(
-      main.indexOf('aria-label="Run actions"'),
+    // The Delivery Path line comes first, then the focus block, the rows and the footer.
+    expect(main).toMatch(
+      /^class="outcome-dialog-main"><div class="outcome-path">.*?<\/div><section class="outcome-focus"/s,
     );
+    expect(main.indexOf("outcome-focus")).toBeLessThan(main.indexOf("outcome-row-fold"));
+    expect(main.indexOf("outcome-row-fold")).toBeLessThan(main.indexOf('aria-label="Run actions"'));
     const waitingDialog = dialogMarkup(
       await render(payload({ worksets: [outcome(started())] }), {
         runs: {
@@ -583,7 +672,7 @@ describe("the live log and taking control", () => {
       "acme-onboarding",
     );
     expect(waitingDialog).toMatch(
-      /aria-label="Needs you">.*?<\/section><section class="outcome-log-section"/s,
+      /aria-label="Needs you">.*?<\/section><details[^>]*aria-label="Activity".*?outcome-log-section/s,
     );
     // The log names itself and can be scrolled by keyboard.
     expect(waitingDialog).toMatch(/role="log" aria-label="Run log" tabindex="0"/);
@@ -619,9 +708,9 @@ describe("the live log and taking control", () => {
     expect(dialog).toMatch(
       /aria-label="Taking control".*?Control passes to you once the .*?apply.*? stage ends/s,
     );
-    // The waiting note leads, the live log follows it directly.
+    // The waiting note leads; the live log follows in the Activity row.
     expect(dialog).toMatch(
-      /aria-label="Taking control".*?<\/section><section class="outcome-log-section"/s,
+      /aria-label="Taking control".*?<\/section><details[^>]*aria-label="Activity".*?outcome-log-section/s,
     );
     expect(dialog).not.toContain("/take-control");
     // The session starts only once control passed.
@@ -649,17 +738,21 @@ describe("the live log and taking control", () => {
     expect(dialog).not.toContain("data-terminal-workset");
     expect(dialog).toContain("/acme-onboarding/return");
     expect(dialog).toContain("returning to automation failed: acme");
-    // The control layout: the way back above the terminal, and no map narrowing it.
+    // The control layout: the terminal in the main area, the way back as the footer's primary
+    // action, and no map narrowing it.
     expect(dialog).toContain('data-layout="control"');
-    expect(dialog.indexOf("/acme-onboarding/return")).toBeLessThan(
-      dialog.indexOf("data-outcome-terminal"),
+    expect(dialog.indexOf("data-outcome-terminal")).toBeLessThan(
+      dialog.indexOf("/acme-onboarding/return"),
+    );
+    expect(dialog.slice(dialog.indexOf("outcome-dialog-foot"))).toMatch(
+      /factory-primary[^>]*>Return to automation</,
     );
     expect(dialog).not.toContain("workflow-graph-nodes");
     expect(dialog).toContain("outcome-facts");
     expect(dialog).not.toContain("/take-control");
   });
 
-  it("names what each attention expects in the Outcome's panel", async () => {
+  it("names what needs the person in the focus block, and only for what does", async () => {
     const markup = await render(
       payload({
         worksets: [
@@ -676,8 +769,8 @@ describe("the live log and taking control", () => {
       { runs: { "acme-a": { ...waiting }, "acme-b": running() } },
     );
     const first = dialogMarkup(markup, "acme-a");
-    expect(first).toContain("The run is paused on this.");
-    expect(dialogMarkup(markup, "acme-b")).not.toContain("outcome-dialog-attention");
+    expect(first).toContain('aria-label="Needs you"');
+    expect(dialogMarkup(markup, "acme-b")).not.toContain('aria-label="Needs you"');
     expect(markup).toContain("data-outcome-filter");
   });
 

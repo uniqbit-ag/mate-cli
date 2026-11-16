@@ -8,7 +8,11 @@ import {
   SPECS_RELATIVE_DIR,
 } from "../../../lib/change-layout";
 import { companionTicketFormat, type TicketFormat } from "../../../lib/delivery/branches";
-import { linkedRepositoryCatalog } from "../../../lib/workset/repositories";
+import {
+  type LinkedRepositoryCatalog,
+  linkedRepositoryCatalog,
+  type RepositorySourceKind,
+} from "../../../lib/workset/repositories";
 import type { readWorksets, WorksetProblem } from "../../../lib/workset/record";
 import type { WorksetStageId, WorksetTurn } from "../../../lib/workset/stage";
 import {
@@ -106,6 +110,10 @@ export interface StudioCompanionPayload {
   worksets: StudioWorkset[];
   /** `org/repository` identities linked to the companion: what a new Workset may name. */
   linkedRepositories: string[];
+  /** Where each of those comes from, so only the list's own can be removed in Studio. */
+  repositorySources?: Record<string, RepositorySourceKind>;
+  /** Each repository's Git token key, `host/org` of its clone URL, matched against stored token keys. */
+  repositoryKeys?: Record<string, string>;
   /** The companion's ticket setting; the Outcome form offers a Ticket field only for `jira`. */
   ticketFormat: TicketFormat;
   /** Records that could not be read, by path and reason. */
@@ -390,10 +398,11 @@ export async function assembleCompanionPayload(
   if ("error" in linkedResult) {
     warnings.push(`linked repositories: ${errorMessage(linkedResult.error)}`);
   }
-  const catalog =
+  const catalog: LinkedRepositoryCatalog =
     "catalog" in linkedResult
       ? linkedResult.catalog
-      : { identities: [], aliases: new Map<string, string>() };
+      : { identities: [], aliases: new Map(), kinds: new Map(), keys: new Map(), problem: null };
+  if (catalog.problem) warnings.push(catalog.problem);
 
   const specs: StudioSpec[] = await Promise.all(
     (specList.value.specs ?? []).map(async (spec) => ({
@@ -438,6 +447,8 @@ export async function assembleCompanionPayload(
     topology: topology.ok ? topology.value : null,
     worksets: worksets.worksets,
     linkedRepositories: catalog.identities,
+    repositorySources: Object.fromEntries(catalog.kinds),
+    repositoryKeys: Object.fromEntries(catalog.keys),
     ticketFormat,
     worksetProblems: worksets.problems,
     warnings,

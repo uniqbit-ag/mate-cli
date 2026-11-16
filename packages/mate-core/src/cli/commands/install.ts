@@ -15,21 +15,20 @@ import { MemberChoicesStore, type MemberChoices } from "../../lib/member-choices
 import { renderInstallExecution } from "../install-plan";
 import {
   describeUnknownAudience,
-  installPluginDeclarations,
   readAudienceSelection,
   resolveAudience,
 } from "../../tools/setup/dynamic-plugins/audiences";
 import { hydrateDynamicPlugins } from "../../tools/setup/dynamic-plugins/hydrate";
-import {
-  installDeclaredPlugins,
-  type PluginInstallResult,
-} from "../../tools/setup/dynamic-plugins/install";
+import type { PluginInstallResult } from "../../tools/setup/dynamic-plugins/install";
 import { registryConfigHint } from "../../tools/setup/dynamic-plugins/registry-hint";
-import {
-  FrozenInstallError,
-  installDeclaredPluginsFrozen,
-} from "../../tools/setup/dynamic-plugins/frozen";
+import { FrozenInstallError } from "../../tools/setup/dynamic-plugins/frozen";
 import { verifyDeclaredPlugins } from "../../tools/setup/dynamic-plugins/verify";
+import {
+  AUDIENCE_WORKSPACES_VERSION,
+  describeRemovedAudience,
+  installPluginWorkspaces,
+  type PluginWorkspacesOutcome,
+} from "../../tools/setup/dynamic-plugins/workspaces";
 
 export function reportPluginInstallResults(results: PluginInstallResult[]): boolean {
   for (const result of results) {
@@ -43,6 +42,18 @@ export function reportPluginInstallResults(results: PluginInstallResult[]): bool
     }
   }
   return results.every((result) => result.status !== "failed");
+}
+
+/** Names what the plugin step removed or migrated, beyond the per-plugin results. */
+export function reportPluginWorkspaces(
+  outcome: Pick<PluginWorkspacesOutcome, "removed" | "migrated">,
+): void {
+  for (const audience of outcome.removed) console.log(`  ${describeRemovedAudience(audience)}`);
+  if (outcome.migrated) {
+    console.log(
+      `  moved audience plugins out of the shared plugin workspace and raised engines.${FRAMEWORK_NAME} to >=${AUDIENCE_WORKSPACES_VERSION}; commit .${FRAMEWORK_NAME}/plugins/ and framework.yaml`,
+    );
+  }
 }
 
 export interface InstallCommandDeps {
@@ -145,7 +156,7 @@ function printPlanText(plan: Awaited<ReturnType<typeof inspectInstallPlan>>): vo
  * - `--yes` — skip confirmation; required for non-TTY execution. Tools the companion only recommends are not installed by `--yes` alone.
  * - `--with <capability>` — install a tool the companion recommends (RTK, TokenSave, Graphify, Context Mode) and remember the choice. Repeatable.
  * - `--without <capability>` — decline a recommended tool and remember the choice. Repeatable.
- * - `--frozen-plugins` — deployment restore: install declared plugins exactly from the committed lockfile, never rewrite the plugin manifest or lockfile. The checkout's plugin-generated files are written, not committed.
+ * - `--frozen-plugins` — deployment restore: install the base plugins and the selected audience's exactly from their committed lockfiles, never rewrite a plugin manifest or lockfile. The checkout's plugin-generated files are written, not committed.
  */
 export async function runInstallCommand(
   argv: string[],
@@ -176,53 +187,53 @@ export async function runInstallCommand(
     process.exitCode = 1;
     return false;
   }
+  let audience: string | null = null;
   if (context.kind === "companion") {
-    const audience = resolveAudience(context.config, readAudienceSelection(process.env));
-    if (!audience.ok) {
-      process.stderr.write(`${FRAMEWORK_NAME}: ${describeUnknownAudience(audience)}\n`);
+    const resolved = resolveAudience(context.config, readAudienceSelection(process.env));
+    if (!resolved.ok) {
+      process.stderr.write(`${FRAMEWORK_NAME}: ${describeUnknownAudience(resolved)}\n`);
       process.exitCode = 1;
       return false;
     }
+    audience = resolved.active;
   }
-  const declarations =
-    context.kind === "companion" || context.kind === "hub"
-      ? installPluginDeclarations(context.config)
-      : [];
   // Root-declared plugins (companion or hub) install first and hydrate into
   // the registry before the plan is built, so one run goes install → load →
-  // plan and their own install requirements are part of the plan.
-  if (
-    (context.kind === "companion" || context.kind === "hub") &&
-    context.companionPath &&
-    declarations.length
-  ) {
-    let results: PluginInstallResult[];
+  // plan and their own install requirements are part of the plan. The base
+  // plugins and the selected audience's install; no other audience does.
+  if ((context.kind === "companion" || context.kind === "hub") && context.companionPath) {
+    let outcome: PluginWorkspacesOutcome;
     try {
-      results = frozen
-        ? await installDeclaredPluginsFrozen(context.companionPath, declarations)
-        : await installDeclaredPlugins(context.companionPath, declarations);
+      outcome = await installPluginWorkspaces(context.companionPath, context.config, audience, {
+        frozen,
+      });
     } catch (error) {
       if (!(error instanceof FrozenInstallError)) throw error;
       process.stderr.write(`${FRAMEWORK_NAME}: frozen plugin install refused: ${error.message}\n`);
       process.exitCode = 1;
       return false;
     }
-    if (!reportPluginInstallResults(results)) {
+    reportPluginWorkspaces(outcome);
+    if (!reportPluginInstallResults(outcome.results)) {
       process.stderr.write(
         `${FRAMEWORK_NAME}: a declared plugin failed to install; installation is incomplete.\n`,
       );
       process.exitCode = 1;
       return false;
     }
-    await hydrateDynamicPlugins({ companionPath: context.companionPath });
-    if (frozen) {
-      const failures = await verifyDeclaredPlugins(context.companionPath);
-      if (failures.length > 0) {
-        for (const failure of failures) {
-          process.stderr.write(`${FRAMEWORK_NAME}: plugin ${failure.package}: ${failure.reason}\n`);
+    if (outcome.declared) {
+      await hydrateDynamicPlugins({ companionPath: context.companionPath });
+      if (frozen) {
+        const failures = await verifyDeclaredPlugins(context.companionPath);
+        if (failures.length > 0) {
+          for (const failure of failures) {
+            process.stderr.write(
+              `${FRAMEWORK_NAME}: plugin ${failure.package}: ${failure.reason}\n`,
+            );
+          }
+          process.exitCode = 1;
+          return false;
         }
-        process.exitCode = 1;
-        return false;
       }
     }
   }

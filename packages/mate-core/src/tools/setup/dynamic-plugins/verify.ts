@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import type { PluginDeclaration } from "../../../lib/orchestrator/types";
-import { readAudienceSelection, readEffectiveDeclarations } from "./audiences";
+import { readAudienceSelection, readEffectiveEntries } from "./audiences";
 import { validateDeclaration } from "./declarations";
 import { loadDynamicPlugin, type DynamicPluginLoadDeps } from "./loader";
 import { pluginPackageRoot } from "./paths";
@@ -38,18 +38,21 @@ export async function inspectDeclaredPlugins(
   const env = deps.env ?? process.env;
   const failures: PluginVerificationFailure[] = [];
   const capabilities: string[] = [];
-  const declarations: PluginDeclaration[] = [];
-  for (const entry of await readEffectiveDeclarations(companionPath, readAudienceSelection(env))) {
+  const declarations: Array<{ declaration: PluginDeclaration; audience: string | null }> = [];
+  for (const { entry, audience } of await readEffectiveEntries(
+    companionPath,
+    readAudienceSelection(env),
+  )) {
     const { declaration, error } = validateDeclaration(entry);
-    if (declaration) declarations.push(declaration);
+    if (declaration) declarations.push({ declaration, audience });
     else failures.push({ package: "(malformed entry)", reason: error ?? "invalid plugins entry" });
   }
 
-  for (const declaration of declarations) {
+  for (const { declaration, audience } of declarations) {
     const name = declaration.package;
     // oxlint-disable-next-line no-await-in-loop -- declared order is part of the contract
     const installed = await fs
-      .access(pluginPackageRoot(companionPath, name))
+      .access(pluginPackageRoot(companionPath, name, audience))
       .then(() => true)
       .catch(() => false);
     if (!installed) {
@@ -60,7 +63,7 @@ export async function inspectDeclaredPlugins(
       continue;
     }
     // oxlint-disable-next-line no-await-in-loop -- declared order is part of the contract
-    const result = await loadDynamicPlugin(companionPath, declaration, { ...deps, env });
+    const result = await loadDynamicPlugin(companionPath, declaration, { ...deps, env }, audience);
     if (!result.ok) failures.push({ package: name, reason: result.warning });
     else if (result.plugin.kind === "capability") capabilities.push(result.plugin.id);
   }

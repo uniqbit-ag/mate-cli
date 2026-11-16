@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 
 import { getWrapperBinPath } from "./lib/package-paths";
 import { runtimeWrapperBinPath } from "./runtime/runtime-directory";
@@ -21,6 +21,9 @@ import { findRealOpenSpec } from "../test/real-openspec";
  * with OpenSpec's data and config directories isolated per test. Skipped where
  * no real `openspec` is installed.
  */
+
+/** Each test shells out to the real OpenSpec CLI several times; bun's 5s default is too tight. */
+setDefaultTimeout(30_000);
 
 const SCHEMA_SOURCE = path.join(import.meta.dirname, "templates", "capabilities", "openspec-cap");
 /**

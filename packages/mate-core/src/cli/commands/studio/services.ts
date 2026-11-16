@@ -3,6 +3,7 @@ import type { UsageRequest } from "../../../lib/usage/cache";
 import type { UsageResponse } from "../../../lib/usage/types";
 import type { StudioSpecGraph } from "./graph";
 import type { StoredReport } from "./reports";
+import type { RepositoryAddInput, RepositoryAddResult } from "./repository-add";
 import type { SkillAgent, SkillPreview } from "./skill-files";
 import type { StudioModePolicy } from "./selection";
 import type { VaultConflict, VaultSaved } from "./vault";
@@ -23,6 +24,11 @@ export interface StudioServices {
   readonly writable: boolean;
   /** Whether the factory broker is reachable, so the Agents panel can be offered. */
   readonly factoryMode: boolean;
+  /**
+   * Whether removing the companion only unregisters it: in factory mode, Studio deletes only
+   * folders inside the factory's companions directory.
+   */
+  keepsFolder(companionPath: string): boolean;
   /** The startup profile's Studio modes; every page selection is resolved through it. */
   readonly modePolicy: StudioModePolicy;
   /** Everything one view is derived from, for the address that asked for it. */
@@ -79,7 +85,34 @@ export interface StudioServices {
    * Studio was started for.
    */
   deleteCompanion(companionDigest: string): Promise<{ deletedFolder: boolean }>;
+  /**
+   * Adds a companion to Studio's registry, by Git URL (the factory clones it) or by the absolute
+   * path of a folder Studio can read (registered in place). Needs `writable` and factory mode.
+   * A refusal is an answer, not an error; `tokenKey` names the Git token that would unlock a
+   * private URL.
+   */
+  addCompanion(input: CompanionAddInput): Promise<CompanionAddResult>;
+  /** Adds a Working Repository to the companion's list; see {@link RepositoryAddInput}. */
+  addRepository(companionDigest: string, input: RepositoryAddInput): Promise<RepositoryAddResult>;
+  /** Removes an entry of the companion's list; a linked or configured repository is not one. */
+  removeRepository(
+    companionDigest: string,
+    identity: string,
+  ): Promise<{ ok: true } | { ok: false; reason: string }>;
 }
+
+/**
+ * Adds a Working Repository to a companion's `factory.local.yaml`, by Git URL or from a local
+ * checkout's `origin`, after the factory checked the remote answers. Needs `writable` and factory
+ * mode; a refusal is an answer, and `tokenKey` names the Git token that would unlock a private one.
+ */
+export type { RepositoryAddInput, RepositoryAddResult };
+
+export type CompanionAddInput = { kind: "url"; url: string } | { kind: "path"; path: string };
+
+export type CompanionAddResult =
+  | { ok: true; digest: string; existing: boolean }
+  | { ok: false; reason: string; tokenKey?: string };
 
 /** The request context Studio's application receives from core on every request. */
 export interface StudioRequestContext {

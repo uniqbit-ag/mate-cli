@@ -52,9 +52,56 @@ describe("working repository local excludes", () => {
     expect(first).not.toContain(".claude/settings.local.json");
     expect(first.match(/# mate managed: start/g)).toHaveLength(1);
     expect(first.match(/# mate managed: end/g)).toHaveLength(1);
-    for (const entry of ["/.mate/", "/.claude/", "/.opencode/opencode.json", "/.agents/"]) {
+    for (const entry of [
+      "/.mate/",
+      "/.claude/",
+      "/.opencode/opencode.json",
+      "/.agents/",
+      "/.worktreeinclude.local",
+    ]) {
       expect(first.split("\n").filter((line) => line === entry)).toHaveLength(1);
     }
+  });
+
+  test("a block written without the personal include entry gains it in place", async () => {
+    const repoPath = await makeRepo("mate-working-excludes-include-");
+    const excludePath = path.join(repoPath, ".git", "info", "exclude");
+    const block = [
+      "# mate managed: start",
+      "/.mate/",
+      "/.claude/",
+      "/.opencode/opencode.json",
+      "/.agents/",
+      "/.mcp.json",
+    ];
+    await fs.writeFile(
+      excludePath,
+      ["# before", ...block, "# mate managed: end", "# after", ""].join("\n"),
+      "utf8",
+    );
+
+    await ensureWorkingRepoLocalExcludes(repoPath);
+
+    expect(await fs.readFile(excludePath, "utf8")).toBe(
+      ["# before", ...block, "/.worktreeinclude.local", "# mate managed: end", "# after", ""].join(
+        "\n",
+      ),
+    );
+  });
+
+  test("ignores only the root .worktreeinclude.local", async () => {
+    const repoPath = await makeRepo("mate-working-excludes-include-root-");
+    await ensureWorkingRepoLocalExcludes(repoPath);
+    await fs.mkdir(path.join(repoPath, "apps", "acme"), { recursive: true });
+    await fs.writeFile(path.join(repoPath, ".worktreeinclude.local"), ".env\n");
+    await fs.writeFile(path.join(repoPath, "apps", "acme", ".worktreeinclude.local"), ".env\n");
+
+    const status = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], {
+      cwd: repoPath,
+      encoding: "utf8",
+    });
+    expect(status.split("\n")).not.toContain("?? .worktreeinclude.local");
+    expect(status).toContain("apps/acme/.worktreeinclude.local");
   });
 
   test("keeps the repository's own .opencode files visible to Git", async () => {

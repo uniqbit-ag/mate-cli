@@ -16,17 +16,14 @@ export interface StudioAccessOptions {
   port: () => number;
   allowedHosts?: readonly string[];
   publicOrigin?: string | null;
+  /** Operator-pinned token; generated per start when absent. */
   token?: string | null;
 }
 
-/**
- * One server's Host, Origin, and token policy. `null` token means the server
- * is unguarded and issues none.
- */
+/** One server's Host, Origin, and token policy. Every start holds a token. */
 export interface StudioAccess {
   invocation: StudioInvocation;
-  guarded: boolean;
-  token: string | null;
+  token: string;
   cookieName(): string;
   /** Accepted origin for this request, or `null` when its Host is not one Studio answers to. */
   acceptedOrigin(request: Request): string | null;
@@ -104,8 +101,7 @@ function readCookie(request: Request, name: string): string | null {
 }
 
 export function createStudioAccess(options: StudioAccessOptions): StudioAccess {
-  const guarded = options.invocation === "serve" || options.terminal;
-  const token = guarded ? (options.token ?? generateStudioToken()) : null;
+  const token = options.token ?? generateStudioToken();
   const publicOrigin = options.publicOrigin ? normalizeOrigin(options.publicOrigin) : null;
   const publicAuthority = publicOrigin ? new URL(publicOrigin).host : null;
   const configured = new Set<string>();
@@ -127,7 +123,6 @@ export function createStudioAccess(options: StudioAccessOptions): StudioAccess {
 
   return {
     invocation: options.invocation,
-    guarded,
     token,
     cookieName: () => `mate_studio_${options.port()}`,
     acceptedOrigin(request) {
@@ -143,14 +138,11 @@ export function createStudioAccess(options: StudioAccessOptions): StudioAccess {
       return normalizeOrigin(origin) === acceptedOrigin;
     },
     hasToken(request) {
-      if (!token) return false;
       const value = readCookie(request, `mate_studio_${options.port()}`);
       return value !== null && tokensEqual(value, token);
     },
     requires(kind) {
-      if (!guarded) return false;
-      if (options.invocation === "serve") return true;
-      return kind !== "read";
+      return options.invocation === "serve" || kind !== "read";
     },
   };
 }
@@ -172,7 +164,7 @@ export function exchangeStudioToken(
 ): Response | null {
   const url = new URL(request.url);
   if (!url.searchParams.has("token")) return null;
-  if (request.method !== "GET" || !access.token) {
+  if (request.method !== "GET") {
     return new Response("the access token is exchanged only by opening its address", {
       status: 400,
       headers: EXCHANGE_HEADERS,

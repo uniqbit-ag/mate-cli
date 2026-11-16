@@ -19,6 +19,8 @@ const CORE_EXCLUDE_ENTRIES = [
   "/.opencode/opencode.json",
   "/.agents/",
   "/.mcp.json",
+  // Personal include file; the worktree include gate needs it ignored.
+  "/.worktreeinclude.local",
 ];
 const LEGACY_CORE_EXCLUDE_ENTRIES = new Set([".mate/", ".claude/settings.local.json"]);
 

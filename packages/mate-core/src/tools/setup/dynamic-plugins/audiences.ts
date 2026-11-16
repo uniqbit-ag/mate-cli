@@ -102,24 +102,70 @@ export function effectivePluginDeclarations(raw: unknown, audience: string | nul
   return [...pluginList(normalizeBaseAudience(raw)), ...pluginList(audienceEntry(raw, audience))];
 }
 
+/** The ordinary install that writes and installs `audience`'s workspace (`null`: the shared one). */
+export function audienceInstallCommand(audience: string | null): string {
+  const install = `${FRAMEWORK_NAME} install`;
+  return audience === null ? install : `${AUDIENCE_ENV}=${audience} ${install}`;
+}
+
+/** A raw `plugins` entry with the workspace it installs into and loads from. */
+export interface OriginPluginEntry {
+  entry: unknown;
+  /** `null` for a base plugin, else the audience declaring it. */
+  audience: string | null;
+}
+
+/** `effectivePluginDeclarations`, each entry keeping its origin. */
+export function effectivePluginEntries(raw: unknown, audience: string | null): OriginPluginEntry[] {
+  const active = resolveAudience(raw, audience);
+  const name = active.ok ? active.active : null;
+  return [
+    ...pluginList(normalizeBaseAudience(raw)).map((entry) => ({ entry, audience: null })),
+    ...pluginList(audienceEntry(raw, name)).map((entry) => ({ entry, audience: name })),
+  ];
+}
+
+/** One plugin workspace an install run owns. */
+export interface PluginInstallTarget {
+  /** `null` for the shared workspace, else the audience's own. */
+  audience: string | null;
+  declarations: PluginDeclaration[];
+}
+
 /**
- * Base plugins followed by every audience's, for installation only: a
- * package shared by audiences appears once since validation guarantees one
- * version. Runtime declarations must come from `effectivePluginDeclarations`.
+ * Install targets of an already validated config: the base plugins, plus the
+ * active audience's. No other audience is a target, so a run can neither
+ * install nor relock it. `base` and an undeclared audience select none.
  */
-export function allPluginDeclarations(raw: unknown): unknown[] {
-  const all = [...pluginList(normalizeBaseAudience(raw))];
-  for (const name of declaredAudiences(raw)) {
-    all.push(...pluginList(audienceEntry(raw, name)));
+export function pluginInstallTargets(
+  config: unknown,
+  audience: string | null,
+): PluginInstallTarget[] {
+  const targets: PluginInstallTarget[] = [
+    {
+      audience: null,
+      declarations: pluginList(normalizeBaseAudience(config)) as PluginDeclaration[],
+    },
+  ];
+  const resolved = resolveAudience(config, audience);
+  if (resolved.ok && resolved.active !== null) {
+    targets.push({
+      audience: resolved.active,
+      declarations: pluginList(audienceEntry(config, resolved.active)) as PluginDeclaration[],
+    });
   }
-  const seen = new Set<string>();
-  return all.filter((entry) => {
-    if (!isRecord(entry) || typeof entry.package !== "string") return true;
-    const key = `${entry.package}@${String(entry.version)}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  return targets;
+}
+
+/** Packages declared under any audience, the ones that never belong in the shared workspace. */
+export function audiencePluginPackages(raw: unknown): Set<string> {
+  const packages = new Set<string>();
+  for (const name of declaredAudiences(raw)) {
+    for (const entry of pluginList(audienceEntry(raw, name))) {
+      if (isRecord(entry) && typeof entry.package === "string") packages.add(entry.package);
+    }
+  }
+  return packages;
 }
 
 /** Operator-facing message for a `MATE_AUDIENCE` the companion does not declare. */
@@ -128,11 +174,6 @@ export function describeUnknownAudience(
 ): string {
   const declared = resolution.declared.length > 0 ? resolution.declared.join(", ") : "none";
   return `unknown audience "${resolution.requested}" (${AUDIENCE_ENV}); declared audiences: ${declared}`;
-}
-
-/** Install-time declarations of an already validated config: base plus every audience. */
-export function installPluginDeclarations(config: unknown): PluginDeclaration[] {
-  return allPluginDeclarations(config) as PluginDeclaration[];
 }
 
 /**
@@ -171,6 +212,9 @@ export async function readEffectiveDeclarations(
   return effectivePluginDeclarations(await readFrameworkRaw(companionPath), audience);
 }
 
-export async function readAllDeclarations(companionPath: string): Promise<unknown[]> {
-  return allPluginDeclarations(await readFrameworkRaw(companionPath));
+export async function readEffectiveEntries(
+  companionPath: string,
+  audience: string | null,
+): Promise<OriginPluginEntry[]> {
+  return effectivePluginEntries(await readFrameworkRaw(companionPath), audience);
 }

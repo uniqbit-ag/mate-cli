@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 
-import { agentCommand, runAttach } from "./attach-client";
+import { agentCommand, prepareCommand, runAttach } from "./attach-client";
 import { serveAttach } from "./attach";
 import { CredentialStore } from "./credential-store";
 import { encodeControl, encodeData, FRAME_CONTROL, FRAME_STDERR, FrameDecoder } from "./frames";
@@ -219,6 +219,7 @@ describe("the attach helper", () => {
       "claude",
       "--",
       "--yes",
+      "--prepared",
       "/mate-clarify-intent Engineers sign in with SSO.",
     ]);
     expect(agentCommand("explore", "ignored")).toEqual([
@@ -226,6 +227,7 @@ describe("the attach helper", () => {
       "claude",
       "--",
       "--yes",
+      "--prepared",
       "/mate-explore-change",
     ]);
     expect(agentCommand("continue", "ignored")).toEqual([
@@ -233,8 +235,14 @@ describe("the attach helper", () => {
       "claude",
       "--",
       "--yes",
+      "--prepared",
       "--continue",
     ]);
+  });
+
+  test("prepares through exec, never in the attached terminal", () => {
+    expect(prepareCommand()).toEqual(["mate", "claude", "--", "--yes", "--prepare-only"]);
+    expect(prepareCommand({ noGit: true }).at(-1)).toBe("--no-git");
   });
 
   test("resumes the factory's Claude session, and skips companion Git sync when asked", () => {
@@ -244,6 +252,7 @@ describe("the attach helper", () => {
       "claude",
       "--",
       "--yes",
+      "--prepared",
       "--no-git",
       "--resume",
       session,

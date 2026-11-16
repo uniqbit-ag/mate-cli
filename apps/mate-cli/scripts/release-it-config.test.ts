@@ -312,6 +312,15 @@ afterEach(async () => {
 });
 
 describe("stable release-it config", () => {
+  test("release-path binaries never use a registry fallback", async () => {
+    const root = JSON.parse(await fs.readFile(workspacePackageJsonPath, "utf8")) as PackageJson;
+    const cli = JSON.parse(await fs.readFile(packageJsonPath, "utf8")) as PackageJson;
+    for (const script of [root.scripts?.lint, cli.scripts?.typecheck]) {
+      expect(script).toBeDefined();
+      expect(script).not.toMatch(/\b(?:bunx|npx)\b/);
+    }
+  });
+
   test("runs root release scripts from the package cwd instead of through workspace filters", async () => {
     const workspacePackageJson = JSON.parse(
       await fs.readFile(workspacePackageJsonPath, "utf8"),
@@ -391,9 +400,11 @@ describe("stable release-it config", () => {
   test("prepares stable and canary releases without publishing locally", async () => {
     const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf8")) as PackageJson;
 
-    expect(packageJson.scripts?.release).toBe("release-it --config ../../.release-it.json");
+    expect(packageJson.scripts?.release).toBe(
+      "bun install --frozen-lockfile && release-it --config ../../.release-it.json",
+    );
     expect(packageJson.scripts?.["release:canary"]).toBe(
-      "release-it --config ../../.release-it.canary.json --preRelease=canary",
+      "bun install --frozen-lockfile && release-it --config ../../.release-it.canary.json --preRelease=canary",
     );
     for (const script of [packageJson.scripts?.release, packageJson.scripts?.["release:canary"]]) {
       expect(script).not.toContain("publish.sh");
@@ -538,9 +549,17 @@ describe("sync-release-versions", () => {
       "utf8",
     );
     const fixturePackages = [
-      ["apps/mate-cli", { name: "@uniqbit/mate", version: "1.5.0-canary.2" }],
+      [
+        "apps/mate-cli",
+        {
+          name: "@uniqbit/mate",
+          version: "1.4.0",
+          dependencies: { "@uniqbit/mate-core": "1.4.0" },
+        },
+      ],
       ["packages/mate-core", { name: "@uniqbit/mate-core", version: "1.4.0" }],
       ["apps/mate-vscode", { name: "@uniqbit/mate-vscode", version: "1.4.0" }],
+      ["apps/acme-tool", { name: "acme-tool", version: "1.4.0" }],
     ] as const;
     for (const [dir, contents] of fixturePackages) {
       await fs.mkdir(path.join(workspaceDir, dir), { recursive: true });
@@ -558,12 +577,45 @@ describe("sync-release-versions", () => {
       "utf8",
     );
 
-    const result = spawnSync("bun", [syncScriptPath, workspaceDir], {
+    execFileSync(process.execPath, ["install"], { cwd: workspaceDir, stdio: "ignore" });
+    const cliPath = path.join(workspaceDir, "apps/mate-cli/package.json");
+    const cliBefore = JSON.parse(await fs.readFile(cliPath, "utf8"));
+    cliBefore.version = "1.5.0-canary.2";
+    await fs.writeFile(cliPath, JSON.stringify(cliBefore));
+    const binDir = path.join(workspaceDir, "bin");
+    const callsPath = path.join(workspaceDir, "bun-calls");
+    await fs.mkdir(binDir);
+    await fs.writeFile(
+      path.join(binDir, "bun"),
+      '#!/bin/sh\nprintf "%s\\n" "$*" >> "$BUN_CALLS"\nexec "$REAL_BUN" "$@"\n',
+      { mode: 0o755 },
+    );
+    const result = spawnSync(process.execPath, [syncScriptPath, workspaceDir], {
       cwd: workspaceDir,
       encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
+        BUN_CALLS: callsPath,
+        REAL_BUN: process.execPath,
+      },
     });
     expect(result.stderr).not.toContain("failed");
     expect(result.status).toBe(0);
+    expect(await fs.readFile(callsPath, "utf8")).toBe("install --frozen-lockfile\n");
+    const lock = JSON.parse(
+      (await fs.readFile(path.join(workspaceDir, "bun.lock"), "utf8")).replace(
+        /,\s*([}\]])/g,
+        "$1",
+      ),
+    );
+    for (const workspace of ["apps/mate-cli", "apps/mate-vscode", "packages/mate-core"]) {
+      expect(lock.workspaces[workspace].version).toBe("1.5.0-canary.2");
+    }
+    expect(lock.workspaces["apps/mate-cli"].dependencies["@uniqbit/mate-core"]).toBe(
+      "1.5.0-canary.2",
+    );
+    expect(lock.workspaces["apps/acme-tool"].version).toBe("1.4.0");
 
     const cli = JSON.parse(
       await fs.readFile(path.join(workspaceDir, "apps/mate-cli/package.json"), "utf8"),
@@ -597,6 +649,7 @@ describe("sync-release-versions", () => {
     expect(staged).toContain("packages/mate-core/package.json");
     expect(staged).toContain("apps/mate-vscode/package.json");
     expect(staged).toContain(MOD_MANIFEST);
+    expect(staged).toContain("bun.lock");
   });
 });
 

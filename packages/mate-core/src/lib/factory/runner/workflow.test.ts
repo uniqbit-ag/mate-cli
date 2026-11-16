@@ -230,6 +230,7 @@ describe("apply", () => {
         "-C",
         "/var/lib/mate-factory/repos/acme__web",
         "push",
+        "--end-of-options",
         "origin",
         branch,
       ]);
@@ -399,6 +400,7 @@ describe("apply", () => {
         "-C",
         "/var/lib/mate-factory/repos/acme__web",
         "push",
+        "--end-of-options",
         "origin",
         "workset/acme-login",
       ],
@@ -436,6 +438,7 @@ describe("apply", () => {
       "-C",
       "/var/lib/mate-factory/repos/acme__web",
       "push",
+      "--end-of-options",
       "origin",
       "workset/acme-login",
     ]);
@@ -775,7 +778,15 @@ describe("review reports", () => {
     await r.idle("acme-login");
     expect(prompts[0]).toStartWith("/mate-propose-change Revise acme-login-a with this feedback:");
     expect(prompts).toContain(PROMPTS.apply("acme-login-a"));
-    expect(calls).toContainEqual(expect.arrayContaining(["push", "origin", "workset/acme-login"]));
+    expect(calls).toContainEqual([
+      "git",
+      "-C",
+      "/var/lib/mate-factory/repos/acme__web",
+      "push",
+      "--end-of-options",
+      "origin",
+      "workset/acme-login",
+    ]);
     expect((await runs.facts("acme-login")).execution.state).toBe("idle");
   });
 

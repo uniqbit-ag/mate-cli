@@ -134,6 +134,30 @@ describe("the board's runner actions", () => {
     handler.close();
   });
 
+  test("delete removes an Outcome with no change, its run state and its record", async () => {
+    const { handler, act } = handlerFor();
+    await runs.fail("acme-login", "propose", "boom");
+    await act("delete");
+    expect((await readWorksets(companion)).worksets).toEqual([]);
+    expect((await runs.facts("acme-login")).execution.state).toBe("idle");
+    handler.close();
+  });
+
+  test("delete refused for a taken-over Outcome gives the reason and changes nothing", async () => {
+    const { handler, act } = handlerFor();
+    await runs.control.take("acme-login", false, async () => []);
+    await expect(act("delete")).rejects.toThrow("return it to automation first");
+    expect((await readWorksets(companion)).worksets).toHaveLength(1);
+    handler.close();
+  });
+
+  test("delete without the runner is refused because it needs the factory mode", async () => {
+    const { handler, act } = handlerFor({ runner: false });
+    await expect(act("delete")).rejects.toThrow("needs the appliance's factory mode");
+    expect((await readWorksets(companion)).worksets).toHaveLength(1);
+    handler.close();
+  });
+
   test("starting a ready Later Outcome runs propose by itself", async () => {
     const { handler, runner, act } = handlerFor();
     await advanceWorkset(companion, "acme-login");

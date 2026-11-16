@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import type { StudioChange } from "@uniqbit/mate-core/studio";
 import { useState } from "react";
 
+import { PathSteps } from "../../components/path-steps";
 import { Button } from "../../components/ui/button";
 import {
   Age,
@@ -22,6 +23,7 @@ import { ArtifactReader, Artifacts } from "./artifacts";
 import {
   CHANGE_GROUPS,
   changeGroup,
+  changeProgress,
   changeStep,
   GROUP_TITLES,
   groupChanges,
@@ -32,7 +34,7 @@ type Filter = "all" | ChangeGroup;
 
 const GROUP_HINTS: Record<ChangeGroup, string> = {
   "needs-you": "Review or fix before the build goes on",
-  building: "An agent is working through the tasks",
+  building: "Some tasks are done; others remain",
   ready: "Every task is done",
 };
 
@@ -46,34 +48,11 @@ function status(change: StudioChange): { marker: Marker; word: string } {
       ? { marker: "warn", word: "No tasks" }
       : { marker: "review", word: "Review" };
   }
-  if (group === "building") return { marker: "build", word: "Building" };
+  if (group === "building") return { marker: "build", word: GROUP_TITLES.building };
   return { marker: "done", word: "Ready" };
 }
 
 const PATH_STAGES = ["Propose change", "Human review", "Apply change", "Archive change"];
-
-/** Where the change is on the Delivery Path, as four steps. */
-function PathSteps({ stage }: { stage: string }) {
-  const at = PATH_STAGES.indexOf(stage);
-  return (
-    <ol className="m-0 grid list-none grid-cols-4 gap-1 p-0" aria-label="Delivery Path">
-      {PATH_STAGES.map((name, index) => (
-        <li
-          key={name}
-          aria-current={index === at ? "step" : undefined}
-          className={cn(
-            "grid gap-1.5 text-2xs text-muted before:h-1 before:rounded-full before:bg-rule before:content-['']",
-            index < at && "before:bg-[color-mix(in_srgb,var(--accent)_55%,var(--border))]",
-            index === at && "font-semibold text-text before:bg-accent",
-            index === at && name === "Human review" && "before:bg-why",
-          )}
-        >
-          {name}
-        </li>
-      ))}
-    </ol>
-  );
-}
 
 function ChangeDetail({
   change,
@@ -88,6 +67,7 @@ function ChangeDetail({
   onRead: (path: string | null) => void;
 }) {
   const step = changeStep(change);
+  const progress = changeProgress(change);
   const { marker, word } = status(change);
   const artifacts = (
     <PanelSection title="Artifacts" aside={change.schemaName}>
@@ -121,17 +101,21 @@ function ChangeDetail({
         <>
           {review ? artifacts : null}
           <PanelSection title="Delivery Path" aside={step.stage}>
-            <PathSteps stage={step.stage} />
+            <PathSteps
+              steps={PATH_STAGES}
+              current={PATH_STAGES.indexOf(step.stage)}
+              tone={step.stage === "Human review" ? "why" : "accent"}
+            />
           </PanelSection>
           <PanelSection title="Next step">
             <p className="m-0 text-sm">{step.next}.</p>
             <CommandLine text={step.prompt} />
           </PanelSection>
           <PanelSection
-            title="Tasks"
-            aside={`${change.completedTasks ?? 0}/${change.totalTasks ?? 0}`}
+            title={progress.unit === "tasks" ? "Tasks" : "Plan"}
+            aside={`${progress.done}/${progress.total}`}
           >
-            <Progress done={change.completedTasks ?? 0} total={change.totalTasks ?? 0} />
+            <Progress {...progress} />
           </PanelSection>
           {review ? null : artifacts}
         </>
@@ -157,7 +141,7 @@ function ChangeRow({
         type="button"
         className={cn(
           ROW,
-          "grid grid-cols-[minmax(0,1fr)_120px_150px_72px] @max-[640px]:grid-cols-[minmax(0,1fr)_auto]",
+          "grid grid-cols-[minmax(0,1fr)_max-content_150px_72px] @max-[640px]:grid-cols-[minmax(0,1fr)_auto]",
         )}
         aria-current={current ? "true" : undefined}
         data-change={change.name}
@@ -173,7 +157,7 @@ function ChangeRow({
         </span>
         <StatusWord marker={marker}>{word}</StatusWord>
         <span className="@max-[640px]:hidden">
-          <Progress done={change.completedTasks ?? 0} total={change.totalTasks ?? 0} />
+          <Progress {...changeProgress(change)} />
         </span>
         <Age at={change.lastModified} className="text-right @max-[640px]:hidden" />
       </button>

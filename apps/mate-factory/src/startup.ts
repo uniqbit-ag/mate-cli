@@ -309,8 +309,8 @@ function childDetail(result: RunResult, fallback: string, secrets: Array<string 
 }
 
 /**
- * npm reads the project `.npmrc` beside `.mate/plugins/package.json`, so only
- * that file can redirect the registry or carry credentials for it.
+ * npm reads the project `.npmrc` beside a plugin workspace's `package.json`,
+ * so only that file can redirect the registry or carry credentials for it.
  */
 function overridesRegistry(npmrc: string, registry: PluginRegistry): boolean {
   if (/registry/i.test(npmrc)) return true;
@@ -333,11 +333,16 @@ function restorePlugins(
   secrets: Array<string | null>,
   audience: string | null,
 ): void {
-  const override = path.join(companion, ".mate", "plugins", ".npmrc");
-  if (fs.existsSync(override) && overridesRegistry(fs.readFileSync(override, "utf8"), registry)) {
-    throw new StartupError(
-      `${override} overrides the configured plugin registry; remove it from the companion.`,
-    );
+  // The restore runs npm in the shared workspace and in the served audience's own.
+  const workspaces = [path.join(companion, ".mate", "plugins")];
+  if (audience !== null) workspaces.push(path.join(workspaces[0], "audiences", audience));
+  for (const workspace of workspaces) {
+    const override = path.join(workspace, ".npmrc");
+    if (fs.existsSync(override) && overridesRegistry(fs.readFileSync(override, "utf8"), registry)) {
+      throw new StartupError(
+        `${override} overrides the configured plugin registry; remove it from the companion.`,
+      );
+    }
   }
   deps.log(`restoring plugins of ${companion} from ${registry.url}`);
   const restored = deps.run("bash", [deps.setupScript, companion], companion, {
@@ -536,9 +541,31 @@ export function renderCredentials(config: ApplianceConfig): string {
 /** Set by the root factory supervisor for the unprivileged startup it runs once Sysbox and the broker are up. */
 export const FACTORY_ACTIVE_ENV = "MATE_FACTORY_ACTIVE";
 
+/** The lowercase host of an HTTP(S), SSH or scp-style Git URL; null when it names none. */
+export function hostOfGitUrl(url: string): string | null {
+  const trimmed = url.trim();
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(trimmed)) {
+    try {
+      return new URL(trimmed).hostname.toLowerCase() || null;
+    } catch {
+      return null;
+    }
+  }
+  return /^(?:[^/\s@]+@)?([^/\s:]{2,}):.+$/.exec(trimmed)?.[1]?.toLowerCase() ?? null;
+}
+
+/** The hosts the startup Git token may be used for: those of the URLs the operator configured. */
+function gitTokenHosts(config: ApplianceConfig): string[] {
+  const urls = [
+    ...config.companionRepos.map((location) => location.url),
+    ...config.factory.repositories,
+  ];
+  return [...new Set(urls.map(hostOfGitUrl).filter((host): host is string => host !== null))];
+}
+
 /**
  * What the root factory supervisor evaluates: whether factory mode is on, the
- * Workset agent credential, which it hands to the broker only, and the Workset
+ * Workset agent credential and the startup Git token, which it hands to the broker only, and the Workset
  * resource limits the broker enforces. Root is refused without factory mode, so
  * "not root by default" keeps its meaning.
  */
@@ -553,6 +580,8 @@ export function renderFactory(config: ApplianceConfig): string {
     "MATE_FACTORY_ENABLED=1",
     `MATE_FACTORY_CREDENTIAL_NAME=${shellQuote(credential?.name ?? "")}`,
     `MATE_FACTORY_CREDENTIAL_VALUE=${shellQuote(credential?.value ?? "")}`,
+    `MATE_FACTORY_GIT_TOKEN_VALUE=${shellQuote(config.gitCloneToken ?? "")}`,
+    `MATE_FACTORY_GIT_TOKEN_HOSTS=${shellQuote(config.gitCloneToken === null ? "" : gitTokenHosts(config).join(","))}`,
     `MATE_PLAN_FACTORY_MAX_WORKSETS=${shellQuote(String(config.factory.maxWorksets))}`,
     `MATE_PLAN_FACTORY_IDLE_MINUTES=${shellQuote(String(config.factory.idleMinutes))}`,
     `MATE_PLAN_FACTORY_WORKSET_MEMORY=${shellQuote(config.factory.worksetMemory)}`,

@@ -176,6 +176,8 @@ export interface LaunchRequest {
   scope?: LaunchScope;
   skipGit?: boolean;
   interactiveGit?: boolean;
+  /** The launch's preparation already ran and was reported; its notices are not repeated. */
+  quiet?: boolean;
 }
 
 export interface LaunchResult {

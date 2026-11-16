@@ -250,7 +250,7 @@ const RUNS_IN_ITS_TERMINAL =
   "Mate: this session runs in its own terminal, outside Claude's background daemon; switch to that terminal to continue it.";
 
 const SESSIONS_INFO =
-  "Mate lists only the sessions you start from this sidebar (New session, Resume). Sessions started in a terminal, such as `mate claude`, `claude`, or `mate opencode`, are not recorded: Mate writes nothing for them.\n\nClaude sessions run in Claude's background service and OpenCode sessions in the repository's Mate OpenCode server, so closing a session's terminal only detaches it; Attach reconnects and Stop ends the running turn. A Claude session without background support runs in its terminal and stops when it closes.";
+  "Mate lists only the sessions you start from this sidebar (New session, Resume). Sessions started in a terminal, such as `mate claude`, `claude`, or `mate opencode`, are not recorded: Mate writes nothing for them.\n\nClaude sessions run in Claude's background service and OpenCode sessions in the repository's Mate OpenCode server, so closing a session's terminal only detaches it; Attach reconnects and Stop ends the running turn. A Claude session without background support runs in its terminal and stops when it closes.\n\nClaude sessions started here edit the checkout they start in, the main checkout included, like an interactive session: Mate turns Claude's background worktree isolation off for them only. A `claude --bg` session started elsewhere keeps Claude's setting.";
 
 const ACTIVITY_TEXT = { working: "working", idle: "idle", waiting: "waiting for you" } as const;
 

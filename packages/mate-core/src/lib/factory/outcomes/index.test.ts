@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 
 import type { WorksetStageId } from "../../workset/stage";
+import type { FactoryClient } from "../client";
+import { FactoryError } from "../ids";
 import { readWorksets } from "../../workset/record";
 import { FactoryRunner } from "../runner/scheduler";
 import { Run } from "../runner/run";
@@ -48,6 +50,7 @@ function outcomes(
       return { kind: "done" };
     },
   },
+  client: Pick<FactoryClient, "list" | "delete"> = { list: async () => [], delete: async () => {} },
 ): {
   outcomes: FactoryOutcomes;
   runner: FactoryRunner;
@@ -63,6 +66,7 @@ function outcomes(
       run: async () => ({ status: 0, stdout: "", stderr: "" }),
     }),
     sessionLive: (id) => sessions.busy().has(id),
+    endSession: (id) => sessions.close(companion, id, "returned"),
   });
   return {
     runner,
@@ -70,7 +74,7 @@ function outcomes(
       runner,
       runs,
       companionPath: companion,
-      client: { list: async () => [], delete: async () => {} },
+      client,
       stages: async () => ({
         worksets: (await readWorksets(companion)).worksets.map((record) => ({
           record,
@@ -113,13 +117,56 @@ describe("an action on an Outcome", () => {
     await runner.idle("acme-login");
   });
 
-  test("Return to automation waits while a person's session is live", async () => {
+  test("Return to automation ends the person's live session, then returns", async () => {
+    const sessions = new LiveSessions();
+    const closed: string[] = [];
+    sessions.closeWith(async (companionPath, id, reason) => {
+      closed.push(`${path.basename(companionPath)} ${id} ${reason}`);
+      sessions.end(id);
+    });
+    const { outcomes: o, runner } = outcomes(sessions);
+    await runs.control.take("acme-login", false, async () => []);
+    sessions.begin("acme-login");
+    await o.act("acme-login", "return", none);
+    await runner.idle("acme-login");
+    expect(closed).toEqual(["acme-companion acme-login returned"]);
+    expect((await runs.facts("acme-login")).control.mode).toBe("automatic");
+  });
+
+  test("Return to automation waits while a person's session cannot be ended", async () => {
     const sessions = new LiveSessions();
     const { outcomes: o } = outcomes(sessions);
     await runs.control.take("acme-login", false, async () => []);
     sessions.begin("acme-login");
     await expect(o.act("acme-login", "return", none)).rejects.toThrow("exit Claude");
     expect((await runs.facts("acme-login")).control.mode).toBe("manual");
+  });
+
+  describe("after Claude exits in a person's session", () => {
+    test("the Outcome returns to automation and no longer belongs to the person", async () => {
+      const { outcomes: o } = outcomes();
+      await runs.control.take("acme-login", false, async () => []);
+      await o.returnAfterExit("acme-login");
+      expect((await runs.facts("acme-login")).control.mode).toBe("automatic");
+      expect(await o.takenOver("acme-login")).toBeNull();
+    });
+
+    test("an Outcome the factory drives is left alone", async () => {
+      const { outcomes: o, runner } = outcomes();
+      await o.returnAfterExit("acme-login");
+      expect((await runs.facts("acme-login")).control.mode).toBe("automatic");
+      expect(runner.isActive("acme-login")).toBe(false);
+    });
+
+    test("a refused return keeps control without raising", async () => {
+      const sessions = new LiveSessions();
+      const { outcomes: o } = outcomes(sessions);
+      await runs.control.take("acme-login", false, async () => []);
+      // The person's session has not ended yet, so the return is refused.
+      sessions.begin("acme-login");
+      await o.returnAfterExit("acme-login");
+      expect((await runs.facts("acme-login")).control.mode).toBe("manual");
+    });
   });
 
   test("an id that is not a Workset name is refused before anything is read", async () => {
@@ -228,6 +275,141 @@ describe("moving an Outcome to Later", () => {
     await runs.fail("acme-login", "clarify", "cancelled");
     await o.act("acme-login", "later", none);
     expect(await queuedAt("acme-login")).toBeUndefined();
+  });
+});
+
+describe("deleting an Outcome", () => {
+  const info = { id: "acme-login" } as Awaited<ReturnType<FactoryClient["list"]>>[number];
+  let calls: string[];
+  const brokered = (refusal?: string): Pick<FactoryClient, "list" | "delete"> => ({
+    list: async () => [info],
+    delete: async (id) => {
+      calls.push(`delete ${id}`);
+      if (refusal) throw new FactoryError(refusal);
+    },
+  });
+  const records = async () => (await readWorksets(companion)).worksets.map((w) => w.id);
+
+  beforeEach(() => {
+    calls = [];
+    stage = "clarify-intent";
+  });
+
+  test("removes the container, the run state and, last, the record", async () => {
+    const { outcomes: o } = outcomes(undefined, undefined, brokered());
+    await runs.fail("acme-login", "clarify", "boom");
+    await o.act("acme-login", "delete", none);
+    expect(calls).toEqual(["delete acme-login"]);
+    expect((await runs.facts("acme-login")).execution.state).toBe("idle");
+    expect(await records()).toEqual([]);
+  });
+
+  test("ends the person's open session before the container goes", async () => {
+    const sessions = new LiveSessions();
+    sessions.closeWith(
+      async (_companionPath, id, reason) => void calls.push(`close ${id} ${reason}`),
+    );
+    const { outcomes: o } = outcomes(sessions, undefined, brokered());
+    await o.act("acme-login", "delete", none);
+    expect(calls).toEqual(["close acme-login deleted", "delete acme-login"]);
+  });
+
+  test("a missing container is no error", async () => {
+    const { outcomes: o } = outcomes();
+    await o.act("acme-login", "delete", none);
+    expect(await records()).toEqual([]);
+  });
+
+  test("stops a running run before anything is removed", async () => {
+    let started!: () => void;
+    const begun = new Promise<void>((resolve) => (started = resolve));
+    const { outcomes: o, runner } = outcomes(
+      undefined,
+      {
+        turn: ({ signal }) => {
+          started();
+          return new Promise((_, reject) => {
+            signal.addEventListener("abort", () => reject(signal.reason));
+          });
+        },
+      },
+      {
+        list: async () => [info],
+        delete: async () => {
+          calls.push(`delete; active ${runner.isActive("acme-login")}`);
+        },
+      },
+    );
+    await runner.request("acme-login", "propose", "go on");
+    await begun;
+    await o.act("acme-login", "delete", none);
+    expect(calls).toEqual(["delete; active false"]);
+    expect(await records()).toEqual([]);
+  });
+
+  test("a queued run is dropped and the Outcome removed", async () => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const busy = outcomes(undefined, {
+      turn: async () => {
+        await held;
+        return { kind: "done" };
+      },
+    });
+    fs.writeFileSync(
+      path.join(companion, "worksets", "acme-busy.yaml"),
+      "id: acme-busy\ntitle: Busy\nrepositories: [acme/web]\nstage: explore\n",
+    );
+    await busy.runner.request("acme-busy", "propose", "go on");
+    await busy.runner.request("acme-login", "propose", "go on");
+    expect(busy.runner.isActive("acme-login")).toBe(true);
+    await busy.outcomes.act("acme-login", "delete", none);
+    expect(busy.runner.isActive("acme-login")).toBe(false);
+    expect(await records()).toEqual(["acme-busy"]);
+    release();
+    await busy.runner.idle("acme-busy");
+  });
+
+  test("a refused removal keeps the run state and the record", async () => {
+    const { outcomes: o } = outcomes(undefined, undefined, brokered("work is not pushed"));
+    await runs.fail("acme-login", "clarify", "boom");
+    await expect(o.act("acme-login", "delete", none)).rejects.toThrow("work is not pushed");
+    expect((await runs.facts("acme-login")).execution.state).toBe("failed");
+    expect(await records()).toEqual(["acme-login"]);
+  });
+
+  test("an Outcome with a change is refused and changes nothing", async () => {
+    fs.writeFileSync(
+      path.join(companion, "worksets", "acme-login.yaml"),
+      "id: acme-login\ntitle: Login\nrepositories: [acme/web]\nchanges: [acme-login-plan]\n",
+    );
+    const { outcomes: o } = outcomes(undefined, undefined, brokered());
+    await expect(o.act("acme-login", "delete", none)).rejects.toThrow("has a change");
+    expect(calls).toEqual([]);
+    expect(await records()).toEqual(["acme-login"]);
+  });
+
+  test("a taken-over Outcome is refused until it returns to automation", async () => {
+    const { outcomes: o } = outcomes(undefined, undefined, brokered());
+    await runs.control.take("acme-login", false, async () => []);
+    await expect(o.act("acme-login", "delete", none)).rejects.toThrow(
+      "return it to automation first",
+    );
+    expect(calls).toEqual([]);
+    expect(await records()).toEqual(["acme-login"]);
+  });
+
+  test("a run that starts again before removal refuses and keeps the record", async () => {
+    const { outcomes: o, runner } = outcomes(undefined, undefined, brokered());
+    const stop = runner.stop.bind(runner);
+    runner.stop = async (id) => {
+      await stop(id);
+      await runner.request(id, "clarify");
+    };
+    await expect(o.act("acme-login", "delete", none)).rejects.toThrow("started a run again");
+    await runner.idle("acme-login");
+    expect(calls).toEqual([]);
+    expect(await records()).toEqual(["acme-login"]);
   });
 });
 

@@ -337,7 +337,7 @@ export const SETTINGS: Setting[] = [
     env: "MATE_FACTORY_REPOSITORIES",
     key: "factoryRepositories",
     meaning:
-      "Factory mode: Git URLs of Working Repositories Worksets may be created for and cloned from, one per line or comma-separated. Studio offers each by its `org/repository` name, besides the repositories linked to the companion.",
+      "Factory mode: Git URLs of Working Repositories Worksets may be created for and cloned from, one per line or comma-separated. Optional: repositories can also be added in Studio, to the companion's `factory.local.yaml`. Studio offers each by its `org/repository` name, besides the repositories linked to the companion; a linked repository wins over `factory.local.yaml`, which wins over this setting.",
     default: null,
     required: false,
   },

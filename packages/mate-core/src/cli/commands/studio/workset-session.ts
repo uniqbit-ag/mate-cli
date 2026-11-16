@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { type FactoryClient, factoryClient } from "../../../lib/factory/client";
-import type { AttachStart } from "../../../lib/factory/attach-client";
+import { type AttachStart, prepareCommand } from "../../../lib/factory/attach-client";
 import { prepareWorkset } from "../../../lib/factory/prepare";
 import { writeWorkset } from "../../../lib/workset/record";
 import { effectiveLaunchCompanion } from "./terminal-launch";
@@ -38,23 +38,46 @@ const HAS_CONVERSATION =
 
 /**
  * Interactive Claude shows its first-run login screen until `~/.claude.json` says onboarding is
- * done; the factory's headless turns never set it. Merged in place, every other key kept.
+ * done, and asks to trust the folder until it lists it as accepted; the factory's headless turns
+ * set neither. Run by exec in the Workset's worktree, so the trusted folder is that worktree and
+ * nothing the browser names. Merged in place, every other key kept.
  */
-const ONBOARDED = [
+const CLAUDE_SETTINGS = [
   "node",
   "-e",
   [
     'const fs = require("fs");',
     "const file = `${process.env.HOME}/.claude.json`;",
     "let config = {};",
-    'try { config = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}',
-    "if (config.hasCompletedOnboarding !== true) {",
+    "let text = '';",
+    // A file that cannot be read is reported: nothing could be written there either.
+    'try { text = fs.readFileSync(file, "utf8"); } catch (error) { if (error.code !== "ENOENT") { console.error(`${file} is unreadable: ${error.message}`); process.exit(1); } }',
+    "const isObject = (value) => value !== null && typeof value === 'object';",
+    // A blank file is empty config. A damaged one, as a write cut short leaves it, is kept beside it and replaced, so no session is blocked on a file nobody can reach.
+    "if (text.trim()) { let parsed; try { parsed = JSON.parse(text); } catch {} if (isObject(parsed) && !Array.isArray(parsed)) config = parsed; else { const kept = `${file}.damaged-${Date.now()}`; fs.copyFileSync(file, kept); console.error(`${file} was no JSON object; kept as ${kept}`); } }",
+    "const dir = process.cwd();",
+    "const projects = isObject(config.projects) ? config.projects : {};",
+    "const project = isObject(projects[dir]) ? projects[dir] : {};",
+    "if (config.hasCompletedOnboarding !== true || project.hasTrustDialogAccepted !== true) {",
+    "  project.hasTrustDialogAccepted = true;",
     "  config.hasCompletedOnboarding = true;",
+    "  config.projects = { ...projects, [dir]: project };",
     "  fs.writeFileSync(`${file}.tmp`, JSON.stringify(config, null, 2));",
     "  fs.renameSync(`${file}.tmp`, file);",
     "}",
   ].join("\n"),
 ];
+
+/** The first line of what a failed command said, for the dialog; the full output stays in the broker's log. */
+function firstLine(text: string): string {
+  const line = text.trim().split(/\r?\n/)[0] ?? "";
+  return line.length > 200 ? `${line.slice(0, 200)}…` : line;
+}
+
+function failedStep(step: string, output: { stderr: string; stdout: string }): { reason: string } {
+  const detail = firstLine(output.stderr || output.stdout);
+  return { reason: `${step}${detail ? `: ${detail}` : ""}` };
+}
 
 export function createWorksetResolver(
   options: WorksetResolverOptions,
@@ -75,15 +98,24 @@ export function createWorksetResolver(
         return { reason: NO_CREDENTIAL };
       }
       const { record, warnings } = await prepareWorkset(client, companion.path, id, options.env);
-      const onboarded = await client.exec({ id, command: ONBOARDED });
-      if (onboarded.status !== 0)
-        return { reason: "the Workset's Claude settings could not be prepared" };
+      const settings = await client.exec({ id, command: CLAUDE_SETTINGS });
+      if (settings.status !== 0) {
+        return failedStep("the Workset's Claude settings could not be prepared", settings);
+      }
 
       const takenOver = (await options.takenOver?.(id)) ?? null;
       if (takenOver && !takenOver.claudeSession) {
         return { reason: "this Outcome has no factory conversation to take over" };
       }
       const resumeSession = takenOver?.claudeSession;
+      // The wrap and the index run here, their output captured, so the terminal opens on Claude.
+      const prepared = await client.exec({
+        id,
+        command: prepareCommand(options.noGit ? { noGit: true } : {}),
+      });
+      if (prepared.status !== 0) {
+        return failedStep("the Workset's session could not be prepared", prepared);
+      }
       let start: AttachStart;
       if (resumeSession) {
         start = "resume";

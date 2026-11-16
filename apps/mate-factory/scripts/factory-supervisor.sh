@@ -4,9 +4,9 @@
 #
 # It stays PID 1 so it can stop things in order: Studio and its sessions
 # first, then Workset containers (stopped, not deleted), the broker, the
-# inner daemon and Sysbox. The Workset agent credential reaches the broker
-# only; the unprivileged startup gets neither the variables nor a config file
-# that holds them.
+# inner daemon and Sysbox. The Workset agent credential and the startup Git
+# token reach the broker only; the unprivileged startup gets neither the
+# variables nor a config file that holds them.
 set -uo pipefail
 
 if (( BASH_VERSINFO[0] < 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] < 1) )); then
@@ -216,12 +216,15 @@ LIMITS=()
   if [[ -n "$MATE_FACTORY_CREDENTIAL_NAME" ]]; then
     export "$MATE_FACTORY_CREDENTIAL_NAME=$MATE_FACTORY_CREDENTIAL_VALUE"
   fi
+  if [[ -n "${MATE_FACTORY_GIT_TOKEN_VALUE:-}" ]]; then
+    export MATE_GIT_CLONE_TOKEN="$MATE_FACTORY_GIT_TOKEN_VALUE" MATE_FACTORY_GIT_TOKEN_HOSTS
+  fi
   exec "$MATE" factory serve --socket "$BROKER_SOCKET" --docker-host "$DOCKER_HOST" \
     --state-dir "$STATE_DIR" --image "$WORKSET_IMAGE" --user "$USER_NAME" \
     --companions-dir "${MATE_COMPANIONS_DIR:-/companions}" "${LIMITS[@]}"
 ) &
 BROKER_PID=$!
-unset MATE_FACTORY_CREDENTIAL_VALUE
+unset MATE_FACTORY_CREDENTIAL_VALUE MATE_FACTORY_GIT_TOKEN_VALUE
 wait_for "the factory broker" "$BROKER_PID" test -e "$BROKER_SOCKET"
 ATTACH_SOCKET="$RUN_DIR/attach.sock"
 wait_for "the factory broker's attach socket" "$BROKER_PID" test -e "$ATTACH_SOCKET"

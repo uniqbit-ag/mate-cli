@@ -163,3 +163,31 @@ GIT_CONFIG_VALUE_0: /seed/<companion name>
 **Studio does not print its address within 120 seconds.**
 The script prints the last log lines and exits with an error. Read them, or
 follow the full log with `bun run appliance:local:logs`.
+
+## Keeping the dependency locks current
+
+`locks/global-tools.package-lock.json` pins the published release packages and
+everything they install. The factory image keeps its own copy. When a release
+package gains, drops or changes a dependency, both locks are out of date. Every
+pull request runs `bun run image-locks:check`, and a stale lock fails `ci-ok`.
+The check only reads the committed pins. It resolves nothing and runs no
+dependency scripts.
+
+Before publication, refresh both locks from the local release packages:
+
+```bash
+bun run image-locks:refresh
+```
+
+The command asks npm for the new dependencies only, with lifecycle scripts off.
+It lists every pin it adds, removes or changes for each lock. Review that list
+before you commit. It fails and changes neither lock when a pin that the
+dependency change does not explain would move, or when a candidate does not
+validate. Update such a pin on purpose, then run the command again. It needs
+the npm registry only when a new dependency must be resolved.
+
+The refreshed locks still point at the published release tarball, because the
+new release does not exist yet. Their recorded dependencies describe the new
+release. This difference is temporary. Release preparation replaces the version,
+tarball and integrity of the release packages when it pins the new release.
+The refresh never edits them.

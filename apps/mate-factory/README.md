@@ -196,6 +196,13 @@ remote.
 - `MATE_DOGFOOD_GIT_PORT` changes the port. Other options, such as
   `--companion`, pass through to `local-up.ts`.
 
+### Dependency locks
+
+`locks/global-tools.package-lock.json` is checked on every pull request and
+refreshed together with the appliance image's lock. See "Keeping the
+dependency locks current" in `apps/mate-container/README.md`. Neither command
+builds or publishes the factory image.
+
 ### When something goes wrong
 
 **`no container runtime found; install Docker or Podman.`**

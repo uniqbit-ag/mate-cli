@@ -12,6 +12,7 @@ import type { WrapRuntime } from "../../runtime/runtime-document-manifest";
 import { readWrapState, WRAP_RUNTIMES } from "../../runtime/wrap-state";
 import { cleanupWorkingRepository } from "../../tools/setup/working-repo-cleanup";
 import { locateChange } from "../change-layout";
+import { classifyBranch, configuredProtectedPatterns } from "../delivery/branches";
 import { deliveryCheckout } from "../delivery/checkout";
 import { type DeliveryRecord, readDeliveryRecord } from "../delivery/record";
 import {
@@ -23,6 +24,7 @@ import {
 import { repositoryPath } from "../delivery/forge";
 import { scopedRepositories } from "../openspec-scopes";
 import { attendedLockOptions } from "../orchestrator/companion-git-sync";
+import { readCompanionConfig } from "../orchestrator/config-store";
 import {
   findRepoLocalLinkTo,
   readCompanionRegistry,
@@ -38,13 +40,14 @@ import {
   type IndexOutcome,
   type TokensaveRunner,
 } from "./worktree-index";
+import { copyIncludedFiles, selectIncludedFiles, type IncludeOutcome } from "./worktree-include";
 import { findWorkset, readWorksets, resolveWorksetBranch, resolveWorksetOf } from "./record";
 
 /**
  * Workset worktrees outside the factory: one Git worktree per Working Repository at
  * `<main checkout>.worktrees/<workset-id>`, on the Workset's Delivery Branch, linked to
- * the companion, wrapped like its main checkout and installed. Env files are reported by
- * path, never opened.
+ * the companion, wrapped like its main checkout and installed. Ignored files named by the
+ * main checkout's include files are copied in; other env files are reported by path only.
  */
 
 export interface GitResult {
@@ -109,6 +112,8 @@ export interface WorktreeRepositoryResult {
   wrap: WrapOutcome;
   /** The worktree's tokensave index; a failure only warns. */
   index: IndexOutcome;
+  /** Ignored files copied from the main checkout by its include files. */
+  include: IncludeOutcome;
   /** Env files of the main checkout the worktree lacks, relative to the repository root. */
   missingEnv: string[];
   /** Set when a step for this repository failed. */
@@ -413,6 +418,8 @@ interface Plan {
   /** Start point when `source` is `new`. */
   base?: string;
   reuse: boolean;
+  /** `--take-branch`: `branch` is checked out in `checkout`, which is detached first. */
+  take?: boolean;
   /** Set for an Umbrella Repository's child: the umbrella, whose mirrored worktree holds `target`. */
   umbrella?: string;
 }
@@ -452,19 +459,34 @@ async function changeTarget(companionPath: string, change: string): Promise<Targ
   return { id: resolution.id, repositories };
 }
 
+type ProtectedPatterns = readonly string[];
+
+type PlanOptions = Pick<CreateWorktreesOptions, "ticket" | "takeBranch"> & {
+  /** The companion's protected patterns, read once for every repository's take. */
+  protectedPatterns?: ProtectedPatterns;
+};
+
 /** Phase 1: every check for every repository; any failure means nothing is created. */
 async function planWorktrees(
   companionPath: string,
   target: Target,
   git: GitRunner,
   cwd: string,
-  ticket?: string,
+  options: Pick<CreateWorktreesOptions, "ticket" | "takeBranch">,
 ): Promise<{ plans: Plan[]; mirror?: Mirror; diagnostics: string[]; warnings: string[] }> {
   const warnings: string[] = [];
   const index = await linkedIndex(companionPath, git, cwd);
+  const planOptions: PlanOptions = options.takeBranch
+    ? {
+        ...options,
+        protectedPatterns: configuredProtectedPatterns(
+          (await readCompanionConfig(companionPath)).capabilities ?? [],
+        ),
+      }
+    : options;
   const checked = await Promise.all(
     target.repositories.map((repository) =>
-      planRepository(companionPath, target.id, repository, git, index, warnings, ticket),
+      planRepository(companionPath, target.id, repository, git, index, warnings, planOptions),
     ),
   );
   const plans = checked.filter((entry): entry is Plan => !Array.isArray(entry));
@@ -541,7 +563,7 @@ async function planRepository(
   git: GitRunner,
   index: LinkedIndex,
   warnings: string[],
-  ticket?: string,
+  { ticket, takeBranch, protectedPatterns }: PlanOptions,
 ): Promise<Plan | string[]> {
   const { linked, missing } = linkedCheckout(index, repository);
   if (!linked) {
@@ -612,8 +634,10 @@ async function planRepository(
   };
   const elsewhere = entries.find((entry) => entry.branch === branch && entry.path !== target);
   const inherited = resolution.inheritedFrom.join(", ");
+  const take = Boolean(takeBranch && elsewhere?.path === main.path);
   // An inherited branch is the dependency's worktree; one branch has one worktree.
-  if (elsewhere && inherited && !atTarget) {
+  // In the main checkout, only `--take-branch` moves it out.
+  if (elsewhere && inherited && !atTarget && !take) {
     if (elsewhere.path === main.path) {
       return [
         `${repository}: ${branch}, inherited from ${inherited}, is checked out in ${main.path}; work there or switch it to another branch`,
@@ -628,6 +652,11 @@ async function planRepository(
   if (!reuse && (atTarget || (await exists(target)))) {
     return [`${repository}: ${target} exists and is not a worktree of ${repository} on ${branch}`];
   }
+  if (take) {
+    const refusal = await takeRefusal(git, main.path, branch, checkout, protectedPatterns ?? []);
+    if (refusal) return [`${repository}: ${refusal}`];
+    return { ...plan, target, reuse: false, take: true };
+  }
   if (elsewhere) return [`${repository}: ${branch} is already checked out at ${elsewhere.path}`];
   return {
     ...plan,
@@ -637,9 +666,81 @@ async function planRepository(
   };
 }
 
+/** Why `--take-branch` leaves `branch` in the main checkout `main`, or null to take it. */
+async function takeRefusal(
+  git: GitRunner,
+  main: string,
+  branch: string,
+  checkout: { defaultBranch(): Promise<string> },
+  patterns: ProtectedPatterns,
+): Promise<string | null> {
+  const protection = classifyBranch(branch, {
+    defaultBranch: await checkout.defaultBranch(),
+    patterns,
+  });
+  if (protection.protected) {
+    return `--take-branch does not take the protected branch ${branch} out of ${main}`;
+  }
+  return trackedChangesRefusal(git, main);
+}
+
+/** Why `main`'s tracked changes block a take, or null when it has none. */
+async function trackedChangesRefusal(git: GitRunner, main: string): Promise<string | null> {
+  const status = await git(main, ["status", "--porcelain", "-z", "--untracked-files=no"]);
+  if (status.code !== 0) return `cannot read the status of ${main}: ${status.stderr.trim()}`;
+  // `XY path\0`; a rename or copy, in either column, adds its source as the next field,
+  // which is skipped.
+  const fields = status.stdout.split("\0");
+  const changed: string[] = [];
+  for (let at = 0; at < fields.length; at++) {
+    const field = fields[at]!;
+    if (field.length <= 3) continue;
+    changed.push(field.slice(3));
+    if (/[RC]/.test(field.slice(0, 2))) at++;
+  }
+  if (changed.length > 0) {
+    return `${main} has uncommitted changes to tracked files (${changed.join(", ")}); commit or stash them, then retry --take-branch`;
+  }
+  return null;
+}
+
 async function addWorktree(git: GitRunner, plan: Plan): Promise<string | null> {
   const result = await git(plan.checkout, worktreeAddArgs(plan, plan.target, plan.base));
   return result.code === 0 ? null : `creating the worktree failed: ${result.stderr.trim()}`;
+}
+
+/**
+ * `--take-branch`: detach the main checkout, add the worktree, and undo both on failure.
+ * Earlier repositories' takes stay: their worktrees are made, as for any later failure.
+ */
+async function takeIntoWorktree(
+  git: GitRunner,
+  plan: Plan,
+  warnings: string[],
+): Promise<string | null> {
+  // Checked again: earlier repositories' setup may have given the developer time to edit.
+  const changed = await trackedChangesRefusal(git, plan.checkout);
+  if (changed) return changed;
+  const detached = await git(plan.checkout, ["switch", "--detach"]);
+  if (detached.code !== 0) return `detaching ${plan.checkout} failed: ${detached.stderr.trim()}`;
+  const failure = await addWorktree(git, plan);
+  if (!failure) {
+    warnings.push(
+      `${plan.repository}: ${plan.checkout} is now on a detached HEAD; ${plan.branch} moved to ${plan.target}`,
+    );
+    return null;
+  }
+  // Back to the state before the command, so a failed take changes nothing visible. A
+  // worktree registered before the add failed still holds the branch; the planned target
+  // did not exist, so removing it drops only what the add left. A failed remove matters
+  // only when the switch back fails too: an add that registered nothing leaves nothing.
+  const removed = await git(plan.checkout, ["worktree", "remove", "--force", plan.target]);
+  await git(plan.checkout, ["worktree", "prune"]);
+  const restored = await git(plan.checkout, ["switch", plan.branch]);
+  if (restored.code === 0) return failure;
+  const kept =
+    removed.code === 0 ? "" : `; removing ${plan.target} failed: ${removed.stderr.trim()}`;
+  return `${failure}${kept}; switching ${plan.checkout} back to ${plan.branch} failed: ${restored.stderr.trim()}`;
 }
 
 /** The runtimes `checkout` is wrapped for, in wrap order. */
@@ -725,6 +826,11 @@ export interface CreateWorktreesOptions {
   ticket?: string;
   /** Pass the installer's output through; false discards it, as `--json` needs. */
   streamInstall: boolean;
+  /**
+   * Take a resolved, unprotected branch, inherited ones included, out of a main checkout
+   * without tracked changes: detach that checkout, then add the worktree on the branch.
+   */
+  takeBranch?: boolean;
 }
 
 /**
@@ -775,7 +881,7 @@ async function createTargetWorktrees(
     target,
     git,
     cwd,
-    options.ticket,
+    options,
   );
   if (diagnostics.length > 0) {
     return { workset: worksetId, ok: false, repositories: [], diagnostics, warnings };
@@ -928,10 +1034,13 @@ async function realize(
     install: { command: null, outcome: "skipped" },
     wrap: { runtimes: [], outcome: "skipped" },
     index: { outcome: "skipped" },
+    include: { sources: [], copied: [], failed: [] },
     missingEnv: [],
   };
   if (!plan.reuse) {
-    const failure = await addWorktree(git, plan);
+    const failure = plan.take
+      ? await takeIntoWorktree(git, plan, warnings)
+      : await addWorktree(git, plan);
     if (failure) {
       return {
         ...result,
@@ -956,6 +1065,13 @@ async function realize(
     result.wrap = linked.wrap;
     if (linked.error) result.error = linked.error;
     if (linked.warning) warnings.push(`${plan.repository}: ${linked.warning}`);
+  }
+  // Before install: a copied `.npmrc` may be what lets it reach a private registry.
+  const selection = await selectIncludedFiles(git, plan.checkout);
+  for (const warning of selection.warnings) warnings.push(`${plan.repository}: ${warning}`);
+  result.include = await copyIncludedFiles(plan.checkout, plan.target, selection);
+  if (result.include.failed.length > 0) {
+    result.error ??= `copying ${result.include.failed.map((entry) => entry.path).join(", ")} failed`;
   }
   const command = await installCommand(plan.target);
   result.install.command = command ? command.join(" ") : null;

@@ -17,8 +17,8 @@ import {
   rowText,
   secretMatch,
   toEntries,
-} from "../hooks/companion.ts";
-import { RULES, contextReply, policyJson, type PolicyOptions } from "./policy.ts";
+} from "../hooks/companion";
+import { RULES, contextReply, policyJson, type PolicyOptions } from "./policy";
 
 function policyOf(options: PolicyOptions = {}): SecretPolicy {
   const parsed = parsePolicy(policyJson(options));

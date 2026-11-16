@@ -56,8 +56,10 @@ export interface RunnerOptions {
   rankFor?: (id: string) => Promise<number | null>;
   /** The Workset's identity for prompts the runner builds itself. */
   recordFor?: (id: string) => Promise<Pick<WorksetRecord, "id" | "title"> | undefined>;
-  /** Whether a person works on the Workset in a live session; pickup and Return to automation wait for it. */
+  /** Whether a person works on the Workset in a live session; pickup waits for it. */
   sessionLive?: (id: string) => boolean;
+  /** Ends the person's live session for Return to automation; without it, Return waits for it. */
+  endSession?: (id: string) => Promise<void>;
   /** Told once a Workset's run has ended, whatever its outcome; pickup hangs off this. */
   onSettled?: (id: string) => void;
   setTimer?: (callback: () => void, ms: number) => unknown;
@@ -66,6 +68,9 @@ export interface RunnerOptions {
 
 /** How often runs waiting for a Workset container slot try again, besides settles and session ends. */
 export const SLOT_RETRY_MS = 30_000;
+
+/** How long Delete waits for a cancelled run to end before it gives up. */
+export const STOP_WAIT_MS = 30_000;
 
 function isSlotBusy(error: unknown): boolean {
   return error instanceof FactoryError && error.code === "busy";
@@ -187,21 +192,26 @@ export class FactoryRunner {
   }
 
   /**
-   * Return to automation, refused while the Outcome's session is live: links the changes the
-   * person proposed, logs task progress and hands control back, then starts the stage the
-   * factory would start by itself, told that a person worked in the conversation. One step
-   * under the Workset's lock, so no pickup starts that stage in between. A waiting question
-   * stays waiting; failed and later stages wait for a person. On failure the person keeps
-   * control, with the reason recorded.
+   * Return to automation: ends the person's live session while they hold control (refused
+   * when it cannot), links the changes the person proposed, logs task progress and hands
+   * control back, then starts the stage the factory would start by itself, told that a person
+   * worked in the conversation. One step under the Workset's lock, so no pickup starts that
+   * stage in between. A waiting question stays waiting; failed and later stages wait for a
+   * person. On failure the person keeps control, with the reason recorded.
    */
   returnToAutomation(id: string): Promise<void> {
     return this.locks.run(id, async () => {
-      if (this.options.sessionLive?.(id)) {
-        throw new StageError(
-          "exit Claude in the Outcome's terminal first, then return to automation",
-        );
+      const { runs, endSession, sessionLive } = this.options;
+      if (sessionLive?.(id)) {
+        // Only a person in control closes the session; a takeover still waiting is refused below.
+        const { control } = await runs.facts(id);
+        if (endSession && control.mode === "manual") await endSession(id);
+        if (sessionLive(id)) {
+          throw new StageError(
+            "exit Claude in the Outcome's terminal first, then return to automation",
+          );
+        }
       }
-      const { runs } = this.options;
       const { companionPath } = this.options.depsFor(id);
       const log = (text: string) => void this.live.log(id, text);
       const returned = await runs.control.giveBack(id, async (changesBefore) => {
@@ -294,6 +304,54 @@ export class FactoryRunner {
     const controller = this.active.get(id);
     if (!controller) throw new StageError(`Workset ${id} has no run to cancel`);
     controller.abort(new StageError("cancelled"));
+  }
+
+  /**
+   * Cancels a queued or running run and waits until it has ended; no run, nothing to do.
+   * `refusal` is checked and the run cancelled under the Workset's lock, so a refused caller
+   * cancels nothing. The wait is outside it: a settling run takes the lock to hand over.
+   */
+  async stop(id: string, refusal: () => Promise<string | null> = async () => null): Promise<void> {
+    const cancelled = await this.locks.run(id, async () => {
+      const reason = await refusal();
+      if (reason) throw new StageError(reason);
+      if (!this.isActive(id)) return false;
+      try {
+        await this.cancel(id);
+      } catch (error) {
+        // The run may have ended on its own between the check and the cancel.
+        if (this.isActive(id)) throw error;
+      }
+      return true;
+    });
+    if (!cancelled) return;
+    const clearTimer =
+      this.options.clearTimer ??
+      ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
+    let timer: unknown;
+    const timedOut = new Promise<false>((resolve) => {
+      timer = this.setTimer(() => resolve(false), STOP_WAIT_MS);
+    });
+    const ended = await Promise.race([this.idle(id).then(() => true), timedOut]);
+    clearTimer(timer);
+    if (!ended) throw new StageError(`the run of Workset ${id} did not stop; try again`);
+  }
+
+  /**
+   * Delete, under the Workset's lock so no pickup starts a run meanwhile: `refusal` is
+   * re-checked and a run that started again refuses, then `remove` runs.
+   */
+  discard(
+    id: string,
+    refusal: () => Promise<string | null>,
+    remove: () => Promise<unknown>,
+  ): Promise<void> {
+    return this.locks.run(id, async () => {
+      const reason = await refusal();
+      if (reason) throw new StageError(reason);
+      if (this.isActive(id)) throw new StageError(`Workset ${id} started a run again; try again`);
+      await remove();
+    });
   }
 
   /**

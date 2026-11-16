@@ -104,6 +104,7 @@ When Git auto mode is enabled, Mate fetches the configured upstream and merges
 it before syncing managed companion files. Resolve unfinished operations or
 conflicts in the companion repository, then retry the launch.
 `mate companion sync` runs the same synchronization without launching an agent.
+Mate does not synchronize an upstream whose remote or branch name starts with `-`; set another upstream with `git branch --set-upstream-to <remote>/<branch>`.
 
 To bypass synchronization for one launch:
 

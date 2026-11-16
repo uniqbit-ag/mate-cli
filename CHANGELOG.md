@@ -14,6 +14,12 @@
 - `mate install` and setup no longer upgrade TokenSave or RTK. When an installed TokenSave, RTK or Graphify reports another version, older or newer, Mate warns, names the pinned install command, and continues with the installed version.
 - The container and factory images install Graphify and its dependencies only after checking each archive against the hash in `graphify.requirements.txt`. The factory image now carries RTK 1.1.0, the version the container image already used.
 
+### Studio issues an access token on every start (breaking)
+
+- `mate studio` now generates a token on every start, with or without `--writable` and `--terminal`, and prints and opens `http://localhost:<port>/?token=…`. Before, `mate studio --writable` without `--terminal` issued none, and a save needed only a matching `Origin` header, which any local process can set. So another user or process on the machine could create, overwrite or delete companion files.
+- A write without the token is refused with 401: a save, a preview, a companion delete, and every other action Studio's page runs. The browser that `mate studio` opens keeps working. A script that saves through `mate studio --writable` must send the token cookie. Reading stays open on the interactive command, as under `--terminal`.
+- Studio refuses to be shown in a frame. Every response carries `frame-ancestors 'none'` and `X-Frame-Options: DENY`, except a hosted report, which Studio frames itself. A page that embeds Studio, such as an intranet portal, no longer shows it.
+
 ### Wraps stay inside the working repository (security)
 
 - Mate reads `.mate/runtime-documents.json` as data, not as authority over paths. It acts only on its own destinations: `.claude/settings.local.json`, `.opencode/opencode.json`, this repository's MCP servers in `~/.claude.json`, the legacy `.mcp.json`, companion copies under `.opencode/`, and skill and command links under `.claude/skills/` and `.claude/commands/`. A committed or hand-edited record naming anything else, such as `../x` or `~/.claude/settings.json`, is ignored, named in a warning, and dropped at the next write. Before, `mate unwrap` or a wrap pass could rewrite or delete such a path.

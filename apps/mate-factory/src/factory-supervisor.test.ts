@@ -68,7 +68,7 @@ function writeExecutable(name: string, body: string): void {
 
 /** Runs until TERM, noting start and stop; `ready` names a file to create once started. */
 const longRunning = (name: string, ready = "") => `
-note "${name} started uid=$(id -u) home=$HOME token=\${CLAUDE_CODE_OAUTH_TOKEN:-none}"
+note "${name} started uid=$(id -u) home=$HOME token=\${CLAUDE_CODE_OAUTH_TOKEN:-none} git=\${MATE_GIT_CLONE_TOKEN:-none} hosts=\${MATE_FACTORY_GIT_TOKEN_HOSTS:-none} leak=\${MATE_FACTORY_GIT_TOKEN_VALUE:-none}"
 ${ready ? `touch "${ready}"` : ""}
 trap 'note "${name} stopped"; exit 0' TERM
 while :; do sleep 0.05 & wait $!; done
@@ -87,7 +87,7 @@ function stubs(options: Options = {}): void {
     `case "$2" in
   --factory)
     ${factory ? "" : 'echo "mate-appliance: the container runs as root without factory mode" >&2; exit 1'}
-    printf '%s\\n' MATE_FACTORY_ENABLED=1 "MATE_FACTORY_CREDENTIAL_NAME='CLAUDE_CODE_OAUTH_TOKEN'" "MATE_FACTORY_CREDENTIAL_VALUE='acme-token'" \
+    printf '%s\\n' MATE_FACTORY_ENABLED=1 "MATE_FACTORY_CREDENTIAL_NAME='CLAUDE_CODE_OAUTH_TOKEN'" "MATE_FACTORY_CREDENTIAL_VALUE='acme-token'" "MATE_FACTORY_GIT_TOKEN_VALUE='acme-git'" "MATE_FACTORY_GIT_TOKEN_HOSTS='git.acme.test,git.example.test'" \
       "MATE_PLAN_FACTORY_MAX_WORKSETS='3'" "MATE_PLAN_FACTORY_IDLE_MINUTES='0'" \
       "MATE_PLAN_FACTORY_WORKSET_MEMORY='2g'" "MATE_PLAN_FACTORY_WORKSET_PIDS='512'" \
       "MATE_PLAN_FACTORY_WORKSET_CPUS=''" "MATE_PLAN_FACTORY_AGENT_MEMORY='1g'" ;;
@@ -140,7 +140,7 @@ esac`,
     "appliance",
     `readable=no; [[ -r "$MATE_APPLIANCE_CONFIG" ]] && readable=yes
 runs=no; [[ -w "$MATE_FACTORY_STATE_DIR/runs" ]] && runs=yes
-note "studio started uid=$(id -u) home=$HOME token=\${CLAUDE_CODE_OAUTH_TOKEN:-none} docker=\${DOCKER_HOST:-none} active=$MATE_FACTORY_ACTIVE broker=$MATE_FACTORY_BROKER config=$MATE_APPLIANCE_CONFIG config-readable=$readable state-mode=$(stat -c %a "$MATE_FACTORY_STATE_DIR") runs-writable=$runs"
+note "studio started uid=$(id -u) home=$HOME token=\${CLAUDE_CODE_OAUTH_TOKEN:-none} docker=\${DOCKER_HOST:-none} active=$MATE_FACTORY_ACTIVE broker=$MATE_FACTORY_BROKER config=$MATE_APPLIANCE_CONFIG config-readable=$readable state-mode=$(stat -c %a "$MATE_FACTORY_STATE_DIR") runs-writable=$runs git=\${MATE_GIT_CLONE_TOKEN:-none} leak=\${MATE_FACTORY_GIT_TOKEN_VALUE:-none}"
 trap 'note "studio stopped"; exit 0' TERM
 while :; do sleep 0.05 & wait $!; done`,
   );
@@ -321,6 +321,9 @@ withContainer("the factory supervisor", () => {
       outcome.log.split("\n").find((entry) => entry.startsWith(name)) ?? "";
 
     expect(line("broker")).toContain("uid=0 home=/root token=acme-token");
+    // The startup Git token reaches the broker with the hosts it may be used for, and nothing else.
+    expect(line("broker")).toContain("git=acme-git hosts=git.acme.test,git.example.test leak=none");
+    expect(line("studio started")).toContain("git=none leak=none");
     expect(line("studio started")).toContain(
       "uid=10001 home=/home/mate token=none docker=none active=1",
     );
@@ -330,7 +333,7 @@ withContainer("the factory supervisor", () => {
     // The stored agent credential lies in the state directory, which mate may pass but not list.
     expect(line("studio started")).toContain("state-mode=711 runs-writable=yes");
     for (const name of ["sysbox-mgr", "sysbox-fs", "dockerd"]) {
-      expect(line(`${name} started`)).toContain("token=none");
+      expect(line(`${name} started`)).toContain("token=none git=none");
     }
   }, 180_000);
 

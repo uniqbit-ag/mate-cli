@@ -4,6 +4,9 @@ import {
   companionDigest,
   OUTCOME_ACTIONS,
   type OutcomeAction,
+  type RepositoryAddInput,
+  type RepositoryAddResult,
+  type StudioChange,
   type StudioCompanionPayload,
 } from "@uniqbit/mate-core/studio";
 
@@ -11,7 +14,14 @@ import {
 export type FactoryPayload = Pick<
   StudioCompanionPayload,
   "worksets" | "linkedRepositories" | "ticketFormat" | "worksetProblems" | "warnings"
->;
+> & {
+  /** Where each offered repository comes from; only the list's own can be removed in Studio. */
+  repositorySources?: StudioCompanionPayload["repositorySources"];
+  /** Each repository's Git token key (`host/org`), matched against the stored token keys. */
+  repositoryKeys?: StudioCompanionPayload["repositoryKeys"];
+  /** Task counts per change, for a running Outcome's progress. */
+  changes?: Pick<StudioChange, "name" | "completedTasks" | "totalTasks">[];
+};
 
 /** Board actions a person can take: core's Outcome actions, plus `create`, which needs no runner. */
 const FACTORY_ACTIONS = ["create", ...OUTCOME_ACTIONS] as const;
@@ -83,7 +93,14 @@ export const getFactory = createServerFn({ method: "GET" })
       payload: payload
         ? ({
             worksets: payload.worksets,
+            changes: payload.changes.map(({ name, completedTasks, totalTasks }) => ({
+              name,
+              completedTasks,
+              totalTasks,
+            })),
             linkedRepositories: payload.linkedRepositories,
+            repositorySources: payload.repositorySources,
+            repositoryKeys: payload.repositoryKeys,
             ticketFormat: payload.ticketFormat,
             worksetProblems: payload.worksetProblems,
             warnings: payload.warnings,
@@ -97,3 +114,35 @@ export const getFactory = createServerFn({ method: "GET" })
       renderedAt: page.renderedAt ?? Date.now(),
     };
   });
+
+function checkedCompanion(companion: unknown): string {
+  if (typeof companion !== "string" || !COMPANION_DIGEST_PATTERN.test(companion)) {
+    throw new Error("no registered companion was selected");
+  }
+  return companion;
+}
+
+/** Adds a Working Repository to the companion's list; a refusal comes back as an answer with its reason. */
+export const addRepository = createServerFn({ method: "POST" })
+  .validator((input: { companion: string; input: RepositoryAddInput }) => {
+    const companion = checkedCompanion(input?.companion);
+    const given = input.input;
+    if (given?.kind === "url" && typeof given.url === "string") {
+      return { companion, input: { kind: "url", url: given.url } satisfies RepositoryAddInput };
+    }
+    if (given?.kind === "path" && typeof given.path === "string") {
+      return { companion, input: { kind: "path", path: given.path } satisfies RepositoryAddInput };
+    }
+    throw new Error("name a Git URL or a path");
+  })
+  .handler(({ data, context }): Promise<RepositoryAddResult> =>
+    context.studio.addRepository(data.companion, data.input),
+  );
+
+/** Removes an entry the companion's list holds. */
+export const removeRepository = createServerFn({ method: "POST" })
+  .validator((input: { companion: string; identity: string }) => {
+    if (typeof input?.identity !== "string") throw new Error("name the repository to remove");
+    return { companion: checkedCompanion(input.companion), identity: input.identity };
+  })
+  .handler(({ data, context }) => context.studio.removeRepository(data.companion, data.identity));
