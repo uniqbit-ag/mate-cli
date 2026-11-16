@@ -8,8 +8,9 @@ import type { SessionRuntime } from "./session-registry";
 
 /**
  * Machine-local, append-only record of the refusals and failed commands Mate
- * caused in agent sessions. One JSON line per event, one file per UTC month;
- * a single append per event, so concurrent hooks need no lock.
+ * caused in agent sessions, and of the agents' reports on them. One JSON line
+ * per record, one file per family and UTC month; a single append per record,
+ * so concurrent hooks need no lock.
  */
 
 type FrictionKind = "refusal" | "command-failure";
@@ -32,9 +33,40 @@ export interface FrictionEvent {
 
 export type NewFrictionEvent = Omit<FrictionEvent, "v" | "id" | "at">;
 
+export const REPORT_KINDS = ["bug", "unclear", "missing"] as const;
+export const REPORT_COSTS = ["blocker", "detour", "papercut"] as const;
+export type ReportKind = (typeof REPORT_KINDS)[number];
+export type ReportCost = (typeof REPORT_COSTS)[number];
+
+/** An agent's judgement on a Friction Event, or a free report on friction that has none. */
+export interface FrictionReport {
+  v: 1;
+  id: string;
+  /** ISO 8601 UTC. */
+  at: string;
+  eventId: string | null;
+  kind: ReportKind;
+  cost: ReportCost | null;
+  subject: string;
+  expected: string;
+  evidence: string | null;
+  workaround: string | null;
+  mateVersion: string;
+  companion: string;
+  sessionId: string | null;
+  runtime: FrictionRuntime | null;
+}
+
+export type NewFrictionReport = Omit<FrictionReport, "v" | "id" | "at">;
+
+type Family = "events" | "reports";
+
 /** Months kept before the current one. */
 const RETAINED_PREVIOUS_MONTHS = 2;
-const LOG_FILE = /^events-(\d{4}-\d{2})\.jsonl$/;
+
+function familyPattern(family: Family): RegExp {
+  return new RegExp(`^${family}-(\\d{4}-\\d{2})\\.jsonl$`);
+}
 
 export function frictionLogDir(homeDir?: string): string {
   return path.join(mateHome(homeDir), "friction");
@@ -49,20 +81,29 @@ function monthsBefore(month: string, count: number): string {
   return monthOf(new Date(Date.UTC(year, monthNumber - 1 - count, 1)));
 }
 
-export function frictionLogFile(month: string, homeDir?: string): string {
-  return path.join(frictionLogDir(homeDir), `events-${month}.jsonl`);
+function familyFile(family: Family, month: string, homeDir?: string): string {
+  return path.join(frictionLogDir(homeDir), `${family}-${month}.jsonl`);
 }
 
-function logMonths(dir: string): string[] {
+export function frictionLogFile(month: string, homeDir?: string): string {
+  return familyFile("events", month, homeDir);
+}
+
+export function frictionReportFile(month: string, homeDir?: string): string {
+  return familyFile("reports", month, homeDir);
+}
+
+function logMonths(dir: string, family: Family): string[] {
+  const pattern = familyPattern(family);
   return fs
     .readdirSync(dir)
-    .map((name) => LOG_FILE.exec(name)?.[1])
+    .map((name) => pattern.exec(name)?.[1])
     .filter((month): month is string => Boolean(month));
 }
 
-function pruneBefore(dir: string, oldestKept: string): void {
-  for (const month of logMonths(dir)) {
-    if (month < oldestKept) fs.rmSync(path.join(dir, `events-${month}.jsonl`), { force: true });
+function pruneBefore(family: Family, oldestKept: string, homeDir?: string): void {
+  for (const month of logMonths(frictionLogDir(homeDir), family)) {
+    if (month < oldestKept) fs.rmSync(familyFile(family, month, homeDir), { force: true });
   }
 }
 
@@ -71,52 +112,82 @@ interface AppendOptions {
   now?: Date;
 }
 
-/** Best effort: every failure is swallowed. */
-export function appendEvent(event: NewFrictionEvent, options: AppendOptions = {}): void {
+/** Throws on a failed write; the first record of a month prunes its family's old files. */
+function appendRecord<T extends object>(
+  family: Family,
+  fields: T,
+  options: AppendOptions,
+): T & { v: 1; id: string; at: string } {
+  const now = options.now ?? new Date();
+  const month = monthOf(now);
+  const dir = frictionLogDir(options.homeDir);
+  const file = familyFile(family, month, options.homeDir);
+  const record = { v: 1 as const, id: crypto.randomUUID(), at: now.toISOString(), ...fields };
+  fs.mkdirSync(dir, { recursive: true });
+  const created = !fs.existsSync(file);
+  fs.appendFileSync(file, `${JSON.stringify(record)}\n`, "utf8");
+  if (created) pruneBefore(family, monthsBefore(month, RETAINED_PREVIOUS_MONTHS), options.homeDir);
+  return record;
+}
+
+/** Best effort: every failure is swallowed and returns null. */
+export function appendEvent(
+  event: NewFrictionEvent,
+  options: AppendOptions = {},
+): FrictionEvent | null {
   try {
-    const now = options.now ?? new Date();
-    const month = monthOf(now);
-    const dir = frictionLogDir(options.homeDir);
-    const file = frictionLogFile(month, options.homeDir);
-    const record: FrictionEvent = {
-      v: 1,
-      id: crypto.randomUUID(),
-      at: now.toISOString(),
-      ...event,
-    };
-    fs.mkdirSync(dir, { recursive: true });
-    const created = !fs.existsSync(file);
-    fs.appendFileSync(file, `${JSON.stringify(record)}\n`, "utf8");
-    if (created) pruneBefore(dir, monthsBefore(month, RETAINED_PREVIOUS_MONTHS));
+    return appendRecord("events", event, options);
   } catch {
     // recording never changes the outcome it records
+    return null;
   }
 }
 
-function isFrictionEvent(value: unknown): value is FrictionEvent {
-  if (!value || typeof value !== "object") return false;
-  const event = value as Record<string, unknown>;
-  return (
-    event.v === 1 &&
-    typeof event.at === "string" &&
-    typeof event.fingerprint === "string" &&
-    typeof event.sessionId === "string" &&
-    typeof event.companion === "string"
-  );
+/** Unlike an event, a report is asked for, so a failed write throws. */
+export function appendReport(
+  report: NewFrictionReport,
+  options: AppendOptions = {},
+): FrictionReport {
+  return appendRecord("reports", report, options);
 }
 
-function parseLine(line: string): FrictionEvent | null {
+/** A version-1 record whose `fields` are strings. */
+function recordOf<T>(fields: string[]): (value: unknown) => value is T {
+  return (value): value is T => {
+    if (!value || typeof value !== "object") return false;
+    const record = value as Record<string, unknown>;
+    return record.v === 1 && fields.every((field) => typeof record[field] === "string");
+  };
+}
+
+const isFrictionEvent = recordOf<FrictionEvent>([
+  "id",
+  "at",
+  "fingerprint",
+  "sessionId",
+  "companion",
+]);
+const isFrictionReport = recordOf<FrictionReport>([
+  "id",
+  "at",
+  "kind",
+  "subject",
+  "expected",
+  "companion",
+]);
+
+function parseLine<T>(line: string, accept: (value: unknown) => value is T): T | null {
   try {
     const parsed: unknown = JSON.parse(line);
-    return isFrictionEvent(parsed) ? parsed : null;
+    return accept(parsed) ? parsed : null;
   } catch {
     return null;
   }
 }
 
-interface ReadEventsOptions {
+interface ReadOptions {
   sinceDays: number;
-  /** Only events recorded for this companion. */
+  /** Only records for this companion. */
   companion?: string;
   homeDir?: string;
   now?: Date;
@@ -124,8 +195,12 @@ interface ReadEventsOptions {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** The guard records the companion as it resolved it, which may be a link to the one asked for. */
-function samePath(target: string): (candidate: string) => boolean {
+/**
+ * Whether a recorded companion is this one; any companion without a target. The guard
+ * records the companion as it resolved it, which may be a link to the one asked for.
+ */
+export function companionFilter(target?: string): (candidate: string) => boolean {
+  if (!target) return () => true;
   const wanted = realPath(target);
   const seen = new Map<string, boolean>();
   return (candidate) => {
@@ -138,35 +213,86 @@ function samePath(target: string): (candidate: string) => boolean {
   };
 }
 
-/** Events in the window, oldest file first; unreadable files and unparseable lines are skipped. */
-export function readEvents(options: ReadEventsOptions): FrictionEvent[] {
-  const now = options.now ?? new Date();
-  const since = new Date(now.getTime() - options.sinceDays * DAY_MS);
-  const dir = frictionLogDir(options.homeDir);
-  const companion = options.companion ? samePath(options.companion) : undefined;
-  let months: string[];
+/** A month's records in file order; an unreadable file or an unparseable line is skipped. */
+function readMonth<T>(
+  family: Family,
+  month: string,
+  accept: (value: unknown) => value is T,
+  homeDir?: string,
+): T[] {
+  let text: string;
   try {
-    months = logMonths(dir).filter((month) => month >= monthOf(since));
+    text = fs.readFileSync(familyFile(family, month, homeDir), "utf8");
   } catch {
     return [];
   }
-  const events: FrictionEvent[] = [];
-  for (const month of months.toSorted()) {
-    let text: string;
-    try {
-      text = fs.readFileSync(frictionLogFile(month, options.homeDir), "utf8");
-    } catch {
-      continue;
-    }
-    for (const line of text.split("\n")) {
-      if (!line.trim()) continue;
-      const event = parseLine(line);
-      if (!event) continue;
-      const at = Date.parse(event.at);
-      if (Number.isNaN(at) || at < since.getTime()) continue;
-      if (companion && !companion(event.companion)) continue;
-      events.push(event);
+  return text
+    .split("\n")
+    .filter((line) => line.trim())
+    .map((line) => parseLine(line, accept))
+    .filter((record): record is T => record !== null);
+}
+
+function readFamily<T extends { at: string; companion: string }>(
+  family: Family,
+  accept: (value: unknown) => value is T,
+  options: ReadOptions,
+): T[] {
+  const now = options.now ?? new Date();
+  const since = new Date(now.getTime() - options.sinceDays * DAY_MS);
+  const dir = frictionLogDir(options.homeDir);
+  const inCompanion = companionFilter(options.companion);
+  let months: string[];
+  try {
+    months = logMonths(dir, family).filter((month) => month >= monthOf(since));
+  } catch {
+    return [];
+  }
+  return months
+    .toSorted()
+    .flatMap((month) => readMonth(family, month, accept, options.homeDir))
+    .filter((record) => {
+      const at = Date.parse(record.at);
+      if (Number.isNaN(at) || at < since.getTime()) return false;
+      return inCompanion(record.companion);
+    });
+}
+
+/** Events in the window, oldest file first. */
+export function readEvents(options: ReadOptions): FrictionEvent[] {
+  return readFamily("events", isFrictionEvent, options);
+}
+
+/** Reports in the window, oldest file first. */
+export function readReports(options: ReadOptions): FrictionReport[] {
+  return readFamily("reports", isFrictionReport, options);
+}
+
+/** The event with this id in any retained month, or null. */
+export function findEvent(id: string, options: { homeDir?: string } = {}): FrictionEvent | null {
+  let months: string[];
+  try {
+    months = logMonths(frictionLogDir(options.homeDir), "events");
+  } catch {
+    return null;
+  }
+  for (const month of months.toSorted().toReversed()) {
+    const found = readMonth("events", month, isFrictionEvent, options.homeDir).find(
+      (event) => event.id === id,
+    );
+    if (found) return found;
+  }
+  return null;
+}
+
+/** Whether no earlier line of the event's month holds the same session and fingerprint. */
+export function firstInSession(event: FrictionEvent, options: { homeDir?: string } = {}): boolean {
+  const month = readMonth("events", monthOf(new Date(event.at)), isFrictionEvent, options.homeDir);
+  for (const recorded of month) {
+    if (recorded.id === event.id) return true;
+    if (recorded.sessionId === event.sessionId && recorded.fingerprint === event.fingerprint) {
+      return false;
     }
   }
-  return events;
+  return true;
 }

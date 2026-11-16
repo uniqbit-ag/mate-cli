@@ -4,7 +4,11 @@ import { main } from "./cli/main";
 import { setActiveDistribution, type DistributionConfig } from "./distribution";
 import { FRAMEWORK_NAME } from "./framework";
 import { currentSession } from "./lib/session-attribution";
-import { recordCommandFailure, withoutArgumentValues } from "./runtime/friction-recorder";
+import {
+  nudgeLine,
+  recordCommandFailure,
+  withoutArgumentValues,
+} from "./runtime/friction-recorder";
 import { createBunPlugin } from "./tools/setup/package-managers/bun";
 import { createUvPlugin } from "./tools/setup/package-managers/uv";
 import type { PluginRegistration } from "./tools/setup/plugin";
@@ -49,7 +53,7 @@ export function createMate({ config, plugins, main: runMain = main }: CreateMate
       const errors = session ? captureErrorTail((text) => withoutArgumentValues(text, args)) : null;
       const record = (exitCode: number) => {
         if (!session || !errors || exitCode === 0) return;
-        recordCommandFailure({
+        const recorded = recordCommandFailure({
           args,
           exitCode,
           errorText: errors.text(),
@@ -58,6 +62,7 @@ export function createMate({ config, plugins, main: runMain = main }: CreateMate
           env: process.env,
           cwd: process.cwd(),
         });
+        if (recorded?.firstInSession) process.stderr.write(`${nudgeLine(recorded.id)}\n`);
       };
       // Some commands end with `process.exit()`, so `main` never settles for them.
       if (session) process.once("exit", record);

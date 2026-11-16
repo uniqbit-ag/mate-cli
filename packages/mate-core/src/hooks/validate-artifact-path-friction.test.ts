@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { frictionLogDir, readEvents } from "../runtime/friction-log";
+import { nudgeLine } from "../runtime/friction-recorder";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
 import { evaluate } from "./validate-artifact-path";
@@ -78,7 +79,7 @@ describe("the Claude guard records refusals as friction", () => {
     expect(log).not.toContain("line one");
   });
 
-  test("leaves the exit code and stderr unchanged", async () => {
+  test("keeps the exit code and message, and adds the nudge line after it", async () => {
     const selected = fixture(["friction"]);
     const plain = fixture([]);
     const target = (repo: string) => ({ file_path: path.join(repo, "design.md") });
@@ -87,12 +88,24 @@ describe("the Claude guard records refusals as friction", () => {
     const unrecorded = await plain.run("Write", target(plain.repo));
 
     expect(recorded.exitCode).toBe(2);
-    expect(recorded.exitCode).toBe(unrecorded.exitCode);
+    expect(unrecorded.exitCode).toBe(2);
+    const [event] = readEvents({ sinceDays: 1, homeDir: selected.home });
     const root = (repo: string) => path.dirname(repo);
     expect(recorded.stderr.replaceAll(root(selected.repo), "")).toBe(
-      unrecorded.stderr.replaceAll(root(plain.repo), ""),
+      `${unrecorded.stderr.replaceAll(root(plain.repo), "")}${nudgeLine(event.id)}\n`,
     );
+    expect(unrecorded.stderr).not.toContain("cap friction report");
     expect(fs.existsSync(frictionLogDir(plain.home))).toBe(false);
+  });
+
+  test("a repeated refusal gets no nudge line", async () => {
+    const { repo, run } = fixture(["friction"]);
+    const write = () => run("Write", { file_path: path.join(repo, "design.md") });
+
+    expect((await write()).stderr).toContain("cap friction report");
+    const second = await write();
+    expect(second.exitCode).toBe(2);
+    expect(second.stderr).not.toContain("cap friction report");
   });
 
   test("an allowed call records nothing", async () => {

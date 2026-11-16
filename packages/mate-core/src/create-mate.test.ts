@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { withEnv } from "../../../test/fixtures";
 import { frictionLogDir, readEvents } from "./runtime/friction-log";
+import { nudgeLine } from "./runtime/friction-recorder";
 
 let mainImpl: (argv?: string[]) => Promise<void> = async () => {};
 
@@ -127,13 +128,13 @@ describe("createMate records a failed agent-run command as friction", () => {
     return { home: path.join(root, "home"), companion };
   }
 
-  /** Runs `argv` with a main that prints `printed` and exits `exitCode`; returns what was printed. */
+  /** Runs `argv` with a main that prints and exits `exitCode`; returns what went to stderr and stdout. */
   async function runFailing(
     env: Record<string, string | undefined>,
     exitCode: number,
     argv = ["bun", "mate", "artifact", "archive", "--bogus", "acme"],
     print: () => void = () => console.error("Unknown flag: --bogus"),
-  ): Promise<unknown[]> {
+  ): Promise<{ printed: unknown[]; stdout: unknown[] }> {
     const cli = createMate({
       config: acmeConfig,
       plugins: [],
@@ -143,34 +144,39 @@ describe("createMate records a failed agent-run command as friction", () => {
       },
     });
     const printed: unknown[] = [];
+    const stdout: unknown[] = [];
     const originalConsoleError = console.error;
     const originalWrite = process.stderr.write;
+    const originalStdoutWrite = process.stdout.write;
     const originalExitCode = process.exitCode;
     console.error = (...args: unknown[]) => printed.push(...args);
     process.stderr.write = ((chunk: unknown) => printed.push(chunk) > 0) as typeof originalWrite;
+    process.stdout.write = ((chunk: unknown) => stdout.push(chunk) > 0) as typeof originalWrite;
     try {
       await withEnv(env, () => cli.run(argv));
       expect(process.exitCode).toBe(exitCode);
     } finally {
       console.error = originalConsoleError;
       process.stderr.write = originalWrite;
+      process.stdout.write = originalStdoutWrite;
       // Bun keeps a non-zero exit code when it is set back to undefined.
       process.exitCode = originalExitCode ?? 0;
     }
-    return printed;
+    return { printed, stdout };
   }
 
   const noSession = { CLAUDE_CODE_SESSION_ID: undefined, OPENCODE_SESSION_ID: undefined };
 
-  test("records one event in an agent session, leaving output unchanged", async () => {
+  test("records one event in an agent session, and adds the nudge line after its output", async () => {
     const { home, companion } = companionSelectingFriction();
 
-    const printed = await runFailing(
+    const { printed } = await runFailing(
       { ...noSession, HOME: home, MATE_ARTIFACT_PATH: companion, CLAUDE_CODE_SESSION_ID: "s1" },
       1,
     );
 
-    expect(printed).toEqual(["Unknown flag: --bogus"]);
+    const [event] = readEvents({ sinceDays: 1, homeDir: home });
+    expect(printed).toEqual(["Unknown flag: --bogus", `${nudgeLine(event.id)}\n`]);
     expect(readEvents({ sinceDays: 1, homeDir: home })).toMatchObject([
       {
         kind: "command-failure",
@@ -194,16 +200,40 @@ describe("createMate records a failed agent-run command as friction", () => {
     const { home, companion } = companionSelectingFriction();
     const token = `acme${"x".repeat(1_500)}`;
 
-    const printed = await runFailing(
+    const { printed } = await runFailing(
       { ...noSession, HOME: home, MATE_ARTIFACT_PATH: companion, CLAUDE_CODE_SESSION_ID: "s1" },
       1,
       ["bun", "mate", "companion", "prepare", `--token=${token}`],
       () => process.stderr.write(`Unsupported argument: --token=${token}\n`),
     );
 
-    expect(printed).toEqual([`Unsupported argument: --token=${token}\n`]);
+    expect(printed[0]).toBe(`Unsupported argument: --token=${token}\n`);
     const [event] = readEvents({ sinceDays: 1, homeDir: home });
     expect(event.detail.errorText).toBe("Unsupported argument: --token=…");
+  });
+
+  test("a failed JSON command keeps its stdout; a repeat and a failed report get no nudge", async () => {
+    const { home, companion } = companionSelectingFriction();
+    const env = {
+      ...noSession,
+      HOME: home,
+      MATE_ARTIFACT_PATH: companion,
+      CLAUDE_CODE_SESSION_ID: "s1",
+    };
+    const document = '{"kind":"error","version":1}\n';
+    const json = ["bun", "mate", "artifact", "archive", "--json"];
+    const printJson = () => process.stdout.write(document);
+
+    const first = await runFailing(env, 1, json, printJson);
+    const repeat = await runFailing(env, 1, json, printJson);
+    const report = await runFailing(env, 1, ["bun", "mate", "cap", "friction", "report", "F-0"]);
+
+    expect(first.stdout).toEqual([document]);
+    expect(first.printed).toHaveLength(1);
+    expect(String(first.printed[0])).toContain("cap friction report");
+    expect(repeat.printed).toEqual([]);
+    expect(report.printed).toEqual(["Unknown flag: --bogus"]);
+    expect(readEvents({ sinceDays: 1, homeDir: home })).toHaveLength(3);
   });
 
   test("records nothing without an agent session id", async () => {

@@ -73,6 +73,7 @@ const unlisted = new Set([
   "artifact finish",
   // A plugin's `cliCommands`: `usage()` adds them at run time, not in its source text.
   "cap friction list",
+  "cap friction report",
 ]);
 
 /**

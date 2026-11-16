@@ -15,6 +15,7 @@ import { readContext, type CompanionContext } from "./companion-policy";
 import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { MATE_ENV } from "../runtime/env-names";
 import { frictionLogDir, readEvents } from "../runtime/friction-log";
+import { nudgeLine } from "../runtime/friction-recorder";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
 import { ROUTE_SYNC_MARKER, TOKENSAVE_DB } from "../runtime/tokensave-route";
@@ -532,7 +533,7 @@ describe("OpenCode companion hooks record refusals as friction", () => {
     expect(JSON.stringify(events)).not.toContain("line one");
   });
 
-  test("rethrows the refusal with its message unchanged", async () => {
+  test("rethrows the refusal with its message, and the nudge line after it", async () => {
     const selected = await wrappedWithFriction(["friction"]);
     const plain = await wrappedWithFriction([]);
 
@@ -541,11 +542,23 @@ describe("OpenCode companion hooks record refusals as friction", () => {
     });
     const unrecorded = await plain.call("write", { filePath: path.join(plain.repo, "spec.md") });
 
+    const [event] = readEvents({ sinceDays: 1, homeDir: selected.home });
     const root = (repo: string) => path.dirname(repo);
     expect(recorded?.message.replaceAll(root(selected.repo), "")).toBe(
-      unrecorded?.message.replaceAll(root(plain.repo), ""),
+      `${unrecorded?.message.replaceAll(root(plain.repo), "")}\n${nudgeLine(event.id)}`,
     );
-    expect(recorded?.message).toContain(ARTIFACT_REFUSAL_HEADLINE);
+    expect(unrecorded?.message).toContain(ARTIFACT_REFUSAL_HEADLINE);
+    expect(unrecorded?.message).not.toContain("cap friction report");
     await expect(fs.access(frictionLogDir(plain.home))).rejects.toThrow();
+  });
+
+  test("a repeated refusal gets no nudge line", async () => {
+    const { repo, call } = await wrappedWithFriction(["friction"]);
+    const write = () => call("write", { filePath: path.join(repo, "spec.md") });
+
+    expect((await write())?.message).toContain("cap friction report");
+    const second = await write();
+    expect(second?.message).toContain(ARTIFACT_REFUSAL_HEADLINE);
+    expect(second?.message).not.toContain("cap friction report");
   });
 });

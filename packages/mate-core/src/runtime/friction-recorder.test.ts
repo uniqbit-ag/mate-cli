@@ -9,6 +9,7 @@ import {
   commandDetail,
   commandFingerprint,
   frictionSelected,
+  nudgeLine,
   recordRefusal,
   refusalDetail,
   type RefusalRecord,
@@ -117,7 +118,7 @@ describe("refusalDetail", () => {
 
 describe("recordRefusal", () => {
   function record(companionPath: string, home: string, overrides: Partial<RefusalRecord> = {}) {
-    recordRefusal({
+    return recordRefusal({
       check: "artifact",
       toolKind: "write",
       message: "refused",
@@ -165,9 +166,23 @@ describe("recordRefusal", () => {
     expect(text).not.toContain("refused");
   });
 
+  test("returns the event's id; only a session's first refusal of a kind is first", () => {
+    const home = tempDir("mate-friction-home-");
+    const selected = companion(["friction"]);
+
+    const first = record(selected, home);
+    const second = record(selected, home);
+    const otherSession = record(selected, home, { sessionId: "s2" });
+
+    const [event] = readEvents({ sinceDays: 1, homeDir: home });
+    expect(first).toEqual({ id: event.id, firstInSession: true });
+    expect(second?.firstInSession).toBe(false);
+    expect(otherSession?.firstInSession).toBe(true);
+  });
+
   test("a companion without friction creates no folder", () => {
     const home = tempDir("mate-friction-home-");
-    record(companion(["rtk"]), home);
+    expect(record(companion(["rtk"]), home)).toBeNull();
 
     expect(fs.existsSync(frictionLogDir(home))).toBe(false);
   });
@@ -215,5 +230,16 @@ describe("command projection", () => {
     });
     expect(detail.errorText).toBe("e".repeat(1_000));
     expect(commandFingerprint(detail)).toBe("command:doctor:2");
+  });
+});
+
+describe("nudgeLine", () => {
+  test("is one line naming the event, the report command and the way on", () => {
+    const line = nudgeLine("F-12ab");
+
+    expect(line).toContain("F-12ab");
+    expect(line).toContain("mate cap friction report");
+    expect(line).toContain("continue with your task");
+    expect(line).not.toContain("\n");
   });
 });

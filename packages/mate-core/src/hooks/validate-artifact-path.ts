@@ -17,7 +17,12 @@ import { checkCommitAttribution } from "../runtime/commit-attribution-guard";
 import { gitEnvironment } from "../runtime/companion-git";
 import { companionForkRefusal } from "../runtime/companion-sync";
 import { readCompanionRuntimeContext } from "../runtime/env";
-import { recordRefusal, type FrictionCheck } from "../runtime/friction-recorder";
+import {
+  nudgeLine,
+  recordRefusal,
+  type FrictionCheck,
+  type RecordedFriction,
+} from "../runtime/friction-recorder";
 import { guardLaunchEnvironment } from "../runtime/launch-env-guard";
 import { companionLinkPath } from "../runtime/repo-local";
 import { checkSecretAccess, type SecretToolCall } from "../runtime/secret-guard";
@@ -356,13 +361,13 @@ function recordHookRefusal(
   stderr: string,
   call: ToolCall,
   ctx: GuardContext,
-) {
+): RecordedFriction | null {
   const { toolName, toolInput } = call;
   const command = toolName === "Bash" ? stringOrEmpty(toolInput.command) : "";
   const paths = command
     ? commandMatches(command)
     : [toolInput.file_path, toolInput.notebook_path, toolInput.path].map(stringOrEmpty);
-  recordRefusal({
+  return recordRefusal({
     check,
     toolKind: secretToolCall(toolName, toolInput, ctx)?.kind ?? "other",
     message: stderr,
@@ -380,6 +385,7 @@ function recordHookRefusal(
  * Fails open only when no Mate context resolves from either source; in a
  * wrapped Working Repository the guard runs without a launch. A refusal is
  * recorded as friction after the verdict; an allowed call records nothing.
+ * A session's first refusal of a kind ends with the nudge line.
  */
 export async function evaluate(
   payload: unknown,
@@ -390,8 +396,11 @@ export async function evaluate(
   if (!ctx) return { exitCode: 0, stderr: "" };
   const call = toolCall(payload);
   const outcome = await decide(call, ctx);
-  if (outcome.check) recordHookRefusal(outcome.check, outcome.stderr, call, ctx);
-  return outcome;
+  if (!outcome.check) return outcome;
+  const recorded = recordHookRefusal(outcome.check, outcome.stderr, call, ctx);
+  return recorded?.firstInSession
+    ? { ...outcome, stderr: `${outcome.stderr.replace(/\n?$/, "\n")}${nudgeLine(recorded.id)}\n` }
+    : outcome;
 }
 
 async function decide({ toolName, toolInput }: ToolCall, ctx: GuardContext): Promise<HookOutcome> {

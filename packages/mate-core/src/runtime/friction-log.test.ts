@@ -6,10 +6,16 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   appendEvent,
+  appendReport,
+  findEvent,
+  firstInSession,
   frictionLogDir,
   frictionLogFile,
+  frictionReportFile,
   readEvents,
+  readReports,
   type NewFrictionEvent,
+  type NewFrictionReport,
 } from "./friction-log";
 
 const tempRoots: string[] = [];
@@ -140,5 +146,98 @@ describe("readEvents", () => {
 
   test("returns nothing when no log exists", () => {
     expect(readEvents({ sinceDays: 30, homeDir: tempHome(), now })).toEqual([]);
+  });
+});
+
+function report(overrides: Partial<NewFrictionReport> = {}): NewFrictionReport {
+  return {
+    eventId: null,
+    kind: "unclear",
+    cost: null,
+    subject: "skill:acme",
+    expected: "the step names its command",
+    evidence: "the step says only 'run it'",
+    workaround: null,
+    mateVersion: "1.0.0",
+    companion: "/acme/companion",
+    sessionId: "s1",
+    runtime: "claude",
+    ...overrides,
+  };
+}
+
+describe("appendReport", () => {
+  test("appends one line per report to the month's reports file", () => {
+    const home = tempHome();
+    const now = new Date("2027-03-14T10:00:00Z");
+    const first = appendReport(report(), { homeDir: home, now });
+    appendReport(report(), { homeDir: home, now });
+
+    const recorded = lines(frictionReportFile("2027-03", home)).map((line) => JSON.parse(line));
+    expect(recorded).toHaveLength(2);
+    expect(recorded[0]).toEqual({ v: 1, id: first.id, at: now.toISOString(), ...report() });
+    expect(fs.existsSync(frictionLogFile("2027-03", home))).toBe(false);
+  });
+
+  test("a new month deletes report files older than the two months before it", () => {
+    const home = tempHome();
+    for (const month of ["2027-01", "2027-02", "2027-03", "2027-04"]) {
+      appendReport(report(), { homeDir: home, now: new Date(`${month}-15T00:00:00Z`) });
+    }
+
+    expect(fs.readdirSync(frictionLogDir(home)).sort()).toEqual([
+      "reports-2027-02.jsonl",
+      "reports-2027-03.jsonl",
+      "reports-2027-04.jsonl",
+    ]);
+  });
+});
+
+describe("readReports", () => {
+  const now = new Date("2027-03-14T12:00:00Z");
+
+  test("skips a malformed line and filters by companion", () => {
+    const home = tempHome();
+    appendReport(report({ companion: "/acme/one" }), { homeDir: home, now });
+    fs.appendFileSync(frictionReportFile("2027-03", home), '{"v":1,"id":"x"}\nnot json\n');
+    appendReport(report({ companion: "/acme/two" }), { homeDir: home, now });
+
+    expect(readReports({ sinceDays: 30, homeDir: home, now })).toHaveLength(2);
+    expect(
+      readReports({ sinceDays: 30, companion: "/acme/two", homeDir: home, now }).map(
+        (entry) => entry.companion,
+      ),
+    ).toEqual(["/acme/two"]);
+  });
+});
+
+describe("findEvent", () => {
+  test("finds an event in an earlier month and returns null for an unknown id", () => {
+    const home = tempHome();
+    const old = appendEvent(event(), { homeDir: home, now: new Date("2027-02-01T00:00:00Z") });
+    appendEvent(event(), { homeDir: home, now: new Date("2027-03-01T00:00:00Z") });
+
+    expect(findEvent(old!.id, { homeDir: home })).toEqual(old);
+    expect(findEvent("no-such-event", { homeDir: home })).toBeNull();
+    expect(findEvent("no-such-event", { homeDir: tempHome() })).toBeNull();
+  });
+});
+
+describe("firstInSession", () => {
+  test("only the session's first event of a fingerprint is first", () => {
+    const home = tempHome();
+    const now = new Date("2027-03-14T10:00:00Z");
+    const first = appendEvent(event(), { homeDir: home, now })!;
+    const second = appendEvent(event(), { homeDir: home, now })!;
+    const otherSession = appendEvent(event({ sessionId: "s2" }), { homeDir: home, now })!;
+    const otherKind = appendEvent(event({ fingerprint: "refusal:secret:read" }), {
+      homeDir: home,
+      now,
+    })!;
+
+    expect(firstInSession(first, { homeDir: home })).toBe(true);
+    expect(firstInSession(second, { homeDir: home })).toBe(false);
+    expect(firstInSession(otherSession, { homeDir: home })).toBe(true);
+    expect(firstInSession(otherKind, { homeDir: home })).toBe(true);
   });
 });

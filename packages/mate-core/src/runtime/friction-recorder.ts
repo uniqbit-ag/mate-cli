@@ -1,5 +1,11 @@
 import { resolveCompanionRuntime } from "./env";
-import { appendEvent, type FrictionRuntime } from "./friction-log";
+import { FRAMEWORK_NAME } from "./framework";
+import {
+  appendEvent,
+  firstInSession,
+  type FrictionRuntime,
+  type NewFrictionEvent,
+} from "./friction-log";
 import { isCapabilityEnabled, readCompanionPolicy } from "./policy";
 import type { SecretToolCall } from "./secret-guard";
 
@@ -20,6 +26,23 @@ const COMMAND_LIMIT = 500;
 const PATH_LIMIT = 5;
 
 type Env = Record<string, string | undefined>;
+
+/** A recorded event; `firstInSession` decides whether the agent is asked about it. */
+export interface RecordedFriction {
+  id: string;
+  firstInSession: boolean;
+}
+
+function record(event: NewFrictionEvent, env: Env): RecordedFriction | null {
+  const recorded = appendEvent(event, { homeDir: env.HOME });
+  if (!recorded) return null;
+  return { id: recorded.id, firstInSession: firstInSession(recorded, { homeDir: env.HOME }) };
+}
+
+/** One line, appended after a refusal or a failed command's own output. */
+export function nudgeLine(id: string): string {
+  return `Wrong or unclear? Run: ${FRAMEWORK_NAME} cap friction report ${id} --kind <bug|unclear> --expected "<what you expected>". Then continue with your task.`;
+}
 
 export function frictionSelected(companionPath: string | undefined | null): boolean {
   if (!companionPath) return false;
@@ -96,24 +119,25 @@ export interface RefusalRecord extends RefusalEvidence {
   env: Env;
 }
 
-export function recordRefusal(record: RefusalRecord): void {
+export function recordRefusal(refusal: RefusalRecord): RecordedFriction | null {
   try {
-    if (!frictionSelected(record.companionPath)) return;
-    appendEvent(
+    if (!frictionSelected(refusal.companionPath)) return null;
+    return record(
       {
         kind: "refusal",
-        fingerprint: refusalFingerprint(record.check, record.toolKind),
-        mateVersion: record.env.MATE_VERSION || "unknown",
-        runtime: record.runtime,
-        sessionId: record.sessionId,
-        companion: record.companionPath,
-        repositoryPath: record.repositoryPath || null,
-        detail: refusalDetail(record),
+        fingerprint: refusalFingerprint(refusal.check, refusal.toolKind),
+        mateVersion: refusal.env.MATE_VERSION || "unknown",
+        runtime: refusal.runtime,
+        sessionId: refusal.sessionId,
+        companion: refusal.companionPath,
+        repositoryPath: refusal.repositoryPath || null,
+        detail: refusalDetail(refusal),
       },
-      { homeDir: record.env.HOME },
+      refusal.env,
     );
   } catch {
     // recording never changes the refusal
+    return null;
   }
 }
 
@@ -189,28 +213,32 @@ export interface CommandFailureRecord extends CommandFailure {
   cwd: string;
 }
 
-export function recordCommandFailure(record: CommandFailureRecord): void {
+export function recordCommandFailure(failure: CommandFailureRecord): RecordedFriction | null {
   try {
     const { companionPath, repositoryPath } = resolveCompanionRuntime(
-      record.env,
-      record.cwd,
+      failure.env,
+      failure.cwd,
     ).context;
-    if (!frictionSelected(companionPath)) return;
-    const detail = commandDetail(record);
-    appendEvent(
+    if (!frictionSelected(companionPath)) return null;
+    const detail = commandDetail(failure);
+    const recorded = record(
       {
         kind: "command-failure",
         fingerprint: commandFingerprint(detail),
-        mateVersion: record.mateVersion || "unknown",
-        runtime: record.session.runtime,
-        sessionId: record.session.id,
+        mateVersion: failure.mateVersion || "unknown",
+        runtime: failure.session.runtime,
+        sessionId: failure.session.id,
         companion: companionPath,
         repositoryPath: repositoryPath || null,
         detail: { ...detail },
       },
-      { homeDir: record.env.HOME },
+      failure.env,
     );
+    // A failed report gets no nudge, so reporting cannot loop.
+    const reporting = detail.command === "cap" && detail.subcommand === "friction";
+    return recorded && reporting ? { ...recorded, firstInSession: false } : recorded;
   } catch {
     // recording never changes the command's outcome
+    return null;
   }
 }

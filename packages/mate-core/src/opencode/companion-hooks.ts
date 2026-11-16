@@ -11,7 +11,12 @@ import {
 } from "../runtime/companion-sync";
 import { hasLaunchEnvironment } from "../runtime/env";
 import { MATE_ENV } from "../runtime/env-names";
-import { recordRefusal, type FrictionCheck } from "../runtime/friction-recorder";
+import {
+  nudgeLine,
+  recordRefusal,
+  type FrictionCheck,
+  type RecordedFriction,
+} from "../runtime/friction-recorder";
 import { resolveProjection } from "../runtime/projection";
 import { checkSecretAccess, type SecretToolCall } from "../runtime/secret-guard";
 import { isSecretPolicyFile } from "../runtime/secret-policy-weakening";
@@ -248,7 +253,10 @@ export async function registerCompanionHooks(
     try {
       await guardToolInput(context, event.tool, event.input, env);
     } catch (error) {
-      if (error instanceof GuardRefusal) recordToolRefusal(error, event, context, env);
+      if (error instanceof GuardRefusal) {
+        const recorded = recordToolRefusal(error, event, context, env);
+        if (recorded?.firstInSession) error.message = `${error.message}\n${nudgeLine(recorded.id)}`;
+      }
       throw error;
     }
   });
@@ -260,7 +268,7 @@ function recordToolRefusal(
   event: { tool: string; sessionID: string; input: unknown },
   context: CompanionContext,
   env: Record<string, string | undefined>,
-): void {
+): RecordedFriction | null {
   const tool = V1_TOOL_NAMES[event.tool] ?? event.tool;
   const args = (event.input && typeof event.input === "object" ? event.input : {}) as Record<
     string,
@@ -271,7 +279,7 @@ function recordToolRefusal(
     tool === "apply_patch"
       ? extractPatchPaths(text(args.patchText))
       : [text(args.filePath) || text(args.path)];
-  recordRefusal({
+  return recordRefusal({
     check: refusal.check,
     toolKind: secretToolCall(context, tool, args)?.kind ?? "other",
     message: refusal.message,

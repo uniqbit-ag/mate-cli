@@ -829,15 +829,49 @@ repository.
 | `mate cap index --graphify`                  | Refresh only Graphify.                          |
 | `mate cap index --tokensave`                 | Refresh only TokenSave.                         |
 | `mate cap friction list [--days N] [--json]` | List recorded friction, grouped by fingerprint. |
+| `mate cap friction report [<event-id>] ...`  | Record what an agent expected.                  |
 
 `mate cap friction list` needs the [`friction`](/docs/capabilities#friction)
 capability. It reads the events of the last `N` days, default 30, recorded for
 the resolved companion, and groups them by fingerprint. For each group it shows
 the event count, the number of sessions, the highest count in one session, the
-first and last time seen, and the Mate versions. Groups with the most repeats in
-one session come first, then those with the most events. With `--json` it
-prints one document with `kind` `friction-list` and `version` 1. It writes
-nothing to the log.
+first and last time seen, the Mate versions, and the number of reports on its
+events with the latest `expected` text. Groups with the most repeats in one
+session come first, then those with the most events. Free reports of the
+companion follow in their own section, newest first. With `--json` it prints
+one document with `kind` `friction-list` and `version` 1; each group carries its
+`reports`, and the document carries `freeReports`. It writes nothing to the
+log.
+
+`mate cap friction report` also needs the capability. It records one Friction
+Report and prints its id:
+
+| Flag                                 | Meaning                                                                                               |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `<event-id>`                         | The Friction Event the report is about. Optional; without it, the report is a free report.            |
+| `--kind <bug\|unclear\|missing>`     | Required. Mate was wrong, its message did not help, or something needed does not exist.               |
+| `--expected <text>`                  | Required. What the agent expected.                                                                    |
+| `--cost <blocker\|detour\|papercut>` | Optional. What the friction cost.                                                                     |
+| `--subject <type>[:<name>]`          | Required for a free report. `type` is `command`, `hook`, `skill`, `guidance`, `capability` or `docs`. |
+| `--evidence <text>`                  | Required for a free report: what the agent saw.                                                       |
+| `--workaround <text>`                | Optional. What the agent did instead.                                                                 |
+| `--json`                             | Print one JSON document.                                                                              |
+
+A report on an event takes its subject from the event; a `--subject` given
+with an event id is ignored. Each text is cut to
+1,000 characters. The report records the agent session's id and runtime, or
+null outside a session. With `--json` it prints `kind` `friction-report`,
+`version` 1, `id` and `eventId`. A refusal exits 1 and records nothing; with
+`--json` it prints `kind` `error` with one of these codes:
+
+| Code                                                     | Cause                                                                          |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `missing-kind`, `invalid-kind`                           | `--kind` is missing or not one of the three values.                            |
+| `missing-expected`, `invalid-cost`                       | `--expected` is missing, or `--cost` has an unknown value.                     |
+| `event-not-found`                                        | No event in the log has that id.                                               |
+| `missing-subject`, `invalid-subject`, `missing-evidence` | A free report lacks its subject or evidence, or names an unknown subject type. |
+| `secret`, `scan-failed`                                  | The text holds a secret, or it could not be scanned. The text is not printed.  |
+| `capability-disabled`, `usage`, `write-failed`           | The capability is off, an argument is unknown, or the log cannot be written.   |
 
 The two index flags cannot be combined. When both Graphify and TokenSave are
 enabled, the default index flow refreshes TokenSave and then refreshes Graphify
