@@ -65,8 +65,48 @@ export interface ImageInputs {
   };
 }
 
-export function readImageInputs(file: string = IMAGE_INPUTS_FILE): ImageInputs {
-  return parse(fs.readFileSync(file, "utf8")) as ImageInputs;
+/** mate-core's tool manifest: the shared tool versions a member's computer uses too. */
+export const TOOL_MANIFEST_FILE = path.join(
+  CONTAINER_ROOT,
+  "..",
+  "..",
+  "packages",
+  "mate-core",
+  "tool-manifest.yaml",
+);
+
+/** The image inputs with the manifest's image tools merged into `tools`; a tool in both files throws. */
+export function readImageInputs(
+  file: string = IMAGE_INPUTS_FILE,
+  manifestFile: string = TOOL_MANIFEST_FILE,
+): ImageInputs {
+  const inputs = parse(fs.readFileSync(file, "utf8")) as ImageInputs;
+  const manifest = parse(fs.readFileSync(manifestFile, "utf8")) as {
+    tools: Record<string, ToolInput>;
+  };
+  for (const [name, tool] of Object.entries(manifest.tools)) {
+    // mate-core's own npm dependencies; no image installs them.
+    if (tool.source === "npm_dependency") continue;
+    if (name in inputs.tools) {
+      throw new Error(`${name} is listed in both ${file} and ${manifestFile}`);
+    }
+    inputs.tools[name] = tool;
+  }
+  return inputs;
+}
+
+/** Each global-tools lock dependency that differs from the version the inputs pin. */
+export function globalToolsLockDrift(inputs: ImageInputs, root: string): string[] {
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(root, inputs.locks.global_tools!.manifest), "utf8"),
+  ) as { dependencies: Record<string, string> };
+  const pinned: Record<string, string> = { "@uniqbit/mate": inputs.mate.version };
+  for (const tool of Object.values(inputs.tools)) {
+    if (tool.source === "npm_global" && tool.package) pinned[tool.package] = tool.version;
+  }
+  return Object.entries(pinned)
+    .filter(([name, version]) => manifest.dependencies[name] !== version)
+    .map(([name, version]) => `${name}: lock ${manifest.dependencies[name]}, inputs ${version}`);
 }
 
 /**

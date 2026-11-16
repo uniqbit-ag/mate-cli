@@ -3,7 +3,7 @@
 # and the factory broker.
 #
 # Everything the factory needs is installed here, at exact versions checked
-# against apps/mate-factory/image-inputs.yaml. Startup does filesystem work
+# against apps/mate-factory/image-inputs.yaml and mate-core's tool manifest. Startup does filesystem work
 # only: it copies a prebuilt workspace and starts two processes. No package
 # manager, dependency resolver, download, native build, or installation script
 # runs in a started container.
@@ -15,8 +15,9 @@
 # syntax=docker/dockerfile:1
 
 # ---------------------------------------------------------------------------
-# Pins. Kept in sync with image-inputs.yaml, which is the release-owned source
-# and which the workflow reads to pass these in.
+# Pins. Kept in sync with image-inputs.yaml and, for the shared capability
+# tools, packages/mate-core/tool-manifest.yaml; the workflow reads both through
+# `readImageInputs()` to pass these in.
 # ---------------------------------------------------------------------------
 ARG NODE_IMAGE=node@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
 ARG BUN_IMAGE=oven/bun@sha256:4f6e31d1a54d6a3dd312daef655fc998101b5043d52e12592ac293ef04b9bc73
@@ -244,10 +245,12 @@ RUN npm ci --omit=dev --no-audit --no-fund \
 # ===========================================================================
 # Stage: graphify — the graphify tool, shared by the runtime and Workset images.
 #
-# `uv tool install graphifyy` would resolve transitive dependencies afresh on
-# every rebuild; installing from the compiled, hashed requirements does not.
-# Paths match where both images keep it, because the tool's environment names
-# its interpreter absolutely.
+# `uv pip install --require-hashes` fails on any archive whose hash differs
+# from the lock; `--no-deps` resolves nothing the lock does not list and
+# `--no-build` refuses sdists. (`uv tool install --with-requirements` checks no
+# hashes.) The version assertion ties the build argument to the lock.
+# Paths match where both images keep it, because the venv names its
+# interpreter absolutely.
 # ===========================================================================
 FROM ${NODE_IMAGE} AS graphify
 
@@ -257,18 +260,16 @@ ARG GRAPHIFY_PYTHON_VERSION
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
 COPY --from=fetch /out/bin/uv /usr/local/bin/uv
-ENV UV_TOOL_DIR=/opt/mate/uv/tools \
-    UV_TOOL_BIN_DIR=/opt/mate/uv/bin \
-    UV_PYTHON_INSTALL_DIR=/opt/mate/uv/python \
+ENV UV_PYTHON_INSTALL_DIR=/opt/mate/uv/python \
     UV_NO_MODIFY_PATH=1
 COPY locks/graphify.requirements.txt /opt/mate/locks/graphify.requirements.txt
 RUN uv python install "${GRAPHIFY_PYTHON_VERSION}" \
- && uv tool install --no-cache \
-      --python "${GRAPHIFY_PYTHON_VERSION}" \
-      --with-requirements /opt/mate/locks/graphify.requirements.txt \
-      "graphifyy==${GRAPHIFY_VERSION}" \
- && rm -rf /opt/mate/uv/bin \
- && /opt/mate/uv/tools/graphifyy/bin/graphify --version
+ && uv venv --no-cache /opt/mate/graphify --python "${GRAPHIFY_PYTHON_VERSION}" \
+ && uv pip install --no-cache --python /opt/mate/graphify \
+      --require-hashes --no-deps --no-build \
+      -r /opt/mate/locks/graphify.requirements.txt \
+ && test "$(/opt/mate/graphify/bin/python -c 'import importlib.metadata as m; print(m.version("graphifyy"))')" = "${GRAPHIFY_VERSION}" \
+ && /opt/mate/graphify/bin/graphify --version
 
 # ===========================================================================
 # Stage: workset — the image every Workset container runs.
@@ -318,8 +319,9 @@ COPY --from=fetch /out/bin/claude /usr/local/bin/claude
 # passes its installation gate offline and agents get the same tools.
 COPY --from=fetch /out/bin/tokensave /out/bin/rtk /out/bin/uv /out/bin/uvx /usr/local/bin/
 COPY --from=graphify /opt/mate/uv /opt/mate/uv
+COPY --from=graphify /opt/mate/graphify /opt/mate/graphify
 COPY --from=packages /opt/mate/tools /opt/mate/tools
-RUN ln -sf /opt/mate/uv/tools/graphifyy/bin/graphify /usr/local/bin/graphify \
+RUN ln -sf /opt/mate/graphify/bin/graphify /usr/local/bin/graphify \
  && ln -sf /usr/local/bin/bun /usr/local/bin/bunx \
  && ln -sf /opt/mate/tools/node_modules/.bin/mate /usr/local/bin/mate \
  && ln -sf /opt/mate/tools/node_modules/.bin/openspec /usr/local/bin/openspec
@@ -466,7 +468,8 @@ ENV UV_TOOL_DIR=/opt/mate/uv/tools \
     UV_NO_MODIFY_PATH=1
 COPY locks/graphify.requirements.txt /opt/mate/locks/graphify.requirements.txt
 COPY --from=graphify /opt/mate/uv /opt/mate/uv
-RUN ln -sf /opt/mate/uv/tools/graphifyy/bin/graphify /usr/local/bin/graphify \
+COPY --from=graphify /opt/mate/graphify /opt/mate/graphify
+RUN ln -sf /opt/mate/graphify/bin/graphify /usr/local/bin/graphify \
  && graphify --version
 
 # --- the unprivileged identity the container runs as -----------------------

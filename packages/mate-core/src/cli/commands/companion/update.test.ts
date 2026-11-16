@@ -302,12 +302,12 @@ describe("mate companion update — version precondition", () => {
 });
 
 describe("mate companion update — regeneration", () => {
-  test.each(["js", "mjs", "missing"])("runs the bundled skills CLI: %s", async (kind) => {
+  test.each(["js", "mjs", "missing"])("runs the pinned skills CLI: %s", async (kind) => {
     const runCli = mock(async () => {});
     skillsCliDeps.run = runCli;
     skillsCliDeps.locate = () =>
       kind === "missing"
-        ? { missing: "bundled skills CLI is missing. Reinstall Mate to restore it." }
+        ? { missing: "the skills CLI that Mate pins is missing. Reinstall Mate to restore it." }
         : { bin: `/acme/skills/cli.${kind}`, version: "1.0.0" };
 
     if (kind === "missing") {

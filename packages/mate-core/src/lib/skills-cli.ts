@@ -3,13 +3,14 @@ import { createRequire } from "node:module";
 import path from "node:path";
 
 import { runCommand } from "../tools/setup/utils";
+import { bundledCliCommand } from "./openspec-cli";
 
 const require = createRequire(import.meta.url);
-const MISSING = "bundled skills CLI is missing. Reinstall Mate to restore it.";
+const MISSING = "the skills CLI that Mate pins is missing. Reinstall Mate to restore it.";
 
 export type SkillsCliLocation = { bin: string; version: string } | { missing: string };
 
-export function resolveSkillsCli(): SkillsCliLocation {
+function resolveSkillsCli(): SkillsCliLocation {
   try {
     const manifestPath = require.resolve("skills/package.json");
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
@@ -25,19 +26,13 @@ export function resolveSkillsCli(): SkillsCliLocation {
 }
 
 export const skillsCliDeps = {
-  locate: (): SkillsCliLocation => resolveSkillsCli(),
+  locate: resolveSkillsCli,
   run: runCommand,
 };
 
 export function runSkillsCli(args: string[], cwd: string): Promise<void> {
   const location = skillsCliDeps.locate();
   if ("missing" in location) return Promise.reject(new Error(location.missing));
-  const js = location.bin.endsWith(".js") || location.bin.endsWith(".mjs");
-  return skillsCliDeps.run(
-    js ? process.execPath : location.bin,
-    js ? [location.bin, ...args] : args,
-    {
-      cwd,
-    },
-  );
+  const [command, commandArgs] = bundledCliCommand(location.bin, args);
+  return skillsCliDeps.run(command, commandArgs, { cwd });
 }

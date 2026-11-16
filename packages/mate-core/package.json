@@ -12,6 +12,7 @@
     "src/",
     "studio-dist/",
     "wrappers/",
+    "tool-manifest.yaml",
     "claude-plugin/",
     "opencode-plugin/",
     "claude-capability-plugins/",

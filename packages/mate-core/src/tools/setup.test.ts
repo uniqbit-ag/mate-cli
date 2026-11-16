@@ -343,6 +343,7 @@ describe("executeSetup", () => {
       expect(runMock.mock.calls.map((call) => [call[0][0], call[1]])).toEqual([
         ["--version", companionRoot],
         ["--version", companionRoot],
+        ["--version", companionRoot],
         ["install", companionRoot],
       ]);
       await expect(fs.access(path.join(workingRepoRoot, TOKENSAVE_STORE_DIR))).rejects.toThrow();
