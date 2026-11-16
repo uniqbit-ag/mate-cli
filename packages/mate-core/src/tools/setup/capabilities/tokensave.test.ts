@@ -90,7 +90,7 @@ describe("tokensavePlugin.apply", () => {
     runMock = mock(() => ({ ok: true, stderr: "", stdout: "" }));
     runCommandMock = mock(async () => {});
     runShellCommandMock = mock(async () => {});
-    rustcVersionMock = mock(() => ({ ok: true, stderr: "", stdout: "rustc 1.91.0" }));
+    rustcVersionMock = mock(() => ({ ok: true, stderr: "", stdout: "rustc 1.95.0" }));
     tokensaveDeps.run = runMock;
     tokensaveDeps.runCommand = runCommandMock;
     tokensaveDeps.runShellCommand = runShellCommandMock;
@@ -405,7 +405,7 @@ describe("tokensavePlugin.apply", () => {
     tokensaveDeps.rustcVersion = () => ({
       ok: true,
       stderr: "",
-      stdout: "rustc 1.90.0 (abc 2026-01-01)",
+      stdout: "rustc 1.94.0 (abc 2026-01-01)",
     });
     tokensaveDeps.isCommandOnPath = (command) => command === "cargo";
     tokensaveDeps.pathValue = () => "/usr/bin";

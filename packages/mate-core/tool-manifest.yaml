@@ -3,7 +3,8 @@
 # images. Every version is exact: no range, channel, or "latest".
 #
 # Entries keep the image inputs' tool format. The images read them through
-# `readImageInputs()`; mate-core reads only `version` through `toolVersion()`.
+# `readImageInputs()`; mate-core reads `version` through `toolVersion()` and
+# TokenSave's `rust_version`.
 # npm tools mate-core depends on also stay exact in its package.json, held
 # equal to this file by `lib/tool-manifest.test.ts`.
 
@@ -57,6 +58,9 @@ tools:
   tokensave:
     detect: tokensave
     version: 7.15.0
+    # `rust-version` of this release's Cargo.toml; setup uses Cargo only at or
+    # above it. Bump with `version`.
+    rust_version: 1.95.0
     source: github_release
     base_url: https://github.com/aovestdipaperino/tokensave/releases/download
     # Prebuilt release binaries, so the image needs no Rust toolchain.

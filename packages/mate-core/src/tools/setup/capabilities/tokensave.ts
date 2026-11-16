@@ -7,7 +7,7 @@ import path from "node:path";
 import { parse as parseJsonc } from "jsonc-parser";
 
 import { isDeclinedByMember, readMemberChoices } from "../../../lib/member-choices";
-import { toolVersion, warnOnVersionDrift } from "../../../lib/tool-manifest";
+import { readToolManifest, toolVersion, warnOnVersionDrift } from "../../../lib/tool-manifest";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import { DEFAULT_SECRET_DENY_PATTERNS, type SecretPolicy } from "../../../runtime/secret-patterns";
 import type { InstallRequirement } from "../install-contract";
@@ -22,7 +22,7 @@ export const TOKENSAVE_STORE_DIR = ".tokensave";
 export const TOKENSAVE_STORE_CONFIG_FILE = "config.json";
 /** The index itself: `tokensave sync` refuses a store without it. */
 const TOKENSAVE_STORE_DATABASE_FILE = "tokensave.db";
-export const TOKENSAVE_MIN_RUST_VERSION = "1.91.0";
+export const TOKENSAVE_MIN_RUST_VERSION = tokensaveMinRustVersion();
 /** Single-graph posture Mate owns in the per-project store config; every other key is left as found. */
 const TOKENSAVE_OWNED_POSTURE = { auto_track: false, suppress_scope_warning: true } as const;
 const TOKENSAVE_BRANCH_META_FILE = "branch-meta.json";
@@ -222,6 +222,14 @@ export async function isTokensaveAgentIntegrated(agent: string): Promise<boolean
     );
   }
   return true;
+}
+
+/** `rust_version` of the pinned TokenSave entry in the tool manifest. */
+function tokensaveMinRustVersion(): string {
+  const value = readToolManifest().tools.tokensave?.rust_version;
+  if (typeof value !== "string")
+    throw new Error("tool manifest names no rust_version for tokensave");
+  return value;
 }
 
 function getCargoRustVersionError(): string | undefined {
