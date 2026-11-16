@@ -67,6 +67,14 @@ describe("the base image's input digest", () => {
     expect(localInputsDigest(root)).not.toBe(before);
   });
 
+  test("changes when the shared tool manifest changes", () => {
+    const manifest = path.join(root, "tool-manifest.yaml");
+    fs.writeFileSync(manifest, "tools: {}\n");
+    const before = localInputsDigest(root, manifest);
+    fs.appendFileSync(manifest, "# changed\n");
+    expect(localInputsDigest(root, manifest)).not.toBe(before);
+  });
+
   test("changes when a lock file is added", () => {
     const before = localInputsDigest(root);
     write("locks/new.lock", "x");

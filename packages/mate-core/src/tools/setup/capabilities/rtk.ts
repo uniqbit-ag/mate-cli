@@ -1,3 +1,6 @@
+import os from "node:os";
+import path from "node:path";
+
 import type { CapabilityPlugin, RuntimeContributionsByRuntime, SetupContext } from "../plugin";
 import type { InstallRequirement } from "../install-contract";
 import {
@@ -26,8 +29,17 @@ const RTK_UNINSTALL_COMMANDS: Record<string, string> = {
   opencode: "rtk init -g --uninstall --opencode",
 };
 
-function defaultIsRtkOnPath(): boolean {
-  return isCommandOnPath("rtk", process.env.PATH ?? "");
+/** Where the pinned installer puts `rtk`; it only prints a PATH hint, so a fresh install may be off PATH. */
+function rtkInstallDir(): string {
+  return process.env.RTK_INSTALL_DIR || path.join(os.homedir(), ".local", "bin");
+}
+
+/** True when `rtk` is on PATH or in its install directory; the latter joins this process's PATH. */
+function locateRtk(installDir: string): boolean {
+  if (isCommandOnPath("rtk", process.env.PATH ?? "")) return true;
+  if (!isCommandOnPath("rtk", installDir)) return false;
+  process.env.PATH = [installDir, process.env.PATH].filter(Boolean).join(path.delimiter);
+  return true;
 }
 
 /** The first `rtk` on PATH, as PATH names it. */
@@ -38,6 +50,8 @@ function defaultRtkBinaryPath(): string | null {
 export type RtkDeps = {
   confirm?: typeof confirm;
   isRtkOnPath?: () => boolean;
+  /** Probed when `rtk` is not on PATH; defaults to the installer's target. */
+  installDir?: string;
   runRtkInstallCmd?: (cmd: string) => Promise<void>;
   runRtkCommandSilently?: (cmd: string) => Promise<void>;
   readMemberChoices?: ReadMemberChoices;
@@ -47,7 +61,7 @@ export type RtkDeps = {
 
 export function createRtkPlugin(deps: RtkDeps = {}): CapabilityPlugin {
   const askConfirm = deps.confirm ?? confirm;
-  const checkRtkPath = deps.isRtkOnPath ?? defaultIsRtkOnPath;
+  const checkRtkPath = deps.isRtkOnPath ?? (() => locateRtk(deps.installDir ?? rtkInstallDir()));
   const runRtkInstall = deps.runRtkInstallCmd ?? runShellCommand;
   const runSilently = deps.runRtkCommandSilently ?? runShellCommandSilently;
   const checkRtkVersion = async (): Promise<void> => {

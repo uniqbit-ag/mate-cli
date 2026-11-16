@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 import type { SetupContext } from "../plugin";
 import { createRtkPlugin } from "./rtk";
@@ -121,6 +124,24 @@ describe("createRtkPlugin", () => {
       expect(runRtkMock).not.toHaveBeenCalled();
     });
   }
+});
+
+describe("RTK install requirement", () => {
+  test("verifies a fresh install in the installer's directory when PATH lacks it", async () => {
+    const installDir = fs.mkdtempSync(path.join(os.tmpdir(), "mate-rtk-"));
+    process.env.PATH = fs.mkdtempSync(path.join(os.tmpdir(), "mate-empty-path-"));
+    const [requirement] = createRtkPlugin({
+      installDir,
+      runRtkInstallCmd: async () => {
+        fs.writeFileSync(path.join(installDir, "rtk"), "#!/bin/sh\n", { mode: 0o755 });
+      },
+    }).getInstallRequirements!({ config: {} });
+
+    expect(await requirement!.detect()).toBe(false);
+    await requirement!.install();
+    expect(await requirement!.verify!()).toBe(true);
+    expect(process.env.PATH!.split(path.delimiter)[0]).toBe(installDir);
+  });
 });
 
 describe("RTK version check", () => {
