@@ -14,6 +14,7 @@ function makeCtx(
   return {
     companionPath: "/tmp/acme-companion",
     activeProviders: ["claude", "opencode"],
+    scope: "companion",
     mode: "sync",
     config: { allowedAgents: ["claude", "opencode"], capabilities },
   };

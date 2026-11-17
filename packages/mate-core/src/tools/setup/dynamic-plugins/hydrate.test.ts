@@ -32,7 +32,7 @@ const PACKAGE = "@acme/custom-plugin";
 const VERSION = "1.2.0";
 
 const fakeHost: PluginHost = {
-  apiVersion: 1,
+  apiVersion: 2,
   distribution: { name: "acme-mate", version: "0.0.1" },
   ensureCapabilityEnabled: async () => true,
 };
@@ -47,8 +47,7 @@ export default function createPlugin(config, host) {
     defaultSelected: false,
     isEnabled: (frameworkConfig) =>
       (frameworkConfig.capabilities ?? []).some((capability) => capability.name === "acme-custom"),
-    apply: async () => {},
-    teardown: async () => {},
+    lifecycle: { companion: { apply: async () => {}, teardown: async () => {} } },
     cliCommands: [{ name: "hello", description: "say hello", run: async () => {} }],
   };
 }
@@ -74,7 +73,13 @@ async function writeCompanion(options: {
     await fs.mkdir(root, { recursive: true });
     await fs.writeFile(
       path.join(root, "package.json"),
-      JSON.stringify({ name: PACKAGE, version: VERSION, type: "module", main: "index.js" }),
+      JSON.stringify({
+        name: PACKAGE,
+        version: VERSION,
+        type: "module",
+        main: "index.js",
+        mate: { pluginApiVersion: 2 },
+      }),
       "utf8",
     );
     await fs.writeFile(path.join(root, "index.js"), options.source ?? FACTORY_SOURCE, "utf8");
@@ -117,8 +122,9 @@ export default function createPlugin() {
     description = "class plugin";
     defaultSelected = false;
     isEnabled() { return false; }
-    async apply() {}
-    async teardown() {}
+    get lifecycle() {
+      return { companion: { async apply() {}, async teardown() {} } };
+    }
   }
   return new AcmePlugin();
 }
@@ -137,8 +143,8 @@ export default function createPlugin() {
     expect(warnings).toEqual([]);
     const plugin = registry.getAll()[0];
     expect(plugin.isEnabled({ allowedAgents: [], capabilities: [] })).toBe(true);
-    expect(typeof plugin.apply).toBe("function");
-    expect(typeof plugin.teardown).toBe("function");
+    expect(typeof plugin.lifecycle.companion!.apply).toBe("function");
+    expect(typeof plugin.lifecycle.companion!.teardown).toBe("function");
   });
 
   test("honors an explicit default policy", async () => {
@@ -237,8 +243,7 @@ export default function createPlugin() {
       description: "compiled-in plugin owning the namespace",
       defaultSelected: false,
       isEnabled: () => true,
-      apply: async () => {},
-      teardown: async () => {},
+      lifecycle: { companion: { async apply() {}, async teardown() {} } },
       cliCommands: [{ name: "hello", description: "built-in hello", run: async () => {} }],
     };
     const registry = makeRegistry([builtin]);

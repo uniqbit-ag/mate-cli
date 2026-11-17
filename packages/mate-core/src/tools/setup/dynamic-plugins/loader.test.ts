@@ -34,8 +34,7 @@ export default function createPlugin(config, host) {
     defaultSelected: false,
     isEnabled: (frameworkConfig) =>
       (frameworkConfig.capabilities ?? []).some((capability) => capability.name === "acme-custom"),
-    apply: async () => {},
-    teardown: async () => {},
+    lifecycle: { companion: { apply: async () => {}, teardown: async () => {} } },
     cliCommands: [
       { name: "hello", description: "say hello", run: async () => {} },
     ],
@@ -65,7 +64,7 @@ async function writeInstalledPlugin(
       version: options.version ?? "1.2.0",
       type: "module",
       ...(options.entryField ?? { main: "index.js" }),
-      ...(options.manifestExtra ?? {}),
+      ...(options.manifestExtra ?? { mate: { pluginApiVersion: 2 } }),
     }),
     "utf8",
   );
@@ -79,7 +78,7 @@ const declaration = (overrides: Partial<PluginDeclaration> = {}): PluginDeclarat
 });
 
 const fakeHost: PluginHost = {
-  apiVersion: 1,
+  apiVersion: 2,
   distribution: { name: "acme-mate", version: "0.0.1" },
   ensureCapabilityEnabled: async () => true,
 };
@@ -107,7 +106,7 @@ describe("loadDynamicPlugin", () => {
   test("accepts a named createPlugin export when no default function exists", async () => {
     const companionPath = await makeTempDir("plugin-load-named-");
     await writeInstalledPlugin(companionPath, {
-      source: `export function createPlugin() { return { id: "acme-custom", kind: "capability", label: "x", description: "x", defaultSelected: false, isEnabled: () => false, apply: async () => {}, teardown: async () => {} }; }`,
+      source: `export function createPlugin() { return { id: "acme-custom", kind: "capability", label: "x", description: "x", defaultSelected: false, isEnabled: () => false, lifecycle: { companion: { apply: async () => {}, teardown: async () => {} } } }; }`,
     });
 
     const result = await loadDynamicPlugin(companionPath, declaration(), { host: fakeHost });
@@ -133,14 +132,78 @@ describe("loadDynamicPlugin", () => {
     const result = await loadDynamicPlugin(companionPath, declaration(), { host: fakeHost });
     if (result.ok) throw new Error("expected refusal");
     expect(result.warning).toContain("99");
-    expect(result.warning).toContain("1");
+    expect(result.warning).toContain("supports: 2");
   });
 
-  test("missing pluginApiVersion defaults to 1 and loads", async () => {
-    const companionPath = await makeTempDir("plugin-load-apidefault-");
-    await writeInstalledPlugin(companionPath);
+  for (const [label, manifestExtra, warning] of [
+    [
+      "declared API v1",
+      { mate: { pluginApiVersion: 1 } },
+      `plugin "${PACKAGE}" requires plugin API version 1; this CLI supports: 2.`,
+    ],
+    [
+      "no declared API version",
+      {},
+      `plugin "${PACKAGE}" declares no mate.pluginApiVersion, so it requires plugin API version 1; this CLI supports: 2.`,
+    ],
+    [
+      "a non-number API version",
+      { mate: { pluginApiVersion: "2" } },
+      `plugin "${PACKAGE}" declares an invalid mate.pluginApiVersion ("2"); expected a number, this CLI supports: 2.`,
+    ],
+  ] as const) {
+    test(`${label} is refused before import`, async () => {
+      const companionPath = await makeTempDir("plugin-load-apiv1-");
+      await writeInstalledPlugin(companionPath, {
+        manifestExtra,
+        source: `throw new Error("must never execute");`,
+      });
+
+      const result = await loadDynamicPlugin(companionPath, declaration(), { host: fakeHost });
+      if (result.ok) throw new Error("expected refusal");
+      expect(result.warning).toBe(warning);
+    });
+  }
+
+  const pluginSource = (members: string) =>
+    `export default () => ({ id: "acme-custom", kind: "capability", label: "x", description: "x", defaultSelected: false, isEnabled: () => false, ${members} });`;
+
+  for (const [label, members, reason] of [
+    [
+      "without a lifecycle record",
+      "apply: async () => {}, teardown: async () => {}",
+      "missing lifecycle record",
+    ],
+    [
+      "with a declared scope that lacks teardown",
+      "lifecycle: { hub: { apply: async () => {} } }",
+      "lifecycle.hub needs apply and teardown functions",
+    ],
+    ["whose lifecycle getter throws", `get lifecycle() { throw new Error("boom"); }`, "boom"],
+  ] as const) {
+    test(`v2 plugin ${label} is refused`, async () => {
+      const companionPath = await makeTempDir("plugin-load-badlifecycle-");
+      await writeInstalledPlugin(companionPath, { source: pluginSource(members) });
+
+      const result = await loadDynamicPlugin(companionPath, declaration(), { host: fakeHost });
+      if (result.ok) throw new Error("expected refusal");
+      expect(result.warning).toContain(PACKAGE);
+      expect(result.warning).toContain(reason);
+    });
+  }
+
+  test("half-migrated v2 plugin loads with a warning per leftover", async () => {
+    const companionPath = await makeTempDir("plugin-load-halfmigrated-");
+    await writeInstalledPlugin(companionPath, {
+      source: pluginSource("lifecycle: { companian: {} }, applyHub: async () => {}"),
+    });
+
     const result = await loadDynamicPlugin(companionPath, declaration(), { host: fakeHost });
-    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.warning);
+    expect(result.warnings).toEqual([
+      `plugin "${PACKAGE}" declares unknown lifecycle scope "companian"; known scopes: companion, hub.`,
+      `plugin "${PACKAGE}" declares applyHub, which plugin API version 2 ignores; move the handlers into lifecycle.`,
+    ]);
   });
 
   test("import errors are isolated into a warning", async () => {
@@ -210,6 +273,7 @@ describe("loadDynamicPlugin", () => {
         version: "1.2.0",
         type: "module",
         main: "does-not-exist.js",
+        mate: { pluginApiVersion: 2 },
       }),
       "utf8",
     );

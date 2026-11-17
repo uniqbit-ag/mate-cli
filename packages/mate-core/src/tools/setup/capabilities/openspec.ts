@@ -467,25 +467,29 @@ export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityP
       ...(isOpenSpecEnabled(ctx.config) ? skillIgnoreEntries(MATE_SKILLS) : []),
     ],
     persistGitignoreEntries: true,
-    async apply(ctx) {
-      // OpenSpec output is committed in the companion, so only setup and
-      // `mate companion update` touch it; a launch must leave it alone.
-      if (ctx.mode === "setup" || ctx.regenerateOpenSpec === true) {
-        await initializeOpenSpec(ctx, depsWithDefaults.runOpenSpec);
-      } else {
-        const location = depsWithDefaults.locateOpenSpec();
-        if ("missing" in location) process.stderr.write(`openspec: ${location.missing}\n`);
-      }
-      await applyMateOpenspecSkills(ctx);
-      await removeLegacyOpenCodeCopies(ctx.companionPath, ctx.managedOutput);
-      await reconcileOpenSpecSchema(ctx);
-    },
-    async teardown(ctx) {
-      await teardownClaudeSkillRoot(ctx.companionPath, ctx.managedOutput);
-      await teardownSharedSkillRoot(ctx.companionPath, ctx.managedOutput);
-      await removeLegacyOpenCodeCopies(ctx.companionPath, ctx.managedOutput);
-      await removeGeneratedOpenSpecOutput(ctx.companionPath, ctx.managedOutput);
-      await teardownOpenSpecSchema(ctx.companionPath);
+    lifecycle: {
+      companion: {
+        async apply(ctx) {
+          // OpenSpec output is committed in the companion, so only setup and
+          // `mate companion update` touch it; a launch must leave it alone.
+          if (ctx.mode === "setup" || ctx.regenerateOpenSpec === true) {
+            await initializeOpenSpec(ctx, depsWithDefaults.runOpenSpec);
+          } else {
+            const location = depsWithDefaults.locateOpenSpec();
+            if ("missing" in location) process.stderr.write(`openspec: ${location.missing}\n`);
+          }
+          await applyMateOpenspecSkills(ctx);
+          await removeLegacyOpenCodeCopies(ctx.companionPath, ctx.managedOutput);
+          await reconcileOpenSpecSchema(ctx);
+        },
+        async teardown(ctx) {
+          await teardownClaudeSkillRoot(ctx.companionPath, ctx.managedOutput);
+          await teardownSharedSkillRoot(ctx.companionPath, ctx.managedOutput);
+          await removeLegacyOpenCodeCopies(ctx.companionPath, ctx.managedOutput);
+          await removeGeneratedOpenSpecOutput(ctx.companionPath, ctx.managedOutput);
+          await teardownOpenSpecSchema(ctx.companionPath);
+        },
+      },
     },
     forProvider: {
       claude: {

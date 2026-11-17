@@ -51,7 +51,7 @@ export async function makeStagingFixture(
     isCommandOnPath: (command: string) => command === "openspec",
     getInstalledVersion: async () => undefined,
   });
-  await plugin.apply({
+  await plugin.lifecycle.companion!.apply({
     companionPath: seed,
     activeProviders: [],
     mode: "sync",

@@ -37,10 +37,14 @@ function fakeProvider(id: string, log: string[]): ProviderPlugin {
     description: id,
     defaultSelected: true,
     isEnabled: () => true,
-    async apply() {
-      log.push(`provider:${id}`);
+    lifecycle: {
+      companion: {
+        async apply() {
+          log.push(`provider:${id}`);
+        },
+        async teardown() {},
+      },
     },
-    async teardown() {},
   };
 }
 
@@ -52,8 +56,7 @@ function declaringCapability(log: string[], enabled: boolean): CapabilityPlugin 
     description: "declares contributions",
     defaultSelected: false,
     isEnabled: () => enabled,
-    async apply() {},
-    async teardown() {},
+    lifecycle: { companion: { async apply() {}, async teardown() {} } },
     getRuntimeContributions() {
       log.push("collect:acme");
       return {
@@ -83,6 +86,7 @@ async function runPlan(companionPath: string, plugins: (ProviderPlugin | Capabil
     config,
     mode: "setup",
     activeProviders: plan.activeProviders,
+    scope: "companion",
   };
   return executeSetupInstallationPlan(ctx, plugins, plan);
 }
@@ -105,8 +109,7 @@ async function pluginFolderCapability(
       description: "ships a Claude plugin folder",
       defaultSelected: false,
       isEnabled: () => enabled,
-      async apply() {},
-      async teardown() {},
+      lifecycle: { companion: { async apply() {}, async teardown() {} } },
       getRuntimeContributions: () => ({ claude: { pluginDirectories: [{ path: folder }] } }),
     },
   };
@@ -330,7 +333,13 @@ describe("engine contribution reconciliation", () => {
       const errors: [string, unknown][] = [];
 
       const inputs = await collectRuntimeContributionInputs(
-        { companionPath, config, mode: "setup", activeProviders: plan.activeProviders },
+        {
+          companionPath,
+          config,
+          mode: "setup",
+          activeProviders: plan.activeProviders,
+          scope: "companion",
+        },
         plugins,
         plan,
         (capabilityId, error) => errors.push([capabilityId, error]),

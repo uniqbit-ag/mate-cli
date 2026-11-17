@@ -1,7 +1,17 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import { describe, expect, mock, test } from "bun:test";
 
 import { buildSetupInstallationPlan, executeSetupInstallationPlan } from "./engine";
-import type { CapabilityPlugin, Plugin, SetupContext } from "./plugin";
+import type {
+  CapabilityPlugin,
+  Plugin,
+  PluginLifecycle,
+  ProviderPlugin,
+  SetupContext,
+} from "./plugin";
 
 function makeCtx(
   config: SetupContext["config"],
@@ -12,10 +22,19 @@ function makeCtx(
     config,
     mode,
     activeProviders: [],
+    scope: "companion",
   };
 }
 
-function makePlugin(id: string, kind: Plugin["kind"], enabled = true): Plugin {
+function makeLifecycle(overrides: Partial<PluginLifecycle> = {}): PluginLifecycle {
+  return { apply: async () => {}, teardown: async () => {}, ...overrides };
+}
+
+function makePlugin<K extends Plugin["kind"]>(
+  id: string,
+  kind: K,
+  enabled = true,
+): Plugin & { kind: K } {
   return {
     id,
     kind,
@@ -23,8 +42,7 @@ function makePlugin(id: string, kind: Plugin["kind"], enabled = true): Plugin {
     description: "",
     defaultSelected: false,
     isEnabled: () => enabled,
-    async apply() {},
-    async teardown() {},
+    lifecycle: { companion: makeLifecycle() },
   };
 }
 
@@ -76,6 +94,7 @@ describe("setup engine", () => {
       config: { allowedAgents: ["claude"] },
       mode: "setup",
       activeProviders: ["claude"],
+      scope: "companion",
     };
 
     const stderrChunks: string[] = [];
@@ -123,8 +142,12 @@ describe("setup engine", () => {
     const child = `${hub}/companions/acme`;
     const rootPlugin: Plugin = {
       ...makePlugin("root", "root"),
-      async apply(ctx) {
-        appliedPaths.push(ctx.companionPath);
+      lifecycle: {
+        companion: makeLifecycle({
+          async apply(ctx) {
+            appliedPaths.push(ctx.companionPath);
+          },
+        }),
       },
     };
     const config = {
@@ -152,13 +175,15 @@ describe("setup engine", () => {
     expect(appliedPaths).not.toContain(child);
   });
 
-  test("hub-scope apply action calls applyHub, not apply", async () => {
+  test("hub-scope apply action calls lifecycle.hub, not lifecycle.companion", async () => {
     const applyMock = mock(async () => {});
     const applyHubMock = mock(async () => {});
     const capability: CapabilityPlugin = {
       ...makePlugin("hub-cap", "capability"),
-      apply: applyMock,
-      applyHub: applyHubMock,
+      lifecycle: {
+        companion: makeLifecycle({ apply: applyMock }),
+        hub: makeLifecycle({ apply: applyHubMock }),
+      },
     };
     const config = { allowedAgents: [] };
     const ctx: SetupContext = { ...makeCtx(config), scope: "hub" };
@@ -173,13 +198,15 @@ describe("setup engine", () => {
     );
   });
 
-  test("hub-scope teardown action calls teardownHub, not teardown", async () => {
+  test("hub-scope teardown action calls lifecycle.hub, not lifecycle.companion", async () => {
     const teardownMock = mock(async () => {});
     const teardownHubMock = mock(async () => {});
     const capability: CapabilityPlugin = {
       ...makePlugin("hub-cap", "capability", false),
-      teardown: teardownMock,
-      teardownHub: teardownHubMock,
+      lifecycle: {
+        companion: makeLifecycle({ teardown: teardownMock }),
+        hub: makeLifecycle({ teardown: teardownHubMock }),
+      },
     };
     const config = { allowedAgents: [] };
     const ctx: SetupContext = { ...makeCtx(config), scope: "hub" };
@@ -191,13 +218,12 @@ describe("setup engine", () => {
     expect(teardownMock).not.toHaveBeenCalled();
   });
 
-  test("hub-scope action for a capability declaring neither hook calls nothing", async () => {
+  test("hub-scope action for a capability without lifecycle.hub calls nothing", async () => {
     const applyMock = mock(async () => {});
     const teardownMock = mock(async () => {});
     const capability: CapabilityPlugin = {
       ...makePlugin("hub-cap", "capability"),
-      apply: applyMock,
-      teardown: teardownMock,
+      lifecycle: { companion: { apply: applyMock, teardown: teardownMock } },
     };
     const config = { allowedAgents: [] };
     const ctx: SetupContext = { ...makeCtx(config), scope: "hub" };
@@ -210,13 +236,15 @@ describe("setup engine", () => {
     expect(outcome.executedActions).toEqual([]);
   });
 
-  test("companion-scope dispatch never calls applyHub/teardownHub", async () => {
+  test("companion-scope dispatch never calls lifecycle.hub", async () => {
     const applyMock = mock(async () => {});
     const applyHubMock = mock(async () => {});
     const capability: CapabilityPlugin = {
       ...makePlugin("hub-cap", "capability"),
-      apply: applyMock,
-      applyHub: applyHubMock,
+      lifecycle: {
+        companion: makeLifecycle({ apply: applyMock }),
+        hub: makeLifecycle({ apply: applyHubMock }),
+      },
     };
     const config = { allowedAgents: [] };
     const ctx = makeCtx(config);
@@ -228,12 +256,12 @@ describe("setup engine", () => {
     expect(applyHubMock).not.toHaveBeenCalled();
   });
 
-  test("forProvider action stays skipped in hub scope even when the capability declares applyHub", async () => {
+  test("forProvider action stays skipped in hub scope even when the capability declares lifecycle.hub", async () => {
     const providerApplyMock = mock(async () => {});
     const applyHubMock = mock(async () => {});
     const capability: CapabilityPlugin = {
       ...makePlugin("hub-cap", "capability"),
-      applyHub: applyHubMock,
+      lifecycle: { hub: makeLifecycle({ apply: applyHubMock }) },
       forProvider: {
         claude: {
           apply: providerApplyMock,
@@ -241,7 +269,10 @@ describe("setup engine", () => {
         },
       },
     };
-    const provider = { ...makePlugin("claude", "provider"), isEnabled: () => true };
+    const provider: Plugin = {
+      ...makePlugin("claude", "provider"),
+      lifecycle: { hub: makeLifecycle() },
+    };
     const config = { allowedAgents: ["claude"] };
     const ctx: SetupContext = { ...makeCtx(config), scope: "hub", activeProviders: ["claude"] };
 
@@ -250,6 +281,65 @@ describe("setup engine", () => {
 
     expect(providerApplyMock).not.toHaveBeenCalled();
     expect(applyHubMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("hub scope applies a root plugin only through lifecycle.hub", async () => {
+    const hubApplyMock = mock(async () => {});
+    const companionOnlyApplyMock = mock(async () => {});
+    const hubRoot: Plugin = {
+      ...makePlugin("hub-root", "root"),
+      lifecycle: { hub: makeLifecycle({ apply: hubApplyMock }) },
+    };
+    const companionRoot: Plugin = {
+      ...makePlugin("companion-root", "root"),
+      lifecycle: { companion: makeLifecycle({ apply: companionOnlyApplyMock }) },
+    };
+    const config = { allowedAgents: [] };
+    const ctx: SetupContext = { ...makeCtx(config), scope: "hub" };
+
+    const plan = buildSetupInstallationPlan(config, [hubRoot, companionRoot]);
+    await executeSetupInstallationPlan(ctx, [hubRoot, companionRoot], plan);
+
+    expect(hubApplyMock).toHaveBeenCalledTimes(1);
+    expect(companionOnlyApplyMock).not.toHaveBeenCalled();
+  });
+
+  test("companion scope removes MCP servers of a plugin that no longer declares lifecycle.companion", async () => {
+    const companionPath = await fs.mkdtemp(path.join(os.tmpdir(), "mate-engine-mcp-"));
+    try {
+      const unregister = mock(async (_ctx: SetupContext, _name: string) => {});
+      const provider: ProviderPlugin = {
+        ...makePlugin("claude", "provider"),
+        hosting: { mcp: { register: async () => {}, unregister } },
+      };
+      const registering: CapabilityPlugin = {
+        ...makePlugin("acme", "capability"),
+        lifecycle: {
+          companion: makeLifecycle({
+            async apply(ctx) {
+              await ctx.mcp?.register({ name: "acme", command: "acme" });
+            },
+          }),
+        },
+      };
+      const withoutCompanion: CapabilityPlugin = { ...registering, lifecycle: {} };
+      const config = { allowedAgents: ["claude"] };
+      const ctx: SetupContext = { ...makeCtx(config), companionPath, activeProviders: ["claude"] };
+
+      for (const capability of [registering, withoutCompanion]) {
+        const plugins = [provider, capability];
+        await executeSetupInstallationPlan(
+          ctx,
+          plugins,
+          buildSetupInstallationPlan(config, plugins),
+        );
+      }
+
+      expect(unregister).toHaveBeenCalledTimes(1);
+      expect(unregister.mock.calls[0]?.[1]).toBe("acme");
+    } finally {
+      await fs.rm(companionPath, { recursive: true, force: true });
+    }
   });
 });
 
@@ -261,8 +351,7 @@ describe("registration policy enforcement", () => {
     const teardownMock = mock(async () => {});
     const capability: Plugin = {
       ...makePlugin("locked-cap", "capability", false),
-      apply: applyMock,
-      teardown: teardownMock,
+      lifecycle: { companion: { apply: applyMock, teardown: teardownMock } },
     };
     const entries = [{ plugin: capability, policy: "required" as const }];
 
@@ -277,7 +366,7 @@ describe("registration policy enforcement", () => {
     const applyMock = mock(async () => {});
     const capability: Plugin = {
       ...makePlugin("locked-cap", "capability", false),
-      apply: applyMock,
+      lifecycle: { companion: makeLifecycle({ apply: applyMock }) },
     };
     const entries = [{ plugin: capability, policy: "required" as const }];
 
@@ -291,7 +380,7 @@ describe("registration policy enforcement", () => {
     const teardownMock = mock(async () => {});
     const capability: Plugin = {
       ...makePlugin("opt-cap", "capability", false),
-      teardown: teardownMock,
+      lifecycle: { companion: makeLifecycle({ teardown: teardownMock }) },
     };
     const entries = [{ plugin: capability, policy: "optional" as const }];
 

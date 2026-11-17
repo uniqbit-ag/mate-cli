@@ -903,6 +903,10 @@ export async function removeClaudeHookGroupsWhere(
   await writeClaudeSettings(settingsLocalPath, settings);
 }
 
+async function teardownClaudeProvider(ctx: SetupContext): Promise<void> {
+  await teardownClaude(ctx.companionPath, ctx.config.allowedAgents ?? []);
+}
+
 export function createClaudePlugin(): ProviderPlugin {
   return {
     id: "claude",
@@ -933,18 +937,22 @@ export function createClaudePlugin(): ProviderPlugin {
         getFilePath: (ctx: SetupContext) => path.join(ctx.companionPath, "CLAUDE.md"),
       },
     },
-    async apply(ctx) {
-      if (ctx.scope === "hub") {
-        await syncCompanionClaudeSettings(ctx.companionPath, ctx.config);
-        return;
-      }
-      await configureClaude(ctx.companionPath);
-      await configureClaudeGuidance(ctx.companionPath);
-      await teardownLegacyClaudeBin(ctx.companionPath);
-      await syncCompanionClaudeSettings(ctx.companionPath, ctx.config);
-    },
-    async teardown(ctx) {
-      await teardownClaude(ctx.companionPath, ctx.config.allowedAgents ?? []);
+    lifecycle: {
+      companion: {
+        async apply(ctx) {
+          await configureClaude(ctx.companionPath);
+          await configureClaudeGuidance(ctx.companionPath);
+          await teardownLegacyClaudeBin(ctx.companionPath);
+          await syncCompanionClaudeSettings(ctx.companionPath, ctx.config);
+        },
+        teardown: teardownClaudeProvider,
+      },
+      hub: {
+        async apply(ctx) {
+          await syncCompanionClaudeSettings(ctx.companionPath, ctx.config);
+        },
+        teardown: teardownClaudeProvider,
+      },
     },
   };
 }

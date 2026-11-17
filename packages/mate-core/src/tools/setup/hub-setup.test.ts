@@ -38,10 +38,14 @@ describe("hub setup scope", () => {
       description: "hub MCP fixture",
       defaultSelected: false,
       isEnabled: () => true,
-      apply: async () => {
-        capabilityApplied = true;
+      lifecycle: {
+        companion: {
+          apply: async () => {
+            capabilityApplied = true;
+          },
+          teardown: async () => {},
+        },
       },
-      teardown: async () => {},
       getRuntimeContributions: (_ctx: SetupContext) => ({
         claude: { mcpServers: [{ name: "acme", command: "acme", args: ["serve"] }] },
         opencode: { mcpServers: [{ name: "acme", command: "acme", args: ["serve"] }] },
@@ -104,8 +108,7 @@ describe("hub setup scope", () => {
       description: "hub agent-definition fixture",
       defaultSelected: false,
       isEnabled: () => true,
-      apply: async () => {},
-      teardown: async () => {},
+      lifecycle: { companion: { async apply() {}, async teardown() {} } },
       getRuntimeContributions: (_ctx: SetupContext) => ({
         claude: {
           agentDefinitions: [{ name: "acme", content: "---\nname: acme\n---\nAcme agent body.\n" }],
@@ -166,5 +169,41 @@ describe("hub setup scope", () => {
 
     await expect(fs.access(path.join(hubPath, ".claude", "agents", "acme.md"))).rejects.toThrow();
     await expect(fs.access(path.join(hubPath, ".opencode", "agents", "acme.md"))).rejects.toThrow();
+  });
+
+  test("tears down a disabled provider through its hub lifecycle", async () => {
+    const hubPath = await makeTempDir();
+    const registry = new PluginRegistry([createClaudePlugin(), createOpenCodePlugin()]);
+    setActiveDistribution({ config: { runtime: "bun", version: "test" }, registry });
+    const registrations = registry.getEntries();
+    const run = async (allowedAgents: string[]) => {
+      const config: FrameworkConfig = {
+        type: "hub",
+        allowedAgents,
+        packageManagers: [],
+        capabilities: [],
+      };
+      const plan = buildSetupInstallationPlan(config, registrations);
+      await executeSetupInstallationPlan(
+        {
+          companionPath: hubPath,
+          config,
+          mode: "setup",
+          activeProviders: plan.activeProviders,
+          scope: "hub",
+        },
+        registrations,
+        plan,
+      );
+    };
+
+    await run(["claude", "opencode"]);
+    await fs.access(path.join(hubPath, ".claude", "settings.local.json"));
+    // OpenCode's hub apply writes nothing; its teardown prunes empty runtime folders.
+    await fs.mkdir(path.join(hubPath, ".opencode", "skills"), { recursive: true });
+
+    await run([]);
+    await expect(fs.access(path.join(hubPath, ".claude", "settings.local.json"))).rejects.toThrow();
+    await expect(fs.access(path.join(hubPath, ".opencode"))).rejects.toThrow();
   });
 });

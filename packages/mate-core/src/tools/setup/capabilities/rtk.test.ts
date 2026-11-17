@@ -16,6 +16,7 @@ function makeCtx(mode: "setup" | "sync" = "setup"): SetupContext {
   return {
     companionPath: "/tmp/companion",
     activeProviders: [],
+    scope: "companion",
     mode,
     config: {
       allowedAgents: [],
@@ -36,7 +37,7 @@ describe("createRtkPlugin", () => {
       readMemberChoices: async () => ({ rtk: "declined" }),
     });
 
-    await plugin.apply(makeCtx());
+    await plugin.lifecycle.companion!.apply(makeCtx());
 
     expect(confirmMock).not.toHaveBeenCalled();
     expect(runInstall).not.toHaveBeenCalled();
@@ -52,7 +53,7 @@ describe("createRtkPlugin", () => {
         isBrewAvailable: () => true,
       });
 
-      await plugin.apply(makeCtx());
+      await plugin.lifecycle.companion!.apply(makeCtx());
 
       expect(stdoutSpy).toHaveBeenCalledWith(
         expect.stringContaining("brew install rtk-ai/tap/rtk"),
@@ -73,7 +74,7 @@ describe("createRtkPlugin", () => {
         isBrewAvailable: () => false,
       });
 
-      await plugin.apply(makeCtx());
+      await plugin.lifecycle.companion!.apply(makeCtx());
 
       expect(stdoutSpy).toHaveBeenCalledWith(
         expect.stringContaining(
@@ -89,7 +90,7 @@ describe("createRtkPlugin", () => {
     const confirmMock = mock(async () => false);
     const plugin = createRtkPlugin({ confirm: confirmMock, isRtkOnPath: () => false });
 
-    await plugin.apply(makeCtx("sync"));
+    await plugin.lifecycle.companion!.apply(makeCtx("sync"));
 
     expect(confirmMock).not.toHaveBeenCalled();
   });

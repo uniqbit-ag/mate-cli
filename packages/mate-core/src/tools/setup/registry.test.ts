@@ -34,8 +34,7 @@ function makePlugin(id: string, kind: Plugin["kind"] = "provider"): Plugin {
     description: "",
     defaultSelected: false,
     isEnabled: () => true,
-    async apply() {},
-    async teardown() {},
+    lifecycle: { companion: { async apply() {}, async teardown() {} } },
   };
 }
 
@@ -143,10 +142,14 @@ describe("SetupContext — activeProviders", () => {
       description: "",
       defaultSelected: false,
       isEnabled: (config) => (config.capabilities ?? []).some((c) => c.name === "spy"),
-      async apply(ctx) {
-        capturedCtx.push(ctx);
+      lifecycle: {
+        companion: {
+          async apply(ctx) {
+            capturedCtx.push(ctx);
+          },
+          async teardown() {},
+        },
       },
-      async teardown() {},
       forProvider: {
         claude: {
           async apply(ctx) {
@@ -252,9 +255,10 @@ describe("GitignorePlugin", () => {
       config: { allowedAgents: [] },
       mode: "setup",
       activeProviders: [],
+      scope: "companion",
     };
 
-    await gitignorePlugin.apply(ctx);
+    await gitignorePlugin.lifecycle.companion!.apply(ctx);
 
     const content = await fs.readFile(path.join(root, ".gitignore"), "utf8");
     expect(content).toContain(".active/");
@@ -277,9 +281,10 @@ describe("GitignorePlugin", () => {
       config: { allowedAgents: [] },
       mode: "sync",
       activeProviders: [],
+      scope: "companion",
     };
 
-    await gitignorePlugin.teardown(ctx);
+    await gitignorePlugin.lifecycle.companion!.teardown(ctx);
 
     const content = await fs.readFile(path.join(root, ".gitignore"), "utf8");
     expect(content).toBe("node_modules/\n");
@@ -303,9 +308,10 @@ describe("GitignorePlugin", () => {
       config: { allowedAgents: [] },
       mode: "sync",
       activeProviders: [],
+      scope: "companion",
     };
 
-    await gitignorePlugin.apply(ctx);
+    await gitignorePlugin.lifecycle.companion!.apply(ctx);
 
     const content = await fs.readFile(path.join(root, ".gitignore"), "utf8");
     expect(content).toContain(".sticky/");
@@ -327,11 +333,12 @@ describe("GitignorePlugin", () => {
       config: { allowedAgents: [] },
       mode: "sync",
       activeProviders: [],
+      scope: "companion",
     };
 
-    await gitignorePlugin.apply(ctx);
+    await gitignorePlugin.lifecycle.companion!.apply(ctx);
     const first = await fs.readFile(path.join(root, ".gitignore"), "utf8");
-    await gitignorePlugin.apply(ctx);
+    await gitignorePlugin.lifecycle.companion!.apply(ctx);
     const second = await fs.readFile(path.join(root, ".gitignore"), "utf8");
 
     expect(first).toBe(second);
@@ -351,8 +358,7 @@ describe("engine forProvider cross-cutting", () => {
       description: "",
       defaultSelected: false,
       isEnabled: (config) => (config.capabilities ?? []).some((c) => c.name === "spy"),
-      async apply() {},
-      async teardown() {},
+      lifecycle: { companion: { async apply() {}, async teardown() {} } },
       forProvider: {
         claude: {
           apply: applyMock,
@@ -387,8 +393,7 @@ describe("engine forProvider cross-cutting", () => {
       description: "",
       defaultSelected: false,
       isEnabled: (config) => (config.capabilities ?? []).some((c) => c.name === "spy"),
-      async apply() {},
-      async teardown() {},
+      lifecycle: { companion: { async apply() {}, async teardown() {} } },
       forProvider: {
         claude: {
           apply: applyMock,
@@ -433,8 +438,7 @@ describe("engine forProvider cross-cutting", () => {
       description: "",
       defaultSelected: false,
       isEnabled: (config) => (config.capabilities ?? []).some((c) => c.name === "spy"),
-      async apply() {},
-      async teardown() {},
+      lifecycle: { companion: { async apply() {}, async teardown() {} } },
       forProvider: {
         opencode: {
           apply: applyMock,

@@ -46,6 +46,7 @@ async function makeContext(): Promise<SetupContext> {
     companionPath,
     mode: "sync",
     activeProviders: ["claude", "opencode"],
+    scope: "companion",
     config: {
       allowedAgents: ["claude", "opencode"],
       capabilities: [{ name: "context-mode" }],
@@ -79,8 +80,8 @@ describe("createContextModePlugin", () => {
       readMemberChoices: async () => ({ "context-mode": "accepted" }),
     });
 
-    await plugin.apply({ ...ctx, mode: "setup" });
-    await plugin.apply(ctx);
+    await plugin.lifecycle.companion!.apply({ ...ctx, mode: "setup" });
+    await plugin.lifecycle.companion!.apply(ctx);
 
     expect(installPackage).toHaveBeenCalledTimes(1);
     expect(validatePackage).toHaveBeenCalledTimes(1);
@@ -97,7 +98,7 @@ describe("createContextModePlugin", () => {
         readMemberChoices: async () => (choice ? { "context-mode": choice } : {}),
       });
 
-      await plugin.apply(ctx);
+      await plugin.lifecycle.companion!.apply(ctx);
       const claude = (await plugin.getRuntimeContributions!(ctx)).claude!;
       const problems = await plugin.forProvider!.claude!.preflight!({
         companionPath: ctx.companionPath,
@@ -122,7 +123,7 @@ describe("createContextModePlugin", () => {
       readMemberChoices: async () => ({ "context-mode": "declined" }),
     });
 
-    await plugin.apply({ ...ctx, mode: "setup" });
+    await plugin.lifecycle.companion!.apply({ ...ctx, mode: "setup" });
 
     expect(installPackage).not.toHaveBeenCalled();
     expect(validatePackage).not.toHaveBeenCalled();
@@ -181,7 +182,7 @@ describe("createContextModePlugin", () => {
       validatePackage: async () => {},
     });
 
-    await plugin.apply({ ...ctx, mode: "setup" });
+    await plugin.lifecycle.companion!.apply({ ...ctx, mode: "setup" });
 
     await expect(fs.access(legacyDir)).rejects.toThrow();
     await expect(
@@ -196,7 +197,9 @@ describe("createContextModePlugin", () => {
       validatePackage: async () => {},
     });
 
-    await expect(plugin.apply({ ...ctx, mode: "setup" })).resolves.toBeUndefined();
+    await expect(
+      plugin.lifecycle.companion!.apply({ ...ctx, mode: "setup" }),
+    ).resolves.toBeUndefined();
   });
 
   test("declared reference lands after existing plugins idempotently", async () => {

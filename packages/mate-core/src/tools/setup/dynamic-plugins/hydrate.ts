@@ -109,6 +109,7 @@ export async function hydrateDynamicPlugins(deps: HydrateDynamicPluginsDeps = {}
         warn(result.warning);
         continue;
       }
+      for (const warning of result.warnings) warn(warning);
 
       const namespace = result.plugin.cliNamespace ?? result.plugin.id;
       const holder = registry

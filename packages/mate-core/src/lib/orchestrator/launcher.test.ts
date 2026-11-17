@@ -154,8 +154,7 @@ function makeCapability(
     description: "",
     defaultSelected: false,
     isEnabled: () => options.enabled ?? true,
-    async apply() {},
-    async teardown() {},
+    lifecycle: { companion: { async apply() {}, async teardown() {} } },
     forProvider: {
       [providerId]: {
         async apply() {},

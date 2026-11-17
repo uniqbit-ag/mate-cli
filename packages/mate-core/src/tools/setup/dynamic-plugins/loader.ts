@@ -4,7 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import type { PluginDeclaration } from "../../../lib/orchestrator/types";
-import type { Plugin } from "../plugin";
+import type { Plugin, SetupScope } from "../plugin";
 import { resolveEffectivePluginConfig } from "./config-resolution";
 import {
   createPluginHost,
@@ -19,7 +19,10 @@ interface PluginManifest {
   mate?: { pluginApiVersion?: unknown };
 }
 
-export type DynamicPluginLoadResult = { ok: true; plugin: Plugin } | { ok: false; warning: string };
+/** `warnings` flag a plugin that loads but is likely half-migrated. */
+export type DynamicPluginLoadResult =
+  | { ok: true; plugin: Plugin; warnings: string[] }
+  | { ok: false; warning: string };
 
 export interface DynamicPluginLoadDeps {
   env?: Record<string, string | undefined>;
@@ -62,11 +65,24 @@ export async function loadDynamicPlugin(
   }
 
   // Version negotiation happens before any plugin code executes.
-  const apiVersion = manifest.mate?.pluginApiVersion ?? 1;
-  if (typeof apiVersion !== "number" || !SUPPORTED_PLUGIN_API_VERSIONS.includes(apiVersion)) {
+  const declaredVersion = manifest.mate?.pluginApiVersion;
+  const supported = SUPPORTED_PLUGIN_API_VERSIONS.join(", ");
+  if (declaredVersion === undefined || declaredVersion === null) {
     return {
       ok: false,
-      warning: `plugin "${name}" requires plugin API version ${String(apiVersion)}; this CLI supports: ${SUPPORTED_PLUGIN_API_VERSIONS.join(", ")}.`,
+      warning: `plugin "${name}" declares no mate.pluginApiVersion, so it requires plugin API version 1; this CLI supports: ${supported}.`,
+    };
+  }
+  if (typeof declaredVersion !== "number") {
+    return {
+      ok: false,
+      warning: `plugin "${name}" declares an invalid mate.pluginApiVersion (${JSON.stringify(declaredVersion)}); expected a number, this CLI supports: ${supported}.`,
+    };
+  }
+  if (!SUPPORTED_PLUGIN_API_VERSIONS.includes(declaredVersion)) {
+    return {
+      ok: false,
+      warning: `plugin "${name}" requires plugin API version ${declaredVersion}; this CLI supports: ${supported}.`,
     };
   }
 
@@ -130,11 +146,59 @@ export async function loadDynamicPlugin(
     };
   }
 
+  try {
+    return checkPluginShape(name, plugin);
+  } catch (error) {
+    return {
+      ok: false,
+      warning: `plugin "${name}" returned an invalid plugin object: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+// Exhaustive over SetupScope, so a new scope cannot slip past validation.
+const SETUP_SCOPES: Record<SetupScope, true> = { companion: true, hub: true };
+const V1_MEMBERS = ["apply", "teardown", "applyHub", "teardownHub"];
+
+function checkPluginShape(name: string, plugin: Plugin): DynamicPluginLoadResult {
   if (!isRecord(plugin) || typeof plugin.id !== "string" || plugin.id.length === 0) {
     return {
       ok: false,
       warning: `plugin "${name}" returned an invalid plugin object (missing id).`,
     };
   }
-  return { ok: true, plugin };
+  const lifecycle: unknown = plugin.lifecycle;
+  if (!isRecord(lifecycle)) {
+    return {
+      ok: false,
+      warning: `plugin "${name}" returned an invalid plugin object (missing lifecycle record); plugin API version 2 requires one.`,
+    };
+  }
+  const warnings: string[] = [];
+  for (const [scope, handlers] of Object.entries(lifecycle)) {
+    if (handlers === undefined) continue;
+    if (!Object.hasOwn(SETUP_SCOPES, scope)) {
+      warnings.push(
+        `plugin "${name}" declares unknown lifecycle scope "${scope}"; known scopes: ${Object.keys(SETUP_SCOPES).join(", ")}.`,
+      );
+      continue;
+    }
+    if (
+      !isRecord(handlers) ||
+      typeof handlers.apply !== "function" ||
+      typeof handlers.teardown !== "function"
+    ) {
+      return {
+        ok: false,
+        warning: `plugin "${name}" returned an invalid plugin object (lifecycle.${scope} needs apply and teardown functions).`,
+      };
+    }
+  }
+  const v1Members = V1_MEMBERS.filter((member) => member in plugin);
+  if (v1Members.length > 0) {
+    warnings.push(
+      `plugin "${name}" declares ${v1Members.join(", ")}, which plugin API version 2 ignores; move the handlers into lifecycle.`,
+    );
+  }
+  return { ok: true, plugin, warnings };
 }

@@ -37,6 +37,7 @@ function contextFor(companionPath: string, repoPath?: string): SetupContext {
     config,
     mode: "sync",
     activeProviders: ["claude"],
+    scope: "companion",
     target: "working",
     ...(repoPath ? { repoPath } : {}),
   };
@@ -73,6 +74,7 @@ describe("the projection target", () => {
       config,
       mode: "sync",
       activeProviders: ["claude"],
+      scope: "companion",
     };
 
     expect(projectionTarget(ctx)).toBe("companion");
@@ -102,6 +104,7 @@ describe("the projection target", () => {
       config,
       mode: "sync",
       activeProviders: ["claude"],
+      scope: "companion",
     };
 
     expect(() => projectionRepoRoot(ctx)).toThrow(/needs a Working Repository in scope/);

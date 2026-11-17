@@ -12,8 +12,7 @@ function plugin(id: string, service?: Partial<PluginService>): Plugin {
     description: id,
     defaultSelected: false,
     isEnabled: () => true,
-    async apply() {},
-    async teardown() {},
+    lifecycle: {},
     ...(service ? { service: { apiVersion: 1, id, label: id, ...service } as PluginService } : {}),
   };
 }

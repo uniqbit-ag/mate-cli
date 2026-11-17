@@ -6,7 +6,7 @@
 import type { CapabilityPlugin, Plugin } from "../plugin";
 
 /** Host API version this core constructs. Grows only on breaking changes. */
-export const PLUGIN_API_VERSION = 1;
+export const PLUGIN_API_VERSION = 2;
 
 /**
  * The sole runtime surface a dynamic plugin receives into the running core.

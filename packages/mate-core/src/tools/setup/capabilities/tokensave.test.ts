@@ -40,6 +40,7 @@ function makeCtx(
   return {
     companionPath,
     activeProviders: opts?.providers ?? [],
+    scope: "companion",
     mode: opts?.mode ?? "setup",
     repoPath: opts?.repoPath,
     config: {
@@ -115,7 +116,7 @@ describe("tokensavePlugin.apply", () => {
     const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
     tempRoots.push(companionDir);
     const ctx = makeCtx(companionDir);
-    await tokensavePlugin.apply(ctx);
+    await tokensavePlugin.lifecycle.companion!.apply(ctx);
     expect(runMock).not.toHaveBeenCalled();
   });
 
@@ -125,7 +126,7 @@ describe("tokensavePlugin.apply", () => {
     tempRoots.push(companionDir, repoDir);
 
     const ctx = makeCtx(companionDir, { repoPath: repoDir, providers: ["claude", "opencode"] });
-    await tokensavePlugin.apply(ctx);
+    await tokensavePlugin.lifecycle.companion!.apply(ctx);
 
     const calls = runMock.mock.calls;
     expect(runCommandMock).not.toHaveBeenCalled();
@@ -157,7 +158,7 @@ describe("tokensavePlugin.apply", () => {
     }) as typeof process.stderr.write;
 
     try {
-      await tokensavePlugin.apply(
+      await tokensavePlugin.lifecycle.companion!.apply(
         makeCtx(companionDir, { repoPath: repoDir, providers: ["claude"] }),
       );
     } finally {
@@ -180,7 +181,7 @@ describe("tokensavePlugin.apply", () => {
     tempRoots.push(companionDir, repoDir);
 
     const ctx = makeCtx(companionDir, { repoPath: repoDir, providers: ["opencode", "claude"] });
-    await tokensavePlugin.apply(ctx);
+    await tokensavePlugin.lifecycle.companion!.apply(ctx);
 
     const installCalls = runMock.mock.calls.filter((c) => c[0][0] === "install");
     expect(installCalls.map((c) => c[0])).toEqual([
@@ -201,7 +202,7 @@ describe("tokensavePlugin.apply", () => {
       repoPath: repoDir,
       providers: ["claude", "unknown-agent"],
     });
-    await tokensavePlugin.apply(ctx);
+    await tokensavePlugin.lifecycle.companion!.apply(ctx);
 
     const installCalls = runMock.mock.calls.filter((c) => c[0][0] === "install");
     expect(installCalls.map((c) => c[0])).toEqual([
@@ -231,7 +232,7 @@ describe("tokensavePlugin.apply", () => {
 
     try {
       const ctx = makeCtx(companionDir, { repoPath: repoDir, providers: ["claude", "opencode"] });
-      await tokensavePlugin.apply(ctx);
+      await tokensavePlugin.lifecycle.companion!.apply(ctx);
     } finally {
       process.stderr.write = originalStderrWrite;
     }
@@ -263,7 +264,7 @@ describe("tokensavePlugin.apply", () => {
 
     try {
       // Absent config stays absent.
-      await tokensavePlugin.apply(
+      await tokensavePlugin.lifecycle.companion!.apply(
         makeCtx(homeDir, { repoPath: repoDir, providers: ["claude", "opencode"] }),
       );
       await expect(fs.access(configFile)).rejects.toThrow();
@@ -284,7 +285,7 @@ describe("tokensavePlugin.apply", () => {
       const original = `upload_enabled = true\ninstalled_agents = ["claude"]\n`;
       await fs.mkdir(path.dirname(configFile), { recursive: true });
       await fs.writeFile(configFile, original, "utf8");
-      await tokensavePlugin.apply(
+      await tokensavePlugin.lifecycle.companion!.apply(
         makeCtx(homeDir, { repoPath: repoDir, providers: ["claude", "opencode"] }),
       );
       expect(await fs.readFile(configFile, "utf8")).toBe(original);
@@ -299,7 +300,7 @@ describe("tokensavePlugin.apply", () => {
     tempRoots.push(companionDir, repoDir);
 
     const ctx = makeCtx(companionDir, { repoPath: repoDir, providers: ["unknown-agent"] });
-    await tokensavePlugin.apply(ctx);
+    await tokensavePlugin.lifecycle.companion!.apply(ctx);
 
     expect(runMock).not.toHaveBeenCalled();
     expect(runCommandMock).not.toHaveBeenCalled();
@@ -323,7 +324,7 @@ describe("tokensavePlugin.apply", () => {
     tokensaveDeps.pathValue = () => "/opt/homebrew/bin";
 
     const ctx = makeCtx(companionDir, { repoPath: repoDir, providers: ["claude"] });
-    await tokensavePlugin.apply(ctx);
+    await tokensavePlugin.lifecycle.companion!.apply(ctx);
 
     expect(runCommandMock).toHaveBeenCalledWith("brew", [
       "install",
@@ -354,7 +355,7 @@ describe("tokensavePlugin.apply", () => {
     tokensaveDeps.isCommandOnPath = (command) => command === "cargo";
     tokensaveDeps.pathValue = () => "/usr/bin";
 
-    await tokensavePlugin.apply(
+    await tokensavePlugin.lifecycle.companion!.apply(
       makeCtx(companionDir, { repoPath: repoDir, providers: ["claude"] }),
     );
 
@@ -393,7 +394,7 @@ describe("tokensavePlugin.apply", () => {
     }) as typeof process.stderr.write;
 
     try {
-      await tokensavePlugin.apply(
+      await tokensavePlugin.lifecycle.companion!.apply(
         makeCtx(companionDir, { repoPath: repoDir, providers: ["claude"] }),
       );
     } finally {
@@ -421,7 +422,7 @@ describe("tokensavePlugin.apply", () => {
     tokensaveDeps.run = runMock;
 
     const ctx = makeCtx(companionDir, { repoPath: repoDir, providers: ["claude"] });
-    await tokensavePlugin.apply(ctx);
+    await tokensavePlugin.lifecycle.companion!.apply(ctx);
 
     expect(runCommandMock).not.toHaveBeenCalled();
     expect(runMock.mock.calls.map((call) => call[0][0])).toEqual(["--version"]);
@@ -433,7 +434,7 @@ describe("tokensavePlugin.apply", () => {
     tempRoots.push(companionDir, repoDir);
 
     const ctx = makeCtx(companionDir, { repoPath: repoDir, providers: ["claude"] });
-    await tokensavePlugin.apply(ctx);
+    await tokensavePlugin.lifecycle.companion!.apply(ctx);
 
     for (const call of runMock.mock.calls) {
       expect(call[1]).toBe(repoDir);
@@ -450,7 +451,7 @@ describe("tokensavePlugin.apply", () => {
       providers: ["claude", "opencode"],
       mode: "sync",
     });
-    await tokensavePlugin.apply(ctx);
+    await tokensavePlugin.lifecycle.companion!.apply(ctx);
 
     expect(runMock.mock.calls.map((call) => call[0][0])).toEqual(["--version"]);
   });
@@ -462,7 +463,9 @@ describe("tokensavePlugin.apply", () => {
     tokensaveDeps.isCommandOnPath = () => true;
     tokensaveDeps.readMemberChoices = async () => ({ tokensave: "declined" });
 
-    await tokensavePlugin.apply(makeCtx(companionDir, { providers: ["claude"], mode: "setup" }));
+    await tokensavePlugin.lifecycle.companion!.apply(
+      makeCtx(companionDir, { providers: ["claude"], mode: "setup" }),
+    );
 
     expect(runCommandMock).not.toHaveBeenCalled();
     expect(runShellCommandMock).not.toHaveBeenCalled();
@@ -474,7 +477,9 @@ describe("tokensavePlugin.apply", () => {
     runMock.mockImplementation(() => ({ ok: false, stderr: "not found", stdout: "" }));
     tokensaveDeps.isCommandOnPath = () => true;
 
-    await tokensavePlugin.apply(makeCtx(companionDir, { providers: ["claude"], mode: "sync" }));
+    await tokensavePlugin.lifecycle.companion!.apply(
+      makeCtx(companionDir, { providers: ["claude"], mode: "sync" }),
+    );
 
     expect(runCommandMock).not.toHaveBeenCalled();
     expect(runShellCommandMock).not.toHaveBeenCalled();
@@ -547,7 +552,7 @@ describe("tokensavePlugin.apply", () => {
     const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));
     tempRoots.push(companionDir, repoDir);
 
-    await tokensavePlugin.apply(
+    await tokensavePlugin.lifecycle.companion!.apply(
       makeCtx(companionDir, { repoPath: repoDir, providers: ["claude", "opencode"] }),
     );
 
@@ -571,8 +576,8 @@ describe("tokensavePlugin.apply", () => {
     );
 
     const ctx = makeCtx(companionDir, { repoPath: repoDir, providers: ["claude", "opencode"] });
-    await tokensavePlugin.apply(ctx);
-    await tokensavePlugin.teardown!(ctx);
+    await tokensavePlugin.lifecycle.companion!.apply(ctx);
+    await tokensavePlugin.lifecycle.companion!.teardown!(ctx);
 
     expect(runMock.mock.calls.some((c) => (c[0] as string[]).includes("branch"))).toBe(false);
   });
@@ -581,7 +586,9 @@ describe("tokensavePlugin.apply", () => {
     const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
     tempRoots.push(companionDir);
 
-    await tokensavePlugin.apply(makeCtx(companionDir, { providers: ["claude", "opencode"] }));
+    await tokensavePlugin.lifecycle.companion!.apply(
+      makeCtx(companionDir, { providers: ["claude", "opencode"] }),
+    );
 
     await expect(
       fs.access(path.join(companionDir, ".claude", "settings.local.json")),
@@ -605,7 +612,7 @@ describe("tokensavePlugin.teardown", () => {
     const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
     tempRoots.push(companionDir);
     const ctx = makeCtx(companionDir);
-    await tokensavePlugin.teardown(ctx);
+    await tokensavePlugin.lifecycle.companion!.teardown(ctx);
     expect(runMock).not.toHaveBeenCalled();
   });
 
@@ -617,7 +624,7 @@ describe("tokensavePlugin.teardown", () => {
     tempRoots.push(companionDir, repoDir);
 
     const ctx = makeCtx(companionDir, { repoPath: repoDir, providers: ["claude", "opencode"] });
-    await tokensavePlugin.teardown(ctx);
+    await tokensavePlugin.lifecycle.companion!.teardown(ctx);
 
     const uninstallCalls = runMock.mock.calls.filter((c) => c[0][0] === "uninstall");
     expect(uninstallCalls.length).toBe(0);

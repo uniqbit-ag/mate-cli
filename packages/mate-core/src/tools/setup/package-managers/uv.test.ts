@@ -27,7 +27,7 @@ describe("createUvPlugin apply()", () => {
       isCommandOnPath: () => true,
     });
 
-    await plugin.apply(makeCtx());
+    await plugin.lifecycle.companion!.apply(makeCtx());
 
     expect(confirmMock).not.toHaveBeenCalled();
   });
@@ -39,7 +39,7 @@ describe("createUvPlugin apply()", () => {
       isCommandOnPath: () => false,
     });
 
-    await plugin.apply(makeCtx({ mode: "sync" }));
+    await plugin.lifecycle.companion!.apply(makeCtx({ mode: "sync" }));
 
     expect(confirmMock).not.toHaveBeenCalled();
   });
@@ -55,7 +55,7 @@ describe("createUvPlugin apply()", () => {
         platform: "darwin",
       });
 
-      await plugin.apply(makeCtx());
+      await plugin.lifecycle.companion!.apply(makeCtx());
 
       expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining("brew install uv"));
     } finally {
@@ -74,7 +74,7 @@ describe("createUvPlugin apply()", () => {
         platform: "darwin",
       });
 
-      await plugin.apply(makeCtx());
+      await plugin.lifecycle.companion!.apply(makeCtx());
 
       expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining("astral.sh/uv/install.sh"));
     } finally {
@@ -93,7 +93,7 @@ describe("createUvPlugin apply()", () => {
         platform: "linux",
       });
 
-      await plugin.apply(makeCtx());
+      await plugin.lifecycle.companion!.apply(makeCtx());
 
       expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining("astral.sh/uv/install.sh"));
     } finally {
@@ -112,7 +112,7 @@ describe("createUvPlugin apply()", () => {
         platform: "win32",
       });
 
-      await plugin.apply(makeCtx());
+      await plugin.lifecycle.companion!.apply(makeCtx());
 
       expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining("astral.sh/uv/install.ps1"));
     } finally {
@@ -133,7 +133,7 @@ describe("createUvPlugin apply()", () => {
         runCommand: runCommandMock,
       });
 
-      await plugin.apply(makeCtx());
+      await plugin.lifecycle.companion!.apply(makeCtx());
 
       expect(runCommandMock).toHaveBeenCalledWith("brew", ["install", "uv"]);
       expect(runCommandMock).toHaveBeenCalledWith("uv", ["tool", "update-shell"]);
@@ -160,7 +160,7 @@ describe("createUvPlugin apply()", () => {
         runCommand: runCommandMock,
       });
 
-      await expect(plugin.apply(makeCtx())).resolves.toBeUndefined();
+      await expect(plugin.lifecycle.companion!.apply(makeCtx())).resolves.toBeUndefined();
 
       expect(runCommandMock).toHaveBeenCalledWith("brew", ["install", "uv"]);
       expect(runCommandMock).toHaveBeenCalledWith("uv", ["tool", "update-shell"]);
@@ -188,7 +188,7 @@ describe("createUvPlugin apply()", () => {
         runShellCommand: runShellCommandMock,
       });
 
-      await plugin.apply(makeCtx());
+      await plugin.lifecycle.companion!.apply(makeCtx());
 
       expect(runCommandMock).not.toHaveBeenCalled();
       expect(runShellCommandMock).not.toHaveBeenCalled();
@@ -207,7 +207,7 @@ describe("createUvPlugin apply()", () => {
       readMemberChoices: async () => ({ graphify: "declined" }),
     });
 
-    await plugin.apply(
+    await plugin.lifecycle.companion!.apply(
       makeCtx({
         config: { allowedAgents: [], capabilities: [{ name: "graphify" }] },
       }),
@@ -218,7 +218,7 @@ describe("createUvPlugin apply()", () => {
 
   test("teardown is a no-op", async () => {
     const plugin = createUvPlugin();
-    await expect(plugin.teardown(makeCtx())).resolves.toBeUndefined();
+    await expect(plugin.lifecycle.companion!.teardown(makeCtx())).resolves.toBeUndefined();
   });
 });
 

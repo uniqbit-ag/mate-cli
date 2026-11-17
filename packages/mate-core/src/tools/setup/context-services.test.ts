@@ -52,10 +52,14 @@ function mcpCapability(descriptor: McpServerDescriptor): CapabilityPlugin {
     description: "",
     defaultSelected: false,
     isEnabled: (config) => (config.capabilities ?? []).some((c) => c.name === "acme-mcp"),
-    async apply(ctx) {
-      await ctx.mcp?.register(descriptor);
+    lifecycle: {
+      companion: {
+        async apply(ctx) {
+          await ctx.mcp?.register(descriptor);
+        },
+        async teardown() {},
+      },
     },
-    async teardown() {},
   };
 }
 
@@ -78,10 +82,14 @@ function instructionsCapability(content: string, providers?: string[]): Capabili
     description: "",
     defaultSelected: false,
     isEnabled: (config) => (config.capabilities ?? []).some((c) => c.name === "acme-rules"),
-    async apply(ctx) {
-      await ctx.instructions?.append(content, providers ? { providers } : undefined);
+    lifecycle: {
+      companion: {
+        async apply(ctx) {
+          await ctx.instructions?.append(content, providers ? { providers } : undefined);
+        },
+        async teardown() {},
+      },
     },
-    async teardown() {},
   };
 }
 
@@ -102,10 +110,14 @@ describe("ctx.templates.render", () => {
       description: "",
       defaultSelected: false,
       isEnabled: (config) => (config.capabilities ?? []).some((c) => c.name === "acme-scaffold"),
-      async apply(ctx) {
-        await ctx.templates?.render(templatePath, destination, data);
+      lifecycle: {
+        companion: {
+          async apply(ctx) {
+            await ctx.templates?.render(templatePath, destination, data);
+          },
+          async teardown() {},
+        },
       },
-      async teardown() {},
     };
   }
 
@@ -383,8 +395,7 @@ describe("unhosted context services", () => {
       description: "",
       defaultSelected: false,
       isEnabled: (config) => (config.allowedAgents ?? []).includes("bare"),
-      async apply() {},
-      async teardown() {},
+      lifecycle: { companion: { async apply() {}, async teardown() {} } },
     };
     const capability = mcpCapability({ name: "acme-kb", command: "acme-kb-mcp" });
 

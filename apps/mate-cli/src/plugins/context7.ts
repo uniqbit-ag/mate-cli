@@ -31,9 +31,13 @@ export function createContext7Plugin(options: Context7Options = {}): CapabilityP
     defaultSelected: false,
     isEnabled: (config) => (config.capabilities ?? []).some((c) => c.name === "context7"),
     getInstallRequirements: () => [],
-    async apply(ctx) {
-      await ctx.mcp?.register({ name: "context7", command, args });
+    lifecycle: {
+      companion: {
+        async apply(ctx) {
+          await ctx.mcp?.register({ name: "context7", command, args });
+        },
+        async teardown() {},
+      },
     },
-    async teardown() {},
   };
 }

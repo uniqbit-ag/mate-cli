@@ -31,6 +31,7 @@ function makeCtx(companionPath: string): SetupContext {
     config: { allowedAgents: ["claude"], capabilities: [] },
     mode: "setup",
     activeProviders: ["claude"],
+    scope: "companion",
   };
 }
 

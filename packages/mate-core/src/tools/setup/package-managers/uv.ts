@@ -166,49 +166,53 @@ export function createUvPlugin(deps: PackageManagerSetupDeps = {}): Plugin & { l
         },
       ];
     },
-    async apply(ctx: SetupContext) {
-      if (locateUv()) {
-        return;
-      }
-      const pathValue = currentPath();
+    lifecycle: {
+      companion: {
+        async apply(ctx: SetupContext) {
+          if (locateUv()) {
+            return;
+          }
+          const pathValue = currentPath();
 
-      if (ctx.mode !== "setup") {
-        return;
-      }
-      const needing = UV_DEPENDENT_CAPABILITIES.filter((id) =>
-        (ctx.config.capabilities ?? []).some((capability) => capability.name === id),
-      );
-      if (await isDeclinedByMember(ctx.companionPath, needing, deps.readMemberChoices)) return;
+          if (ctx.mode !== "setup") {
+            return;
+          }
+          const needing = UV_DEPENDENT_CAPABILITIES.filter((id) =>
+            (ctx.config.capabilities ?? []).some((capability) => capability.name === id),
+          );
+          if (await isDeclinedByMember(ctx.companionPath, needing, deps.readMemberChoices)) return;
 
-      let installCmd: string;
-      let runInstall: () => Promise<void>;
+          let installCmd: string;
+          let runInstall: () => Promise<void>;
 
-      if (platform === "darwin" && onPath("brew", pathValue)) {
-        installCmd = "brew install uv";
-        runInstall = () => execCommand("brew", ["install", "uv"]);
-      } else if (platform === "win32") {
-        installCmd = `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`;
-        runInstall = () =>
-          execCommand("powershell", [
-            "-ExecutionPolicy",
-            "ByPass",
-            "-c",
-            "irm https://astral.sh/uv/install.ps1 | iex",
-          ]);
-      } else if (platform === "linux" || platform === "darwin") {
-        installCmd = "curl -LsSf https://astral.sh/uv/install.sh | sh";
-        runInstall = () => execShellCommand("curl -LsSf https://astral.sh/uv/install.sh | sh");
-      } else {
-        throw new Error(`Unsupported platform for uv setup: ${platform}`);
-      }
+          if (platform === "darwin" && onPath("brew", pathValue)) {
+            installCmd = "brew install uv";
+            runInstall = () => execCommand("brew", ["install", "uv"]);
+          } else if (platform === "win32") {
+            installCmd = `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`;
+            runInstall = () =>
+              execCommand("powershell", [
+                "-ExecutionPolicy",
+                "ByPass",
+                "-c",
+                "irm https://astral.sh/uv/install.ps1 | iex",
+              ]);
+          } else if (platform === "linux" || platform === "darwin") {
+            installCmd = "curl -LsSf https://astral.sh/uv/install.sh | sh";
+            runInstall = () => execShellCommand("curl -LsSf https://astral.sh/uv/install.sh | sh");
+          } else {
+            throw new Error(`Unsupported platform for uv setup: ${platform}`);
+          }
 
-      process.stdout.write(`uv is not installed. To install:\n  ${installCmd}\n`);
-      const ok = await askConfirm("Run this install command now?");
-      if (ok) {
-        await runInstall();
-        await runUpdateShell();
-      }
+          process.stdout.write(`uv is not installed. To install:\n  ${installCmd}\n`);
+          const ok = await askConfirm("Run this install command now?");
+          if (ok) {
+            await runInstall();
+            await runUpdateShell();
+          }
+        },
+        async teardown(_ctx: SetupContext) {},
+      },
     },
-    async teardown(_ctx: SetupContext) {},
   };
 }

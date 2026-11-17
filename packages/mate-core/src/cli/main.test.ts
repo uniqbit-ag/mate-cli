@@ -705,8 +705,7 @@ describe("plugin CLI commands", () => {
       description: "",
       defaultSelected: false,
       isEnabled: () => true,
-      async apply() {},
-      async teardown() {},
+      lifecycle: { companion: { async apply() {}, async teardown() {} } },
       cliCommands,
       cliNamespace,
     };

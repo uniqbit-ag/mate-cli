@@ -29,6 +29,7 @@ function makeCtx(companionPath: string, activeProviders: string[]): SetupContext
     config: { allowedAgents: activeProviders, capabilities: [] },
     mode: "setup",
     activeProviders,
+    scope: "companion",
   };
 }
 

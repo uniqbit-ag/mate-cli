@@ -36,6 +36,7 @@ function makeCtx(
   return {
     companionPath,
     activeProviders: opts.activeProviders ?? [],
+    scope: "companion",
     mode: opts.mode ?? "setup",
     config: {
       allowedAgents: opts.activeProviders ?? [],
@@ -54,7 +55,7 @@ describe("createGraphifyPlugin apply()", () => {
       isCommandOnPath: checkPathMock,
     });
 
-    await plugin.apply(makeCtx("/tmp/companion"));
+    await plugin.lifecycle.companion!.apply(makeCtx("/tmp/companion"));
 
     expect(confirmMock).not.toHaveBeenCalled();
   });
@@ -70,7 +71,7 @@ describe("createGraphifyPlugin apply()", () => {
       isInstalledViaUvTool: checkUvToolMock,
     });
 
-    await plugin.apply(makeCtx("/tmp/companion"));
+    await plugin.lifecycle.companion!.apply(makeCtx("/tmp/companion"));
 
     expect(confirmMock).not.toHaveBeenCalled();
     expect(checkUvToolMock).toHaveBeenCalledWith("graphifyy");
@@ -89,7 +90,7 @@ describe("createGraphifyPlugin apply()", () => {
         isInstalledViaUvTool: checkUvToolMock,
       });
 
-      await plugin.apply(makeCtx("/tmp/companion"));
+      await plugin.lifecycle.companion!.apply(makeCtx("/tmp/companion"));
 
       expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining("uv tool install graphify"));
       expect(confirmMock).toHaveBeenCalled();
@@ -131,7 +132,7 @@ describe("createGraphifyPlugin apply()", () => {
       readMemberChoices: async () => ({ graphify: "declined" }),
     });
 
-    await plugin.apply(makeCtx("/tmp/companion"));
+    await plugin.lifecycle.companion!.apply(makeCtx("/tmp/companion"));
 
     expect(confirmMock).not.toHaveBeenCalled();
     expect(runCommandMock).not.toHaveBeenCalled();
@@ -148,7 +149,7 @@ describe("createGraphifyPlugin apply()", () => {
       isInstalledViaUvTool: checkUvToolMock,
     });
 
-    await plugin.apply(makeCtx("/tmp/companion", { mode: "sync" }));
+    await plugin.lifecycle.companion!.apply(makeCtx("/tmp/companion", { mode: "sync" }));
 
     expect(confirmMock).not.toHaveBeenCalled();
   });
@@ -168,7 +169,7 @@ describe("createGraphifyPlugin apply()", () => {
         runCommand: runCommandMock,
       });
 
-      await plugin.apply(makeCtx("/tmp/companion"));
+      await plugin.lifecycle.companion!.apply(makeCtx("/tmp/companion"));
 
       expect(confirmMock).toHaveBeenCalled();
       expect(runCommandMock).not.toHaveBeenCalled();
@@ -183,7 +184,9 @@ describe("createGraphifyPlugin teardown()", () => {
     const confirmMock = mock(async (_: string) => false);
     const plugin = createGraphifyPlugin({ confirm: confirmMock });
 
-    await expect(plugin.teardown(makeCtx("/tmp/companion"))).resolves.toBeUndefined();
+    await expect(
+      plugin.lifecycle.companion!.teardown(makeCtx("/tmp/companion")),
+    ).resolves.toBeUndefined();
     expect(confirmMock).not.toHaveBeenCalled();
   });
 });
@@ -871,7 +874,7 @@ describe("createGraphifyPlugin forProvider — provider asset install", () => {
       runProviderInstall: installMock,
     });
 
-    await plugin.apply(makeCtx(root, { activeProviders: ["opencode"] }));
+    await plugin.lifecycle.companion!.apply(makeCtx(root, { activeProviders: ["opencode"] }));
 
     await expect(fs.access(path.join(root, "AGENTS.md"))).rejects.toThrow();
   });
@@ -1061,7 +1064,7 @@ describe("createGraphifyPlugin forProvider — provider asset install", () => {
       isCommandOnPath: () => false,
       isInstalledViaUvTool: () => false,
     });
-    await plugin.teardown(makeCtx(root));
+    await plugin.lifecycle.companion!.teardown(makeCtx(root));
 
     const remaining = await fs.readFile(path.join(root, "AGENTS.md"), "utf8").catch(() => "");
     expect(remaining).not.toContain("## graphify");

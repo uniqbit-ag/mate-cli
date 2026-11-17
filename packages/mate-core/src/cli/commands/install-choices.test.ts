@@ -36,8 +36,7 @@ function recommendedTool() {
         },
       },
     ],
-    async apply() {},
-    async teardown() {},
+    lifecycle: { companion: { async apply() {}, async teardown() {} } },
   };
   return { plugin, state };
 }

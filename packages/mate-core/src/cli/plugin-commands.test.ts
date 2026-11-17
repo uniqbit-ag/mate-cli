@@ -18,8 +18,7 @@ function makePlugin(id: string, cliCommands?: PluginCliCommand[]): Plugin {
     description: "",
     defaultSelected: false,
     isEnabled: () => true,
-    async apply() {},
-    async teardown() {},
+    lifecycle: { companion: { async apply() {}, async teardown() {} } },
     cliCommands,
   };
 }

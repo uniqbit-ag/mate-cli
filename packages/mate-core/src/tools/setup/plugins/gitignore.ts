@@ -111,19 +111,27 @@ export function createGitignorePlugin(
     description: "Maintain the managed gitignore block from all active plugin contributions.",
     defaultSelected: true,
     isEnabled: () => true,
-    async apply(ctx: SetupContext) {
-      const { join } = await import("node:path");
-      const entries = collectManagedGitignoreEntries(ctx, resolvePlugins());
+    lifecycle: {
+      companion: {
+        async apply(ctx: SetupContext) {
+          const { join } = await import("node:path");
+          const entries = collectManagedGitignoreEntries(ctx, resolvePlugins());
 
-      await writeManagedGitignoreBlock(
-        join(ctx.companionPath, ".gitignore"),
-        resolveName(),
-        entries,
-      );
-    },
-    async teardown(ctx: SetupContext) {
-      const { join } = await import("node:path");
-      await writeManagedGitignoreBlock(join(ctx.companionPath, ".gitignore"), resolveName(), []);
+          await writeManagedGitignoreBlock(
+            join(ctx.companionPath, ".gitignore"),
+            resolveName(),
+            entries,
+          );
+        },
+        async teardown(ctx: SetupContext) {
+          const { join } = await import("node:path");
+          await writeManagedGitignoreBlock(
+            join(ctx.companionPath, ".gitignore"),
+            resolveName(),
+            [],
+          );
+        },
+      },
     },
   };
 }
