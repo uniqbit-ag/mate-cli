@@ -57,9 +57,11 @@ export function createBunPlugin(): Plugin {
           source: "Mate runtime",
           command: plan.command,
           fingerprint: `bun:${process.platform}:${plan.command}`,
-          detect: () => isCommandOnPath(process.platform === "win32" ? "bun.exe" : "bun", bunPath()),
+          detect: () =>
+            isCommandOnPath(process.platform === "win32" ? "bun.exe" : "bun", bunPath()),
           install: plan.install,
-          verify: () => isCommandOnPath(process.platform === "win32" ? "bun.exe" : "bun", bunPath()),
+          verify: () =>
+            isCommandOnPath(process.platform === "win32" ? "bun.exe" : "bun", bunPath()),
         },
       ];
     },
