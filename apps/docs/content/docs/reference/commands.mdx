@@ -843,6 +843,9 @@ repository.
 | `mate cap friction list [--days N] [--all] [--json]` | List recorded friction, grouped by fingerprint. |
 | `mate cap friction report [<event-id>] ...`          | Record what an agent expected.                  |
 
+`mate cap <namespace> --help`, or `-h`, lists the commands of a namespace a
+plugin provides, such as `friction`, and exits 0.
+
 `mate cap friction list` needs the [`friction`](/docs/capabilities#friction)
 capability. It reads the events of the last `N` days, default 30, recorded for
 the resolved companion, and groups them by fingerprint. A fingerprint is
