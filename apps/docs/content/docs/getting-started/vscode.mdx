@@ -63,7 +63,22 @@ Once the managed workspace is open, the sidebar offers:
 - **Sessions:** Claude and OpenCode sessions started from this sidebar for the repository and its worktrees, grouped by Workset and branch. Sessions launched in a terminal are not listed.
 - **Worktrees:** the repository's Git checkouts, with Workset branches marked. Opening one opens another editor window.
 - **Open changes:** active companion changes grouped by Workset, with task progress and session counts. Expand a group to see its changes or resume the latest session. Opening a change shows its proposal, or its tasks when it has no proposal.
+- **Ready to archive:** active changes whose tasks are all checked, with their Workset. They are no longer listed under Open changes.
 - **Ready to publish:** archived changes reported by Mate, including those still waiting for their delivery merge. Being listed does not mean a change has been published.
+
+### Archive or publish from the sidebar
+
+Set `mate.agentRuntime` to `claude` or `opencode` to add change actions to the
+sidebar. Right-click a **Ready to archive** item and pick **Archive this**, or a
+**Ready to publish** item and pick **Publish this**. Mate starts a new session
+of that runtime in the repository root and opens its terminal. The session's
+first turn runs `mate-archive-change` or `mate-publish-artifact` on the item,
+and the session is listed under **Sessions** like any other.
+
+The actions are hidden while `mate.agentRuntime` is unset, and Mate never
+falls back to another runtime. **New session** ignores the setting and still
+asks for a runtime. The sidebar runs no checks of its own: the skill reports
+an unmerged delivery branch and asks before it publishes anything.
 
 Visible sections reload every 30 seconds while the editor window is focused,
 and when you return to the window. Change the interval with the

@@ -392,6 +392,12 @@ Once that workspace is open, the Mate sidebar shows:
 - **Ready to publish**: the archived changes `mate artifact pending` reports,
   marked when they still wait for their merge.
 
+With the `mate.agentRuntime` setting (`claude` or `opencode`) set, the
+context menu of a Ready to archive item offers _Archive this_, and that of a
+Ready to publish item _Publish this_. Each starts a new sidebar session of
+that runtime in the repository root, running `mate-archive-change` or
+`mate-publish-artifact` on the item. Unset, the actions are hidden.
+
 The sidebar reloads when it becomes visible and on **Refresh**.
 
 ## Comment Guidance

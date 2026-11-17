@@ -4,6 +4,7 @@ import path from "node:path";
 
 import * as vscode from "vscode";
 
+import { actionPrompt, type ChangeAction } from "./actions";
 import { readOpenChanges, readyToArchive, type OpenChange } from "./changes";
 import {
   groupSessions,
@@ -174,7 +175,14 @@ function readyItem(change: OpenChange): SectionItem {
   return {
     ...item,
     description: [item.description, workset].filter(Boolean).join(" · ") || undefined,
+    contextValue: "change.ready",
+    data: { name: change.name } satisfies ActionTarget,
   };
+}
+
+/** Payload of a Ready to archive or Ready to publish item. */
+interface ActionTarget {
+  name: string;
 }
 
 export function worksetItem(workset: Workset, sessions: Session[]): SectionItem {
@@ -444,6 +452,8 @@ export function activate(context: vscode.ExtensionContext): void {
         description: item.waitingForMerge ? "waiting for merge" : undefined,
         tooltip: item.anchor,
         icon: item.waitingForMerge ? ICONS.waitingForMerge : ICONS.readyToPublish,
+        contextValue: "pending",
+        data: { name: item.name } satisfies ActionTarget,
       })),
     })),
   );
@@ -464,8 +474,18 @@ export function activate(context: vscode.ExtensionContext): void {
     return backgroundSupport;
   };
 
-  /** Starts (or resumes) a Claude session in the background, registers it, and attaches a terminal. */
-  const startInBackground = async (cwd: string, resumeId?: string, retried = false) => {
+  /**
+   * Starts (or resumes) a Claude session in the background, registers it, and attaches a terminal.
+   * `prompt` is a new session's first turn.
+   */
+  const startInBackground = async (
+    cwd: string,
+    {
+      resumeId,
+      prompt,
+      retried = false,
+    }: { resumeId?: string; prompt?: string; retried?: boolean } = {},
+  ) => {
     let started: BackgroundStart;
     try {
       started = await vscode.window.withProgress(
@@ -475,7 +495,7 @@ export function activate(context: vscode.ExtensionContext): void {
             ? "Mate: resuming Claude in the background"
             : "Mate: starting Claude in the background",
         },
-        () => startClaudeBackground(cwd, resumeId),
+        () => startClaudeBackground(cwd, resumeId, undefined, prompt),
       );
       await addSession({ id: started.sessionId, runtime: "claude", cwd });
     } catch (error) {
@@ -489,13 +509,16 @@ export function activate(context: vscode.ExtensionContext): void {
     };
     openSessionTerminal(session, attachCommand(session));
     sessions.refresh();
-    if (!retried) void retryEarlyFailure(session, resumeId);
+    if (!retried) void retryEarlyFailure(session, { resumeId, prompt });
   };
 
-  /** Starts a new session in `cwd`: Claude in the background when it can, else in a terminal. */
-  const startSession = async (runtime: Runtime, cwd: string) => {
+  /**
+   * Starts a new session in `cwd`: Claude in the background when it can, else in a terminal.
+   * `prompt` is its first turn.
+   */
+  const startSession = async (runtime: Runtime, cwd: string, prompt?: string) => {
     if (runtime === "claude" && (await backgroundSupported(cwd))) {
-      await startInBackground(cwd);
+      await startInBackground(cwd, { prompt });
       return;
     }
     const session = { id: newSessionId(runtime), runtime, cwd };
@@ -506,13 +529,34 @@ export function activate(context: vscode.ExtensionContext): void {
         `Mate: could not register the session: ${(error as Error).message}`,
       );
     }
-    openSessionTerminal(session, launchCommand(session));
+    openSessionTerminal(session, launchCommand(session, prompt));
     sessions.refresh();
+  };
+
+  /** Starts the configured runtime in the repository root on the item's skill; no precondition checks. */
+  const startChangeAction = async (action: ChangeAction, item?: SectionItem) => {
+    const name = (item?.data as ActionTarget | undefined)?.name;
+    const repository = gate.state.repository;
+    if (!name || !repository) return;
+    // The menu hides while unset, but the setting may change before the pick.
+    const runtime = vscode.workspace.getConfiguration("mate").get<string | null>("agentRuntime");
+    if (runtime !== "claude" && runtime !== "opencode") {
+      return void vscode.window.showErrorMessage(
+        "Mate: set `mate.agentRuntime` to `claude` or `opencode` to use change actions.",
+      );
+    }
+    const prompt = actionPrompt(action, runtime, name);
+    if (!prompt) {
+      return void vscode.window.showErrorMessage(
+        `Mate: "${name}" is not a valid change name: use lowercase letters, digits, and hyphens.`,
+      );
+    }
+    await startSession(runtime, repository.root, prompt);
   };
 
   const retryEarlyFailure = async (
     session: Pick<Session, "id" | "runtime" | "cwd">,
-    resumeId: string | undefined,
+    { resumeId, prompt }: { resumeId?: string; prompt?: string },
   ) => {
     // oxlint-disable no-await-in-loop -- polling, one check after another
     for (let waited = 0; waited < EARLY_FAILURE_MS; waited += EARLY_FAILURE_POLL_MS) {
@@ -524,7 +568,7 @@ export function activate(context: vscode.ExtensionContext): void {
       terminals.find({ ...session, startedAt: "" })?.dispose();
       // The failed start registered its own id; a resume that kept the old id keeps its entry.
       if (session.id !== resumeId) await removeSession(session.id, os.homedir()).catch(() => {});
-      await startInBackground(session.cwd, resumeId, true);
+      await startInBackground(session.cwd, { resumeId, prompt, retried: true });
       return;
     }
     // oxlint-enable no-await-in-loop
@@ -635,7 +679,7 @@ export function activate(context: vscode.ExtensionContext): void {
         return void vscode.commands.executeCommand("mate.attachSession", item);
       }
       if (session.runtime === "claude" && (await backgroundSupported(session.cwd))) {
-        await startInBackground(session.cwd, session.id);
+        await startInBackground(session.cwd, { resumeId: session.id });
         return;
       }
       openSessionTerminal(session, resumeCommand(session));
@@ -676,6 +720,13 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand("mate.resumeWorksetSession", (item?: SectionItem) =>
       vscode.commands.executeCommand("mate.resumeSession", item),
+    ),
+
+    vscode.commands.registerCommand("mate.archiveChange", (item?: SectionItem) =>
+      startChangeAction("archive", item),
+    ),
+    vscode.commands.registerCommand("mate.publishArtifact", (item?: SectionItem) =>
+      startChangeAction("publish", item),
     ),
 
     vscode.commands.registerCommand("mate.removeSession", async (item?: SectionItem) => {

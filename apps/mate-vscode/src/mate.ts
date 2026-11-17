@@ -191,14 +191,15 @@ export interface BackgroundStart {
 
 /**
  * Starts a Claude session in the background through Mate (`mate claude -- --bg`,
- * with {@link IN_PLACE_SETTINGS}, and `--resume <id>` to continue one) and returns
- * its ids. Falls back to the `claude agents --json` entry that appeared in `cwd`
- * when the launch output names none.
+ * with {@link IN_PLACE_SETTINGS}, `--resume <id>` to continue one, and `prompt` as
+ * its first turn) and returns its ids. Falls back to the `claude agents --json`
+ * entry that appeared in `cwd` when the launch output names none.
  */
 export async function startClaudeBackground(
   cwd: string,
   resumeId?: string,
   run?: ShellRunner,
+  prompt?: string,
 ): Promise<BackgroundStart> {
   const before = new Set((await claudeAgents(cwd, run)).map((agent) => agent.sessionId));
   const args = [
@@ -208,6 +209,7 @@ export async function startClaudeBackground(
     "--settings",
     IN_PLACE_SETTINGS,
     ...(resumeId ? ["--resume", resumeId] : []),
+    ...(prompt ? [prompt] : []),
   ];
   const result = await (run ?? loginShell)(
     ["mate", ...args.map(shellQuote)].join(" "),
