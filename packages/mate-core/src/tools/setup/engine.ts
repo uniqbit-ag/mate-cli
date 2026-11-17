@@ -13,7 +13,11 @@ import type {
   RuntimeContributionsByRuntime,
   SetupContext,
 } from "./plugin";
-import { reconcileClaudeContributions, renderClaudeWorkingDocuments } from "./providers/claude";
+import {
+  declaredHookMarkers,
+  reconcileClaudeContributions,
+  renderClaudeWorkingDocuments,
+} from "./providers/claude";
 import {
   inspectClaudePluginFolders,
   publishClaudePluginFolders,
@@ -224,6 +228,20 @@ const RUNTIME_SURFACE_WORKING_RENDERERS: Record<
   opencode: renderOpenCodeWorkingDocuments,
 };
 
+/** Markers are substring matches, so an empty one would strip every hook group with a command. */
+function assertHookMarkers(capabilityId: string, byRuntime: RuntimeContributionsByRuntime): void {
+  const markers = Object.values(byRuntime).flatMap((contributions) =>
+    contributions ? declaredHookMarkers(contributions) : [],
+  );
+  const invalid = markers.find((marker) => marker.trim() === "");
+  if (invalid !== undefined) {
+    throw new Error(
+      `Capability "${capabilityId}" declares an invalid hook marker ${JSON.stringify(invalid)}: ` +
+        "a marker needs at least one non-whitespace character.",
+    );
+  }
+}
+
 /**
  * The declared Capability contributions of one pass, keyed by runtime. Shared
  * by both targets: what a companion pass writes is what a working pass renders.
@@ -251,6 +269,7 @@ async function collectContributionInputs(
     let byRuntime: RuntimeContributionsByRuntime;
     try {
       byRuntime = await capability.getRuntimeContributions(ctx);
+      assertHookMarkers(capability.id, byRuntime);
     } catch (error) {
       if (!onContributionError) throw error;
       onContributionError(capability.id, error);
