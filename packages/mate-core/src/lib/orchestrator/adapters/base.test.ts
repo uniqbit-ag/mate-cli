@@ -162,8 +162,13 @@ afterEach(async () => {
 describe("LaunchAdapter.prepareLaunch", () => {
   test("builds the Claude invocation without rewriting the model base URL", async () => {
     /** Unset around the call: a session wrapped by an older Mate exports the variable itself. */
+    const home = await makeTempDir("mate-claude-home-");
     const launch = await withEnv(
-      { ANTHROPIC_BASE_URL: undefined, CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: undefined },
+      {
+        ANTHROPIC_BASE_URL: undefined,
+        CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: undefined,
+        USERPROFILE: home,
+      },
       () => prepareClaudeLaunch(makeContext(), ["--print", "hello"]),
     );
 
@@ -172,6 +177,44 @@ describe("LaunchAdapter.prepareLaunch", () => {
     expect(launch.env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD).toBeUndefined();
     expect(launch.env.ANTHROPIC_BASE_URL).toBeUndefined();
   });
+
+  test.skipIf(process.platform !== "win32")(
+    "uses the native Claude installation only when no Claude is on PATH",
+    async () => {
+      const home = await makeTempDir("mate-claude-home-");
+      const nativeBin = path.join(home, ".local", "bin");
+      const nativeClaude = path.join(nativeBin, "claude.exe");
+      const otherBin = path.join(home, "other-bin");
+      await fs.mkdir(nativeBin, { recursive: true });
+      await fs.mkdir(otherBin);
+
+      await withEnv({ USERPROFILE: home, PATH: otherBin }, async () => {
+        expect((await prepareClaudeLaunch(makeContext(), [])).command).toBe("claude");
+        await fs.writeFile(nativeClaude, "");
+        expect((await prepareClaudeLaunch(makeContext(), [])).command).toBe(nativeClaude);
+        await fs.writeFile(path.join(otherBin, "claude.exe"), "");
+        expect((await prepareClaudeLaunch(makeContext(), [])).command).toBe("claude");
+      });
+    },
+  );
+
+  test.skipIf(process.platform !== "win32")(
+    "finds native Claude for background launches without changing the user PATH",
+    async () => {
+      const home = await makeTempDir("mate-claude-home-");
+      const nativeBin = path.join(home, ".local", "bin");
+      const nativeClaude = path.join(nativeBin, "claude.exe");
+      const { companionPath } = await claudeCompanion("mate-claude-bg-");
+      await fs.mkdir(nativeBin, { recursive: true });
+      await fs.writeFile(nativeClaude, "");
+      await withEnv({ USERPROFILE: home, PATH: "C:\\missing" }, async () => {
+        const launch = await prepareClaudeLaunch({ ...makeContext(), companionPath }, ["--bg"]);
+        expect(launch.command).toBe(nativeClaude);
+        expect(launch.env.PATH).toBe("C:\\missing");
+        expect(process.env.PATH).toBe("C:\\missing");
+      });
+    },
+  );
 
   test("the operator's own additional-directories memory variable passes through unchanged", async () => {
     const launch = await withEnv({ CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "0" }, () =>

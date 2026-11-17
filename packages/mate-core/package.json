@@ -26,6 +26,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./plugins": "./src/plugins.ts",
+    "./plugin-api": "./src/plugin-api.ts",
     "./runtime": "./src/runtime/index.ts",
     "./opencode": "./src/opencode/index.ts",
     "./opencode/tui": "./src/opencode/tui.tsx",

@@ -5,7 +5,9 @@ import path from "node:path";
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
 import { extractPatchPaths, readContext } from "../../src/opencode";
+import { repoLocalRegistryPath } from "../../src/runtime/repo-local";
 import { runtimeDirectoryPath, runtimeWrapperBinPath } from "../../src/runtime/runtime-directory";
+import { umbrellaChildrenBlock } from "../../src/runtime/umbrella-children";
 
 import { registerCompanion } from "./companion";
 
@@ -119,6 +121,7 @@ describe("OpenCode companion registration", () => {
         expect(shell.env.MATE_GUIDANCE_JSON).toBe("");
 
         const [prompt] = await system("base");
+        expect(prompt).not.toContain("<umbrella-children");
         expect(prompt).toContain("/package/wrappers/bin/openspec");
         expect(prompt).toContain("<cli-tools>");
         expect(prompt).toContain('name="mate" type="global"');
@@ -188,6 +191,38 @@ describe("OpenCode companion registration", () => {
         expect(once[0]).toStartWith("base\n\nextra\n\n<companion-policy");
 
         expect(await system(...once)).toEqual(once);
+      },
+    );
+  });
+
+  test("puts the children block after the policy in an Umbrella Repository", async () => {
+    const root = await makeTempDir("mate-opencode-umbrella-");
+    const umbrella = path.join(root, "acme");
+    await fs.mkdir(path.dirname(repoLocalRegistryPath(umbrella)), { recursive: true });
+    await fs.writeFile(repoLocalRegistryPath(umbrella), "companions: []\n");
+    for (const name of ["api", "web"]) {
+      await fs.mkdir(path.join(umbrella, name, ".git"), { recursive: true });
+      await fs.writeFile(
+        path.join(umbrella, name, ".git", "config"),
+        `[remote "origin"]\n\turl = git@github.com:acme/${name}.git\n`,
+      );
+    }
+
+    await withEnv(
+      {
+        MATE_ARTIFACT_PATH: path.join(root, "companion"),
+        MATE_REPO_PATH: umbrella,
+        MATE_GUIDANCE_JSON: GUIDANCE_JSON,
+        MATE_REPO_ID: "acme",
+        MATE_POLICY_JSON: "{}",
+        MATE_GIT_AUTO_MODE: "0",
+        MATE_WRAPPER_BIN_PATH: "/package/wrappers/bin",
+      },
+      async () => {
+        const [prompt] = await (await register(umbrella)).system("base");
+
+        expect(prompt).toContain(`</companion-policy>\n\n${umbrellaChildrenBlock(umbrella)}`);
+        expect(prompt).toContain('<child repository="acme/web" folder="web" />');
       },
     );
   });

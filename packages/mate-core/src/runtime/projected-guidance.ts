@@ -3,6 +3,7 @@ import { hasLaunchEnvironment } from "./env";
 import { readFrictionSwitch } from "./friction-switch";
 import { readCompanionPolicy } from "./policy";
 import { resolveProjection } from "./projection";
+import { umbrellaChildrenBlock } from "./umbrella-children";
 
 /**
  * The companion guidance for an Unmanaged Session, built from the Projection
@@ -34,7 +35,7 @@ export function buildProjectedGuidance(
   if (!projection) return null;
 
   const policy = readCompanionPolicy(projection.companionPath);
-  return buildCompanionGuidance(
+  const guidance = buildCompanionGuidance(
     {
       companionPath: projection.companionPath,
       repository: { id: projection.repositoryId, path: projection.repositoryPath },
@@ -44,4 +45,6 @@ export function buildProjectedGuidance(
     /** The projected path, not the running install's: a wrap may be another mate's. */
     { wrapperBinPath: projection.wrapperBinPath, friction: readFrictionSwitch(env.HOME) },
   );
+  const children = umbrellaChildrenBlock(projection.repositoryPath);
+  return children ? `${guidance}\n\n${children}` : guidance;
 }

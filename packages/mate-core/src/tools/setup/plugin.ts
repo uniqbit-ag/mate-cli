@@ -1,7 +1,7 @@
 import type { FrameworkConfig, LinkedRepository } from "../../lib/orchestrator/types";
 import type { SessionKind } from "../../runtime/session-kind";
 import type { InstallRequirement, InstallRequirementContext } from "./install-contract";
-import type { ClaudeHookGroup } from "./providers/claude-format";
+import type { ClaudeHookGroup } from "../../runtime/claude-hook-group";
 
 export type SetupScope = "companion" | "hub";
 
@@ -235,6 +235,11 @@ export interface PluginDirectoryContribution {
 export interface RuntimeContributions {
   mcpServers?: McpServerDescriptor[];
   hookGroups?: HookGroupContribution[];
+  /**
+   * Claude only. Markers this Capability owns apart from `hookGroups`: the
+   * companion pass strips matching managed groups, enabled or not. Adds no group.
+   */
+  hookMarkers?: string[];
   permissionEntries?: string[];
   guidanceSections?: GuidanceSectionContribution[];
   skillTrees?: SkillTreeContribution[];

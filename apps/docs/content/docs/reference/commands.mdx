@@ -785,7 +785,10 @@ mate session context --repo <dir> [--json]
 
 Prints the companion and the secret policy that Mate resolves for a folder of a
 wrapped Working Repository. A Claude plugin in a plain `claude` session asks this,
-because such a session has no `MATE_*` launch environment. The folder can be the
+because such a session has no Mate launch environment. A session counts as a Mate
+launch only when `MATE_ARTIFACT_PATH` is set. Other `MATE_*` variables that you set
+in the Agent Runtime's settings, such as `MATE_REACT_DOCTOR_BIN_PATH`, leave it a
+plain session. The folder can be the
 repository root or any folder below it. A relative `--repo` resolves against the
 current folder, and a link before a `..` is followed first, as the system does:
 with `forward` a link to `/x/sub`, `--repo /x/d/forward/../acme-app` asks about

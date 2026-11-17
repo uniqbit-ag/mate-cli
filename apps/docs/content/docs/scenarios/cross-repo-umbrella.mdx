@@ -1,0 +1,121 @@
+---
+title: Work Across Repositories From an Umbrella
+description: Plan and deliver one change that spans several repositories from the folder that holds them.
+---
+
+## Audience
+
+Developers whose change touches several repositories at once, such as an API
+and the web app that calls it, and who keep those repositories side by side in
+one plain folder.
+
+## Goal
+
+Start one agent session in the folder that holds the repositories, and plan,
+build, and archive one change that names each repository it touches.
+
+## Steps
+
+<Steps>
+<Step>
+
+### Link the folder once
+
+Keep the repositories as direct children of one folder that is no Git checkout
+itself, and link that folder:
+
+```sh
+cd ~/src/acme
+mate companion link
+```
+
+The folder is now an [Umbrella Repository](/docs/concepts/umbrella-repository).
+Nothing is written into `api/` or `web/`.
+
+</Step>
+<Step>
+
+### Start the session in the folder
+
+```sh
+cd ~/src/acme
+mate claude
+```
+
+The session is told which repositories the folder holds. After the companion
+policy, it gets one block that names each child by repository and folder:
+
+```xml
+<umbrella-children folder="/home/dev/src/acme" count="2">
+  <child repository="acme/api" folder="api" />
+  <child repository="acme/web" folder="web" />
+  Each child is a Working Repository of its own. The Working Repository of a piece of work is the child it concerns.
+</umbrella-children>
+```
+
+The agent does not have to list the folder and guess what each child is.
+
+</Step>
+<Step>
+
+### Explore the change
+
+Describe the change and run `/mate-explore-change`. The skill first resolves
+which children the change concerns. It reads the context map of those
+repositories only, and names one scope per repository and Area:
+
+```yaml
+scopes:
+  - repository: acme/api
+    area: .
+  - repository: acme/web
+    area: .
+```
+
+When the request names no repository and the skill cannot tell which child it
+concerns, it asks you.
+
+</Step>
+<Step>
+
+### Propose and apply
+
+Run `/mate-propose-change` and then `/mate-apply-change`. Apply settles a
+delivery branch for each scoped child. To keep the children's current branches
+untouched, choose the worktree option: Mate creates one mirrored worktree,
+`~/src/acme.worktrees/<id>`, with a Git worktree of each scoped child. Claude
+Code cannot move a session there, so start a new session in that folder and run
+`/mate-apply-change` again.
+
+</Step>
+<Step>
+
+### Archive
+
+When the work is done, run `/mate-archive-change`. Each spec the change
+produces stays owned by exactly one repository.
+
+</Step>
+</Steps>
+
+## Diagram
+
+```text
+~/src/acme/                 Umbrella Repository: the session starts here
+  api/  ── origin acme/api   ─┐
+  web/  ── origin acme/web   ─┤  one change, one scope per child
+                              ▼
+~/src/acme.worktrees/<id>/  mirrored worktree for apply
+  api/  ── branch for acme/api
+  web/  ── branch for acme/web
+```
+
+## Outcome
+
+One session and one change cover the work in both repositories. The agent knows
+each repository by its identity from the start, planning reads only the
+context of the repositories the change concerns, and each repository gets its
+own delivery branch.
+
+See [Umbrella Repository](/docs/concepts/umbrella-repository) for which folders
+count as children and what the session is told when a folder holds many.
