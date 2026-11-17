@@ -1,4 +1,4 @@
-import type { StudioChange } from "@uniqbit/mate-core/studio";
+import type { StudioChange, StudioSubmittedChange } from "@uniqbit/mate-core/studio";
 
 /** What a change needs next, read from its validation and task counts (design D5). */
 export type ChangeGroup = "needs-you" | "building" | "ready";
@@ -8,7 +8,7 @@ export const CHANGE_GROUPS: readonly ChangeGroup[] = ["needs-you", "building", "
 export const GROUP_TITLES: Record<ChangeGroup, string> = {
   "needs-you": "Needs you",
   building: "Implementation started",
-  ready: "Ready to archive",
+  ready: "Ready to submit",
 };
 
 export function changeGroup(change: StudioChange): ChangeGroup {
@@ -16,6 +16,18 @@ export function changeGroup(change: StudioChange): ChangeGroup {
   const done = change.completedTasks ?? 0;
   if (change.valid === false || total === 0 || done === 0) return "needs-you";
   return done < total ? "building" : "ready";
+}
+
+/**
+ * The changes still in flight: a submitted change awaits publication even when its folder is
+ * checked out, unless that folder holds work the submitted one lacks.
+ */
+export function activeChanges(
+  changes: StudioChange[],
+  submitted: readonly StudioSubmittedChange[],
+): StudioChange[] {
+  const awaiting = new Set(submitted.map((change) => change.name));
+  return changes.filter((change) => !awaiting.has(change.name) || change.unsubmitted === true);
 }
 
 export function groupChanges(changes: StudioChange[]): Record<ChangeGroup, StudioChange[]> {
@@ -71,10 +83,10 @@ export function changeStep(change: StudioChange): ChangeStep {
     };
   }
   return {
-    stage: "Archive change",
+    stage: "Submit change",
     situation: "All tasks done",
-    next: "Archive the change",
-    prompt: `/mate-archive-change ${change.name}`,
+    next: "Submit the change",
+    prompt: `/mate-submit-change ${change.name}`,
   };
 }
 

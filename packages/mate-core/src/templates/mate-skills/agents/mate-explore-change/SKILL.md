@@ -21,7 +21,14 @@ large for one change is suggested as several.
    [references/openspec-explore.md](references/openspec-explore.md) and follow it for the
    exploration itself. When a `PRE-EXPLORE HANDOFF` block is in this conversation, treat
    its Confirmed points as settled and start from its Unresolved questions and
-   Assumptions.
+   Assumptions. `openspec list` also names changes awaiting publication: a change whose `openspec/changes/<name>/delivery.yaml` says
+   `state: submitted` is not what the user is working on and never the current
+   behaviour. Run `mate artifact pending --json` once: each submitted change lists its
+   `author` and `touches` (the capability and requirement it rewrites or removes). When
+   one touches what this exploration is about, name the change and its author to the
+   user and read only that change's delta for that capability, from the companion with
+   `git show <ref>:<path>/specs/<capability>/spec.md` (`submitted.ref` and the change's
+   `path`); read any other submitted change only when the user names it.
 
 2. **Resolve scope from the context map.** Before reading code, identify the canonical
    Working Repository (`org/repository` from its Git remote) and the repository-relative
@@ -42,7 +49,7 @@ large for one change is suggested as several.
    Suggest slices only when the test clearly passes; a
    borderline case stays one change. When the explored direction clearly passes the
    test, propose slices: one change per slice,
-   each reviewable and archivable on its own, in dependency order. Name the
+   each reviewable and shippable on its own, in dependency order. Name the
    dependencies between slices; they become `dependsOn` entries when the changes are
    proposed. Several slices may share one delivery branch. Slicing is a suggestion;
    the user decides.

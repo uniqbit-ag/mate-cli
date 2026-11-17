@@ -69,7 +69,7 @@ const panel = (doc: Document) => doc.querySelector('[data-slot="sheet-content"]'
 describe("Dashboard", () => {
   it("lists each change once under what it needs, in order, and no specs or skills", () => {
     const markup = staticMarkup(<Dashboard payload={payload(changes)} />);
-    const order = ["Needs you", "Implementation started", "Ready to archive"].map((title) =>
+    const order = ["Needs you", "Implementation started", "Ready to submit"].map((title) =>
       markup.indexOf(`>${title}</h2>`),
     );
     expect(order.every((index) => index !== -1)).toBe(true);
@@ -82,6 +82,51 @@ describe("Dashboard", () => {
     );
     expect(markup).not.toContain("Specs by Area");
     expect(markup).not.toContain("mate-apply-change");
+  });
+
+  it("lists submitted changes awaiting publication, marking the user's own and naming others", () => {
+    const markup = staticMarkup(
+      <Dashboard
+        payload={{
+          ...payload([change("acme-ready", 7, 7), change("acme-login", 5, 5)]),
+          submitted: [
+            {
+              name: "acme-login",
+              group: "acme/product@workset/acme-login",
+              blocked: false,
+              mine: true,
+              author: "Acme Me",
+            },
+            { name: "acme-theirs", group: "", blocked: true, mine: false, author: "Acme Dev" },
+          ],
+        }}
+      />,
+    );
+    expect(markup.indexOf(">Ready to submit</h2>")).toBeLessThan(
+      markup.indexOf(">Awaiting publication</h2>"),
+    );
+    // A local copy of a submitted change is not also listed as active.
+    expect(markup).not.toContain('data-change="acme-login"');
+    expect(markup).toContain('data-submitted="acme-login"');
+    expect(markup).toContain("Yours");
+    expect(markup).toContain("acme/product@workset/acme-login");
+    expect(markup).toContain("Acme Dev");
+    expect(markup).toContain("Blocked");
+    expect(markup).toContain("/mate-publish-artifact");
+  });
+
+  it("shows only submitted changes when nothing else is in flight", () => {
+    const markup = staticMarkup(
+      <Dashboard
+        payload={{
+          ...payload([]),
+          submitted: [{ name: "acme-theirs", group: "", blocked: false, mine: false }],
+        }}
+      />,
+    );
+    expect(markup).not.toContain("No change is in flight");
+    expect(markup).toContain("Someone else");
+    expect(markup).toContain("no delivery branch");
   });
 
   it("shows a change's progress as done of total with a bar", () => {
@@ -142,7 +187,7 @@ describe("Dashboard", () => {
       />,
     );
     expect(markup).toContain(">Needs you</h2>");
-    expect(markup).not.toContain(">Ready to archive</h2>");
+    expect(markup).not.toContain(">Ready to submit</h2>");
     expect(markup).toContain("2 validation issues");
     expect(markup).toContain("Invalid");
   });
@@ -171,7 +216,7 @@ describe("Dashboard", () => {
       "All3",
       "Needs you1",
       "Implementation started1",
-      "Ready to archive1",
+      "Ready to submit1",
     ]);
     await act(async () => filter[2]!.click());
     expect(groups(doc)).toEqual(["Implementation started"]);

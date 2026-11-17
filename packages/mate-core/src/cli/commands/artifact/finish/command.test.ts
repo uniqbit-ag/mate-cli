@@ -14,6 +14,7 @@ import type { FinishResult } from "./engine";
 import type { ArtifactFinisher, FinisherFactory } from "./finisher";
 import { type GitOps, RemoteFetchError } from "./git";
 import type { WorktreeCleanupDeps } from "./worktree-cleanup";
+import type { PublicationResult, PublishDeps } from "../../../../lib/delivery/staging/publish";
 
 const COMPANION = "/companion";
 
@@ -72,10 +73,6 @@ function stubGit(record: string[] = [], branch = "main"): GitOps {
     async rebaseOntoUpstream() {
       return { ok: true, conflictedPaths: [] };
     },
-    async tagExists() {
-      return false;
-    },
-    async tag() {},
     async push() {
       record.push("push");
       return { ok: true, error: "" };
@@ -137,7 +134,9 @@ describe("runArtifactPublishCommand", () => {
     await runArtifactPublishCommand(["--json"], deps);
 
     expect(record).toEqual([]);
-    expect(stderr.join("\n")).toContain("requires an archive anchor or change name");
+    expect(stderr.join("\n")).toContain(
+      "requires a Delivery Group, a change name or archive anchor",
+    );
     expect(process.exitCode).toBe(1);
   });
 
@@ -940,5 +939,188 @@ describe("runArtifactPublishCommand — worktree cleanup", () => {
     await runArtifactPublishCommand(["--specs", "--json"], deps);
 
     expect(calls).toEqual([]);
+  });
+});
+
+describe("runArtifactPublishCommand — Delivery Groups", () => {
+  const GROUP = "acme_product/workset/acme-login";
+
+  function publication(
+    group: string,
+    status: PublicationResult["status"],
+    extra: Partial<PublicationResult> = {},
+  ): PublicationResult {
+    return {
+      status,
+      group,
+      changes: ["acme-login"],
+      records: status === "ok" ? ["2026-11-15-acme-login"] : [],
+      conflictedPaths: [],
+      warnings: [],
+      message: `${group}: ${status}`,
+      ...extra,
+    };
+  }
+
+  function groupDeps(
+    calls: { target: string; deps: PublishDeps }[],
+    statuses: Record<string, PublicationResult["status"]> = {},
+  ) {
+    const record: string[] = [];
+    const harness = makeDeps(record);
+    harness.deps.hasRemote = async () => true;
+    harness.deps.unpushedPublication = async () => false;
+    harness.deps.worktreeCleanup = { readWorksets: async () => ({ worksets: [], errors: [] }) };
+    harness.deps.publishSubmitted = async (_companion, target, deps) => {
+      calls.push({ target, deps });
+      return publication(target, statuses[target] ?? "ok", {
+        ...(statuses[target] === "ok" || !statuses[target] ? { commit: "a".repeat(40) } : {}),
+      });
+    };
+    return { ...harness, record };
+  }
+
+  test("publishes a Delivery Group from any machine and reports its commit, no tag", async () => {
+    const calls: { target: string; deps: PublishDeps }[] = [];
+    const { deps, stdout, record } = groupDeps(calls);
+
+    await runArtifactPublishCommand([GROUP, "--json"], deps);
+
+    expect(calls.map((call) => call.target)).toEqual([GROUP]);
+    expect(record).toEqual([]);
+    expect(JSON.parse(stdout[0]!)).toMatchObject({
+      status: "ok",
+      group: GROUP,
+      tag: null,
+      commit: "a".repeat(40),
+      anchors: ["2026-11-15-acme-login"],
+    });
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("a submitted change name publishes its group; an anchor uses the checkout", async () => {
+    const calls: { target: string; deps: PublishDeps }[] = [];
+    const { deps, record } = groupDeps(calls);
+
+    await runArtifactPublishCommand(["acme-login", "--json"], deps);
+    await runArtifactPublishCommand(["2026-07-14-acme-legacy", "--json"], deps);
+
+    expect(calls.map((call) => call.target)).toEqual(["acme-login"]);
+    expect(record).toContain("resolve:2026-07-14-acme-legacy");
+  });
+
+  test("a held group or one awaiting a publisher does not fail the command", async () => {
+    const calls: { target: string; deps: PublishDeps }[] = [];
+    const { deps, stderr } = groupDeps(calls, { [GROUP]: "held" });
+
+    await runArtifactPublishCommand([GROUP], deps);
+
+    expect(stderr).toContain(`${GROUP}: held`);
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("a group --refresh leaves held names the lookups that need an answer", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-publish-held-"));
+    const change = path.join(dir, "openspec", "changes", "acme-login");
+    await fs.mkdir(change, { recursive: true });
+    await fs.writeFile(
+      path.join(change, "delivery.yaml"),
+      "version: 1\nchange: acme-login\nstate: submitted\ndeliveries:\n  - repository: acme/product\n    branch: workset/acme-login\n",
+    );
+    const { deps, stdout, stderr } = groupDeps([]);
+    deps.settleLinked = async () => ({ recorded: [], warning: null });
+    deps.deliveryEnvironment = {
+      ensureUnambiguousCompanion: async () => true,
+      loadLinkedRepositories: async () => [],
+      loadGitAutoMode: async () => false,
+    };
+    deps.publishSubmitted = async (_companion, target, publish) => {
+      expect(await publish.settle!(dir, ["acme-login"])).toBeNull();
+      return publication(target, "held", { reason: "unmerged" });
+    };
+
+    try {
+      await runArtifactPublishCommand([GROUP, "--refresh", "--json"], deps);
+      await runArtifactPublishCommand([GROUP, "--refresh"], deps);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+
+    const result = JSON.parse(stdout[0]!) as FinishResult;
+    expect(result.outcomes).toEqual([
+      expect.objectContaining({
+        repository: "acme/product",
+        branch: "workset/acme-login",
+        needsAnswer: true,
+        answerReason: "no-checkout",
+      }),
+    ]);
+    expect(stderr.at(-1)).toBe(
+      `${GROUP}: held\n  workset/acme-login: acme/product is not linked on this machine; needs an answer\n  Answer with --confirm-merged, --confirm-open or --confirm-dropped.`,
+    );
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("--all tries every group, dependencies first by the queue, and exits non-zero on a conflict", async () => {
+    const calls: { target: string; deps: PublishDeps }[] = [];
+    const { deps, stdout } = groupDeps(calls, { "acme_product/workset/acme-a": "conflict" });
+    deps.publicationQueue = async () => ({
+      groups: ["acme_product/workset/acme-a", GROUP],
+      fresh: true,
+    });
+
+    await runArtifactPublishCommand(["--all", "--json"], deps);
+
+    expect(calls.map((call) => call.target)).toEqual(["acme_product/workset/acme-a", GROUP]);
+    expect(calls.every((call) => call.deps.withDependencies === false)).toBe(true);
+    expect((JSON.parse(stdout[0]!) as FinishResult[]).map((result) => result.status)).toEqual([
+      "conflict",
+      "ok",
+    ]);
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("--all reuses the queue's fetch only when it succeeded", async () => {
+    for (const fresh of [true, false]) {
+      const calls: { target: string; deps: PublishDeps }[] = [];
+      const { deps } = groupDeps(calls);
+      deps.publicationQueue = async () => ({ groups: [GROUP], fresh });
+
+      // oxlint-disable-next-line no-await-in-loop -- one run per case
+      await runArtifactPublishCommand(["--all", "--json"], deps);
+
+      expect(calls[0]!.deps.fresh).toBe(fresh ? true : undefined);
+    }
+  });
+
+  test("--refresh settles the group and its dependencies; --confirm-* only the named group", async () => {
+    const calls: { target: string; deps: PublishDeps }[] = [];
+    const { deps } = groupDeps(calls);
+    const settled: string[] = [];
+    deps.settleLinked = async (environment) => {
+      settled.push(environment.companionPath);
+      return { recorded: [], warning: "recording merges failed" };
+    };
+
+    await runArtifactPublishCommand([GROUP, "--refresh"], deps);
+    await runArtifactPublishCommand([GROUP, "--confirm-merged"], deps);
+
+    // Merges linked checkouts settle are recorded once, before the group, only with --refresh.
+    expect(settled).toHaveLength(1);
+    expect(calls[0]!.deps.settle).toBeDefined();
+    expect(calls[0]!.deps.settleDependency).toBeDefined();
+    expect(calls[1]!.deps.settle).toBeDefined();
+    expect(calls[1]!.deps.settleDependency).toBeUndefined();
+  });
+
+  test("--confirm-* with --all is refused before anything runs", async () => {
+    const calls: { target: string; deps: PublishDeps }[] = [];
+    const { deps, stderr } = groupDeps(calls);
+
+    await runArtifactPublishCommand(["--all", "--confirm-merged"], deps);
+
+    expect(calls).toEqual([]);
+    expect(stderr.join("\n")).toContain("--confirm-* answers for the Delivery Group of one target");
+    expect(process.exitCode).toBe(1);
   });
 });

@@ -15,25 +15,18 @@ export interface FinishContext {
 }
 
 /**
- * The committable result of resolving a publication target: what anchor the tag is
- * derived from and which paths the publication commit is scoped to.
+ * The committable result of resolving a publication target: its anchor and which paths the
+ * publication commit is scoped to.
  */
 export interface Produced {
-  /** Dated/immutable anchor the tag mirrors, e.g. `2026-07-14-my-change`. */
+  /** Dated/immutable anchor, e.g. `2026-07-14-my-change`. */
   anchorName: string;
   /** Pathspecs the publication commit stages — and nothing outside them. */
   commitPaths: string[];
-  /** Tag namespace preceding the anchor; defaults to the finisher's type. */
-  tagNamespace?: string;
   /** Whole commit subject; defaults to `chore(<type>): finish <anchorName>`. */
   commitSubject?: string;
-  /**
-   * Tag behaviour when the name is taken and this run produced a fresh commit.
-   * `reuse` (default) leaves the existing tag and pushes; `suffix` takes the
-   * lowest free `.N` so the fresh commit gets an anchor of its own. A resumed
-   * run reuses under either value: its commit is the tagged one already.
-   */
-  tagCollision?: "reuse" | "suffix";
+  /** Commit trailers, e.g. `Mate-Artifact: openspec/<anchor>`; a `Mate-Transaction` is always added. */
+  trailers?: Record<string, string>;
   /** Published anyway, but reported: e.g. a legacy archive whose merge was not checked. */
   warning?: string;
 }

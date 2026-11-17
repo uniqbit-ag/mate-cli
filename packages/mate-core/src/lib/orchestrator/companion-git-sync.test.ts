@@ -417,6 +417,20 @@ describe("CompanionGitSync", () => {
     });
   });
 
+  test("drops the preflight stash once local changes are restored", async () => {
+    const { companion, upstream } = await makeRepository();
+    await fs.writeFile(path.join(companion, "scratch.md"), "local dirty\n");
+    await fs.writeFile(path.join(upstream, "notes.md"), "remote\n");
+    git(upstream, "add", "notes.md");
+    git(upstream, "commit", "-qm", "remote notes");
+    git(upstream, "push", "-q");
+
+    await new CompanionGitSync().sync(companion);
+
+    expect(await fs.readFile(path.join(companion, "scratch.md"), "utf8")).toBe("local dirty\n");
+    expect(git(companion, "stash", "list").trim()).toBe("");
+  });
+
   test("discloses the preflight stash when sync fails after stashing", async () => {
     const { companion, upstream } = await makeRepository();
     await fs.writeFile(path.join(companion, "notes.md"), "local dirty\n");

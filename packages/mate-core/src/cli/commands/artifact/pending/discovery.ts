@@ -10,6 +10,7 @@ import {
   filesBelow,
   SPECS_RELATIVE_DIR,
 } from "../../../../lib/change-layout";
+import { pathIsDirectory } from "../../../../lib/fs-utils";
 import type { WorkingTreeChange } from "../finish/git";
 
 /** Whether an archived change still has uncommitted content in the companion working tree. */
@@ -46,8 +47,6 @@ export interface ArchiveEntry {
   anchor: string;
   /** Companion-relative POSIX path of the archive directory. */
   path: string;
-  /** Tag `mate artifact publish` creates for this anchor. */
-  tag: string;
   /** Uncommitted owned directories that make this change pending. */
   uncommittedPaths: string[];
   /** Uncommitted canonical specs this change's delta specs applied to. */
@@ -55,11 +54,6 @@ export interface ArchiveEntry {
   /** Uncommitted canonical specs with their working-tree change kind. */
   uncommittedSpecChanges: UncommittedSpecChange[];
   state: CommitState;
-}
-
-/** The tag `mate artifact publish` creates, never a recomputed date. */
-export function finishMarker(anchor: string): string {
-  return `openspec/${anchor}`;
 }
 
 /** Porcelain collapses an untracked directory to `dir/`; compare without that suffix. */
@@ -125,8 +119,8 @@ export async function canonicalSpecsFor(companionPath: string, anchor: string): 
 
 /**
  * Lists every dated archive directory with its commit state. State comes from the paths a
- * change owns outright — its archive directory and the active directory archiving deleted
- * — because canonical specs are shared: a spec today's work modified would otherwise
+ * change owns outright — its archive directory and the active directory archiving deleted,
+ * unless a new change took that name — because canonical specs are shared: a spec today's work modified would otherwise
  * resurrect every long-published change that ever touched it. Owned specs are still
  * reported on a pending entry so the publication scope is visible. Ordering is the stable
  * anchor sort (oldest date first).
@@ -141,7 +135,10 @@ export async function discoverArchives(
   return Promise.all(
     anchors.map(async (anchor) => {
       const name = changeNameOf(anchor);
-      const ownedPaths = [`${ARCHIVE_RELATIVE_DIR}/${anchor}`, `${CHANGES_RELATIVE_DIR}/${name}`];
+      const activePath = `${CHANGES_RELATIVE_DIR}/${name}`;
+      // Archiving deleted the active directory: one that exists is a new change of that name.
+      const reused = await pathIsDirectory(path.join(companionPath, ...activePath.split("/")));
+      const ownedPaths = [`${ARCHIVE_RELATIVE_DIR}/${anchor}`, ...(reused ? [] : [activePath])];
       const owned = matching(uncommittedPaths, ownedPaths);
       const ownedDirectories = matchingDirectories(uncommittedPaths, ownedPaths);
       const specs =
@@ -156,7 +153,6 @@ export async function discoverArchives(
         name,
         anchor,
         path: `${ARCHIVE_RELATIVE_DIR}/${anchor}`,
-        tag: finishMarker(anchor),
         uncommittedPaths: ownedDirectories,
         uncommittedSpecs: specs,
         uncommittedSpecChanges: specChanges,

@@ -14,8 +14,9 @@ export type HasRef = (ref: string) => Promise<boolean>;
 export type ListRefs = (prefixes: string[]) => Promise<string[]>;
 
 /**
- * A local merge check, without fetch or forge: a merge commit settles `merged`, commits
- * matched on the default branch read as `squashed`. A head on the default branch's own line
+ * A local merge check, without fetch: a merge commit or a default-branch commit containing the
+ * head settles `merged`; on Git without `merge-tree --write-tree`, commits matched by patch
+ * identity read as `squashed`. A head on the default branch's own line
  * is `open`: it may be a fast-forward, but then its commits are already there and continuing
  * on it is safe.
  */

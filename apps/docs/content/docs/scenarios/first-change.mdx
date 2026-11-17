@@ -64,7 +64,7 @@ The full schema, `mate-v1`, writes a proposal, specs, a design, and tasks:
 | 8   | Apply change                | `mate-apply-change`     |
 | 9   | Inspect outcome (optional)  | `mate-show-me`          |
 | 10  | Refine code (optional)      | `mate-simplify-code`    |
-| 11  | Archive change              | `mate-archive-change`   |
+| 11  | Submit change               | `mate-submit-change`    |
 | 12  | Publish companion artifacts | `mate-publish-artifact` |
 
 The minimal schema, `mate-minimal`, writes only specs and tasks, so it has two
@@ -82,16 +82,16 @@ reviews:
 | 6   | Apply change                | `mate-apply-change`     |
 | 7   | Inspect outcome (optional)  | `mate-show-me`          |
 | 8   | Refine code (optional)      | `mate-simplify-code`    |
-| 9   | Archive change              | `mate-archive-change`   |
+| 9   | Submit change               | `mate-submit-change`    |
 | 10  | Publish companion artifacts | `mate-publish-artifact` |
 
 Studio's Workflow view shows the same stages for both schemas. Each path is a
 node graph running top to bottom: one node per stage, connected by edges in
 stage order, beside labelled Plan, Review, Build, and Ship bands. The reviews
 share one group node. Apply change branches to the optional Inspect outcome and
-Refine code, which rejoin at Archive change. A dashed bypass edge skips each
+Refine code, which rejoin at Submit change. A dashed bypass edge skips each
 optional stage, and a mark on an edge shows where a new session starts. An
-inner frame marks the stages each change repeats, up to Archive change. An
+inner frame marks the stages each change repeats, up to Submit change. An
 outer frame holds the Workset: one or more changes delivered together on one
 branch per Working Repository. Select a
 node to open its stage in the side panel: what it does, why it is there, its
@@ -225,7 +225,7 @@ There is no separate ticket question. Mate stores the ticket
 nowhere else; the branch name carries it. Started on a fresh, unprotected branch
 whose name holds one key, such as `feature/ABC-123-retry` or `feature/abc-123-retry`
 with no commits beyond `origin/HEAD`, apply records that branch without asking and
-says so. Propose and archive never ask for a ticket.
+says so. Propose and submit never ask for a ticket.
 
 A team with its own branch convention sets a **branch template** once, on the
 same capability:
@@ -265,42 +265,72 @@ Apply records the Working Repository's; record each other repository with
 `--not-applicable <reason>` when it needs no branch. Publication holds the
 change back until every named repository has a delivery.
 
-When the change declares `dependsOn` and a dependency is neither archived nor fully
+When the change declares `dependsOn` and a dependency is neither published nor fully
 implemented, recording the branch warns about it, so apply asks whether to apply
-the dependency first. The warning never blocks.
+the dependency first. The warning never blocks. A dependency that is submitted, or
+still active in your checkout, counts as done: its requirements reach the canonical
+specs only at publication, so propose and apply read the specs as they will be with
+`mate artifact project <change-name>`.
 
 ### 6. Inspect and refine (optional)
 
 `/mate-show-me` renders what the change did; `/mate-simplify-code` tidies it.
 Either, both, or neither, in any order.
 
-### 7. Archive change, before or after the merge
+### 7. Submit change, before the merge
 
-`/mate-archive-change for <change-name>` runs `mate artifact archive`, which
-applies the delta specs to the local canonical specs, moves the change into the
-archive, and leaves a `delivery.yaml` in it. **Archiving does not wait for the
-merge**: while your PR collects approvals, the next change of the same feature
-can already be written against the updated specs. Archiving is local and
-uncommitted. It warns when another active change modifies the same requirement
-when a change it `dependsOn` is not archived yet, or when a planning artifact its
-schema requires is missing; warnings never block.
+`/mate-submit-change for <change-name>` runs `mate artifact submit`, which
+records the delivery, validates the change, sets `state: submitted` in its
+`delivery.yaml`, and pushes the change folders of its Delivery Group (one per
+Workset) to the companion's pending branch, the inbox `mate/inbox`.
+**Submitting does not wait for the merge**,
+and nothing is archived yet: the companion's specs stay as they are until
+publication. The change survives your machine, and a teammate can publish it
+after the merge. The other active changes of the same Workset in your checkout
+are submitted with it when all their tasks are checked; while one has open
+tasks, submit waits and pushes nothing. It warns when another active change
+modifies the same requirement, when a change it `dependsOn` is not submitted yet,
+or when a planning artifact its schema requires is missing; warnings never block.
+A failed push fails the submit; run it again. `/mate-archive-change` and
+`mate artifact archive` still work as deprecated aliases.
 
 ### 8. Publish companion artifacts after the merge
 
-`/mate-publish-artifact` lists archived, unpublished changes and publishes the
-ones you select with the `mate artifact publish` CLI: one commit, one tag, and
-a push to the companion. It first settles each archive's delivery branch:
+`/mate-publish-artifact` lists the submitted Delivery Groups that hold your own
+changes, merged ones to select and the rest as waiting for merge, and archives an
+earlier Mate left in your checkout; it shows other people's groups only when you
+ask for all. It publishes the ones you select with the
+`mate artifact publish` CLI, from any machine: the group's changes are archived on
+the companion's default branch with their delta specs applied, in `dependsOn`
+order, as one commit for the whole group, validated and pushed. No tag is
+created; the commit carries a `Mate-Artifact` trailer per change. When a
+requirement changed on the default branch since your delta was written, the group
+is blocked, and the skill shows both versions, proposes one text and, once you
+confirm, resolves it with `mate artifact resolve` from whichever machine you are
+on. It first settles each delivery branch:
 
-- With a [forge token](/docs/concepts/forge-token), it asks GitHub whether the
-  branch's PR is merged.
-- Without one, it asks you once per branch: **merged**, **not yet merged**, or
-  **dropped**. Your answer is recorded as yours, and it points to the token
-  setup once per run.
+- From Git: a linked checkout records a merge commit, squash or rebase whose
+  content the default branch contains, without asking. `mate companion sync`
+  on a machine where the repository is linked records it for everyone, so a publisher
+  without the checkout needs no answer. See
+  [Merge State](/docs/concepts/merge-state).
+- Otherwise it asks you once per branch: **merged**, **not yet merged**, or
+  **dropped**. Your answer is recorded as yours. A branch deleted on the remote
+  without its content on the default branch asks whether to drop the change.
 
-Only merged (or not-applicable) archives get a number. The rest stay in the list
+Only merged (or not-applicable) groups get a number. The rest stay in the list
 marked **waiting for merge**, so the published specs always describe the
-default branch. A dropped branch's archive can be restored with Git, because
-nothing was committed yet.
+default branch. A dropped change is removed from the pending branch with
+`mate artifact submit --drop`, from any machine.
+
+Studio's Overview lists every submitted change awaiting publication under
+**Awaiting publication**, marking your own and naming who submitted the others;
+the Claude Code session banner keeps one short line with the counts. A change is
+yours when its submit commit carries your Git `user.email`, or when this
+checkout submitted it. Once your submitted
+change's published archive reaches your checkout through companion
+synchronization, Mate removes the uncommitted local copy; a copy you edited after submitting is kept, with a warning
+to submit it again.
 
 ## A Feature Delivered As Several Changes
 
@@ -312,10 +342,11 @@ Large features work best as several small changes:
 2. Group slices delivered in one merge into one Workset and apply them on
    `workset/<workset-id>`; each records it. A slice needing its own merge is a
    separate Workset connected by dependencies.
-3. Archive each slice as soon as it is applied, so the next one builds on its
-   specs.
-4. After the feature PR merges, publish them together: one lookup or one answer
-   settles every archive on that branch.
+3. Submit the slices when the Workset is done; until then each waits for the
+   others. A later slice reads the specs it builds on with
+   `mate artifact project`.
+4. After the feature PR merges, publish them together from any machine: they
+   share one Delivery Group, and one lookup or one answer settles all of them.
 
 ## Breaking Changes
 
@@ -340,18 +371,29 @@ The generated OpenSpec skills (`openspec-*`) and commands (`/opsx:*`) are gone;
 | `/opsx:propose`, `openspec-propose`        | `/mate-propose-change` |
 | `/opsx:apply`, `openspec-apply-change`     | `/mate-apply-change`   |
 | `/opsx:update`, `openspec-update-change`   | `/mate-propose-change` |
-| `/opsx:archive`, `openspec-archive-change` | `/mate-archive-change` |
-| `/opsx:sync`, `openspec-sync-specs`        | `/mate-archive-change` |
+| `/opsx:archive`, `openspec-archive-change` | `/mate-submit-change`  |
+| `/opsx:sync`, `openspec-sync-specs`        | `/mate-submit-change`  |
 
 `mate artifact publish` now refuses an archive whose delivery is not merged.
 Archives made before delivery records existed still publish, with a warning
 that their merge was not checked.
 
+Publication no longer creates `openspec/...` tags; find an archive's commit with
+`git log --grep "Mate-Artifact: openspec/<anchor>"`. Existing tags stay. A
+publication an older version committed and tagged locally is pushed once, with
+its tag.
+
+Changes are submitted before the merge and archived at publication:
+`/mate-archive-change` and `mate artifact archive` forward to
+`/mate-submit-change` and `mate artifact submit`; the command alias pushes
+nothing. Archives an earlier Mate left uncommitted still publish from the
+checkout that holds them.
+
 {/* breaking:end */}
 
 ## Result
 
-Your change is archived, its delivery branch is merged, and its canonical specs
-are published to the companion under their own tag. See the
+Your change is submitted, its delivery branch is merged, it is archived, and its canonical specs
+are published to the companion's default branch. See the
 [command reference](/docs/reference/commands#artifacts-and-updates) for every
 `mate artifact` command.

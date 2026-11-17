@@ -1,3 +1,8 @@
+import { randomUUID } from "node:crypto";
+
+import { TRANSACTION_TRAILER } from "../../../../lib/artifact-trailer";
+import type { BranchOutcome } from "../../../../lib/delivery/refresh";
+import type { PublicationConflict, PublishedClaim } from "../../../../lib/delivery/staging/publish";
 import type { PruneResult } from "../../../../lib/workset/worktree";
 import { describeSecretFindings, type SecretFinding } from "../../../../runtime/secret-scan";
 import type { ArtifactFinisher, Produced } from "./finisher";
@@ -12,29 +17,62 @@ export type FinishStep =
   | "secret-scan"
   | "commit"
   | "sync-remote"
-  | "tag"
+  | "publish"
   | "push"
   | "done";
 
-/** `deferred`: a remote step stayed unreachable after retries; local work is kept and a re-run completes it. */
-export type FinishStatus = "ok" | "conflict" | "error" | "skipped" | "deferred";
+/**
+ * `deferred`: a remote step stayed unreachable after retries; local work is kept and a re-run
+ * completes it. `held`: a Delivery Group waits for its merge or an unpublished dependency.
+ * `awaiting-publisher`: ready, but this user may not push the default branch.
+ */
+export type FinishStatus =
+  | "ok"
+  | "conflict"
+  | "error"
+  | "skipped"
+  | "deferred"
+  | "held"
+  | "awaiting-publisher";
 
 /**
  * Machine-readable result emitted with `--json`. The publish skill parses this to
- * decide whether to hand a rebase conflict to a human, or to drive the remaining
- * tag + push after resolving one.
+ * decide whether to hand a conflict to a human or to retry. Publication creates no tag:
+ * `tag` is always null and `local.tagged` always false; `commit` names what was published.
  */
 export interface FinishResult {
   type: string;
   name: string;
   anchorName: string | null;
-  tag: string | null;
-  /** True when a prior publication already committed or tagged this anchor. */
+  tag: null;
+  /** The published commit: the Delivery Group's, or the local publication commit. */
+  commit?: string;
+  /** The Delivery Group a change publication published or held. */
+  group?: string;
+  /** The group's submitted changes, in publication order. */
+  changes?: string[];
+  /** The archives the group's changes became. */
+  anchors?: string[];
+  /** Why a group is held: `unmerged`, `dependency-unpublished` or `unconfirmed-merge`. */
+  reason?: "unmerged" | "dependency-unpublished" | "unconfirmed-merge";
+  /** The final merge results the group's changes record and who recorded each. */
+  merges?: PublishedClaim[];
+  /** `unmerged` after `--refresh`: the branch lookups that need the user's answer. */
+  outcomes?: BranchOutcome[];
+  /** `dependency-unpublished`: the changes of other groups it waits for. */
+  heldBy?: string[];
+  /** Groups of dependencies published first in the same run. */
+  dependencies?: FinishResult[];
+  /** The conflict is recorded as `blocked` on the pending branch. */
+  blocked?: boolean;
+  /** A requirement changed since the delta was written, with the texts to resolve it from. */
+  conflict?: PublicationConflict;
+  /** True when a prior publication already committed or pushed this publication. */
   resumed: boolean;
   step: FinishStep;
   status: FinishStatus;
   conflictedPaths: string[];
-  local: { committed: boolean; tagged: boolean; pushed: boolean };
+  local: { committed: boolean; tagged: false; pushed: boolean };
   message: string;
   /** Set when the secret scan stopped the publication: where and which rule, never the value. */
   secretFindings?: SecretFinding[];
@@ -77,24 +115,20 @@ export function printFinishResult(
   }
 }
 
+/** The publication commit's message: subject, then its `Mate-*` trailers. */
+function commitMessage(subject: string, trailers: Record<string, string>): string {
+  const lines = Object.entries(trailers).map(([key, value]) => `${key}: ${value}`);
+  return `${subject}\n\n${lines.join("\n")}`;
+}
+
 /**
- * Runs the fixed publication pipeline for a resolved {@link ArtifactFinisher}:
- * resolve → branch guard → cap sync → secret scan → scoped commit → sync-remote → tag →
- * push. The git, remote-sync, and conflict-handoff machinery is identical for every
- * artifact kind — only the finisher's resolution and cap sync vary.
+ * Runs the local publication pipeline for a resolved {@link ArtifactFinisher}:
+ * resolve → branch guard → cap sync → secret scan → scoped commit → sync-remote → push.
+ * The commit carries `Mate-*` trailers instead of a tag.
  *
  * Isolation is a clean abort, not a rollback: the resolved artifact is durable input
  * the pipeline never produced, so no step resets, restores, or deletes a path.
  */
-/** Lowest free `<base>.N` (N from 2), probed against the tags that exist now. */
-async function nextFreeTag(git: GitOps, base: string): Promise<string> {
-  for (let suffix = 2; suffix <= 1000; suffix += 1) {
-    const candidate = `${base}.${suffix}`;
-    if (!(await git.tagExists(candidate))) return candidate;
-  }
-  throw new Error(`exhausted ${base}.2 through ${base}.1000 without a free tag name`);
-}
-
 export async function runFinishEngine(
   finisher: ArtifactFinisher,
   options: EngineOptions,
@@ -127,6 +161,12 @@ export async function runFinishEngine(
     emit();
   };
 
+  /** The publication commit, once committed (and rebased). */
+  const recordCommit = async (): Promise<void> => {
+    const commit = await git.headCommit?.().catch(() => null);
+    if (commit) result.commit = commit;
+  };
+
   const fail = (step: FinishStep, message: string, status: FinishStatus = "error"): void => {
     result.step = step;
     result.status = status;
@@ -149,14 +189,9 @@ export async function runFinishEngine(
     result.warning = resolved.warning;
     if (!deps.json) deps.stderr(`warning: ${resolved.warning}`);
   }
-  const baseTag = `${resolved.tagNamespace ?? finisher.type}/${resolved.anchorName}`;
-  // Provisional: a `suffix` publication only learns its final name at the tag
-  // step, once the remote sync has revealed tags created elsewhere. Early exits
-  // therefore report the tag this run would have created, not one that exists.
-  result.tag = baseTag;
 
   // Branch guard — before cap sync, so a refusal mutates nothing at all. It applies to
-  // --no-push too: the local tag it creates is the anchor a later push would publish.
+  // --no-push too: the local commit it creates is what a later push would publish.
   result.step = "branch-guard";
   const [expectedBranch, currentBranch] = await Promise.all([
     git.defaultBranch(),
@@ -227,7 +262,10 @@ export async function runFinishEngine(
     await git.add(resolved.commitPaths);
     if (await git.hasStagedChanges(resolved.commitPaths)) {
       await git.commit(
-        resolved.commitSubject ?? `chore(${finisher.type}): finish ${resolved.anchorName}`,
+        commitMessage(
+          resolved.commitSubject ?? `chore(${finisher.type}): finish ${resolved.anchorName}`,
+          { ...resolved.trailers, [TRANSACTION_TRAILER]: randomUUID() },
+        ),
         resolved.commitPaths,
       );
     } else {
@@ -242,16 +280,16 @@ export async function runFinishEngine(
   }
   result.local.committed = true;
 
-  // Sync with remote before tagging (skipped with --no-push — no remote target).
+  // Sync with remote before pushing (skipped with --no-push — no remote target).
   if (!options.noPush) {
     result.step = "sync-remote";
     if (await git.hasUpstream()) {
       try {
         await git.fetch();
       } catch (err) {
-        // Post-commit failure: retain the commit, do not roll back. No tag before a sync.
+        // Post-commit failure: retain the commit, do not roll back.
         if (err instanceof RemoteFetchError && err.transient) {
-          defer("sync-remote", "commit retained locally, not tagged", err.message);
+          defer("sync-remote", "commit retained locally, not pushed", err.message);
         } else {
           fail("sync-remote", `mate: fetch failed (commit retained locally): ${String(err)}`);
         }
@@ -259,12 +297,12 @@ export async function runFinishEngine(
       }
       const rebase = await git.rebaseOntoUpstream();
       if (!rebase.ok) {
-        // Deliberate stop-for-handoff: commit exists, no tag, not pushed. Never auto-resolve.
+        // Deliberate stop-for-handoff: commit exists, not pushed. Never auto-resolve.
         result.step = "sync-remote";
         result.status = "conflict";
         result.conflictedPaths = rebase.conflictedPaths;
         result.message =
-          "mate: rebase onto remote conflicted; resolve the conflict, complete the rebase, then finish tag + push.";
+          "mate: rebase onto remote conflicted; resolve the conflict, complete the rebase, then publish again to push.";
         emit();
         process.exitCode = 1;
         return result;
@@ -272,56 +310,36 @@ export async function runFinishEngine(
     }
   }
 
-  // Tag the (rebased) publication commit — idempotent if a prior run already tagged
-  // it. A `suffix` publication that produced a fresh commit takes the next free name
-  // instead, so its commit gets an anchor rather than trailing someone else's tag.
-  result.step = "tag";
-  let tagName = baseTag;
-  try {
-    if (!(await git.tagExists(baseTag))) {
-      await git.tag(tagName, `Publish ${resolved.anchorName}`);
-    } else if (resolved.tagCollision === "suffix" && !result.resumed) {
-      tagName = await nextFreeTag(git, baseTag);
-      await git.tag(tagName, `Publish ${resolved.anchorName}`);
-    } else {
-      result.resumed = true;
-    }
-    result.tag = tagName;
-  } catch (err) {
-    // Post-commit failure: retain the commit, do not roll back.
-    fail("tag", `mate: tag failed: ${String(err)}`);
-    return result;
-  }
-  result.local.tagged = true;
-
   if (options.noPush) {
+    await recordCommit();
     result.step = "done";
     result.status = "skipped";
-    result.message = `Published ${resolved.anchorName} locally (commit + tag ${tagName}); not pushed (--no-push).`;
+    result.message = `Published ${resolved.anchorName} locally (committed); not pushed (--no-push).`;
     emit();
     return result;
   }
 
-  // Push branch + tag together.
+  // Push the branch; `--follow-tags` still carries a tag an older Mate version created.
   result.step = "push";
   const push = await git.push();
   if (!push.ok) {
-    // Post-tag push failure: retain commit + tag for retry, do not roll back.
+    // Post-commit push failure: retain the commit for retry, do not roll back.
     if (push.transient) {
-      defer("push", `commit and tag ${tagName} retained locally`, push.error);
+      defer("push", "commit retained locally", push.error);
       return result;
     }
     result.status = "error";
-    result.message = `mate: push failed (commit and tag ${tagName} retained locally): ${push.error}`;
+    result.message = `mate: push failed (commit retained locally): ${push.error}`;
     emit();
     process.exitCode = 1;
     return result;
   }
   result.local.pushed = true;
+  await recordCommit();
 
   result.step = "done";
   result.status = "ok";
-  result.message = `Published ${resolved.anchorName}: ${result.resumed ? "resumed, " : ""}committed, tagged ${tagName}, and pushed.`;
+  result.message = `Published ${resolved.anchorName}: ${result.resumed ? "resumed, " : ""}committed and pushed.`;
   emit();
   return result;
 }

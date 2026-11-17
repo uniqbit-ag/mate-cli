@@ -18,13 +18,13 @@ import { makeSshStub, stubSshUrl } from "../../../../test/ssh-stub";
 
 // Local-only, opt-in verification that mate's companion-guidance injection ends
 // up EXACTLY ONCE in the system prompt that the REAL `claude` and `opencode`
-// binaries send to the model API. Unlike cli-e2e.test.ts's launch tests (which
+// binaries send to the model API. Unlike the launch tests in cli-e2e-launch.test.ts (which
 // substitute capturing stub binaries), these tests spawn the actual CLIs and
 // redirect their outbound model requests to a local mock HTTP server, so no
 // real network request or agentic tool call ever happens.
 //
 // This file is intentionally self-contained (it duplicates the small subset of
-// cli-e2e.test.ts's scenario plumbing it needs) rather than importing from it,
+// the scenario plumbing of cli-e2e-support.ts it needs) rather than importing from it,
 // so the stub-based hermetic suite and this real-binary suite stay decoupled.
 //
 // Gating: skipped unless explicitly enabled, and skipped per-tool when the
