@@ -1,12 +1,32 @@
 import { describe, expect, it } from "bun:test";
 import type { StudioChange } from "@uniqbit/mate-core/studio";
 
-import { changeGroup, changeProgress, changeStep, groupChanges } from "./change-group";
+import {
+  activeChanges,
+  changeGroup,
+  changeProgress,
+  changeStep,
+  groupChanges,
+} from "./change-group";
 
 const change = (overrides: Partial<StudioChange>): StudioChange => ({
   name: "acme-queue",
   artifacts: [],
   ...overrides,
+});
+
+describe("activeChanges", () => {
+  it("leaves out a change awaiting publication whose folder is checked out", () => {
+    const local = [change({ name: "acme-login" }), change({ name: "acme-queue" })];
+    const submitted = [{ name: "acme-login", group: "", blocked: false, mine: true }];
+    expect(activeChanges(local, submitted).map((entry) => entry.name)).toEqual(["acme-queue"]);
+  });
+
+  it("keeps a change whose folder holds work its submitted namesake lacks", () => {
+    const local = [change({ name: "acme-login", unsubmitted: true })];
+    const submitted = [{ name: "acme-login", group: "", blocked: false, mine: false }];
+    expect(activeChanges(local, submitted).map((entry) => entry.name)).toEqual(["acme-login"]);
+  });
 });
 
 describe("changeGroup", () => {
@@ -48,10 +68,10 @@ describe("changeStep", () => {
     );
   });
 
-  it("offers the archive prompt once every task is done", () => {
+  it("offers the submit prompt once every task is done", () => {
     const step = changeStep(change({ completedTasks: 7, totalTasks: 7 }));
-    expect(step.stage).toBe("Archive change");
-    expect(step.prompt).toBe("/mate-archive-change acme-queue");
+    expect(step.stage).toBe("Submit change");
+    expect(step.prompt).toBe("/mate-submit-change acme-queue");
   });
 
   it("offers the apply prompt while building", () => {

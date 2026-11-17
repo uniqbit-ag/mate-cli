@@ -21,8 +21,8 @@ const STAGE_CLAIMS: Record<string, string[]> = {
   apply: ["delivery branch", "protected"],
   "inspect-outcome": ["diagram", "diff"],
   "refine-code": ["behavior"],
-  archive: ["canonical", "delivery"],
-  publish: ["merged", "tag"],
+  submit: ["delivery group", "validates"],
+  publish: ["merged", "delivery group"],
 };
 
 describe("Studio stage text", () => {

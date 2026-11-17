@@ -927,40 +927,220 @@ falls back locally. Final delivery failure returns
 
 ## Artifacts And Updates
 
-| Command                                                          | Purpose                                                               |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `mate artifact pending [--json]`                                 | List archived changes and drifted specs that are not published yet.   |
-| `mate artifact publish <target> [options]`                       | Commit, tag, and push one archived change.                            |
-| `mate artifact link <change>... [options]`                       | Record a change's delivery branch and merge state in `delivery.yaml`. |
-| `mate artifact archive <change> [options]`                       | Archive a change, before or after its merge, and record its delivery. |
-| `mate artifact apply-context <change> --json [--since <digest>]` | Fetch fresh apply instructions as a full or compact envelope.         |
-| `mate update`                                                    | Upgrade an npm-managed Mate installation and reinstall requirements.  |
-| `mate update --check`                                            | Check for an update without installing it.                            |
+| Command                                                            | Purpose                                                                        |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `mate artifact pending [--json]`                                   | List submitted Delivery Groups, legacy archives, and drifted specs to publish. |
+| `mate artifact publish <target> [options]`                         | Publish a submitted Delivery Group, a legacy archive, or drifted specs.        |
+| `mate artifact link <change>... [options]`                         | Record a change's delivery branch and merge state in `delivery.yaml`.          |
+| `mate artifact submit <change>... [options]`                       | Submit finished changes for publication: push their Delivery Group's folders.  |
+| `mate artifact take <change> [--json]`                             | Take a submitted change into this checkout, to revise and submit it again.     |
+| `mate artifact archive <change> [options]`                         | Deprecated alias of `mate artifact submit`.                                    |
+| `mate artifact resolve <change> --capability --requirement --file` | Resolve a publication conflict in a submitted change, from any machine.        |
+| `mate artifact project <change> [--json]`                          | Show the canonical specs once the change's `dependsOn` chain is published.     |
+| `mate artifact apply-context <change> --json [--since <digest>]`   | Fetch fresh apply instructions as a full or compact envelope.                  |
+| `mate update`                                                      | Upgrade an npm-managed Mate installation and reinstall requirements.           |
+| `mate update --check`                                              | Check for an update without installing it.                                     |
 
-`mate artifact pending` is read-only. It lists each archived OpenSpec change
-whose files are still uncommitted in the companion, with the canonical specs it
-applied, and separately lists uncommitted specs no pending change accounts for.
+**Submit.** A finished change is submitted before its delivery branch merges.
+`mate artifact submit <change>...` records and refreshes the delivery as
+`mate artifact link` does, prints concurrent-change, dependency,
+incomplete-planning, and unscoped-delivery warnings to stderr, runs
+`openspec validate <change> --strict`, and sets `state: submitted` in the
+change's `delivery.yaml`. A change is refused when its name holds anything but
+letters, digits, `_`, `.` and `-`, or starts with `.` or `-`: the name reaches
+shell commands. Then it pushes the change folders of its **Delivery
+Group** in one secret-scanned commit carrying a `Mate-Transaction` trailer. The
+commit is built in a temporary worktree and pushed without force, rebuilt up to
+three times. It goes to the **inbox**, the companion's pending branch
+`mate/inbox`; your checkout and the default branch are not touched. Nothing is
+archived and no canonical spec changes: publication does that after the merge.
+Submitting needs a companion with a remote: without one, submit fails and
+changes nothing.
 
-The `publish` target is a dated archive anchor (`YYYY-MM-DD-<name>`) or a change
-name that matches exactly one archive. Publishing never archives: archive the
-change first. Options:
+The Delivery Group is `<repository>/<delivery-branch>` with the repository
+written as `org_repo` (for example `acme_widgets/workset/acme-login`), or
+`change/<change>` without a branch; all slices of one Workset share it and are
+pushed and published together. Submit acts on the whole group: the other active
+changes of the group in your checkout are submitted with the one you name when
+all their tasks are checked. While one of them has open tasks or fails its
+check, submit pushes nothing, changes no state, and reports `waiting` with
+`waitingFor`; finish or drop it, then submit again. A change says
+`state: submitted` only once it is on the pending branch. Without a recorded
+delivery it submits nothing and reports `needs-branch`; answer with
+`--branch <branch>` (`--direct` for a protected one), `--not-applicable <reason>`,
+or `--skip-branch`, which leaves an unlinked record so publication asks again;
+add `--repository <org/repo>` when the Working Repository has no `origin` remote
+Mate can read. A failed check or push fails the submit and changes no state;
+run it again, and an unchanged resubmit adds no commit. A change already
+submitted is pushed again only when you edited it since; one you dropped comes
+back when you name it. Submit never replaces a folder a teammate resolved or
+revised on the pending branch since your submit: it fails and names
+`mate artifact take`. `--drop <change>`
+sets `state: dropped` and removes the folder (the group when it is empty) from
+the pending branch, from any machine. `mate artifact archive` still works as a
+deprecated alias of `submit` that only records the delivery and runs the check:
+it submits and pushes nothing; run `mate artifact submit` to submit. With `--json` and one change it prints that change's
+result as one object rather than an array.
 
+Submit refuses a change whose delivery branch Git already counts as merged
+while the work tree that has the branch checked out holds modified tracked
+files: that work is on no commit, so the merge would be recorded without it.
+Commit or stash it, then submit again; nothing is recorded or pushed before.
+Untracked files and edits on another branch do not count.
+
+Submit records the delivery branch's final `head` in `delivery.yaml`, with
+`unpushed: true` while that commit is not on the branch on `origin`.
+`mate companion sync` and `mate artifact publish --refresh` on a machine where
+the delivery's repository is linked check every
+unsettled submitted change in Git and push newly settled merges to the pending
+branch in one commit, so a publisher without that checkout publishes without a
+question. A failure there is a warning; see
+[Merge State](/docs/concepts/merge-state).
+
+**The inbox.** Submitted changes wait on the companion's orphan branch
+`mate/inbox`, in the same `openspec/changes/<name>/` layout, created by the
+first submit. The default branch holds published content only: nobody's
+unfinished or unmerged change shows up in `openspec/changes/` of another
+checkout, and a companion can protect its default branch, since submitting
+needs write access to `mate/inbox` only. Publication is then run by someone
+with push rights to the default branch. Your own submitted change stays in your
+checkout, uncommitted, until its published archive arrives.
+
+Publication trusts the inbox: a publisher lands what it holds, with the merge
+state its Delivery Records name, on the default branch. Whoever can push
+`mate/inbox` can therefore get specs published by the next publisher, and can
+record a delivery as merged. Give that access only to people who may change the
+specs and whose word on a merge you take. `mate artifact pending` and each
+publication name who recorded a merge that is not yours (`merges`): found by Git
+on their machine, or their own answer, which no checkout checked. The name is
+the Git author of the inbox commit, which the pusher writes, so it tells you
+whose claim it is and proves nothing; a host that verifies commit authors
+closes that gap. `mate artifact publish --all` skips a group resting on someone
+else's answer; publish that group by name to accept it.
+
+`mate artifact pending` lists the submitted changes on the pending branch by
+Delivery Group, each with its delivery, any block, whether it is yours (`yours`,
+committed with your Git email or submitted from this checkout) or someone
+else's (`others`, with the submitter as `author`), and the requirements it
+rewrites or removes (`touches`), who recorded each merge that is not yours
+(`merges`), and per group whether it is publishable and which unpublished
+dependencies hold it. Agents read `touches` while exploring
+and proposing, to say who else is changing a requirement before a change is
+planned against it. With `--json` each change carries its `path` and the
+listing the pending branch's `ref`, so `git show <ref>:<path>/proposal.md` in
+the companion reads a file of it without a checkout. To revise a submitted
+change that is not in your checkout, a teammate's or your own from another
+machine, `mate artifact take <change>` writes its folder into
+`openspec/changes/<change>/`, uncommitted; edit it and submit it again. It is
+refused while your checkout holds a folder of that name, and when the folder on
+the pending branch holds a symbolic link or submodule. Separately it lists archives an earlier Mate left
+uncommitted in this checkout, publishable from this checkout only, and
+uncommitted specs no pending change accounts for. In Git mode `auto` it fetches
+the default and pending branches first; otherwise, or when the fetch fails, it
+reports the last fetched state as stale. It changes nothing else.
+
+The `publish` target is a Delivery Group (`<repository>/<branch>` or
+`change/<name>`), a submitted change name, or the dated anchor
+(`YYYY-MM-DD-<name>`) or name of a legacy archive. A Delivery Group publishes
+from any machine once every delivery in it is merged. In a temporary checkout of
+the fetched default branch its changes are applied in `dependsOn` order, then
+submit order: each is checked for stale requirements, archived with
+`openspec archive`, and each canonical spec that changed is validated (errors
+only; warnings never block). The group lands as one commit with a
+`Mate-Artifact: openspec/<anchor>` trailer per change and a `Mate-Transaction`
+trailer, is secret-scanned and pushed without force, rebuilt once when the branch
+moved. The group then leaves `mate/inbox` in a second push; when that one
+fails, the result carries a warning and the next publication of the group takes
+it out. Your checkout then
+fast-forwards to the published commit when nothing blocks it. When the companion refuses your push to its default
+branch, the result is `awaiting-publisher`: nothing is published, and someone
+with push rights publishes it. A change that depends on an unpublished change of
+another group publishes that group first in the same run, or is `held` with
+reason `dependency-unpublished`. With `--json` a result carries `merges`: each
+final merge result the group rests on, with `source`, `recordedBy` and `yours`. A group `--refresh` leaves `held` as
+`unmerged` names why: each branch that needs your answer, for example one
+deleted on the remote that this machine never fetched, with the `--confirm-*`
+flags that answer it; `--json` carries them as `outcomes`. No tag is created:
+`git log --grep "Mate-Artifact: openspec/<anchor>"` finds a publication for a
+revert. Tags made by older versions stay. A legacy archive keeps the commit
+pipeline on this checkout's `HEAD`. Publishing never submits: submit the change
+first. Options:
+
+- `--refresh` checks each submitted change's merge state in its checkout linked
+  on this machine before deciding, and records settled merges of other linked
+  submitted changes on the pending branch; see
+  [Merge State](/docs/concepts/merge-state).
+- `--confirm-merged`, `--confirm-open`, `--confirm-dropped` record your answer
+  instead. A published group carries the settled records in its commit; a group
+  held back, or one whose publication fails, gets them pushed to the pending
+  branch on their own.
 - `--specs [<path>...]` publishes drifted canonical specs as their own
-  publication instead of a change; with paths, only those specs.
-- `--all` publishes every pending change in order, then the remaining spec
-  drift. It skips an archive the merge gate holds back, saying why, and stops
-  at the first conflict, error, or deferral.
+  publication instead of a change, as one commit carrying
+  `Mate-Artifact: openspec/specs/<date>-<specs>`; with paths, only those specs.
+- `--all` publishes every submitted Delivery Group, dependencies first, then
+  every legacy archive, then the remaining spec drift. It skips a group the merge
+  gate holds back or that awaits a publisher, saying why, and a group resting on
+  a merge someone else answered that no checkout found (`held`, reason
+  `unconfirmed-merge`): publish that group by name to accept the answer. A group's conflict
+  blocks only that group and the run goes on, exiting 1 at the end; it stops at
+  the first error, deferral, or local conflict.
+- After `--no-push`, publishing the same legacy archive again pushes that local
+  commit instead of creating a second one.
 - `--type openspec` selects the publisher; it is the default.
-- `--no-push` commits and tags locally without pushing.
+- `--no-push` commits a legacy archive locally on `HEAD` without pushing.
 - `--json` prints machine-readable results.
 
-Publishing never prompts for credentials. When the fetch or push fails with an
-authentication rejection or a network error, it retries twice after a short
-wait. If the remote is still unreachable, the publication is `deferred`: the
-command exits 0 and keeps the commit (and, after a failed push, the tag) in
-the companion. A deferred fetch leaves the commit untagged. Re-run
-`mate artifact publish` with the same target to finish it. Other remote
-failures, such as a rejected push, still fail the command.
+When a requirement a change modifies, removes, or renames changed on the
+default branch since the change's delta was written, publishing stops with a
+conflict instead of merging the two edits; it also conflicts when a delta no
+longer applies or a canonical spec it changed fails validation. It pushes
+nothing, leaves the submitted folders as they are, names the change, the
+capability, and the requirement, or the invalid spec, and records `blocked`
+(reason, paths, first seen, default tip) in the change's `delivery.yaml` on the pending
+branch, so `mate artifact pending` and the session banner show it on every
+machine. With `--json`, the result's `conflict` carries the requirement as the
+delta was written against it, the change's version, and the default branch's.
+Resolve it from any machine: write each requirement as it should read to a file
+and run
+`mate artifact resolve <change> --capability <capability> --requirement <name> --file <file>`,
+one `--capability --requirement --file` triple per requirement. It rewrites the
+submitted folder, takes the default tip as the new delta base, clears the block,
+and pushes; then publish again. While another requirement the change would
+overwrite changed on the default branch too and is not resolved in the same
+call, `resolve` refuses and names it in `unresolved`, so the new delta base
+never hides a teammate's change. It also refuses when a requirement it is given
+changed on the default branch again after the conflict was reported: publish
+again to see the current text, then resolve from that. A removed or renamed requirement, or a delta
+that no longer applies, is fixed in the change's delta spec and submitted
+again. To keep a removal or rename as it is, submit the change again
+unchanged, by name: that accepts the conflict, takes the default tip as the
+delta base and clears the block, as long as the change overwrites no other
+requirement that changed. A requirement the
+change renames and also modifies is resolved under its old name, as the
+conflict reports it. A
+modification identical to the default branch's text is no conflict, and the
+changes of one group build on each other.
+
+The delta base is when the delta was written, not when it was submitted:
+`mate artifact link` keeps the companion's `HEAD` as `specBase` in
+`delivery.yaml` the first time it writes the record (the propose skill runs
+`mate artifact link <change> --spec-base` once the delta specs are written), and
+publication uses it while the default branch still holds it.
+Publishing never prompts for credentials. When a fetch or
+push fails with an authentication rejection or a network error, it retries twice
+after a short wait. If the remote is still unreachable, the publication is
+`deferred` and the command exits 0. A group publication has pushed nothing; a
+local publication keeps its commit. Re-run `mate artifact publish` with the same
+target to finish it. A publication an older version committed and tagged locally
+is pushed once, with its tag. Other remote failures, such as a rejected push,
+still fail the command.
+
+`mate artifact project <change>` shows the canonical specs of the affected
+capabilities as they will read once the change's `dependsOn` chain, submitted or
+still active here, is published. It applies the chain with the publication code
+in a temporary worktree and commits nothing; a dependency that would fail
+publication is reported with publication's reason. The propose and apply skills
+read it for a change with `dependsOn`.
 
 When a publication makes its Workset Done, publish then removes that Workset's
 worktrees as `mate working worktree prune` does: clean, fully pushed worktrees
@@ -975,12 +1155,13 @@ kept worktree follows the result. To get a removed worktree back, run
 worktree that a Claude Code session entered with `EnterWorktree`, so cleanup
 never removes that worktree while the session is still in it.
 
-`mate artifact pending --json` also reports each archive's delivery: `merged`
-and `not-applicable` archives are publishable; `waiting`, `unlinked`, and
-`dropped` ones are held back, and `mate artifact publish` refuses them. A
-`legacy` archive (no `delivery.yaml`) publishes with a warning that its merge was not checked. An archive is also held back while it
-shares a canonical spec with a pending archive that is held back, since its
-commit would carry that archive's unmerged requirements.
+`mate artifact pending --json` also reports each change's delivery: `merged`
+and `not-applicable` changes are publishable; `waiting`, `unlinked`, and
+`dropped` ones are held back. A Delivery Group is published only when every
+change in it is publishable; otherwise `mate artifact publish` reports it as
+`held`. A legacy archive without a `delivery.yaml` publishes with a warning that
+its merge was not checked. A dropped submitted change is removed from any
+machine with `mate artifact submit --drop <change>`.
 
 `mate artifact link` writes the change's `delivery.yaml`, the only writer of
 that file, for active and archived changes. Options:
@@ -998,8 +1179,8 @@ that file, for active and archived changes. Options:
   delivery. `--direct` works on any branch: no PR is looked up for it, and only
   your answer settles it.
 - `--not-applicable <reason>` records that no branch delivers the change.
-- `--pr <url>` records the PR; with `--refresh` it picks that PR when several
-  share the branch.
+- `--pr <url>` records the PR. A refresh keeps it over one it finds, and uses
+  its head ref to recover the head of a deleted branch.
 - `--ticket <KEY>` records the Delivery Branch resolved with a Jira key
   (`ABC-123`, any case): the branch is named by the branch template with the key
   (by default `workset/<TICKET>-<workset-id>`), while a recorded or inherited
@@ -1011,16 +1192,21 @@ that file, for active and archived changes. Options:
   `--not-applicable`, is refused when the repository's delivery is direct or not
   applicable, and is refused unless the companion's openspec
   capability sets `ticket: jira`; see [Your First Change](/docs/scenarios/first-change).
-- `--refresh` asks GitHub for the merge state when a
-  [forge token](/docs/concepts/forge-token) is available, and otherwise checks
-  the repository's local checkout (source `git`); see
+- `--refresh` checks each recorded branch in the repository's checkout linked
+  on this machine: a merge commit, or a default-branch commit containing the
+  branch's head (squash or rebase), records it merged with source `git`, and the
+  remote's pull refs give the PR link. Anything else needs your answer, with an
+  `answerReason`: `likely-merged` (a fast-forward, a merge commit that brought a
+  head never pushed as its branch, or a patch-identity match on Git before 2.38), `not-on-default`, `branch-deleted` (gone on the remote and
+  never merged), `no-checkout` (not linked here) or `direct`; see
   [Merge State](/docs/concepts/merge-state). A direct
   delivery is never settled automatically, because Git cannot tell its commits
   from your other pushes. The refresh reports it as needing your answer; check
   `origin/<branch>` and answer with `--confirm-merged`. The publish skill asks
   this once per branch, for every direct delivery on it.
 - `--fetch`, with `--refresh`, fetches the default and delivery branches from
-  `origin` first even when the companion's Git mode is not `auto`.
+  `origin` and lists its pull refs first, even when the companion's Git mode is
+  not `auto`.
 - `--confirm-merged`, `--confirm-open`, and `--confirm-dropped` record your own
   answer, with source `user`.
 - `--json` prints one result per named change; several changes on one branch
@@ -1071,21 +1257,14 @@ recorded delivery whose repository matches none of them gets a warning on
 stderr, naming the scoped spelling it likely means (same last path segment),
 and appears in `--json` as `settlement.unscoped`. The warning changes neither
 the record nor the exit code; fix whichever spelling is wrong.
-A `dependsOn` change that is neither archived nor fully implemented also gets a
+A `dependsOn` change that is neither published nor fully implemented also gets a
 stderr warning and appears in `--json` as `warnings`; it never blocks. For a repository other than the Working Repository,
-the host comes from the `origin` remote of a linked checkout of it, else from the
-Working Repository's remote, and the default branch comes from that host when it
-is github.com. Without a forge token, or when GitHub
-cannot answer, `main` is taken as its default branch.
+the default branch comes from its checkout linked on this machine, else `main`
+is taken. Mate starts only `git`, reads no credential, and never
+inspects a repository a record merely names.
 
-`mate artifact archive` archives regardless of merge state, prints overlap,
-dependency, incomplete-planning, and unscoped-delivery warnings to stderr before archiving, refreshes merge state from the forge or the local checkout (`--fetch` fetches first in Git mode `default`), always
-leaves a `delivery.yaml`, and then runs `openspec archive`. Without a recorded
-delivery it archives nothing and reports `needs-branch`; answer with
-`--branch <branch>` (`--direct` for a protected one), `--not-applicable <reason>`,
-or `--skip-branch`, which leaves an unlinked record so publication asks again; add `--repository <org/repo>` when the Working
-Repository has no `origin` remote Mate can read. See [Your First Change](/docs/scenarios/first-change)
-for how the commands fit together.
+See [Your First Change](/docs/scenarios/first-change) for how the commands fit
+together.
 
 `mate artifact apply-context` is read-only and opt-in; ordinary apply never
 uses it. Each call fetches fresh `openspec instructions apply --json` for the

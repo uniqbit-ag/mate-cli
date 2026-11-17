@@ -136,7 +136,11 @@ describe("the build cap", () => {
     await r.request("acme-a", "apply", "go on");
     while (started.length === 0) await tick();
     await r.request("acme-b", "apply", "go on");
-    await tick();
+    // The wait is written in the background; a loaded machine needs more than one tick.
+    for (let tries = 0; tries < 400; tries += 1) {
+      await tick();
+      if ((await runs.facts("acme-b")).execution.waiting === "build-slot") break;
+    }
     expect(started).toEqual(["acme-a"]);
     expect((await runs.facts("acme-b")).execution).toMatchObject({
       state: "queued",

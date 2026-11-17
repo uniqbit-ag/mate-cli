@@ -23,6 +23,7 @@ export interface CompanionViewData {
   studioMode: StudioMode;
   /** Overview, Engineering. */
   changes?: StudioCompanionPayload["changes"];
+  submitted?: StudioCompanionPayload["submitted"];
   /** Overview, Analysis. */
   shipped?: StudioCompanionPayload["shipped"];
   specs?: StudioCompanionPayload["specs"];
@@ -89,5 +90,5 @@ export const getCompanionView = createServerFn({ method: "GET" })
     }
     return studioMode === "analysis"
       ? { ...base, shipped: payload.shipped }
-      : { ...base, changes: payload.changes };
+      : { ...base, changes: payload.changes, submitted: payload.submitted };
   });

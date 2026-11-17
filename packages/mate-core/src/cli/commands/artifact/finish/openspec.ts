@@ -1,8 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { parse } from "yaml";
-
 import {
   isPublishable,
   legacyDeliveryWarning,
@@ -18,14 +16,13 @@ import {
   parseAnchor,
   SPECS_RELATIVE_DIR,
 } from "../../../../lib/change-layout";
-import { FRONTMATTER_PATTERN } from "../../../../lib/frontmatter";
-import { pathIsDirectory } from "../../../../lib/fs-utils";
 import {
-  BOM,
-  DELTA_COMMENT_PATTERN,
-  parseScopes,
-  type ScopePair,
-} from "../../../../lib/openspec-scopes";
+  ARTIFACT_TRAILER,
+  openspecArtifact,
+  openspecSpecsArtifact,
+} from "../../../../lib/artifact-trailer";
+import { pathIsDirectory } from "../../../../lib/fs-utils";
+import { reconcileMainSpecFrontmatter } from "../../../../lib/openspec-canonical-frontmatter";
 import { hasOpenspecCapability } from "../../../../lib/orchestrator/capabilities";
 import { runIndexCapCommand } from "../../cap/index-cmd";
 import {
@@ -66,155 +63,6 @@ async function commitPathsForArchive(
     archiveRelative,
     ...canonicalSpecs.map((spec) => spec.canonical),
   ];
-}
-
-type ProjectionResult =
-  | { ok: true; repository: string; areas: string[] }
-  | { ok: false; reason: string };
-
-/** The opening line of a `mate:delta` comment, closed or not. */
-const DELTA_COMMENT_OPENER = /^<!--[ \t]*mate:delta/;
-
-const DELTA_TAGS = new Set(["openspec/change", "openspec/delta"]);
-
-/**
- * A header an agent copied from a delta: it declares `type: delta-spec`, carries a
- * `change` key, or a delta tag. A nested `scopes` key alone does not count, since
- * legacy canonical specs carry one.
- */
-function isDeltaShapedFrontmatter(yamlSource: string): boolean {
-  try {
-    const parsed = parse(yamlSource) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
-    const header = parsed as Record<string, unknown>;
-    if (header.type === "delta-spec" || "change" in header) return true;
-    const tags = Array.isArray(header.tags) ? header.tags : [header.tags];
-    return tags.some((tag) => typeof tag === "string" && DELTA_TAGS.has(tag));
-  } catch {
-    return false;
-  }
-}
-
-function projectDeltaScopes(scopes: ScopePair[]): ProjectionResult {
-  if (scopes.length === 0) return { ok: false, reason: "delta declares no scopes entries" };
-  const repositories = [...new Set(scopes.map((entry) => entry.repository))];
-  if (repositories.length > 1) {
-    return {
-      ok: false,
-      reason: `delta names ${repositories.length} repositories (${repositories.join(", ")}); a spec names exactly one`,
-    };
-  }
-  return {
-    ok: true,
-    repository: repositories[0],
-    areas: [...new Set(scopes.map((entry) => entry.area))],
-  };
-}
-
-async function archivedChangeUsesMateSchema(
-  companionPath: string,
-  anchorName: string,
-): Promise<boolean> {
-  try {
-    const metadataPath = path.join(
-      companionPath,
-      "openspec",
-      "changes",
-      "archive",
-      anchorName,
-      ".openspec.yaml",
-    );
-    const parsed = parse(await fs.readFile(metadataPath, "utf8")) as unknown;
-    if (!parsed || typeof parsed !== "object") return false;
-    const schema = (parsed as Record<string, unknown>).schema;
-    return typeof schema === "string" && ["mate-v1", "mate-minimal"].includes(schema.trim());
-  } catch {
-    return false;
-  }
-}
-
-/**
- * The block through its closing line. Scope keys are omitted when the delta had
- * none — a partial block beats no frontmatter.
- */
-function renderCanonicalFrontmatter(
-  capability: string,
-  scope: { repository: string; areas: string[] } | null,
-): string {
-  return [
-    "---",
-    "type: spec",
-    `capability: ${capability}`,
-    ...(scope ? [`repository: ${scope.repository}`, `areas: [${scope.areas.join(", ")}]`] : []),
-    "tags: [openspec/spec]",
-    "---",
-    "",
-  ].join("\n");
-}
-
-/**
- * Repairs `openspec archive` output: prepends canonical frontmatter to main specs the
- * archive run created bare, and replaces a delta-shaped header or `mate:delta` comment an
- * agent copied onto one.
- * Publish does not archive, so this runs the first time publish resolves that archive,
- * however the archive was made.
- *
- * `openspec archive` rebuilds a brand-new main spec from a skeleton with no frontmatter slot,
- * so scope metadata dies exactly once, at spec birth; existing specs keep theirs because only
- * requirement blocks are spliced. Idempotent, and best-effort by design — the archive is
- * durable input, so a failure here warns rather than refusing the publication.
- */
-async function reconcileMainSpecFrontmatter(
-  companionPath: string,
-  anchorName: string,
-): Promise<string[]> {
-  if (!(await archivedChangeUsesMateSchema(companionPath, anchorName))) return [];
-
-  const archiveDir = path.join(archiveDirOf(companionPath), anchorName);
-  const reconciled: string[] = [];
-
-  for (const { file, canonical: canonicalRelative, capability } of await deltaSpecs(archiveDir)) {
-    if (capability === null) continue;
-    const canonicalPath = path.join(companionPath, canonicalRelative);
-
-    try {
-      const canonical = (await fs.readFile(canonicalPath, "utf8")).replace(BOM, "");
-      /** The body that follows the written block: the whole file, or what trails a delta-shaped header. */
-      let body = `\n${canonical}`;
-      if (DELTA_COMMENT_OPENER.test(canonical)) {
-        const header = DELTA_COMMENT_PATTERN.exec(canonical);
-        if (!header) continue;
-        body = canonical.slice(header[0].length);
-      } else if (canonical.startsWith("---")) {
-        const header = FRONTMATTER_PATTERN.exec(canonical);
-        if (!header || !isDeltaShapedFrontmatter(header[1])) continue;
-        body = canonical.slice(header[0].length);
-      }
-
-      const deltaSource = await fs.readFile(path.join(archiveDir, "specs", file), "utf8");
-      const scopes = parseScopes(deltaSource);
-      const projected = projectDeltaScopes(scopes);
-
-      /** Multi-repository is invalid input, so skip; absent scopes still earn a partial block. */
-      if (!projected.ok && scopes.length > 0) {
-        process.stderr.write(
-          `mate: skipped frontmatter for ${canonicalRelative}: ${projected.reason}\n`,
-        );
-        continue;
-      }
-      const head = renderCanonicalFrontmatter(
-        capability,
-        projected.ok ? { repository: projected.repository, areas: projected.areas } : null,
-      );
-      await fs.writeFile(canonicalPath, head + body, "utf8");
-      reconciled.push(canonicalRelative);
-    } catch (error) {
-      process.stderr.write(
-        `mate: could not reconcile frontmatter for ${canonicalRelative}: ${String(error)}\n`,
-      );
-    }
-  }
-  return reconciled;
 }
 
 async function capSync(context: FinishContext): Promise<boolean> {
@@ -342,13 +190,12 @@ async function resolved(
     resolved: {
       anchorName,
       commitPaths,
+      trailers: { [ARTIFACT_TRAILER]: openspecArtifact(anchorName) },
       ...(delivery.status === "legacy" ? { warning: legacyDeliveryWarning(anchorName) } : {}),
     },
   };
 }
 
-/** Tag namespace segregating spec publications from dated change anchors. */
-const SPEC_TAG_NAMESPACE = "openspec/specs";
 /** Spec ids named individually before the remainder collapses into a count. */
 const SPEC_LABEL_LIMIT = 3;
 
@@ -364,9 +211,9 @@ function specIds(paths: string[]): string[] {
 
 /**
  * The spec ids a publication ships, as `<a>+<b>+<c>+<n>-more`. A dated anchor alone
- * says when a publication ran but never what it shipped; naming the specs makes the tag
- * readable without checking out its commit, and the cap keeps a wide sync from growing
- * an unbounded ref name. Empty for an empty publication, which then anchors on its date.
+ * says when a publication ran but never what it shipped; naming the specs makes the anchor
+ * readable, and the cap keeps a wide sync from growing an unbounded name. Empty for an
+ * empty publication, which then anchors on its date.
  */
 function specLabel(paths: string[]): string {
   const ids = specIds(paths);
@@ -453,8 +300,7 @@ export async function resolveDriftedSpecs(
  *
  * This is the one publication unit that computes its own anchor: it has no archive
  * directory to read one from. The anchor is the calendar date plus the {@link specLabel}
- * of the specs it ships. The segregated {@link SPEC_TAG_NAMESPACE} keeps that computed
- * anchor out of the dated change anchors, which still never compute one.
+ * of the specs it ships; it names the publication in results and creates no tag.
  */
 export function openspecSpecsFinisher(
   contextOrPath: FinishContext | string,
@@ -474,12 +320,12 @@ export function openspecSpecsFinisher(
     },
     async resolve() {
       const label = specLabel(paths);
+      const anchorName = `${calendarDate(now())}${label === "" ? "" : `-${label}`}`;
       const publication: Produced = {
-        anchorName: `${calendarDate(now())}${label === "" ? "" : `-${label}`}`,
+        anchorName,
         commitPaths: paths,
-        tagNamespace: SPEC_TAG_NAMESPACE,
         commitSubject: specCommitSubject(paths),
-        tagCollision: "suffix",
+        trailers: { [ARTIFACT_TRAILER]: openspecSpecsArtifact(anchorName) },
       };
       return { ok: true, resolved: publication };
     },
@@ -496,10 +342,9 @@ export function openspecSpecsFinisher(
  * that can — an archived change is neither validatable nor listed as active.
  *
  * Resolution reads the dated `openspec/changes/archive/` directory names openspec
- * actually created, so a change publication's tag is never a computed date and archived
+ * actually created, so a change publication's anchor is never a computed date and archived
  * prose is never read. Spec publications are the documented exception: having no archive
- * directory to read a date from, {@link openspecSpecsFinisher} computes one, in its own
- * segregated tag namespace.
+ * directory to read a date from, {@link openspecSpecsFinisher} computes one.
  */
 export function openspecFinisher(contextOrPath: FinishContext | string): ArtifactFinisher {
   const context: FinishContext =
@@ -529,7 +374,7 @@ export function openspecFinisher(contextOrPath: FinishContext | string): Artifac
         if (!(await pathIsDirectory(path.join(archiveDirOf(companionPath), target)))) {
           return {
             ok: false,
-            message: `mate: no archive at ${ARCHIVE_RELATIVE_DIR}/${target}. Archive the change first with \`openspec archive ${anchor.name}\`.`,
+            message: `mate: no archive at ${ARCHIVE_RELATIVE_DIR}/${target}. Submit the change with \`mate artifact submit ${anchor.name}\`; publication archives it.`,
           };
         }
         return resolved(context, anchor.name, target);
@@ -542,8 +387,8 @@ export function openspecFinisher(contextOrPath: FinishContext | string): Artifac
         return {
           ok: false,
           message: active
-            ? `mate: ${target} is still active and cannot be published. Run \`openspec archive ${target}\` first; publish only publishes archived changes.`
-            : `mate: no archived change matches "${target}". Archive it first with \`openspec archive ${target}\`, or pass a dated archive anchor.`,
+            ? `mate: ${target} is not submitted and cannot be published. Submit it first with \`mate artifact submit ${target}\`; publication archives it.`
+            : `mate: no submitted or archived change matches "${target}". Submit it first with \`mate artifact submit ${target}\`, or pass a dated archive anchor.`,
         };
       }
       /** Two archives, no tiebreaker: picking one would publish an anchor nobody chose. */

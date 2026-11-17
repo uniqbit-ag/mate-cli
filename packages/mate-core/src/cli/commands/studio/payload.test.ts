@@ -11,7 +11,6 @@ function archive(anchor: string, state: ArchiveEntry["state"] = "committed"): Ar
     name: anchor.slice(11),
     anchor,
     path: `openspec/changes/archive/${anchor}`,
-    tag: `openspec/${anchor}`,
     uncommittedPaths: [],
     uncommittedSpecs: [],
     uncommittedSpecChanges: [],

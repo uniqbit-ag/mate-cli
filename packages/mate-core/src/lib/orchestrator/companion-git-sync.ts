@@ -12,8 +12,17 @@ import {
   type UpstreamTarget,
 } from "../../runtime/companion-git";
 import { recordCompanionSync } from "../../runtime/companion-git-state";
+import { errorMessage } from "../../runtime/error-message";
 import { withCompanionLock, type CompanionLockOptions } from "../../runtime/companion-lock";
+import { inboxRefspec, trackingRefs } from "../../runtime/pending-records";
+import {
+  discardSubmittedArrivals,
+  editedAfterSubmitWarning,
+  planSubmittedArrivals,
+  type SubmittedLayout,
+} from "../../runtime/submitted-arrivals";
 import { FRAMEWORK_NAME } from "../../framework";
+import { defaultArtifactType } from "../delivery/staging/registry";
 import { LaunchPreflightError } from "./types";
 
 type GitCommandResult = GitResult;
@@ -23,12 +32,28 @@ export { describeGitFailure };
 export interface CompanionGitSyncOptions {
   /** Environment Git runs with. */
   env?: Record<string, string | undefined>;
+  /** Home of Mate's local companion state; `HOME` by default. */
+  stateHome?: string;
 }
 
 export interface CompanionGitSyncResult {
   skipped: boolean;
   changed: boolean;
   companionPath: string;
+  /** Submitted change folders discarded because their upstream copy or archive arrived. */
+  discarded?: string[];
+  /** Operator warnings, such as a submitted folder edited after submit. */
+  warnings?: string[];
+}
+
+/** The default artifact type's folders, as the arrival check reads them. */
+function submittedLayout(): SubmittedLayout {
+  const type = defaultArtifactType();
+  return {
+    source: type.source,
+    archiveRoot: type.archiveRoot,
+    recordName: (id) => (type.isRecordId(id) ? type.recordName(id) : null),
+  };
 }
 
 export class CompanionGitSyncError extends LaunchPreflightError {
@@ -95,17 +120,7 @@ export class CompanionGitSync {
     }
 
     await this.assertNoUnfinishedOperation(companionPath);
-    const [target, before] = await Promise.all([
-      this.resolveSyncTarget(companionPath),
-      this.command(companionPath, ["status", "--porcelain=v1", "--untracked-files=all"]),
-    ]);
-    if (before.status !== 0) {
-      throw this.failure(
-        companionPath,
-        `Unable to inspect the working tree: ${this.detail(before)}`,
-      );
-    }
-    const dirty = outputLines(before.stdout).length > 0;
+    const target = await this.resolveSyncTarget(companionPath);
 
     const fetch = await this.fetch(companionPath, target, interactiveGit);
     if (fetch.status !== 0) {
@@ -130,6 +145,62 @@ export class CompanionGitSync {
       );
     }
 
+    const localGit = companionGit(companionPath, { prompt: "never", env: this.options.env });
+    const arrivals = await planSubmittedArrivals(
+      localGit,
+      companionPath,
+      target.ref,
+      submittedLayout(),
+      this.options.stateHome,
+    );
+    const discarded = await discardSubmittedArrivals(
+      localGit,
+      companionPath,
+      arrivals,
+      this.options.stateHome,
+    );
+    const warnings = arrivals.edited.map(editedAfterSubmitWarning);
+
+    const before = await this.command(companionPath, [
+      "status",
+      "--porcelain=v1",
+      "--untracked-files=all",
+    ]);
+    if (before.status !== 0) {
+      const lost = await restoreFailure(discarded);
+      const failure = this.failure(
+        companionPath,
+        `Unable to inspect the working tree: ${this.detail(before)}`,
+      );
+      throw withRestoreNote(companionPath, failure, lost);
+    }
+    const dirty = outputLines(before.stdout).length > 0;
+
+    let result: CompanionGitSyncResult;
+    try {
+      result = await this.mergeUpstream(
+        companionPath,
+        target,
+        dirty,
+        discarded.discarded,
+        warnings,
+      );
+    } catch (error) {
+      // A file the merge brought stays; only paths still missing get their submitted copy back.
+      const lost = await restoreFailure(discarded);
+      throw withRestoreNote(companionPath, error, lost);
+    }
+    await discarded.commit();
+    return result;
+  }
+
+  private async mergeUpstream(
+    companionPath: string,
+    target: SyncTarget,
+    dirty: boolean,
+    discarded: string[],
+    warnings: string[],
+  ): Promise<CompanionGitSyncResult> {
     let stashRef: string | undefined;
     if (dirty) {
       const stash = await this.command(companionPath, [
@@ -176,19 +247,34 @@ export class CompanionGitSync {
       skipped: false,
       changed: headBefore.stdout.trim() !== headAfter.stdout.trim(),
       companionPath,
+      ...(discarded.length > 0 ? { discarded } : {}),
+      ...(warnings.length > 0 ? { warnings } : {}),
     };
   }
 
-  /** Only this fetch may prompt, and only when the caller is interactive. */
-  private fetch(
+  /**
+   * Only this fetch may prompt, and only when the caller is interactive. The inbox rides along
+   * for the pending count.
+   */
+  private async fetch(
     companionPath: string,
     target: SyncTarget,
     interactiveGit: boolean,
   ): Promise<GitCommandResult> {
-    return companionGit(companionPath, {
+    const git = companionGit(companionPath, {
       prompt: interactiveGit ? "if-terminal" : "never",
       env: this.options.env,
-    }).fetch([target.remote, target.branch]);
+    });
+    const fetched = await git.fetch([target.remote, target.branch, inboxRefspec(target.remote)]);
+    if (fetched.status !== 0) return fetched;
+    // Publication lands on the default branch; a checkout tracking another branch fetches it too.
+    const prefix = `refs/remotes/${target.remote}/`;
+    const defaultRef = (await trackingRefs(companionPath))?.defaultRef;
+    if (defaultRef?.startsWith(prefix) && defaultRef !== `${prefix}${target.branch}`) {
+      const branch = defaultRef.slice(prefix.length);
+      await git.fetch([target.remote, `+refs/heads/${branch}:${defaultRef}`]);
+    }
+    return fetched;
   }
 
   private async mergeAndRestore(
@@ -260,8 +346,16 @@ export class CompanionGitSync {
       }
 
       // Keep the stash if dropping it fails; it remains a recoverable backup.
-      await this.command(companionPath, ["stash", "drop", stashRef]);
+      await this.dropStash(companionPath, stashRef);
     }
+  }
+
+  /** Drops the stash entry holding commit `stashRef`: `git stash drop` takes no commit id. */
+  private async dropStash(companionPath: string, stashRef: string): Promise<void> {
+    const listed = await this.command(companionPath, ["stash", "list", "--format=%H"]);
+    if (listed.status !== 0) return;
+    const index = outputLines(listed.stdout).indexOf(stashRef);
+    if (index >= 0) await this.command(companionPath, ["stash", "drop", "-q", `stash@{${index}}`]);
   }
 
   private async assertSafeCompanionRoot(
@@ -427,6 +521,29 @@ export class CompanionGitSync {
   ): CompanionGitSyncError {
     return new CompanionGitSyncError(companionPath, reason, paths, recovery);
   }
+}
+
+/** Puts discarded submitted files back; a failure, naming where they are kept, is returned. */
+async function restoreFailure(discarded: { restore: () => Promise<void> }): Promise<string | null> {
+  return discarded.restore().then(
+    () => null,
+    (error: unknown) => `Putting back discarded submitted folders failed: ${errorMessage(error)}.`,
+  );
+}
+
+/** `error`, its reason extended by `note` when restoring failed too. */
+function withRestoreNote(companionPath: string, error: unknown, note: string | null): unknown {
+  if (!note) return error;
+  if (error instanceof CompanionGitSyncError) {
+    return new CompanionGitSyncError(
+      companionPath,
+      `${error.reason} ${note}`,
+      error.conflictingPaths,
+      error.recovery,
+      error.stashRef,
+    );
+  }
+  return new CompanionGitSyncError(companionPath, `${errorMessage(error)} ${note}`);
 }
 
 /**

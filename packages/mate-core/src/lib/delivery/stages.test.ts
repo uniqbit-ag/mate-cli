@@ -18,7 +18,7 @@ describe("deliveryPath", () => {
       "Apply change",
       "Inspect outcome",
       "Refine code",
-      "Archive change",
+      "Submit change",
       "Publish companion artifacts",
     ]);
   });
@@ -33,7 +33,7 @@ describe("deliveryPath", () => {
       "Apply change",
       "Inspect outcome",
       "Refine code",
-      "Archive change",
+      "Submit change",
       "Publish companion artifacts",
     ]);
   });
@@ -48,7 +48,7 @@ describe("deliveryPath", () => {
       "Apply change": "mate-apply-change",
       "Inspect outcome": "mate-show-me",
       "Refine code": "mate-simplify-code",
-      "Archive change": "mate-archive-change",
+      "Submit change": "mate-submit-change",
       "Publish companion artifacts": "mate-publish-artifact",
     });
     for (const stage of stages.filter((entry) => entry.kind === "human")) {
@@ -58,10 +58,10 @@ describe("deliveryPath", () => {
   });
 
   test("the stage label names the action and the skill is carried separately", () => {
-    const archive = deliveryPath(SCHEMA_ARTIFACTS["mate-v1"]).stages.find(
-      (stage) => stage.id === "archive",
+    const submit = deliveryPath(SCHEMA_ARTIFACTS["mate-v1"]).stages.find(
+      (stage) => stage.id === "submit",
     );
-    expect(archive).toMatchObject({ label: "Archive change", skill: "mate-archive-change" });
+    expect(submit).toMatchObject({ label: "Submit change", skill: "mate-submit-change" });
   });
 
   test("optional stages are independent peers and never required", () => {
@@ -69,7 +69,7 @@ describe("deliveryPath", () => {
     const optional = stages.filter((stage) => stage.optional).map((stage) => stage.id);
     expect(optional).toEqual(["clarify-intent", "inspect-outcome", "refine-code"]);
     const required = stages.filter((stage) => !stage.optional).map((stage) => stage.id);
-    expect(required).toContain("archive");
+    expect(required).toContain("submit");
     expect(required).toContain("publish");
   });
 
@@ -96,7 +96,7 @@ describe("deliveryPath", () => {
       "mate-apply-change",
       "mate-show-me",
       "mate-simplify-code",
-      "mate-archive-change",
+      "mate-submit-change",
       "mate-publish-artifact",
     ]);
   });

@@ -6,7 +6,6 @@
     "worktrees",
     "secret-guardrails",
     "merge-state",
-    "forge-token",
     "commit-attribution"
   ]
 }

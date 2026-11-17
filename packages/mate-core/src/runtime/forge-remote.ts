@@ -1,6 +1,6 @@
-/** A remote URL's forge repository; in `runtime/` so hooks and the OpenCode plugin can parse one. */
+/** Repository identity from a Git remote URL; in `runtime/` so hooks and the OpenCode plugin can parse one. */
 
-export interface ForgeRepo {
+export interface RemoteRepo {
   host: string;
   /** Every path segment before the repository; nested groups keep theirs (`acme/platform`). */
   owner: string;
@@ -8,7 +8,7 @@ export interface ForgeRepo {
 }
 
 /** Parses SSH, scp-style, and HTTPS remotes; credentials in a URL are discarded. */
-export function parseRemote(url: string): ForgeRepo | null {
+export function parseRemote(url: string): RemoteRepo | null {
   const cleaned = url.trim();
   let host: string;
   let remotePath: string;
@@ -32,7 +32,7 @@ export function parseRemote(url: string): ForgeRepo | null {
 }
 
 /** Splits a repository path at its last segment; null below two segments. */
-export function forgeRepoOf(host: string, path: string): ForgeRepo | null {
+export function forgeRepoOf(host: string, path: string): RemoteRepo | null {
   const parts = path.split("/").filter(Boolean);
   if (parts.length < 2) return null;
   return {
@@ -43,6 +43,6 @@ export function forgeRepoOf(host: string, path: string): ForgeRepo | null {
 }
 
 /** The repository's identity: its full path on the host, `owner/repo`. */
-export function repositoryPath(repo: ForgeRepo): string {
+export function repositoryPath(repo: RemoteRepo): string {
   return `${repo.owner}/${repo.repo}`;
 }

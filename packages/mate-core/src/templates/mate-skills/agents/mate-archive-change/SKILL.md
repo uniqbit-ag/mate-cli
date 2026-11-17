@@ -1,81 +1,18 @@
 ---
 name: mate-archive-change
-description: Archive a change through mate artifact archive, which records its delivery, reports merge state and its warnings, and runs the OpenSpec archive, also before the merge. Use when the user wants to archive, finalize, or close out an implemented change.
+description: Deprecated alias that forwards to mate-submit-change, since changes are now submitted before the merge and archived at publication. Use when the user asks to archive a change.
 allowed-tools: Bash(mate:*), Bash(git:*)
 license: MIT
 compatibility: Requires the mate CLI and the openspec capability enabled.
 metadata:
   author: mate
-  version: "1.0"
+  version: "2.0"
 ---
 
 # Mate Archive Change
 
-The Archive change stage of the Delivery Path. Archiving applies the change's delta
-specs to the local canonical specs, so a feature's later changes build on it. It is
-allowed **before** the delivery branch merges: publication, not archive, waits for the
-merge. Archiving is local and uncommitted; it publishes nothing.
-
-## Steps
-
-1. **Archive.**
-
-   ```bash
-   mate artifact archive "<change-name>" --json
-   ```
-
-   Run it from the companion or the linked Working Repository. It shows warnings,
-   refreshes merge state from the forge when a token is available, writes the change's
-   `delivery.yaml`, and runs `openspec archive` itself. Do not run `openspec archive`
-   separately.
-
-2. **Answer a missing branch.** When the result's `status` is `needs-branch`, nothing
-   was archived. Ask the user which branch delivers the change, suggesting
-   `suggestedBranch` when it is set, and re-run with exactly one of:
-
-   - `--branch "<branch>"` — a protected branch only with `--direct`, after the user
-     explicitly confirms a direct delivery;
-   - `--not-applicable "<reason>"` — for a specification-only change;
-   - `--skip-branch` — when the user skips the question; publication will ask again.
-
-3. **Report.** Relay every entry of `warnings` first: another active change that
-   modifies the same requirement, a declared dependency that is not archived yet, or
-   planning artifacts its schema requires that are missing (`incomplete-planning`).
-   Warnings never block. Then report the archive `path` and the delivery: each branch
-   with its merge result and source (`forge`, `git`, or `user`) and PR link, or the
-   not-applicable reason. An open or unknown merge is information, not a failure and not an
-   action: never offer to record it (`mate artifact link … --confirm-*`); publication asks
-   the merge question; a `likely-merged` outcome is only a suggestion that publication
-   confirms with the user.
-
-4. **Hand off.**
-   End the response with a final `## Next steps` section: numbered required actions in
-   execution order, with exact commands and known change names, prerequisites first.
-   Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
-   follows it. Listing an action never invokes it. Never offer the user an optional command, in or above the section; optional work appears above it only as a skill invocation labelled optional.
-
-   **Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
-   and Cursor and the fallback. When the current runtime uses another syntax, swap only
-   the prefix: `@name` in OpenCode, `$name` in Codex, `/skill:name` in Pi. Only the
-   user's statement or the harness's own identity sets the runtime, never a skill's
-   folder or an older example. Arguments, commands, paths, and order stay, and naming
-   never invokes.
-
-   When the delivery branch is not merged yet, list merging it before
-   `/mate-publish-artifact`, and say above the section that publication, not archive,
-   waits for the merge. Never commit, push, open a PR, or merge for the user.
-
-   ```text
-   ## Next steps
-   1. Merge workset/acme-queue
-   2. /mate-publish-artifact
-   ```
-
-When `status` is `failed`, report the message (typically incomplete tasks or a
-validation error) and stop.
-
-## Guardrails
-
-- Never commit, tag, or push; publication is `mate-publish-artifact`.
-- A merger account is provenance, never an artifact review.
-- Do not read or echo `MATE_GIT_TOKEN`.
+Deprecated: archiving before the merge is replaced by the Submit change stage, and
+publication archives. Say so in one line, then follow
+[../mate-submit-change/SKILL.md](../mate-submit-change/SKILL.md) for the same change, from
+its first step. `mate artifact archive` is a deprecated alias that only checks and
+submits nothing; never run it.

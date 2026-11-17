@@ -329,8 +329,18 @@ describe("spawnPrepareRunner", () => {
 
       expect(result.ok).toBe(false);
       expect(result.notes.join(" ")).toContain("timed out");
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      await expect(fs.access(path.join(path.dirname(bin), "finished"))).resolves.toBeNull();
+      const finished = path.join(path.dirname(bin), "finished");
+      const deadline = Date.now() + 4_000;
+      while (
+        Date.now() < deadline &&
+        !(await fs.access(finished).then(
+          () => true,
+          () => false,
+        ))
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      await expect(fs.access(finished)).resolves.toBeNull();
     },
   );
 });

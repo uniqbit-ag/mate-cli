@@ -21,7 +21,7 @@ const ALL_SKILLS = [
   "mate-apply-change",
   "mate-show-me",
   "mate-simplify-code",
-  "mate-archive-change",
+  "mate-submit-change",
   "mate-publish-artifact",
 ];
 
@@ -123,7 +123,7 @@ describe("workflowPlan", () => {
       "Apply change",
       "Inspect outcome",
       "Refine code",
-      "Archive change",
+      "Submit change",
       "Publish companion artifacts",
     ]);
     expect(labels(plan.paths[1])).toEqual([
@@ -135,7 +135,7 @@ describe("workflowPlan", () => {
       "Apply change",
       "Inspect outcome",
       "Refine code",
-      "Archive change",
+      "Submit change",
       "Publish companion artifacts",
     ]);
   });
@@ -164,7 +164,7 @@ describe("workflowPlan", () => {
     const openspec = workflowPlan({ skills: ALL_SKILLS })
       .paths[0].steps.filter((step) => step.badges.includes("openspec"))
       .map((step) => step.id);
-    expect(openspec).toEqual(["explore", "propose", "apply", "archive"]);
+    expect(openspec).toEqual(["explore", "propose", "apply", "submit"]);
   });
 
   it("names each skill stage's Mate skill in its prompt", () => {
@@ -177,17 +177,17 @@ describe("workflowPlan", () => {
       "/mate-apply-change for <change-name>",
       "/mate-show-me for <change-name>",
       "/mate-simplify-code for <change-name>",
-      "/mate-archive-change for <change-name>",
+      "/mate-submit-change for <change-name>",
       "/mate-publish-artifact for <change-name>",
     ]);
   });
 
   it("reports a missing stage skill instead of hiding the stage", () => {
     const steps = workflowPlan({
-      skills: ALL_SKILLS.filter((skill) => skill !== "mate-archive-change"),
+      skills: ALL_SKILLS.filter((skill) => skill !== "mate-submit-change"),
     }).paths[0].steps;
-    const archive = steps.find((step) => step.id === "archive");
-    expect(archive?.missingSkill).toBe("mate-archive-change");
+    const submit = steps.find((step) => step.id === "submit");
+    expect(submit?.missingSkill).toBe("mate-submit-change");
   });
 
   it("reports a missing optional peer skill instead of hiding the stage", () => {
@@ -228,7 +228,7 @@ describe("workflowPlan phases and map", () => {
       ["plan", ["clarify-intent", "explore", "propose"]],
       ["review", ["review-proposal", "review-specs", "review-design", "review-tasks"]],
       ["build", ["apply", "inspect-outcome", "refine-code"]],
-      ["ship", ["archive", "publish"]],
+      ["ship", ["submit", "publish"]],
     ]);
     expect(mapShape(path)).toEqual([
       "clarify-intent",
@@ -237,7 +237,7 @@ describe("workflowPlan phases and map", () => {
       { human: ["review-proposal", "review-specs", "review-design", "review-tasks"] },
       "apply",
       { optional: ["inspect-outcome", "refine-code"] },
-      "archive",
+      "submit",
       "publish",
     ]);
   });
@@ -267,7 +267,7 @@ describe("Workflow view", () => {
   it("renders the graph on the page, without a change picker or a card around it", () => {
     const markup = render();
     expect(markup).toContain("workflow-delivery-path");
-    expect(markup).toContain("Archive change");
+    expect(markup).toContain("Submit change");
     expect(markup).not.toContain('name="change"');
     const graph = markup.indexOf('aria-label="Delivery Path map"');
     expect(markup.lastIndexOf("list-card", graph)).toBe(-1);
@@ -340,11 +340,11 @@ describe("Workflow view", () => {
       expect.arrayContaining([
         "apply>inspect-outcome",
         "apply>refine-code",
-        "inspect-outcome>archive",
-        "refine-code>archive",
+        "inspect-outcome>submit",
+        "refine-code>submit",
       ]),
     );
-    expect(edgeKeys(graph, "bypass")).toEqual(["start>explore", "apply>archive"]);
+    expect(edgeKeys(graph, "bypass")).toEqual(["start>explore", "apply>submit"]);
     expect(attributes(graph, "data-session-mark")).toEqual(["apply"]);
     expect(attributes(graph, "data-band")).toEqual(["plan", "review", "build", "ship"]);
     expect(graph).toMatch(/data-band="review"[^>]*>Review</);
@@ -428,7 +428,7 @@ describe("Workflow view", () => {
     expect(counts).toEqual([
       ["6 changes wait for review", "6"],
       ["3 changes at Apply change", "3"],
-      ["2 changes at Archive change", "2"],
+      ["2 changes at Submit change", "2"],
     ]);
     expect(panel).toContain("Where your changes are");
   });

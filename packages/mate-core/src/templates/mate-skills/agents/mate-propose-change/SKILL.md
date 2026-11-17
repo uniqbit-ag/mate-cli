@@ -54,13 +54,27 @@ propose steps below.
    state in one line why, and continue. If the test clearly passes but the slice
    boundaries are unclear, suggest `/mate-explore-change` instead of guessing slices.
    Record a slice's dependency on an earlier change as a `dependsOn` list in the
-   frontmatter of its first artifact, for example `dependsOn: [add-graph-model]`; archive
-   later warns while a dependency is still unarchived.
+   frontmatter of its first artifact, for example `dependsOn: [add-graph-model]`; submit
+   later warns while a dependency is neither submitted nor published.
 
 3. **Follow the OpenSpec workflow.** Read
    [references/openspec-propose.md](references/openspec-propose.md) and follow it with the
    chosen schema (pass `--schema <schema>` when creating the change). Never ask for a
-   ticket; apply asks when it creates the branch.
+   ticket; apply asks when it creates the branch. Once the change's delta specs are written,
+   record the companion commit they were written against with
+   `mate artifact link "<change-name>" --spec-base --json`, so a requirement someone changes
+   meanwhile conflicts at publication instead of being overwritten. Then compare the
+   requirements the delta specs modify or remove with `touches` of each change in
+   `mate artifact pending --json`: for a match, tell the user the change and its
+   `author`, since the one published second is refused as a conflict until resolved.
+
+   **Dependent changes.** A `dependsOn` change that is submitted or active in this
+   checkout counts as satisfied: its requirements are not in the canonical specs until
+   it is published. Before writing the delta specs of a change with `dependsOn`, read
+   the specs as they will be once that chain is published with
+   `mate artifact project "<change-name>" --json`, and write `MODIFIED` requirements
+   against that text, not against the canonical specs. A failing projection reports
+   publication's reason; relay it.
 
 4. **Hand off to human review.** Reviews are done by people, not by a skill.
    End the response with a final `## Next steps` section: numbered required actions in
@@ -85,8 +99,9 @@ propose steps below.
      above the section as deferred.
    - **Dependencies:** a `dependsOn` change with unfinished work (open tasks or an
      outstanding check) gets its named action listed before applying this change. A
-     dependency that is implemented but unarchived does not block apply: say above
-     the section that archiving it first avoids an archive warning.
+     dependency that is implemented but unsubmitted does not block apply: say above
+     the section that submitting it first, with `/mate-submit-change`, avoids a submit
+     warning.
 
    ```text
    Validation passed; validation is not approval.

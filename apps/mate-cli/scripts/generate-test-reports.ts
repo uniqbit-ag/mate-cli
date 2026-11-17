@@ -27,18 +27,10 @@ async function run(command: string[]) {
 await rm(coverageDir, { force: true, recursive: true });
 await mkdir(coverageDir, { recursive: true });
 
-if (shouldGenerateJunit) {
-  await run([
-    process.execPath,
-    isolatedTest,
-    "--reporter=junit",
-    "--reporter-outfile=coverage/junit.xml",
-  ]);
-}
-
 await run([
   process.execPath,
   isolatedTest,
+  ...(shouldGenerateJunit ? ["--reporter=junit", "--reporter-outfile=coverage/junit.xml"] : []),
   "--coverage",
   "--coverage-reporter=text",
   "--coverage-reporter=lcov",

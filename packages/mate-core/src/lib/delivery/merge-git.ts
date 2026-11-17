@@ -1,11 +1,12 @@
 /**
  * Merge state from a local checkout: whether a delivery branch's head reached the default
- * branch. Only `git` is started. Local queries never reach the network
- * (`GIT_NO_LAZY_FETCH`); the fetch runs only when the caller decides to, never prompts,
- * and uses the user's own remote and credential setup unchanged.
+ * branch, by ancestry or by content. Only `git` is started. Local queries never reach the
+ * network (`GIT_NO_LAZY_FETCH`); the fetch and the pull-ref listing run only when the caller
+ * decides to, never prompt, and use the user's own remote and credential setup unchanged.
  */
 
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -27,20 +28,63 @@ export type SpawnProcess = (
 export interface PatchMatch {
   /** The commit on the default branch the delivery matched. */
   commit: string;
-  /** `fast-forward`: the head is on the default branch's own line, which a branch without commits of its own is too. */
-  style: "squash" | "rebase" | "fast-forward";
+  /**
+   * `fast-forward`: the head is on the default branch's own line, which a branch without commits
+   * of its own is too. `merge`: a merge commit brought a head never pushed as its branch, as the
+   * merge of a branch it was started from does.
+   */
+  style: "squash" | "rebase" | "fast-forward" | "merge";
 }
 
 export interface FetchResult {
   ok: boolean;
   message?: string;
+  /** The delivery branch no longer exists on `origin`. */
+  branchDeleted?: boolean;
+}
+
+/** The first default-branch commit holding a delivery's content. */
+export interface ContainingCommit {
+  commit: string;
+  /** Its committer time (ISO 8601). */
+  committedAt: string;
+}
+
+/**
+ * - a commit: the first on the default branch's first-parent line that contains the head
+ * - `none`: no candidate commit contains it
+ * - `unknown`: Git cannot tell: no `merge-tree --write-tree`, a missing object, a timeout, a
+ *   head whose tree equals its merge base's (no content of its own), more candidates than
+ *   {@link CONTAINMENT_LIMIT} without a hit, or a search past its time budget
+ */
+export type Containment = ContainingCommit | "none" | "unknown";
+
+/** A pull or merge request head the remote advertises. */
+export interface PullRef {
+  number: number;
+  /** `refs/pull/<n>/head` (GitHub) or `refs/merge-requests/<n>/head` (GitLab). Azure DevOps advertises neither. */
+  ref: "pull" | "merge-requests";
+  commit: string;
 }
 
 export interface MergeGit {
   /** True when the path is a Git work tree. */
   isRepository(): Promise<boolean>;
+  /** The URL of `origin`, or null without one. */
+  originUrl(): Promise<string | null>;
   /** `origin/<branch>`, else the local branch; null when neither exists. */
   tip(branch: string): Promise<string | null>;
+  /** The local branch alone; null when it does not exist. */
+  localTip(branch: string): Promise<string | null>;
+  /** `origin/<branch>` alone, as last fetched; null when it does not exist. */
+  remoteTip(branch: string): Promise<string | null>;
+  /**
+   * The work tree that has `branch` checked out and holds modified tracked files; null without
+   * one. Untracked files do not count.
+   */
+  dirtyWorktree(branch: string): Promise<string | null>;
+  /** True when `candidate` is another commit that descends from `base`. */
+  aheadOf(base: string, candidate: string): Promise<boolean>;
   /** True when the commit exists locally, e.g. a recorded head after its branch was deleted. */
   hasCommit(commit: string): Promise<boolean>;
   /** True when `commit` is contained in `origin/<defaultBranch>`. */
@@ -48,30 +92,85 @@ export interface MergeGit {
   /**
    * True when `commit`, already contained in `origin/<defaultBranch>`, lies on its
    * first-parent line: a fast-forward, or a branch that never had commits of its own.
-   * False when a merge commit brought it in.
+   * False when a merge commit brought it in; null when Git could not tell.
    */
-  onFirstParent(commit: string, defaultBranch: string): Promise<boolean>;
+  onFirstParent(commit: string, defaultBranch: string): Promise<boolean | null>;
   /**
    * The commit on `origin/<defaultBranch>` that carries the delivery's changes by patch
    * identity: every branch commit (rebase), else the whole branch diff (squash). Null in a
    * partial clone, without a match, or above {@link PATCH_MATCH_LIMIT} upstream commits.
    */
   patchMatch(head: string, defaultBranch: string): Promise<PatchMatch | null>;
+  /** True when this Git has `merge-tree --write-tree` (2.38 or later); asked once per process. */
+  supportsContainment(): Promise<boolean>;
+  /**
+   * True when merging `head` into `commit` changes nothing: the merge is clean and yields
+   * `commit`'s own tree. Null when Git cannot tell (missing object, timeout, no support).
+   */
+  contains(commit: string, head: string): Promise<boolean | null>;
+  /**
+   * The oldest commit on `origin/<defaultBranch>`'s first-parent line after the merge base that
+   * contains `head`, among those committed at most a day before `head`, at most
+   * {@link CONTAINMENT_LIMIT}. For a head that is not an ancestor of the default branch.
+   */
+  firstContaining(head: string, defaultBranch: string): Promise<Containment>;
   /** When `origin` was last fetched (ISO 8601), or null when unknown. */
   lastFetchedAt(): Promise<string | null>;
-  /** Fetches the default branch, then the delivery branch; a missing branch is not a failure. */
+  /**
+   * Fetches the default branch, then the delivery branch; a missing branch is not a failure but
+   * `branchDeleted`.
+   */
   fetch(defaultBranch: string, branch: string): Promise<FetchResult>;
+  /** The pull and merge request heads `origin` advertises; null when the listing failed. */
+  pullRefs(): Promise<PullRef[] | null>;
+  /** Fetches one PR head, leaving no ref and `FETCH_HEAD` untouched; its commit, or null. */
+  fetchPullHead(number: number, ref: PullRef["ref"]): Promise<string | null>;
 }
 
 export interface MergeGitDeps {
   spawn?: SpawnProcess;
   env?: NodeJS.ProcessEnv;
+  /** Candidate commits tested for containment at most; {@link CONTAINMENT_LIMIT} by default. */
+  containmentLimit?: number;
+  /** Wall time one containment search may take; 5 s by default. */
+  containmentBudgetMs?: number;
 }
 
 /** Upstream commits compared by patch identity at most; more is asked instead. */
 const PATCH_MATCH_LIMIT = 500;
+/** Default-branch commits tested for containment at most. */
+export const CONTAINMENT_LIMIT = 200;
+/** Wall time one containment search may take; past it the answer is `unknown`. */
+const CONTAINMENT_BUDGET_MS = 5_000;
+/** Heads no candidate contained, by checkout, head and default tip; the answer cannot change. */
+const notContainedBySpawn = new WeakMap<SpawnProcess, Set<string>>();
+const NOT_CONTAINED_MAX = 1_000;
+
+/** `spawnFn`'s set in {@link notContainedBySpawn}, created on first use. */
+function notContainedMemo(spawnFn: SpawnProcess): Set<string> {
+  let memo = notContainedBySpawn.get(spawnFn);
+  if (!memo) {
+    memo = new Set();
+    notContainedBySpawn.set(spawnFn, memo);
+  }
+  return memo;
+}
+/** Candidates committed this long before the head still count: clocks and rebases differ. */
+const CONTAINMENT_SLACK_SECONDS = 24 * 60 * 60;
 const FETCH_BUDGET_MS = 20_000;
 const QUERY_TIMEOUT_MS = 15_000;
+const COMMIT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+/** `merge-tree --write-tree` support, probed once per process for each spawner. */
+const containmentSupport = new WeakMap<SpawnProcess, Promise<boolean>>();
+
+/** True for `git version` output of Git 2.38 or later. */
+function hasWriteTree(version: string): boolean {
+  const match = /git version (\d+)\.(\d+)/.exec(version);
+  if (!match) return false;
+  const [major, minor] = [Number(match[1]), Number(match[2])];
+  return major > 2 || (major === 2 && minor >= 38);
+}
 
 export const spawnProcess: SpawnProcess = (command, args, options) =>
   new Promise((resolve) => {
@@ -147,6 +246,47 @@ export function mergeGit(repoPath: string, deps: MergeGitDeps = {}): MergeGit {
     (await value("config", "--get", "remote.origin.promisor")) === "true" ||
     (await value("config", "--get", "extensions.partialClone")) !== null;
 
+  const supportsContainment = (): Promise<boolean> => {
+    let known = containmentSupport.get(spawnFn);
+    if (!known) {
+      known = git(["version"]).then((result) => result.code === 0 && hasWriteTree(result.stdout));
+      containmentSupport.set(spawnFn, known);
+    }
+    return known;
+  };
+
+  const contains = async (commit: string, head: string): Promise<boolean | null> => {
+    if (!(await supportsContainment())) return null;
+    const tree = await value("rev-parse", "--verify", "--quiet", `${commit}^{tree}`);
+    if (!tree) return null;
+    const merged = await git(["merge-tree", "--write-tree", "--no-messages", commit, head]);
+    if (merged.timedOut) return null;
+    // 1: the merge conflicts; anything else is Git failing, e.g. on a missing object.
+    if (merged.code === 1) return false;
+    if (merged.code !== 0) return null;
+    return merged.stdout.split("\n")[0]?.trim() === tree;
+  };
+
+  /** Network Git: never prompts, no background maintenance, the user's credentials unchanged. */
+  const networkEnv = async (): Promise<NodeJS.ProcessEnv> => {
+    const env: NodeJS.ProcessEnv = withGitConfig(
+      { ...promptless, GCM_INTERACTIVE: "never" },
+      { "maintenance.auto": "false", "gc.auto": "0" },
+    );
+    // A user's own SSH command wins; otherwise SSH must not ask for a passphrase.
+    if (
+      !base.GIT_SSH_COMMAND &&
+      !base.GIT_SSH &&
+      !(await value("config", "--get", "core.sshCommand"))
+    ) {
+      env.GIT_SSH_COMMAND = "ssh -o BatchMode=yes";
+    }
+    return env;
+  };
+
+  const network = async (args: readonly string[]): Promise<ProcessResult> =>
+    spawnFn("git", args, { cwd: repoPath, env: await networkEnv(), timeoutMs: FETCH_BUDGET_MS });
+
   /** Patch ids of `log -p` over a range, keyed by patch id. */
   const rangePatchIds = async (range: string): Promise<Map<string, string> | null> => {
     const log = await git(["log", "-p", "--no-merges", "--no-color", "--no-ext-diff", range]);
@@ -160,8 +300,40 @@ export function mergeGit(repoPath: string, deps: MergeGitDeps = {}): MergeGit {
     async isRepository() {
       return (await value("rev-parse", "--is-inside-work-tree")) === "true";
     },
+    originUrl() {
+      return value("config", "--get", "remote.origin.url");
+    },
     async tip(branch) {
       return (await verify(remoteRef(branch))) ?? (await verify(`refs/heads/${branch}`));
+    },
+    localTip(branch) {
+      return verify(`refs/heads/${branch}`);
+    },
+    remoteTip(branch) {
+      return verify(remoteRef(branch));
+    },
+    async dirtyWorktree(branch) {
+      const listed = await value("worktree", "list", "--porcelain");
+      for (const entry of (listed ?? "").split("\n\n")) {
+        const lines = entry.split("\n");
+        const dir = lines.find((line) => line.startsWith("worktree "))?.slice("worktree ".length);
+        if (!dir || !lines.includes(`branch refs/heads/${branch}`)) continue;
+        // oxlint-disable-next-line no-await-in-loop -- a branch is checked out in one work tree
+        const status = await git([
+          "--no-optional-locks",
+          "-C",
+          dir,
+          "status",
+          "--porcelain",
+          "--untracked-files=no",
+        ]);
+        if (status.code === 0 && status.stdout.trim()) return dir;
+      }
+      return null;
+    },
+    async aheadOf(base, candidate) {
+      if (base === candidate) return false;
+      return (await git(["merge-base", "--is-ancestor", base, candidate])).code === 0;
     },
     async hasCommit(commit) {
       return (await git(["cat-file", "-e", `${commit}^{commit}`])).code === 0;
@@ -178,11 +350,12 @@ export function mergeGit(repoPath: string, deps: MergeGitDeps = {}): MergeGit {
         remoteRef(defaultBranch),
         `^${commit}`,
       ]);
-      if (line.code !== 0) return false;
+      if (line.code !== 0) return null;
       const oldest = line.stdout.trim().split("\n").at(-1);
       // Nothing listed: the head is the default branch's tip.
       if (!oldest) return true;
-      return (await value("rev-parse", `${oldest}^1`)) === commit;
+      const parent = await value("rev-parse", `${oldest}^1`);
+      return parent ? parent === commit : null;
     },
     async patchMatch(head, defaultBranch) {
       if (await isPartialClone()) return null;
@@ -213,6 +386,55 @@ export function mergeGit(repoPath: string, deps: MergeGitDeps = {}): MergeGit {
       const squash = entry ? upstreamIds.get(entry[0]) : undefined;
       return squash ? { commit: squash, style: "squash" } : null;
     },
+    supportsContainment,
+    contains,
+    async firstContaining(head, defaultBranch) {
+      if (!(await supportsContainment())) return "unknown";
+      const upstream = remoteRef(defaultBranch);
+      const tip = await verify(upstream);
+      const notContained = notContainedMemo(spawnFn);
+      const key = `${repoPath}\0${head}\0${tip}`;
+      // Unchanged head and default tip: a repeated refresh does not test every candidate again.
+      if (tip && notContained.has(key)) return "none";
+      const mergeBase = await value("merge-base", head, upstream);
+      const headTime = Number(await value("show", "-s", "--format=%ct", head));
+      if (!mergeBase || !headTime) return "unknown";
+      // Like a branch without commits of its own on the ancestry path: every later commit
+      // would "contain" it, so only the user can tell.
+      const [baseTree, headTree] = await Promise.all([
+        value("rev-parse", "--verify", "--quiet", `${mergeBase}^{tree}`),
+        value("rev-parse", "--verify", "--quiet", `${head}^{tree}`),
+      ]);
+      if (!baseTree || baseTree === headTree) return "unknown";
+      const listed = await git([
+        "log",
+        "--first-parent",
+        "--reverse",
+        "--format=%H %ct %cI",
+        `${mergeBase}..${upstream}`,
+        "--",
+      ]);
+      if (listed.code !== 0) return "unknown";
+      const candidates = listed.stdout
+        .split("\n")
+        .map((line) => line.trim().split(" "))
+        .filter(([, time]) => Number(time) >= headTime - CONTAINMENT_SLACK_SECONDS);
+      const limit = deps.containmentLimit ?? CONTAINMENT_LIMIT;
+      const deadline = Date.now() + (deps.containmentBudgetMs ?? CONTAINMENT_BUDGET_MS);
+      for (const [commit, , committedAt] of candidates.slice(0, limit)) {
+        if (Date.now() >= deadline) return "unknown";
+        // oxlint-disable-next-line no-await-in-loop -- oldest first, stops at the first hit
+        const answer = await contains(commit!, head);
+        if (answer === null) return "unknown";
+        if (answer) return { commit: commit!, committedAt: new Date(committedAt!).toISOString() };
+      }
+      if (candidates.length > limit) return "unknown";
+      if (tip) {
+        if (notContained.size >= NOT_CONTAINED_MAX) notContained.clear();
+        notContained.add(key);
+      }
+      return "none";
+    },
     async lastFetchedAt() {
       const fetchHead = await value("rev-parse", "--git-path", "FETCH_HEAD");
       if (!fetchHead) return null;
@@ -225,19 +447,7 @@ export function mergeGit(repoPath: string, deps: MergeGitDeps = {}): MergeGit {
     },
     async fetch(defaultBranch, branch) {
       const deadline = Date.now() + FETCH_BUDGET_MS;
-      // No background maintenance or garbage collection from a fetch Mate started.
-      const env: NodeJS.ProcessEnv = withGitConfig(
-        { ...promptless, GCM_INTERACTIVE: "never" },
-        { "maintenance.auto": "false", "gc.auto": "0" },
-      );
-      // A user's own SSH command wins; otherwise SSH must not ask for a passphrase.
-      if (
-        !base.GIT_SSH_COMMAND &&
-        !base.GIT_SSH &&
-        !(await value("config", "--get", "core.sshCommand"))
-      ) {
-        env.GIT_SSH_COMMAND = "ssh -o BatchMode=yes";
-      }
+      const env = await networkEnv();
       const fetchRef = async (name: string): Promise<ProcessResult> => {
         // Names come from the shared Delivery Record: never fetch one Git would not accept.
         if ((await git(["check-ref-format", `refs/heads/${name}`])).code !== 0) {
@@ -264,10 +474,44 @@ export function mergeGit(repoPath: string, deps: MergeGitDeps = {}): MergeGit {
       if (branch === defaultBranch) return { ok: true };
       const delivery = await fetchRef(branch);
       // A branch deleted after its merge is expected; its recorded head still answers.
-      if (delivery.code !== 0 && !/couldn't find remote ref/i.test(delivery.stderr)) {
-        return fetchFailure(delivery);
+      if (delivery.code !== 0 && /couldn't find remote ref/i.test(delivery.stderr)) {
+        return { ok: true, branchDeleted: true };
       }
+      if (delivery.code !== 0) return fetchFailure(delivery);
       return { ok: true };
+    },
+    async pullRefs() {
+      const listed = await network([
+        "ls-remote",
+        "origin",
+        "refs/pull/*/head",
+        "refs/merge-requests/*/head",
+      ]);
+      if (listed.code !== 0) return null;
+      return listed.stdout.split("\n").flatMap((line) => {
+        const [commit, name] = line.trim().split(/\s+/);
+        const match = name ? /^refs\/(pull|merge-requests)\/(\d+)\/head$/.exec(name) : null;
+        if (!commit || !match || !COMMIT_ID.test(commit)) return [];
+        return [{ number: Number(match[2]), ref: match[1] as PullRef["ref"], commit }];
+      });
+    },
+    async fetchPullHead(number, ref) {
+      if (!Number.isSafeInteger(number) || number <= 0) return null;
+      // Into a private ref removed again, not `FETCH_HEAD`: its time tells when origin was
+      // last fetched, and the user may be about to merge it.
+      const target = `refs/mate/pull-head/${randomUUID()}`;
+      const fetched = await network([
+        "fetch",
+        "--no-tags",
+        "--no-recurse-submodules",
+        "--no-write-fetch-head",
+        "origin",
+        `+refs/${ref}/${number}/head:${target}`,
+      ]);
+      if (fetched.code !== 0) return null;
+      const head = await verify(target);
+      await git(["update-ref", "-d", target]);
+      return head;
     },
   };
 }
