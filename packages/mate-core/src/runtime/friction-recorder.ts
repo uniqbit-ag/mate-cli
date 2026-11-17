@@ -59,7 +59,7 @@ interface RefusalEvidence {
   paths?: string[];
 }
 
-function refusalFingerprint(check: FrictionCheck, kind: ToolKind): string {
+export function refusalFingerprint(check: FrictionCheck, kind: ToolKind): string {
   return `refusal:${check}:${kind}`;
 }
 

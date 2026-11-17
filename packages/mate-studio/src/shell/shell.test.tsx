@@ -265,13 +265,14 @@ describe("the sidebar", () => {
       "/vault",
       "/graph",
       "/usage",
+      "/friction",
       "/reports",
     ]);
     expect(markup).toContain('data-studio-nav-section="Engineering"');
     expect(markup).toContain('data-studio-nav-section="Library"');
   });
 
-  it("groups Usage and Reports under Insights in both modes and rail sizes", () => {
+  it("groups Usage, Friction and Reports under Insights in both modes and rail sizes", () => {
     for (const studioMode of ["engineering", "analysis"] as const) {
       for (const rail of ["full", "min"] as const) {
         useAppearance.setState({ rail });
@@ -281,7 +282,7 @@ describe("the sidebar", () => {
         expect(insights.getAttribute("aria-label")).toBe("Insights");
         expect(
           [...insights.querySelectorAll("a")].map((link) => new URL(link.href).pathname),
-        ).toEqual(["/usage", "/reports"]);
+        ).toEqual(["/usage", "/friction", "/reports"]);
         expect(insights.querySelector('[aria-current="page"]')?.textContent).toContain("Usage");
         const library = root.querySelector(
           `[data-studio-nav-section="${studioMode === "analysis" ? "Published" : "Library"}"]`,
@@ -305,13 +306,22 @@ describe("the sidebar", () => {
       "/vault",
       "/graph",
       "/usage",
+      "/friction",
       "/reports",
     ]);
   });
 
   it("gives Analysis its Overview and the published views, and no Workflow, Skills or Factory", () => {
     const markup = sidebar(shell({ studioMode: "analysis", factoryMode: true }));
-    expect(viewLinks(markup)).toEqual(["/", "/specs", "/vault", "/graph", "/usage", "/reports"]);
+    expect(viewLinks(markup)).toEqual([
+      "/",
+      "/specs",
+      "/vault",
+      "/graph",
+      "/usage",
+      "/friction",
+      "/reports",
+    ]);
     expect(markup).toContain('data-studio-nav-section="Analysis"');
     expect(markup).toContain('data-studio-nav-section="Published"');
   });

@@ -149,6 +149,8 @@ export interface StudioServerDeps {
   vault?: VaultManager;
   reports?: ReportStore;
   usage?: UsageCache;
+  /** Where the Friction Log and Switch live; the user's home when absent. */
+  homeDir?: string;
   terminal?: Partial<TerminalRegistryOptions>;
   launchableAgents?: typeof launchableAgents;
   /**
@@ -622,6 +624,16 @@ export function createStudioFetch(
           throw error;
         });
       return (await usage).read(companionPath, request);
+    },
+    friction: async (digest, { days }) => {
+      const companionPath = await companionPathOf(digest);
+      const { readFrictionView } = await import("../../../lib/friction/view");
+      return readFrictionView(companionPath, { days, homeDir: deps.homeDir });
+    },
+    setFrictionRecording: async (recording) => {
+      const { writeFrictionSwitch } = await import("../../../runtime/friction-switch");
+      writeFrictionSwitch(recording, deps.homeDir);
+      return { recording };
     },
     skillPreview: async (digest, agent, name, file) => {
       const { readSkillPreview } = await import("./skill-files");

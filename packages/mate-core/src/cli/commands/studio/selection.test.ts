@@ -497,6 +497,15 @@ describe("Studio modes", () => {
     expect(parseVaultSelection(at(`?studioMode=${en}`), appliance).studioMode).toBe(an);
   });
 
+  it("offers Friction in both modes and in the appliance", () => {
+    for (const mode of [en, an])
+      expect(parse(at(`?view=friction&studioMode=${mode}`)).view).toBe("friction");
+    expect(parse(at("?view=friction"), appliance)).toMatchObject({
+      studioMode: an,
+      view: "friction",
+    });
+  });
+
   it("reads legacy role bookmarks as aliases only without a canonical mode", () => {
     expect(parse(at("?role=business-analyst")).studioMode).toBe(an);
     expect(parse(at("?role=product-engineer")).studioMode).toBe(en);

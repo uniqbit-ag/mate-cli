@@ -1,4 +1,5 @@
 import type { OutcomeAction } from "../../../lib/factory/outcomes/actions";
+import type { FrictionView, FrictionViewDays } from "../../../lib/friction/view-model";
 import type { UsageRequest } from "../../../lib/usage/cache";
 import type { UsageResponse } from "../../../lib/usage/types";
 import type { StudioSpecGraph } from "./graph";
@@ -72,6 +73,13 @@ export interface StudioServices {
   reports(companionDigest: string): Promise<StoredReport[]>;
   /** Read-only, explicitly refreshed usage; never collected for unrelated views. */
   usage(companionDigest: string, request: UsageRequest): Promise<UsageResponse>;
+  /** The friction recorded for a registered companion on this machine; read-only. */
+  friction(companionDigest: string, request: { days: FrictionViewDays }): Promise<FrictionView>;
+  /**
+   * Sets this machine's Friction Switch. Needs no `writable`: it writes only the switch's
+   * settings file, never a companion, repository, registry or log.
+   */
+  setFrictionRecording(recording: boolean): Promise<{ recording: boolean }>;
   /** One installed skill's files and one of them rendered (SKILL.md by default); read-only. */
   skillPreview(
     companionDigest: string,

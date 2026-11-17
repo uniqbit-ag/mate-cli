@@ -1,10 +1,12 @@
 import {
   COMPANION_DIGEST_PATTERN,
   COMPANION_PARAM,
+  frictionViewDays,
   LEGACY_ROLE_PARAM,
   requestedMode,
   STUDIO_MODE_PARAM,
   viewsFor,
+  type FrictionViewDays,
   type StudioMode,
   type StudioView,
 } from "@uniqbit/mate-core/studio";
@@ -16,6 +18,8 @@ export interface StudioSearch {
   studioMode?: StudioMode;
   usageDays?: number;
   usageRepository?: string;
+  /** Absent for any other period; the view then shows its default. */
+  frictionDays?: FrictionViewDays;
 }
 
 /**
@@ -28,6 +32,7 @@ export function validateStudioSearch(raw: {
   role?: unknown;
   usageDays?: unknown;
   usageRepository?: unknown;
+  frictionDays?: unknown;
 }): StudioSearch {
   const search: StudioSearch = {};
   if (typeof raw.companion === "string" && COMPANION_DIGEST_PATTERN.test(raw.companion)) {
@@ -43,6 +48,8 @@ export function validateStudioSearch(raw: {
     search.usageDays = days;
   if (typeof raw.usageRepository === "string" && /^[a-zA-Z0-9_-]{1,64}$/.test(raw.usageRepository))
     search.usageRepository = raw.usageRepository;
+  const frictionDays = frictionViewDays(raw.frictionDays);
+  if (frictionDays) search.frictionDays = frictionDays;
   return search;
 }
 

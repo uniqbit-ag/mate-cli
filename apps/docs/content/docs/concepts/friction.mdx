@@ -22,8 +22,9 @@ mate friction status   # say whether recording is on, and where the log is
 
 Only you change the switch. `mate friction on` and `mate friction off` refuse
 inside an agent session, so an agent cannot turn recording on or off for you.
-Run them in your own terminal. `mate friction status` also runs inside an agent
-session.
+Run them in your own terminal, or use the control in
+[Studio's Friction view](#in-studio). `mate friction status` also runs inside an
+agent session.
 
 The switch takes effect in the next agent session, with no sync and no new
 wrap. Mate keeps it in `~/.mate/friction/settings.json`.
@@ -100,3 +101,29 @@ companion's friction, or every companion's with `--all`. To investigate what it
 lists, run [`mate triage`](/docs/scenarios/triage-a-mate-problem) in the
 affected repository. While recording is on, `mate doctor` shows the current
 companion's count of the last seven days.
+
+## In Studio
+
+Open **Friction** under Insights in Studio's sidebar, or from the command
+palette. It is offered in Engineering and in Analysis. It shows the selected
+companion's friction as `mate friction list` does, with each fingerprint as a
+plain sentence, such as "The artifact check refused a file write":
+
+- the event and session counts of the period, which is 7, 30 or 90 days
+  (default 30) and kept in the address,
+- each group with its fingerprint, counts, first and last time seen in your
+  local time, Mate versions, and the paths and flags the calls named,
+- the reports on each group's events and the free reports, newest first,
+- a line that names `mate triage` with a Copy button, when anything is listed.
+
+The view shows whether recording is on and offers **Turn recording on** or
+**Turn recording off**. The control sets the same Friction Switch as
+`mate friction on` and `off`. It works in every Studio start, also without
+`--writable`, and needs Studio's own page and its access token like every other
+change. It writes only `~/.mate/friction/settings.json`.
+
+The view reads the Friction Log of the machine that runs Studio. Under
+`mate studio serve`, that is the server, not the machine of the person who
+opens the page. It never shows an event's refusal message, command or error
+text, and reading it creates no file. It does not update by itself: reopen the
+view to read new records.

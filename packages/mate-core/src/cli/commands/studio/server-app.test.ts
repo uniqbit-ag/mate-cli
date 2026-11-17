@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { readFrictionSwitch } from "../../../runtime/friction-switch";
 import { createStudioAccess, type StudioAccess } from "./access";
 import { createStudioFetch } from "./server";
 import type { StudioRequestContext } from "./services";
@@ -227,5 +228,84 @@ describe("the events stream", () => {
   test("refuses a companion that is not registered", async () => {
     const response = await handlerFor(app())(get("/api/events?companion=0123456789"));
     expect(response?.status).toBe(400);
+  });
+});
+
+describe("friction", () => {
+  let home: string;
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "mate-studio-friction-"));
+  });
+  afterEach(() => fs.rmSync(home, { recursive: true, force: true }));
+
+  const files = (dir: string): string[] =>
+    fs
+      .readdirSync(dir, { recursive: true, withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => path.relative(home, path.join(entry.parentPath, entry.name)));
+
+  /** An application whose every call turns recording on, like the Studio server function. */
+  const switching = (): StudioApp => ({
+    clientDir: root,
+    fetch: async (_request, { context }) =>
+      Response.json(await context.studio.setFrictionRecording(true)),
+  });
+
+  const studio = (withApp: StudioApp | null, access?: StudioAccess) =>
+    createStudioFetch(
+      {
+        collectStudioInventory: async () => ({
+          companions: [{ path: "/companions/acme", health: "ready", pairings: [] }],
+        }),
+        homeDir: home,
+      },
+      { app: withApp, ...(access ? { access } : {}) },
+    );
+
+  test("refuses an unregistered digest", async () => {
+    await expect(studio(null).services.friction("0".repeat(10), { days: 30 })).rejects.toThrow();
+  });
+
+  test("setting the switch without --writable writes only the settings file", async () => {
+    const handler = studio(null);
+    expect(handler.services.writable).toBe(false);
+    expect(await handler.services.setFrictionRecording(true)).toEqual({ recording: true });
+    expect(readFrictionSwitch(home)).toBe(true);
+    expect(files(home)).toEqual([path.join(".mate", "friction", "settings.json")]);
+    expect(
+      (await handler.services.friction(companionDigest("/companions/acme"), { days: 30 }))
+        .recording,
+    ).toBe(true);
+  });
+
+  test("a server-function call sets the switch only from Studio's page with the token", async () => {
+    const token = "acme-token-0123456789abcdef";
+    const handler = studio(
+      switching(),
+      createStudioAccess({
+        invocation: "interactive",
+        terminal: false,
+        hostname: "localhost",
+        port: () => 80,
+        token,
+      }),
+    );
+    const call = (origin: string, cookie?: string) =>
+      handler(
+        new Request("http://localhost/_serverFn/abc", {
+          method: "POST",
+          headers: { origin, ...(cookie ? { cookie } : {}) },
+        }),
+      );
+    const tokened = `mate_studio_80=${token}`;
+
+    expect((await call("http://evil.example", tokened))?.status).toBe(403);
+    expect(readFrictionSwitch(home)).toBe(false);
+    const tokenless = await call("http://localhost");
+    expect(tokenless?.status).toBe(401);
+    expect(await tokenless?.text()).toContain("open the address Studio printed");
+    expect(readFrictionSwitch(home)).toBe(false);
+    expect((await call("http://localhost", tokened))?.status).toBe(200);
+    expect(readFrictionSwitch(home)).toBe(true);
   });
 });

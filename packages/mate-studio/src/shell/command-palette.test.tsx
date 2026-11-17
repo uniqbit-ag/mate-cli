@@ -123,6 +123,7 @@ describe("the command palette", () => {
       "Overview",
       "Workflow",
       "Factory",
+      "Friction",
       "archive-spec-drift-check",
       "Copy next step: /mate-apply-change archive-spec-drift-check",
       "Refresh",
@@ -164,6 +165,7 @@ describe("the command palette", () => {
     const listed = options(doc);
     expect(listed.some((entry) => /^(Workflow|Skills|Factory)View$/.test(entry ?? ""))).toBe(false);
     expect(listed.some((entry) => entry?.startsWith("Overview"))).toBe(true);
+    expect(listed).toContain("FrictionView");
     page.unmount();
   });
 });

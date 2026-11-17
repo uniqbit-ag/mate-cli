@@ -3,13 +3,11 @@ import { FRAMEWORK_NAME } from "../../framework";
 import { resolveInstallContext } from "../../lib/install";
 import { currentSession } from "../../lib/session-attribution";
 import { usageDays } from "../../lib/usage/window";
+import { readFrictionSummary, type FrictionGroup } from "../../lib/friction/summary";
 import {
   appendReport,
-  companionFilter,
   findEvent,
   frictionLogDir,
-  readEvents,
-  readReports,
   REPORT_COSTS,
   REPORT_KINDS,
   type FrictionEvent,
@@ -20,95 +18,6 @@ import {
 import { readFrictionSwitch, writeFrictionSwitch } from "../../runtime/friction-switch";
 import { scanContent, type SecretFinding } from "../../runtime/secret-scan";
 import { writeJsonStdout } from "../write-json-stdout";
-
-interface FrictionGroup {
-  fingerprint: string;
-  events: number;
-  sessions: number;
-  /** The highest event count within one session. */
-  maxPerSession: number;
-  firstSeen: string;
-  lastSeen: string;
-  /** Mate version → event count. */
-  versions: Record<string, number>;
-  /** Companion path → event count. */
-  companions: Record<string, number>;
-  /** Path a refused call named → event count. */
-  paths: Record<string, number>;
-  /** Flag a failed command carried → event count. */
-  flags: Record<string, number>;
-  /** Reports on the group's events, newest first. */
-  reports: FrictionReport[];
-}
-
-interface FrictionSummary {
-  events: number;
-  sessions: number;
-  groups: FrictionGroup[];
-  /** Reports on no event, newest first. */
-  freeReports: FrictionReport[];
-}
-
-const newestFirst = (reports: FrictionReport[]) =>
-  reports.toSorted((a, b) => b.at.localeCompare(a.at));
-
-/** `detail` is not validated on read. */
-const strings = (value: unknown): string[] =>
-  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-
-/** Counts each name once per event. */
-function tally(counts: Record<string, number>, names: string[]): void {
-  for (const name of new Set(names)) counts[name] = (counts[name] ?? 0) + 1;
-}
-
-/** Grouped by fingerprint; repeats within one session rank first, then the event count. */
-function summarizeFriction(events: FrictionEvent[], reports: FrictionReport[]): FrictionSummary {
-  const reportsByEvent = Map.groupBy(
-    reports.filter((report) => report.eventId),
-    (report) => report.eventId,
-  );
-  const byFingerprint = new Map<string, FrictionEvent[]>();
-  for (const event of events) {
-    const grouped = byFingerprint.get(event.fingerprint);
-    if (grouped) grouped.push(event);
-    else byFingerprint.set(event.fingerprint, [event]);
-  }
-  const groups = [...byFingerprint].map(([fingerprint, grouped]): FrictionGroup => {
-    const perSession = new Map<string, number>();
-    const versions: Record<string, number> = {};
-    const companions: Record<string, number> = {};
-    const paths: Record<string, number> = {};
-    const flags: Record<string, number> = {};
-    for (const event of grouped) {
-      perSession.set(event.sessionId, (perSession.get(event.sessionId) ?? 0) + 1);
-      versions[event.mateVersion] = (versions[event.mateVersion] ?? 0) + 1;
-      companions[event.companion] = (companions[event.companion] ?? 0) + 1;
-      tally(paths, strings(event.detail.paths));
-      tally(flags, strings(event.detail.flags));
-    }
-    const times = grouped.map((event) => event.at).toSorted();
-    return {
-      fingerprint,
-      events: grouped.length,
-      sessions: perSession.size,
-      maxPerSession: Math.max(...perSession.values()),
-      firstSeen: times[0],
-      lastSeen: times[times.length - 1],
-      versions,
-      companions,
-      paths,
-      flags,
-      reports: newestFirst(grouped.flatMap((event) => reportsByEvent.get(event.id) ?? [])),
-    };
-  });
-  groups.sort((a, b) => b.maxPerSession - a.maxPerSession || b.events - a.events);
-  return {
-    events: events.length,
-    sessions: new Set(events.map((event) => event.sessionId)).size,
-    groups,
-    freeReports: newestFirst(reports.filter((report) => !report.eventId)),
-  };
-}
 
 const DEFAULT_DAYS = 30;
 
@@ -187,13 +96,11 @@ export async function runFrictionListCommand(
   }
   const context = await (deps.resolveContext ?? (() => resolveInstallContext()))();
   const companion = args.all ? "" : (context.companionPath ?? "");
-  const window = { sinceDays: args.days, homeDir: deps.homeDir, now: deps.now };
-  const inCompanion = companionFilter(companion);
-  // A report on an event joins by id, wherever it was made; free reports are this companion's.
-  const summary = summarizeFriction(
-    readEvents({ ...window, companion }),
-    readReports(window).filter((report) => report.eventId || inCompanion(report.companion)),
-  );
+  const summary = readFrictionSummary(companion, {
+    days: args.days,
+    homeDir: deps.homeDir,
+    now: deps.now,
+  });
 
   if (args.json) {
     await writeJsonStdout({
