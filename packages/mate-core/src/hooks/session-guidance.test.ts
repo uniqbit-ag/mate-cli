@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
+import { umbrellaChildrenBlock } from "../runtime/umbrella-children";
 import { buildSessionGuidance } from "./session-guidance";
 
 const tempRoots: string[] = [];
@@ -71,6 +72,29 @@ describe("session-guidance hook module", () => {
     expect(context).toContain(companionPath);
     expect(context).toContain(repoRoot);
     expect(JSON.parse(result.stdout).hookSpecificOutput.hookEventName).toBe("SessionStart");
+  });
+
+  test("appends the children block in an Umbrella Repository, none in a checkout", () => {
+    const { repoRoot } = wrapRepo();
+    expect(additionalContext(buildSessionGuidance({}, repoRoot).stdout)).not.toContain(
+      "<umbrella-children",
+    );
+    for (const name of ["api", "web"]) {
+      fs.mkdirSync(path.join(repoRoot, name, ".git"), { recursive: true });
+      fs.writeFileSync(
+        path.join(repoRoot, name, ".git", "config"),
+        `[remote "origin"]\n\turl = git@github.com:acme/${name}.git\n`,
+      );
+    }
+
+    const context = additionalContext(buildSessionGuidance({}, repoRoot).stdout);
+
+    expect(context).toEndWith(`</companion-policy>\n\n${umbrellaChildrenBlock(repoRoot)}`);
+    expect(context).toContain('<child repository="acme/api" folder="api" />');
+    // Claude's hook cwd follows `cd`; SessionStart runs again on clear and compact.
+    expect(additionalContext(buildSessionGuidance({}, path.join(repoRoot, "api")).stdout)).toBe(
+      context,
+    );
   });
 
   test("names the projected wrapper bin, not the running installation's", () => {

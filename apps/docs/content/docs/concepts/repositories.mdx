@@ -158,8 +158,9 @@ longer need it.
 A plain folder that holds several Git checkouts can be linked once instead of
 each repository. Such a folder is an _Umbrella Repository_: each child checkout
 counts as a linked checkout of its own repository, and a session started in
-the folder can work on a change that spans them. Its Worksets get one mirrored
-worktree for all children.
+the folder can work on a change that spans them. That session is told each
+child by its repository identity, after the companion policy. Its Worksets get
+one mirrored worktree for all children.
 
 A session in a mirrored worktree records the Workset's Delivery Branch. `mate
 session list` reports it `done` once that branch is merged or gone in some
