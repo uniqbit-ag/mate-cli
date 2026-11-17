@@ -6,4 +6,4 @@ pre-commit:
       run: bun run format
       stage_fixed: true
     lint:
-      run: bun run lint
+      run: bun run lint -- --quiet
