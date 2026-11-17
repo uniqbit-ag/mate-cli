@@ -181,6 +181,22 @@ describe("session-banner hook module", () => {
       expect(message).toContain(companion);
     });
 
+    test("prints when only a Capability variable is set", async () => {
+      const repoRoot = makeTempDir("banner-projected-");
+      const companion = path.join(repoRoot, "companion");
+      fs.mkdirSync(companion, { recursive: true });
+      wrapRepo(repoRoot, companion, currentStamp());
+
+      const message = bannerMessage(
+        await buildBanner({ MATE_REACT_DOCTOR_BIN_PATH: "/opt/acme/react-doctor" }, repoRoot, [
+          PROJECTED_FLAG,
+        ]),
+      );
+
+      expect(message).toContain(repoRoot);
+      expect(message).toContain(companion);
+    });
+
     /** The plugin's own copy is unflagged, so a launch never silences it. */
     test("leaves the unflagged copy printing under the same environment", async () => {
       const result = await buildBanner(

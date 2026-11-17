@@ -152,6 +152,18 @@ describe("companion-instructions hook in a Claude-wrapped plain session", () => 
     expect(outcome({}, repoRoot, PLUGIN, subagentStart()).stdout).toBe("");
   });
 
+  test("a Capability variable alone is planned as unmanaged and delivers from the projection", () => {
+    const { repoRoot } = wrappedRepo();
+    const env = { MATE_REACT_DOCTOR_BIN_PATH: "/install/mate/node_modules/.bin/react-doctor" };
+
+    const result = outcome(env, repoRoot, WRAPPED, sessionStart());
+
+    expect(parsed(result.stdout).hookSpecificOutput!.additionalContext).toContain(
+      `${SENTINEL} in ${repoRoot}`,
+    );
+    expect(outcome(env, repoRoot, PLUGIN, sessionStart()).stdout).toBe("");
+  });
+
   test.each(["Explore", "Plan", "fork"])("a %s subagent gets no copy", (agentType) => {
     const { repoRoot } = wrappedRepo();
 
@@ -250,15 +262,26 @@ describe("companion-instructions hook under a launch environment", () => {
     expect(output.additionalContext).toContain(`${SENTINEL} in ${repoRoot}`);
   });
 
-  test("a partial launch environment is not completed from a projection that names another companion", () => {
-    const { repoRoot, launchEnv } = wrappedRepo();
-    const { MATE_ARTIFACT_PATH: _companion, ...partial } = launchEnv;
+  test.each(["MATE_REPO_ID", "MATE_WRAPPER_BIN_PATH"])(
+    "a launch lacking %s names it instead of reading the projection",
+    (name) => {
+      const { repoRoot, launchEnv } = wrappedRepo();
+      const partial = { ...launchEnv, [name]: undefined };
+      const resolveProjection = (): never => {
+        throw new Error("projection read");
+      };
 
-    for (const input of [sessionStart(), subagentStart()]) {
-      const projected = input.hook_event_name === "SessionStart" ? WRAPPED : PLUGIN;
-      expect(outcome(partial, repoRoot, projected, input).stdout).toBe("");
-    }
-  });
+      for (const input of [sessionStart(), subagentStart()]) {
+        const projected = input.hook_event_name === "SessionStart" ? WRAPPED : PLUGIN;
+        const result = outcome(partial, repoRoot, projected, input, { resolveProjection });
+
+        const line = `Companion instructions unavailable: the Mate launch environment lacks ${name}`;
+        const output = parsed(result.stdout);
+        expect(output.hookSpecificOutput!.additionalContext).toBe(line);
+        expect(output.systemMessage).toBe(line);
+      }
+    },
+  );
 
   test("a managed subagent outside any projection reads the launch environment", () => {
     const { repoRoot, launchEnv } = wrappedRepo();

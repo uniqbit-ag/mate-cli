@@ -5,7 +5,12 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { addWorktree, initRepo } from "../../test/git-checkouts";
-import { MATE_ENV, isManagedCompanionContext, readCompanionRuntimeContext } from "./env";
+import {
+  MATE_ENV,
+  hasLaunchEnvironment,
+  isManagedCompanionContext,
+  readCompanionRuntimeContext,
+} from "./env";
 import { companionFrameworkConfigPath, policyDocument } from "./policy";
 import { defaultSecretPolicy, parseSecretsConfig } from "./secret-patterns";
 import { writeProjectionPair, type MateProjection } from "./projection";
@@ -116,6 +121,7 @@ describe("readCompanionRuntimeContext", () => {
 
   test("treats non-'1' flag values as disabled", () => {
     const context = readCompanionRuntimeContext({
+      MATE_ARTIFACT_PATH: "/companions/acme",
       MATE_GRAPHIFY_ENABLED: "true",
       MATE_GIT_AUTO_MODE: "yes",
       MATE_REACT_DOCTOR_ENABLED: "0",
@@ -224,19 +230,30 @@ describe("readCompanionRuntimeContext file-backed composition", () => {
     expect(readCompanionRuntimeContext({}, repoRoot).companionPath).toBe("");
   });
 
-  test("any MATE_ variable present keeps the environment authoritative", () => {
-    const { repoRoot } = makeProjectedRepo();
+  test("MATE_NAME alone is no launch: the projection is read", () => {
+    const { repoRoot, companionPath } = makeProjectedRepo();
 
-    expect(readCompanionRuntimeContext({ MATE_NAME: "acme-mate" }, repoRoot)).toEqual({
-      frameworkName: "acme-mate",
-      companionPath: "",
-      repositoryPath: "",
-      repositoryId: "",
-      policyJson: "{}",
-      graphifyEnabled: false,
-      gitAutoModeEnabled: false,
-      reactDoctorEnabled: false,
-    });
+    const context = readCompanionRuntimeContext({ MATE_NAME: "acme-mate" }, repoRoot);
+
+    expect(context.companionPath).toBe(companionPath);
+    expect(context.repositoryId).toBe("acme");
+  });
+});
+
+describe("hasLaunchEnvironment", () => {
+  const dataNames = Object.values(MATE_ENV).filter((name) => name !== MATE_ENV.companionPath);
+
+  test.each([
+    ["a companion-scoped launch", { MATE_ARTIFACT_PATH: "/companions/acme" }, true],
+    ...dataNames.map((name) => [`${name} alone`, { [name]: "1" }, false] as const),
+    ["an empty env", {}, false],
+    [
+      "an empty MATE_ARTIFACT_PATH",
+      { MATE_ARTIFACT_PATH: "", MATE_REPO_PATH: "/repos/acme" },
+      false,
+    ],
+  ])("%s", (_label, env, expected) => {
+    expect(hasLaunchEnvironment(env as Record<string, string>)).toBe(expected);
   });
 });
 
@@ -249,9 +266,10 @@ describe("isManagedCompanionContext", () => {
     const missingRepo = readCompanionRuntimeContext({
       MATE_ARTIFACT_PATH: "/companions/acme",
     });
-    const missingCompanion = readCompanionRuntimeContext({
-      MATE_REPO_PATH: "/repos/acme",
-    });
+    const missingCompanion = readCompanionRuntimeContext(
+      { MATE_REPO_PATH: "/repos/acme" },
+      makeTempDir("env-unprojected-"),
+    );
 
     expect(isManagedCompanionContext(managed)).toBe(true);
     expect(isManagedCompanionContext(missingRepo)).toBe(true);
