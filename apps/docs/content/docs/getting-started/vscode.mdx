@@ -68,17 +68,20 @@ Once the managed workspace is open, the sidebar offers:
 
 ### Archive or publish from the sidebar
 
-Set `mate.agentRuntime` to `claude` or `opencode` to add change actions to the
-sidebar. Right-click a **Ready to archive** item and pick **Archive this**, or a
+Right-click a **Ready to archive** item and pick **Archive this**, or a
 **Ready to publish** item and pick **Publish this**. Mate starts a new session
-of that runtime in the repository root and opens its terminal. The session's
+in the repository root and opens its terminal. The session's
 first turn runs `mate-archive-change` or `mate-publish-artifact` on the item,
 and the session is listed under **Sessions** like any other.
 
-The actions are hidden while `mate.agentRuntime` is unset, and Mate never
-falls back to another runtime. **New session** ignores the setting and still
-asks for a runtime. The sidebar runs no checks of its own: the skill reports
-an unmerged delivery branch and asks before it publishes anything.
+The session uses the first `claude` or `opencode` entry of the Companion
+Repository's `allowedAgents`, which `mate companion setup` records; other
+agents in the list are skipped, and without such an entry the actions are
+hidden. To start OpenCode instead, list it first, for example with
+`mate companion setup --allowed-agent opencode --allowed-agent claude`.
+**New session** still asks for a runtime. The sidebar runs no checks of its
+own: the skill reports an unmerged delivery branch and asks before it
+publishes anything.
 
 Visible sections reload every 30 seconds while the editor window is focused,
 and when you return to the window. Change the interval with the

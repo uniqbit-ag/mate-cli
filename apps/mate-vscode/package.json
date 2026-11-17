@@ -51,19 +51,6 @@
           "default": 30,
           "minimum": 0,
           "markdownDescription": "Seconds between automatic reloads of the visible Mate sections, only while the window is focused. Values below 5 count as 5. `0` turns the interval off; sections still reload when the window regains focus."
-        },
-        "mate.agentRuntime": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "enum": [
-            "claude",
-            "opencode",
-            null
-          ],
-          "default": null,
-          "markdownDescription": "Agent Runtime the sidebar's change actions (Archive this, Publish this) start. Unset hides the actions; there is no fallback runtime. New session ignores this setting and asks every time."
         }
       }
     },
@@ -247,12 +234,12 @@
         },
         {
           "command": "mate.archiveChange",
-          "when": "view == mate.readyToArchive && viewItem == change.ready && config.mate.agentRuntime",
+          "when": "view == mate.readyToArchive && viewItem == change.ready && mate.changeActionRuntime",
           "group": "mate@1"
         },
         {
           "command": "mate.publishArtifact",
-          "when": "view == mate.readyToPublish && viewItem == pending && config.mate.agentRuntime",
+          "when": "view == mate.readyToPublish && viewItem == pending && mate.changeActionRuntime",
           "group": "mate@1"
         }
       ],

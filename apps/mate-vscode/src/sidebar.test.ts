@@ -536,9 +536,20 @@ describe("workspace gate wiring", () => {
   });
 
   describe("change actions", () => {
+    /** Writes the linked companion's `allowedAgents`; null removes the config. */
+    async function allowAgents(repo: string, agents: string[] | null) {
+      const config = path.join(repo, ".mate/companion/.mate/config");
+      await fs.rm(config, { recursive: true, force: true });
+      if (!agents) return;
+      await fs.mkdir(config, { recursive: true });
+      const list = agents.map((agent) => `  - ${agent}\n`).join("");
+      await fs.writeFile(path.join(config, "framework.yaml"), `allowedAgents:\n${list}git: auto\n`);
+    }
+
     /** A repository with `acme-queue` ready to archive, `acme-retry` open, and one pending archive. */
-    async function withActionItems() {
+    async function withActionItems(agents: string[] | null = null) {
       const repo = await openRepository();
+      await allowAgents(repo, agents);
       const changes = path.join(repo, ".mate/companion/openspec/changes");
       for (const [name, tasks] of [
         ["acme-queue", "- [x] a\n"],
@@ -561,7 +572,7 @@ describe("workspace gate wiring", () => {
     }
 
     test("Ready to archive and Ready to publish items carry their names; Open changes items no action", async () => {
-      const { ready, pending, open } = await withActionItems();
+      const { ready, pending, open } = await withActionItems(["claude"]);
       expect([ready.contextValue, ready.data]).toEqual(["change.ready", { name: "acme-queue" }]);
       expect([pending.description, pending.contextValue, pending.data]).toEqual([
         "waiting for merge",
@@ -576,10 +587,9 @@ describe("workspace gate wiring", () => {
     });
 
     test("OpenCode publishes a waiting archive in the repository root with --prompt", async () => {
-      const { repo, pending } = await withActionItems();
+      const { repo, pending } = await withActionItems(["codex", "opencode", "claude"]);
       const add = (await import("bun:test")).spyOn(mate, "addSession");
       add.mockImplementation(async () => ({}) as never);
-      settings.set("mate.agentRuntime", "opencode");
       await handlers.get("mate.publishArtifact")!(pending);
       expect(add.mock.calls[0]![0]).toMatchObject({ runtime: "opencode", cwd: repo });
       expect(terminals.at(-1)!.cwd).toBe(repo);
@@ -590,7 +600,7 @@ describe("workspace gate wiring", () => {
 
     test("Claude archives in the background with the slash command as first turn", async () => {
       jest.useFakeTimers();
-      const { repo, ready } = await withActionItems();
+      const { repo, ready } = await withActionItems(["claude", "opencode"]);
       const { spyOn } = await import("bun:test");
       spyOn(mate, "claudeSupportsBackground").mockImplementation(async () => true);
       const start = spyOn(mate, "startClaudeBackground").mockImplementation(async () => ({
@@ -598,7 +608,6 @@ describe("workspace gate wiring", () => {
         sessionId: "c25175db-b143",
       }));
       const add = spyOn(mate, "addSession").mockImplementation(async () => ({}) as never);
-      settings.set("mate.agentRuntime", "claude");
       await handlers.get("mate.archiveChange")!(ready);
       expect(start).toHaveBeenCalledWith(
         repo,
@@ -610,8 +619,20 @@ describe("workspace gate wiring", () => {
       expect(terminals.at(-1)!.sent).toEqual(["claude attach c25175db"]);
     });
 
-    test("an unset runtime or an unsafe name starts nothing and shows an error", async () => {
-      const { ready } = await withActionItems();
+    test("the menu context follows allowedAgents across reloads", async () => {
+      const { repo } = await withActionItems(["pi", "opencode"]);
+      expect(contexts.get("mate.changeActionRuntime")).toBe("opencode");
+      await allowAgents(repo, ["codex"]);
+      await providers.get("mate.readyToPublish")!.getChildren();
+      expect(contexts.get("mate.changeActionRuntime")).toBe(false);
+      await allowAgents(repo, ["claude"]);
+      await providers.get("mate.readyToArchive")!.getChildren();
+      expect(contexts.get("mate.changeActionRuntime")).toBe("claude");
+    });
+
+    test("no supported allowed agent or an unsafe name starts nothing and shows an error", async () => {
+      const { repo, ready } = await withActionItems(["codex"]);
+      expect(contexts.get("mate.changeActionRuntime")).toBe(false);
       const { spyOn } = await import("bun:test");
       const add = spyOn(mate, "addSession").mockImplementation(async () => ({}) as never);
       const start = spyOn(mate, "startClaudeBackground");
@@ -619,18 +640,18 @@ describe("workspace gate wiring", () => {
       const shown = window.showErrorMessage as unknown as ReturnType<typeof mock>;
       shown.mockClear();
       await handlers.get("mate.archiveChange")!(ready);
-      settings.set("mate.agentRuntime", "opencode");
+      await allowAgents(repo, ["opencode"]);
       await handlers.get("mate.archiveChange")!({ ...ready, data: { name: "acme;rm -rf" } });
       expect(add).not.toHaveBeenCalled();
       expect(start).not.toHaveBeenCalled();
       expect(terminals).toHaveLength(0);
       expect(shown.mock.calls.map(([message]) => message)).toEqual([
-        expect.stringContaining("mate.agentRuntime"),
+        expect.stringContaining("allowedAgents"),
         expect.stringContaining("acme;rm -rf"),
       ]);
     });
 
-    test("menus show only on their section's items while a runtime is set", async () => {
+    test("menus show only on their section's items while a runtime resolves", async () => {
       const manifest = await Bun.file(path.join(import.meta.dir, "../package.json")).json();
       const menu = (command: string) =>
         manifest.contributes.menus["view/item/context"].find(
@@ -638,12 +659,12 @@ describe("workspace gate wiring", () => {
         );
       expect(menu("mate.archiveChange")).toEqual({
         command: "mate.archiveChange",
-        when: "view == mate.readyToArchive && viewItem == change.ready && config.mate.agentRuntime",
+        when: "view == mate.readyToArchive && viewItem == change.ready && mate.changeActionRuntime",
         group: "mate@1",
       });
       expect(menu("mate.publishArtifact")).toEqual({
         command: "mate.publishArtifact",
-        when: "view == mate.readyToPublish && viewItem == pending && config.mate.agentRuntime",
+        when: "view == mate.readyToPublish && viewItem == pending && mate.changeActionRuntime",
         group: "mate@1",
       });
       const hidden = manifest.contributes.menus.commandPalette.map(
@@ -652,7 +673,9 @@ describe("workspace gate wiring", () => {
       expect(hidden).toEqual(
         expect.arrayContaining(["mate.archiveChange", "mate.publishArtifact"]),
       );
-      expect(manifest.contributes.configuration.properties["mate.agentRuntime"].default).toBeNull();
+      expect(Object.keys(manifest.contributes.configuration.properties)).toEqual([
+        "mate.autoRefreshInterval",
+      ]);
     });
   });
 

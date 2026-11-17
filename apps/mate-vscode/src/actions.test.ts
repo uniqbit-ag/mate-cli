@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test";
 
-import { actionPrompt } from "./actions";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import {
+  actionPrompt,
+  changeActionRuntime,
+  parseAllowedAgents,
+  readChangeActionRuntime,
+} from "./actions";
 
 describe("actionPrompt", () => {
   test("Claude gets the skill as a slash command", () => {
@@ -26,4 +35,54 @@ describe("actionPrompt", () => {
       expect(actionPrompt("publish", "opencode", name)).toBeNull();
     },
   );
+});
+
+describe("parseAllowedAgents", () => {
+  test("reads block and flow lists, quotes, and comments", () => {
+    expect(
+      parseAllowedAgents("version: 1\nallowedAgents:\n  - claude\n  - opencode\ngit: auto\n"),
+    ).toEqual(["claude", "opencode"]);
+    expect(parseAllowedAgents("allowedAgents:\n- 'opencode' # first\n- \"claude\"\n")).toEqual([
+      "opencode",
+      "claude",
+    ]);
+    expect(parseAllowedAgents("allowedAgents: [codex, claude]\n")).toEqual(["codex", "claude"]);
+    expect(parseAllowedAgents("allowedAgents: []\n")).toEqual([]);
+  });
+
+  test("falls back to profiles.default, and ignores nested or absent keys", () => {
+    const legacy = "profiles:\n  default:\n    allowedAgents:\n      - opencode\n";
+    expect(parseAllowedAgents(legacy)).toEqual(["opencode"]);
+    expect(parseAllowedAgents(`allowedAgents: null\n${legacy}`)).toEqual(["opencode"]);
+    expect(
+      parseAllowedAgents("profiles:\n  other:\n    allowedAgents: [claude]\n"),
+    ).toBeUndefined();
+    expect(parseAllowedAgents("engines:\n  allowedAgents: [claude]\n")).toBeUndefined();
+    expect(parseAllowedAgents("# allowedAgents: [claude]\n")).toBeUndefined();
+  });
+});
+
+describe("changeActionRuntime", () => {
+  test("is the first entry the sidebar can start", () => {
+    expect(changeActionRuntime(["codex", "opencode", "claude"])).toBe("opencode");
+    expect(changeActionRuntime(["claude", "opencode"])).toBe("claude");
+    expect(changeActionRuntime(["codex", "pi"])).toBeNull();
+    expect(changeActionRuntime(undefined)).toBeNull();
+  });
+
+  test("reads the linked companion's framework.yaml", async () => {
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), "acme-agents-"));
+    try {
+      expect(await readChangeActionRuntime(repo)).toBeNull();
+      const config = path.join(repo, ".mate/companion/.mate/config");
+      await fs.mkdir(config, { recursive: true });
+      await fs.writeFile(
+        path.join(config, "framework.yaml"),
+        "allowedAgents:\n  - pi\n  - claude\n",
+      );
+      expect(await readChangeActionRuntime(repo)).toBe("claude");
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
+  });
 });

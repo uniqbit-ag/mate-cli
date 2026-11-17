@@ -4,7 +4,7 @@ import path from "node:path";
 
 import * as vscode from "vscode";
 
-import { actionPrompt, type ChangeAction } from "./actions";
+import { actionPrompt, readChangeActionRuntime, type ChangeAction } from "./actions";
 import { readOpenChanges, readyToArchive, type OpenChange } from "./changes";
 import {
   groupSessions,
@@ -435,10 +435,24 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  /** Gates the change action menus; read with every load that shows them. */
+  const updateActionRuntime = async (repository: WindowRepository) => {
+    const runtime = await readChangeActionRuntime(repository.root);
+    await vscode.commands.executeCommand(
+      "setContext",
+      "mate.changeActionRuntime",
+      runtime ?? false,
+    );
+    return runtime;
+  };
+
   const readyToArchiveChanges = new Section(
     "mate.readyToArchive",
     forRepository(async (repository) => {
-      const view = await repositoryView(repository);
+      const [view] = await Promise.all([
+        repositoryView(repository),
+        updateActionRuntime(repository),
+      ]);
       if (!view.changes.linked) return { message: NOT_LINKED };
       return { items: view.ready.map(readyItem) };
     }),
@@ -447,7 +461,11 @@ export function activate(context: vscode.ExtensionContext): void {
   const readyToPublish = new Section(
     "mate.readyToPublish",
     forRepository(async (repository) => ({
-      items: toPendingItems(await pendingArtifacts(repository.root)).map((item) => ({
+      items: toPendingItems(
+        (
+          await Promise.all([pendingArtifacts(repository.root), updateActionRuntime(repository)])
+        )[0],
+      ).map((item) => ({
         label: item.name,
         description: item.waitingForMerge ? "waiting for merge" : undefined,
         tooltip: item.anchor,
@@ -533,16 +551,19 @@ export function activate(context: vscode.ExtensionContext): void {
     sessions.refresh();
   };
 
-  /** Starts the configured runtime in the repository root on the item's skill; no precondition checks. */
+  /**
+   * Starts the companion's first allowed Claude or OpenCode in the repository root
+   * on the item's skill; no precondition checks.
+   */
   const startChangeAction = async (action: ChangeAction, item?: SectionItem) => {
     const name = (item?.data as ActionTarget | undefined)?.name;
     const repository = gate.state.repository;
     if (!name || !repository) return;
-    // The menu hides while unset, but the setting may change before the pick.
-    const runtime = vscode.workspace.getConfiguration("mate").get<string | null>("agentRuntime");
-    if (runtime !== "claude" && runtime !== "opencode") {
+    // The menu shows the last load's runtime; `allowedAgents` may have changed since.
+    const runtime = await updateActionRuntime(repository);
+    if (!runtime) {
       return void vscode.window.showErrorMessage(
-        "Mate: set `mate.agentRuntime` to `claude` or `opencode` to use change actions.",
+        "Mate: the companion's allowedAgents lists neither claude nor opencode. Allow one with `mate setup`.",
       );
     }
     const prompt = actionPrompt(action, runtime, name);
