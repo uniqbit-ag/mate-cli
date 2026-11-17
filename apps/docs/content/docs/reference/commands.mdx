@@ -9,7 +9,7 @@ description: Current Mate CLI commands and their execution contexts.
 | ------------------------------------------ | ----------------------- | -------------------------------------------------------------------------- |
 | `mate companion setup`                     | Companion root          | Create or reconfigure a companion explicitly.                              |
 | `mate companion link`                      | Working repository, TTY | Select or clone a companion, write the link, and install its requirements. |
-| `mate companion list [--json]`             | Linked context          | List linked repositories.                                                  |
+| `mate companion list [--json]`             | Linked context          | List the connected companions; in a companion root, the linked repos.      |
 | `mate companion open [--no-open] [--json]` | Linked context          | Prepare the repository's editor workspace; open it unless `--no-open`.     |
 | `mate companion tui`                       | Linked context, TTY     | Open a shell in the resolved companion.                                    |
 | `mate companion sync`                      | Linked context          | Sync the companion with its Git upstream, interactively at a terminal.     |
@@ -24,6 +24,28 @@ installation confirmation are interactive. The default workflow is:
 mate install
 mate companion link
 mate opencode
+```
+
+`mate companion list` answers by location. In a working repository it lists the
+companions the repository is connected to and marks the one Mate uses with `*`.
+In a companion root it lists the working repositories linked to that companion.
+It never changes a link. With `--json`, or when stdout is not a terminal, it
+prints one object, from a working repository:
+
+```json
+{
+  "workingRepository": { "id": "acme", "path": "/work/acme" },
+  "companions": [{ "path": "/work/acme-companion", "repositoryId": "acme", "active": true }]
+}
+```
+
+and from a companion root:
+
+```json
+{
+  "companionPath": "/work/acme-companion",
+  "repositories": [{ "id": "acme", "path": "/work/acme" }]
+}
 ```
 
 `mate companion open --no-open --json` creates or updates the managed workspace
