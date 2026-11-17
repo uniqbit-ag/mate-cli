@@ -100,6 +100,17 @@ describe("mate cap friction list", () => {
     expect(document.groups[0].versions).toEqual({ "1.0.0": 4 });
   });
 
+  test("--all lists every companion's friction and names each group's companions", async () => {
+    record("refusal:artifact:write", "a");
+    record("refusal:artifact:write", "b", { companion: "/acme/other" });
+
+    await list(["--all", "--json"]);
+
+    const document = JSON.parse(stdout[0]);
+    expect(document).toMatchObject({ companion: null, events: 2 });
+    expect(document.groups[0].companions).toEqual({ [COMPANION]: 1, "/acme/other": 1 });
+  });
+
   test("lists the groups in the same order as text", async () => {
     record("refusal:secret:read", "a");
     record("refusal:artifact:write", "b");

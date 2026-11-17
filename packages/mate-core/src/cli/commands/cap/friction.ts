@@ -32,6 +32,8 @@ interface FrictionGroup {
   lastSeen: string;
   /** Mate version → event count. */
   versions: Record<string, number>;
+  /** Companion path → event count. */
+  companions: Record<string, number>;
   /** Reports on the group's events, newest first. */
   reports: FrictionReport[];
 }
@@ -62,9 +64,11 @@ function summarizeFriction(events: FrictionEvent[], reports: FrictionReport[]): 
   const groups = [...byFingerprint].map(([fingerprint, grouped]): FrictionGroup => {
     const perSession = new Map<string, number>();
     const versions: Record<string, number> = {};
+    const companions: Record<string, number> = {};
     for (const event of grouped) {
       perSession.set(event.sessionId, (perSession.get(event.sessionId) ?? 0) + 1);
       versions[event.mateVersion] = (versions[event.mateVersion] ?? 0) + 1;
+      companions[event.companion] = (companions[event.companion] ?? 0) + 1;
     }
     const times = grouped.map((event) => event.at).toSorted();
     return {
@@ -75,6 +79,7 @@ function summarizeFriction(events: FrictionEvent[], reports: FrictionReport[]): 
       firstSeen: times[0],
       lastSeen: times[times.length - 1],
       versions,
+      companions,
       reports: newestFirst(grouped.flatMap((event) => reportsByEvent.get(event.id) ?? [])),
     };
   });
@@ -89,12 +94,14 @@ function summarizeFriction(events: FrictionEvent[], reports: FrictionReport[]): 
 
 const DEFAULT_DAYS = 30;
 
-function parseArgs(argv: string[]): { days: number; json: boolean } | string {
+function parseArgs(argv: string[]): { days: number; json: boolean; all: boolean } | string {
   let days = DEFAULT_DAYS;
   let json = false;
+  let all = false;
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === "--json") json = true;
+    else if (arg === "--all") all = true;
     else if (arg === "--days" || arg.startsWith("--days=")) {
       try {
         days = usageDays(arg === "--days" ? argv[++index] : arg.slice("--days=".length));
@@ -103,25 +110,29 @@ function parseArgs(argv: string[]): { days: number; json: boolean } | string {
       }
     } else return `Unknown argument: ${arg}`;
   }
-  return { days, json };
+  return { days, json, all };
 }
 
-function renderGroup(group: FrictionGroup): string {
-  const versions = Object.entries(group.versions)
-    .map(([version, count]) => `${version} ×${count}`)
+const counted = (counts: Record<string, number>) =>
+  Object.entries(counts)
+    .map(([name, count]) => `${name} ×${count}`)
     .join(", ");
+
+function renderGroup(group: FrictionGroup, all: boolean): string {
   const [latest] = group.reports;
   return [
     `  ${group.fingerprint}`,
     `    ${group.events} events in ${group.sessions} sessions, at most ${group.maxPerSession} in one session`,
-    `    first ${group.firstSeen}, last ${group.lastSeen}; mate ${versions}`,
+    `    first ${group.firstSeen}, last ${group.lastSeen}; mate ${counted(group.versions)}`,
+    ...(all ? [`    companions: ${counted(group.companions)}`] : []),
     ...(latest ? [`    ${group.reports.length} reports; latest expected: ${latest.expected}`] : []),
   ].join("\n");
 }
 
-function renderFreeReport(report: FrictionReport): string {
+function renderFreeReport(report: FrictionReport, all: boolean): string {
   return [
     `  ${report.subject} (${report.kind}${report.cost ? `, ${report.cost}` : ""}) ${report.at}`,
+    ...(all ? [`    companion: ${report.companion}`] : []),
     `    expected: ${report.expected}`,
     `    evidence: ${report.evidence ?? ""}`,
   ].join("\n");
@@ -150,7 +161,7 @@ export async function runFrictionListCommand(
     }))
   )
     return;
-  const companion = context.companionPath ?? "";
+  const companion = args.all ? "" : (context.companionPath ?? "");
   const window = { sinceDays: args.days, homeDir: deps.homeDir, now: deps.now };
   const inCompanion = companionFilter(companion);
   // A report on an event joins by id, wherever it was made; free reports are this companion's.
@@ -164,7 +175,7 @@ export async function runFrictionListCommand(
       kind: "friction-list",
       version: 1,
       days: args.days,
-      companion,
+      companion: args.all ? null : companion,
       events: summary.events,
       sessions: summary.sessions,
       groups: summary.groups,
@@ -177,12 +188,12 @@ export async function runFrictionListCommand(
     return;
   }
   console.log(
-    `Friction in the last ${args.days} days: ${summary.events} events in ${summary.sessions} sessions`,
+    `Friction in the last ${args.days} days${args.all ? " in all companions" : ""}: ${summary.events} events in ${summary.sessions} sessions`,
   );
-  for (const group of summary.groups) console.log(renderGroup(group));
+  for (const group of summary.groups) console.log(renderGroup(group, args.all));
   if (summary.freeReports.length > 0) {
     console.log(`Free reports: ${summary.freeReports.length}`);
-    for (const report of summary.freeReports) console.log(renderFreeReport(report));
+    for (const report of summary.freeReports) console.log(renderFreeReport(report, args.all));
   }
 }
 

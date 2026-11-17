@@ -37,7 +37,7 @@ export function createFrictionPlugin(): CapabilityPlugin {
     cliCommands: [
       {
         name: "list",
-        description: "List recorded friction, grouped by fingerprint [--days N] [--json]",
+        description: "List recorded friction, grouped by fingerprint [--days N] [--all] [--json]",
         run: async (argv) =>
           (await import("../../../cli/commands/cap/friction")).runFrictionListCommand(argv),
       },

@@ -833,15 +833,15 @@ repository.
 
 ## Capabilities
 
-| Command                                      | Purpose                                         |
-| -------------------------------------------- | ----------------------------------------------- |
-| `mate cap openspec <subcommand> [args...]`   | Run OpenSpec through the active context.        |
-| `mate cap graphify <subcommand> [args...]`   | Run Graphify through the active context.        |
-| `mate cap index`                             | Refresh enabled Graphify and TokenSave indexes. |
-| `mate cap index --graphify`                  | Refresh only Graphify.                          |
-| `mate cap index --tokensave`                 | Refresh only TokenSave.                         |
-| `mate cap friction list [--days N] [--json]` | List recorded friction, grouped by fingerprint. |
-| `mate cap friction report [<event-id>] ...`  | Record what an agent expected.                  |
+| Command                                              | Purpose                                         |
+| ---------------------------------------------------- | ----------------------------------------------- |
+| `mate cap openspec <subcommand> [args...]`           | Run OpenSpec through the active context.        |
+| `mate cap graphify <subcommand> [args...]`           | Run Graphify through the active context.        |
+| `mate cap index`                                     | Refresh enabled Graphify and TokenSave indexes. |
+| `mate cap index --graphify`                          | Refresh only Graphify.                          |
+| `mate cap index --tokensave`                         | Refresh only TokenSave.                         |
+| `mate cap friction list [--days N] [--all] [--json]` | List recorded friction, grouped by fingerprint. |
+| `mate cap friction report [<event-id>] ...`          | Record what an agent expected.                  |
 
 `mate cap friction list` needs the [`friction`](/docs/capabilities#friction)
 capability. It reads the events of the last `N` days, default 30, recorded for
@@ -853,7 +853,9 @@ session come first, then those with the most events. Free reports of the
 companion follow in their own section, newest first. With `--json` it prints
 one document with `kind` `friction-list` and `version` 1; each group carries its
 `reports`, and the document carries `freeReports`. It writes nothing to the
-log.
+log. With `--all` it lists the friction of every companion on this machine,
+including companions no repository resolves to any more: each group names its
+companions with their event counts, and the JSON `companion` is `null`.
 
 `mate cap friction report` also needs the capability. It records one Friction
 Report and prints its id:
