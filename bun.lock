@@ -53,7 +53,7 @@
         "oxlint": "^1.73.0",
         "release-it": "^20.2.1",
         "tsdown": "0.23.0",
-        "typescript": "latest",
+        "typescript": "^7.0.2",
       },
     },
     "apps/mate-container": {
@@ -81,7 +81,7 @@
         "@types/vscode": "1.85.0",
         "@vscode/vsce": "^4.1.0",
         "tsdown": "0.23.0",
-        "typescript": "latest",
+        "typescript": "^7.0.2",
       },
     },
     "packages/mate-core": {
