@@ -32,8 +32,11 @@ import {
 } from "./companion-git";
 import { withCompanionLock } from "./companion-lock";
 import { hasLaunchEnvironment } from "./env";
+import { errorMessage } from "./error-message";
 import { FRAMEWORK_NAME } from "./framework";
+import { inboxRefspec } from "./pending-records";
 import { readCompanionPolicy } from "./policy";
+import { discardSubmittedArrivals, planSubmittedArrivals } from "./submitted-arrivals";
 
 /** The one command that finishes what the unattended half declines to do. */
 export const COMPANION_SYNC_COMMAND = `${FRAMEWORK_NAME} companion sync`;
@@ -93,6 +96,14 @@ async function hasGitPath(
   const gitPath = await git.run(["rev-parse", "--git-path", name]);
   if (gitPath.status !== 0) return false;
   return fs.existsSync(path.resolve(companionPath, gitPath.stdout.trim()));
+}
+
+/** The unfinished Git operations the companion is in the middle of. */
+async function unfinishedGitPaths(git: CompanionGit, companionPath: string): Promise<string[]> {
+  const present = await Promise.all(
+    UNFINISHED_GIT_PATHS.map((name) => hasGitPath(git, companionPath, name)),
+  );
+  return UNFINISHED_GIT_PATHS.filter((_, index) => present[index]);
 }
 
 function notApplicable(companionPath: string): UnattendedSyncOutcome {
@@ -160,10 +171,7 @@ async function syncHoldingLock(
   const target = await git.upstreamTarget();
   if (!target) return notApplicable(companionPath);
 
-  const present = await Promise.all(
-    UNFINISHED_GIT_PATHS.map((name) => hasGitPath(git, companionPath, name)),
-  );
-  const inProgress = UNFINISHED_GIT_PATHS.filter((_, index) => present[index]);
+  const inProgress = await unfinishedGitPaths(git, companionPath);
   if (inProgress.length > 0) {
     return unfinished(
       companionPath,
@@ -172,7 +180,13 @@ async function syncHoldingLock(
     );
   }
 
-  const fetch = await git.fetch(["--no-progress", target.remote, target.branch]);
+  // The inbox rides along for the pending count.
+  const fetch = await git.fetch([
+    "--no-progress",
+    target.remote,
+    target.branch,
+    inboxRefspec(target.remote),
+  ]);
   if (fetch.status !== 0) {
     if (isAuthenticationFailure(fetch)) {
       return unfinished(companionPath, `fetching ${target.ref} needs Git authentication`, homeDir);
@@ -199,25 +213,99 @@ async function syncHoldingLock(
     );
   }
 
-  const merge = await git.run(["merge", "--ff-only", "--no-stat", "--no-progress", target.ref]);
-  if (merge.status !== 0) {
-    const dirty = await git.run(["status", "--porcelain=v1", "--untracked-files=all"]);
-    if (dirty.status === 0 && outputLines(dirty.stdout).length > 0) {
-      return unfinished(
-        companionPath,
-        `local changes block the fast-forward to ${target.ref}`,
-        homeDir,
-      );
-    }
-    return unfinished(
-      companionPath,
-      `unable to fast-forward to ${target.ref}: ${describeGitFailure(merge)}`,
-      homeDir,
-    );
-  }
-
+  const blocked = await fastForward(git, companionPath, target.ref, homeDir);
+  if (blocked) return unfinished(companionPath, blocked, homeDir);
   recordCompanionSync(companionPath, now, homeDir);
   return { status: "complete", changed: true, companionPath };
+}
+
+/**
+ * Fast-forwards the checkout to `ref`; a submitted folder unchanged since submit gives way to
+ * its arriving archive. Returns why it could not, with the checkout as it was.
+ */
+async function fastForward(
+  git: CompanionGit,
+  companionPath: string,
+  ref: string,
+  homeDir: string | undefined,
+): Promise<string | null> {
+  let discarded: Awaited<ReturnType<typeof discardSubmittedArrivals>>;
+  try {
+    const arrivals = await planSubmittedArrivals(git, companionPath, ref, undefined, homeDir);
+    discarded = await discardSubmittedArrivals(git, companionPath, arrivals, homeDir);
+  } catch (error) {
+    // Unattended: a folder that cannot be read or moved is reported, never thrown.
+    return `submitted folders could not give way to their archives: ${errorMessage(error)}`;
+  }
+
+  const merge = await git.run(["merge", "--ff-only", "--no-stat", "--no-progress", ref]);
+  if (merge.status === 0) {
+    // The merge stands; a copy or record left behind changes nothing in the checkout.
+    await discarded.commit().catch(() => {});
+    return null;
+  }
+  // Nothing arrived, so the discarded folders come back until a later sync brings them.
+  const lost = await discarded.restore().then(
+    () => "",
+    (error: unknown) => `; putting back discarded submitted folders failed: ${errorMessage(error)}`,
+  );
+  const dirty = await git.run(["status", "--porcelain=v1", "--untracked-files=all"]);
+  if (dirty.status === 0 && outputLines(dirty.stdout).length > 0) {
+    return `local changes block the fast-forward to ${ref}${lost}`;
+  }
+  return `unable to fast-forward to ${ref}: ${describeGitFailure(merge)}${lost}`;
+}
+
+/** How long the fast-forward after a push waits for another holder of the companion lock. */
+const ADOPT_LOCK_WAIT_MS = 5_000;
+
+export interface AdoptOptions {
+  homeDir?: string;
+  /** Environment Git runs with. */
+  env?: Record<string, string | undefined>;
+}
+
+async function adoptHoldingLock(
+  companionPath: string,
+  branch: string,
+  { homeDir, env }: AdoptOptions,
+): Promise<boolean> {
+  const git = companionGit(companionPath, {
+    prompt: "never",
+    budgetMs: COMPANION_SYNC_TIMEOUT_MS,
+    commandCapMs: GIT_QUERY_TIMEOUT_MS,
+    env,
+  });
+  const target = await git.upstreamTarget();
+  if (!target || target.branch !== branch) return false;
+  const fork = await git.forkState(target.ref);
+  if (!fork || fork.ahead > 0 || fork.behind === 0) return false;
+  if ((await unfinishedGitPaths(git, companionPath)).length > 0) return false;
+  return (await fastForward(git, companionPath, target.ref, homeDir)) === null;
+}
+
+/**
+ * Fast-forwards the checkout to `branch` of its upstream as last fetched or pushed, without a
+ * fetch, so a commit Mate just pushed from a temporary worktree becomes the checkout's own and
+ * plain Git keeps working there. Best effort, never throws: nothing happens when the checkout
+ * tracks another branch, has commits of its own, is mid-operation or stays locked, or when local
+ * changes block the fast-forward; the next synchronization then does it.
+ */
+export async function adoptUpstream(
+  companionPath: string,
+  branch: string,
+  options: AdoptOptions = {},
+): Promise<boolean> {
+  try {
+    const locked = await withCompanionLock(
+      companionPath,
+      { homeDir: options.homeDir, timeoutMs: ADOPT_LOCK_WAIT_MS },
+      () => adoptHoldingLock(companionPath, branch, options),
+    );
+    return locked.acquired && locked.value;
+  } catch {
+    return false;
+  }
 }
 
 /**

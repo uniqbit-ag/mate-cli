@@ -12,23 +12,24 @@ import {
 } from "./branch-template";
 
 /** The Delivery Record's file name at a change root; it moves with the change into its archive. */
-export const DELIVERY_FILE = "delivery.yaml";
+import { DELIVERY_FILE } from "../../runtime/pending-records";
+
+export { DELIVERY_FILE };
 
 /** A merge result: `open` is "not yet merged", `closed-unmerged` is "dropped". */
 export type MergeState = "merged" | "open" | "closed-unmerged";
 
 /**
- * Where a merge result came from; a user answer is recorded as such, never as forge truth.
- * `git`: the delivery's head was found on the default branch in a local checkout.
+ * Where a merge result came from. `git`: a local checkout found the delivery's head or its
+ * content on the default branch. `forge`: written by an earlier Mate; read and kept, never
+ * written, and it counts like `git`.
  */
 export type MergeSource = "forge" | "git" | "user";
 
-/** What the forge reports about a merge, when it reports anything. */
+/** The default-branch commit that brought the delivery in, when Git found one. */
 export interface MergeProvenance {
   mergedAt?: string;
   mergeCommit?: string;
-  /** Provenance only; a merger is never presented as an artifact reviewer. */
-  mergedBy?: string;
 }
 
 export interface MergeResult extends MergeProvenance {
@@ -36,15 +37,6 @@ export interface MergeResult extends MergeProvenance {
   source: MergeSource;
   /** When the result was recorded (ISO 8601). */
   checkedAt: string;
-}
-
-/** The provenance fields `source` carries, without empty ones. */
-export function pickProvenance(source: MergeProvenance): MergeProvenance {
-  return {
-    ...(source.mergedAt ? { mergedAt: source.mergedAt } : {}),
-    ...(source.mergeCommit ? { mergeCommit: source.mergeCommit } : {}),
-    ...(source.mergedBy ? { mergedBy: source.mergedBy } : {}),
-  };
 }
 
 /** One Working Repository's delivery: a branch, or a reason no branch applies. */
@@ -58,14 +50,42 @@ export interface Delivery {
   pr?: string;
   /** The branch's last known tip commit, kept so detection works after the branch is deleted. */
   head?: string;
+  /** True while `head` was not on `origin/<branch>` where it was recorded. */
+  unpushed?: boolean;
   merge?: MergeResult;
   notApplicable?: string;
+}
+
+/** `active` while worked on (also when absent), `submitted` once pushed for publication, `dropped` when withdrawn. */
+export type SubmissionState = "active" | "submitted" | "dropped";
+
+const SUBMISSION_STATES: readonly SubmissionState[] = ["active", "submitted", "dropped"];
+
+/** Why the change's Delivery Group could not publish; cleared by resubmit, resolution or publication. */
+export interface DeliveryBlock {
+  reason: string;
+  paths: string[];
+  /** When the block was first recorded, ISO 8601. */
+  since: string;
+  /**
+   * The default-branch commit the block was last found on; a resolution is refused when the
+   * text it resolved against changed after it.
+   */
+  tip?: string;
 }
 
 export interface DeliveryRecord {
   version: 1;
   change: string;
   deliveries: Delivery[];
+  state?: SubmissionState;
+  blocked?: DeliveryBlock;
+  /**
+   * The companion commit the change's delta specs were written against, recorded the first time
+   * the record is written; publication takes it as the delta base, so a requirement someone
+   * changed after the delta was written conflicts instead of being overwritten.
+   */
+  specBase?: string;
 }
 
 const JIRA_KEY = /^[A-Za-z][A-Za-z0-9]+-\d+$/;
@@ -194,6 +214,8 @@ export function upsertDelivery(
       next.pr = patch.pr;
     }
     if (patch.head !== undefined) next.head = patch.head;
+    if (patch.unpushed === true) next.unpushed = true;
+    else if (patch.unpushed === false) delete next.unpushed;
     if (patch.merge !== undefined) next.merge = patch.merge;
     if (next.direct === false) delete next.direct;
   }
@@ -260,6 +282,11 @@ const MERGE_SOURCES: readonly MergeSource[] = ["forge", "git", "user"];
 /** A full SHA-1 or SHA-256 object name. */
 const COMMIT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
+/** Whether `value` is a full commit ID, never an option or rev expression. */
+export function isCommitId(value: string): boolean {
+  return COMMIT_ID.test(value);
+}
+
 function parseMerge(value: unknown, file: string): MergeResult | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== "object") throw malformed(file, "merge must be a mapping");
@@ -275,7 +302,8 @@ function parseMerge(value: unknown, file: string): MergeResult | undefined {
     source: merge.source as MergeSource,
     checkedAt: optionalString(merge.checkedAt, file, "merge.checkedAt") ?? "",
   };
-  for (const key of ["mergedAt", "mergeCommit", "mergedBy"] as const) {
+  // An earlier Mate's `mergedBy` is ignored, so the next write drops it.
+  for (const key of ["mergedAt", "mergeCommit"] as const) {
     const field = optionalString(merge[key], file, `merge.${key}`);
     if (field !== undefined) result[key] = field;
   }
@@ -294,11 +322,10 @@ function parseDelivery(value: unknown, file: string): Delivery {
   if (branch !== undefined) delivery.branch = branch;
   if (entry.direct === true) delivery.direct = true;
   if (pr !== undefined) delivery.pr = pr;
+  // A head that is no full commit ID never reaches Git: it reads as absent.
   const head = optionalString(entry.head, file, "head");
-  if (head !== undefined) {
-    if (!COMMIT_ID.test(head)) throw malformed(file, "head must be a full commit id");
-    delivery.head = head;
-  }
+  if (head !== undefined && COMMIT_ID.test(head)) delivery.head = head;
+  if (entry.unpushed === true) delivery.unpushed = true;
   const merge = parseMerge(entry.merge, file);
   if (merge) delivery.merge = merge;
   if (notApplicable !== undefined) delivery.notApplicable = notApplicable;
@@ -335,7 +362,45 @@ export async function readDeliveryRecord(changeDir: string): Promise<DeliveryRec
     change:
       optionalString(document.change, file, "change") ?? changeNameOf(path.basename(changeDir)),
     deliveries: deliveries.map((entry) => parseDelivery(entry, file)),
+    ...stateOf(document.state, file),
+    ...blockedOf(document.blocked, file),
+    ...specBaseOf(document.specBase, file),
   };
+}
+
+function stateOf(value: unknown, file: string): { state?: SubmissionState } {
+  const state = optionalString(value, file, "state");
+  if (state === undefined) return {};
+  if (!SUBMISSION_STATES.includes(state as SubmissionState)) {
+    throw malformed(file, `state must be one of ${SUBMISSION_STATES.join(", ")}`);
+  }
+  return { state: state as SubmissionState };
+}
+
+function blockedOf(value: unknown, file: string): { blocked?: DeliveryBlock } {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw malformed(file, "blocked must be a mapping");
+  }
+  const { reason, paths = [], since, tip } = value as Record<string, unknown>;
+  if (typeof reason !== "string" || !reason) throw malformed(file, "blocked.reason must be text");
+  if (!Array.isArray(paths) || paths.some((entry) => typeof entry !== "string")) {
+    throw malformed(file, "blocked.paths must be a list of paths");
+  }
+  if (typeof since !== "string" || Number.isNaN(Date.parse(since))) {
+    throw malformed(file, "blocked.since must be a timestamp");
+  }
+  if (tip !== undefined && (typeof tip !== "string" || !COMMIT_ID.test(tip))) {
+    throw malformed(file, "blocked.tip must be a commit ID");
+  }
+  return { blocked: { reason, paths: paths as string[], since, ...(tip ? { tip } : {}) } };
+}
+
+function specBaseOf(value: unknown, file: string): { specBase?: string } {
+  const specBase = optionalString(value, file, "specBase");
+  if (specBase === undefined) return {};
+  if (!COMMIT_ID.test(specBase)) throw malformed(file, "specBase must be a commit ID");
+  return { specBase };
 }
 
 /**
@@ -353,11 +418,14 @@ export async function canaryTicketOf(changeDir: string): Promise<string | null> 
   }
 }
 
-/** Keys in file order: `version, change, deliveries`. */
+/** Keys in file order: `version, change, state, blocked, specBase, deliveries`. */
 function orderedRecord(record: DeliveryRecord): DeliveryRecord {
   return {
     version: record.version,
     change: record.change,
+    ...(record.state ? { state: record.state } : {}),
+    ...(record.blocked ? { blocked: record.blocked } : {}),
+    ...(record.specBase ? { specBase: record.specBase } : {}),
     deliveries: record.deliveries,
   };
 }

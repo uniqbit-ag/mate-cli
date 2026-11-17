@@ -8,9 +8,7 @@ import { DELIVERY_FILE } from "../../../../lib/delivery/record";
 import type { LaunchContext } from "../../../../lib/orchestrator/framework-context";
 import { runArtifactLinkCommand, type LinkCommandDeps, type LinkResult } from "./link";
 
-const TOKEN = "ghp_TOKEN_MUST_NOT_LEAK";
 const REPO = "acme/acme-app";
-const API = "https://api.github.com/repos/acme/acme-app";
 
 let companion: string;
 let out: string[];
@@ -28,15 +26,20 @@ function repoGit(overrides: Partial<WorkingRepoGit> = {}): WorkingRepoGit {
   };
 }
 
-function respond(routes: Record<string, { status: number; body: unknown }>) {
+/** Replaces the global `fetch` with one that records every request; restored after each test. */
+function recordRequests(): string[] {
   const calls: string[] = [];
-  const fetch = async (url: string) => {
-    calls.push(url);
-    const route = Object.entries(routes).find(([prefix]) => url.startsWith(prefix))?.[1];
-    return new Response(JSON.stringify(route?.body ?? {}), { status: route?.status ?? 404 });
-  };
-  return { calls, fetch };
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    calls.push(String(input));
+    throw new Error("no request expected");
+  }) as unknown as typeof fetch;
+  return calls;
 }
+
+const savedFetch = globalThis.fetch;
+afterEach(() => {
+  globalThis.fetch = savedFetch;
+});
 
 function deps(overrides: Partial<LinkCommandDeps> = {}): LinkCommandDeps {
   return {
@@ -49,7 +52,6 @@ function deps(overrides: Partial<LinkCommandDeps> = {}): LinkCommandDeps {
       }) as unknown as LaunchContext,
     loadCapabilities: async () => [{ name: "openspec", protectedBranches: ["release/*"] }],
     workingRepoGit: () => repoGit(),
-    resolveToken: async () => null,
     now: () => new Date("2026-10-28T10:00:00.000Z"),
     stdout: (line) => out.push(line),
     stderr: (line) => err.push(line),
@@ -282,18 +284,15 @@ describe("mate artifact link", () => {
     await expect(readRaw("x")).rejects.toThrow();
   });
 
-  test("another repository without forge access is recorded without a warning", async () => {
+  test("another repository without a linked checkout is recorded without a warning", async () => {
     const [result] = await run(["x", "--repository", "acme/acme-lib", "--branch", "develop"]);
     expect(result.record.deliveries).toEqual([{ repository: "acme/acme-lib", branch: "develop" }]);
     expect(err).toEqual([]);
   });
 
-  test("a branch protected only on the forge is recorded without asking the forge", async () => {
-    const { calls, fetch } = respond({});
-    const [result] = await run(["x", "--branch", "staging/acme"], {
-      forge: { fetch },
-      resolveToken: async () => ({ token: TOKEN, source: "MATE_GIT_TOKEN" }),
-    });
+  test("an unprotected branch is recorded without any request", async () => {
+    const calls = recordRequests();
+    const [result] = await run(["x", "--branch", "staging/acme"]);
     expect(result.record.deliveries).toEqual([{ repository: REPO, branch: "staging/acme" }]);
     expect(calls).toEqual([]);
   });
@@ -334,32 +333,19 @@ describe("mate artifact link", () => {
     expect(err[0]).toContain("nope");
   });
 
-  test("the token never reaches output, errors, or delivery.yaml", async () => {
-    const { fetch } = respond({
-      [`${API}/pulls?`]: { status: 403, body: { message: `token ${TOKEN} lacks access` } },
-    });
+  test("an unlinked repository needs an answer and sends no request", async () => {
+    const calls = recordRequests();
     await run(["x", "--branch", "change/x"]);
-    const [result] = await run(["x", "--refresh"], {
-      forge: { fetch },
-      resolveToken: async () => ({ token: TOKEN, source: "MATE_GIT_TOKEN" }),
-    });
-    expect(result.outcomes[0]).toMatchObject({
-      needsAnswer: true,
-      answerReason: "forge-failure",
-      failure: { reason: "permission", permission: "Pull requests: read" },
-    });
-    expect([...out, ...err].join("\n")).not.toContain(TOKEN);
-    expect(await readRaw("x")).not.toContain(TOKEN);
+    // `/repo` is no checkout here, so nothing is linked to settle the delivery in.
+    const [result] = await run(["x", "--refresh"]);
+    expect(result.outcomes[0]).toMatchObject({ needsAnswer: true, answerReason: "no-checkout" });
+    expect(calls).toEqual([]);
 
     out = [];
-    await runArtifactLinkCommand(["x", "--refresh"], {
-      ...deps({
-        forge: { fetch },
-        resolveToken: async () => ({ token: TOKEN, source: "MATE_GIT_TOKEN" }),
-      }),
-    });
-    expect([...out, ...err].join("\n")).not.toContain(TOKEN);
-    expect(out.join("\n")).toContain("Pull requests: read");
+    await runArtifactLinkCommand(["x", "--refresh"], deps());
+    expect(out).toContain(
+      "  change/x: acme/acme-app is not linked on this machine; needs an answer",
+    );
   });
 
   test("a direct delivery's refresh asks the user and records nothing", async () => {
@@ -393,8 +379,8 @@ describe("repository identity", () => {
     expect(result.settlement.missing ?? []).toEqual([]);
   });
 
-  test("a linked repository's host is used, so a GitLab repository gets no GitHub request", async () => {
-    const { calls, fetch } = respond({});
+  test("a linked repository is recorded through its own checkout, without any request", async () => {
+    const calls = recordRequests();
     const [result] = await run(["x", "--repository", "acme/platform/web", "--branch", "develop"], {
       loadLinkedRepositories: async () => [
         { id: "acme-app", path: "/repo" },
@@ -406,8 +392,6 @@ describe("repository identity", () => {
             ? { remoteUrl: async () => "https://gitlab.acme.dev/acme/platform/web.git" }
             : {},
         ),
-      forge: { fetch },
-      resolveToken: async () => ({ token: TOKEN, source: "MATE_GIT_TOKEN" }),
     });
     expect(result.record.deliveries).toEqual([
       { repository: "acme/platform/web", branch: "develop" },
@@ -443,13 +427,19 @@ describe("repository identity", () => {
     expect(await readRaw("x")).toContain("branch: change/x");
   });
 
-  test("an unlinked repository is looked up on the Working Repository's host", async () => {
-    const { calls, fetch } = respond({});
-    await run(["x", "--repository", "acme/acme-lib", "--branch", "develop"], {
-      forge: { fetch },
-      resolveToken: async () => ({ token: TOKEN, source: "MATE_GIT_TOKEN" }),
-    });
-    expect(calls[0]).toStartWith("https://api.github.com/repos/acme/acme-lib");
+  test("an unlinked repository is never inspected and needs an answer", async () => {
+    const calls = recordRequests();
+    const [result] = await run([
+      "x",
+      "--repository",
+      "acme/acme-lib",
+      "--branch",
+      "develop",
+      "--refresh",
+    ]);
+    expect(result.outcomes[0]).toMatchObject({ answerReason: "no-checkout" });
+    expect(result.record.deliveries).toEqual([{ repository: "acme/acme-lib", branch: "develop" }]);
+    expect(calls).toEqual([]);
   });
 });
 

@@ -78,7 +78,7 @@ describe("rewriteCommandReferences", () => {
         "/mate-explore-change /mate-explore-change",
         "/mate-propose-change /mate-propose-change",
         "/mate-apply-change /mate-apply-change",
-        "/mate-archive-change /mate-archive-change",
+        "/mate-submit-change /mate-submit-change",
         "/mate-propose-change /mate-propose-change",
       ].join("\n"),
     );

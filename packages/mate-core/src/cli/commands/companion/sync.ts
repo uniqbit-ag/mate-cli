@@ -1,5 +1,6 @@
 import { FRAMEWORK_NAME } from "../../../framework";
 import { createStartupProgress } from "../../../lib/components/startup-progress";
+import { settleLinkedAt } from "../../../lib/delivery/staging/settle-linked";
 import { syncCompanionGit } from "../../../lib/orchestrator/companion-git-sync";
 import { LaunchPreflightError } from "../../../lib/orchestrator/types";
 import { resolveCompanionRuntime } from "../../../runtime/env";
@@ -12,6 +13,8 @@ export interface CompanionSyncDeps {
   resolveRepoPath: typeof resolveRepoPath;
   readCompanionPolicy: typeof readCompanionPolicy;
   syncCompanionGit: typeof syncCompanionGit;
+  /** Records merges this machine's linked checkouts settle on the pending branch. */
+  settleLinked: typeof settleLinkedAt;
   createProgress: typeof createStartupProgress;
 }
 
@@ -22,6 +25,7 @@ export const companionSyncDeps: CompanionSyncDeps = {
   resolveRepoPath,
   readCompanionPolicy,
   syncCompanionGit,
+  settleLinked: settleLinkedAt,
   createProgress: createStartupProgress,
 };
 
@@ -88,6 +92,20 @@ export async function runCompanionSyncCommand(): Promise<void> {
     process.stdout.write(
       `${FRAMEWORK_NAME}: synchronized ${companionPath} (${result.changed ? "updated" : "no changes"}).\n`,
     );
+    for (const folder of result.discarded ?? []) {
+      process.stdout.write(`${FRAMEWORK_NAME}: discarded ${folder}: its submitted copy arrived.\n`);
+    }
+    for (const warning of result.warnings ?? []) {
+      process.stderr.write(`${FRAMEWORK_NAME}: ${warning}\n`);
+    }
+    const settled = await companionSyncDeps.settleLinked(
+      companionPath,
+      repoPath === companionPath ? undefined : repoPath,
+    );
+    for (const change of settled.recorded) {
+      process.stdout.write(`${FRAMEWORK_NAME}: recorded the merge of ${change}.\n`);
+    }
+    if (settled.warning) process.stderr.write(`${FRAMEWORK_NAME}: ${settled.warning}\n`);
   } catch (error) {
     progress.fail("git");
     if (error instanceof LaunchPreflightError) {

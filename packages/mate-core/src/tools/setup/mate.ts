@@ -11,6 +11,7 @@ export const MATE_SKILLS = [
   "mate-explore-change",
   "mate-propose-change",
   "mate-apply-change",
+  "mate-submit-change",
   "mate-archive-change",
   "mate-publish-artifact",
   "mate-backfill-spec",

@@ -214,6 +214,19 @@ const noTerminal = { isTerminal: () => false };
 const terminal = { isTerminal: () => true };
 
 describe("companionGit transport", () => {
+  test("runs Git in the C locale, whatever the user's, so its messages read as matched", async () => {
+    const h = makeHarness();
+    const env = { ...h.env("ok"), LC_ALL: "de_DE.UTF-8", LANG: "de_DE.UTF-8" };
+
+    const result = await companionGit(h.work, { prompt: "never", env }, noTerminal).run([
+      "-c",
+      "alias.locale=!printenv LC_ALL",
+      "locale",
+    ]);
+
+    expect(result.stdout.trim()).toBe("C");
+  });
+
   test("fetches over SSH first and leaves the stored URL unchanged", async () => {
     const h = makeHarness();
     advanceRemote(h, "remote\n");
@@ -533,5 +546,48 @@ describe("companionGit steps", () => {
     git(h.work, "remote", "set-head", "origin", "--delete");
 
     expect(await companionGit(h.work, { prompt: "never" }, noTerminal).forkState()).toBeNull();
+  });
+});
+
+describe("readBlobs", () => {
+  test("reads many blobs in one command, by id, and leaves out what is no blob", async () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), "mate-companion-git-"));
+    tempRoots.push(repo);
+    git(repo, "init", "-q");
+    const contents = [
+      "plain\n",
+      "",
+      "ümlaut — ✓\nno trailing newline",
+      "0 blob 5\nlooks like a header\n",
+    ];
+    const ids = contents.map((content, index) => {
+      fs.writeFileSync(path.join(repo, `acme-${index}.md`), content);
+      return git(repo, "hash-object", "-w", `acme-${index}.md`).stdout.trim();
+    });
+    git(repo, "add", "-A");
+    const tree = git(repo, "write-tree").stdout.trim();
+    const missing = "0".repeat(40);
+
+    const blobs = await companionGit(repo, { prompt: "never" }).readBlobs([
+      ids[0]!,
+      missing,
+      ...ids.slice(1),
+      tree,
+    ]);
+
+    expect([...blobs!.keys()]).toEqual(ids);
+    expect(ids.map((id) => blobs!.get(id))).toEqual(contents);
+  });
+
+  test("is empty without ids and null outside a repository", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mate-companion-git-"));
+    tempRoots.push(dir);
+    const git = companionGit(dir, {
+      prompt: "never",
+      env: { ...process.env, GIT_CEILING_DIRECTORIES: dir },
+    });
+
+    expect(await git.readBlobs([])).toEqual(new Map());
+    expect(await git.readBlobs(["0".repeat(40)])).toBeNull();
   });
 });

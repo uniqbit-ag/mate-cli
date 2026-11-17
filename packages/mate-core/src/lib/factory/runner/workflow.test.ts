@@ -538,6 +538,21 @@ describe("publish", () => {
   });
 });
 
+/** Polls instead of sleeping a fixed time, so a loaded machine only makes the test slower. */
+async function until(condition: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition() && Date.now() < deadline) await Bun.sleep(5);
+}
+
+/** Runs until aborted, also when the abort lands before the turn starts. */
+const untilAborted: StageAgent = {
+  turn: ({ signal }) =>
+    new Promise((_, reject) => {
+      if (signal.aborted) reject(signal.reason);
+      else signal.addEventListener("abort", () => reject(signal.reason));
+    }),
+};
+
 describe("limits", () => {
   test("runs at most the cap at once and queues the rest in order", async () => {
     for (const id of ["acme-a", "acme-b", "acme-c"]) {
@@ -553,11 +568,12 @@ describe("limits", () => {
     };
     const r = runner(agent, commands().run, { maxRuns: 2 });
     for (const id of ["acme-a", "acme-b", "acme-c"]) await r.request(id, "propose");
+    await until(() => release.length >= 2);
     await Bun.sleep(20);
     expect(release).toHaveLength(2);
     expect((await runs.facts("acme-c")).execution.state).toBe("queued");
     release[0]!();
-    await Bun.sleep(20);
+    await until(() => release.length >= 3);
     expect(release).toHaveLength(3);
     for (const next of release.slice(1)) next();
     for (const id of ["acme-a", "acme-b", "acme-c"]) await r.idle(id);
@@ -565,10 +581,7 @@ describe("limits", () => {
 
   test("a stage past its budget fails naming the budget", async () => {
     workset();
-    const agent: StageAgent = {
-      turn: ({ signal }) =>
-        new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason))),
-    };
+    const agent = untilAborted;
     const r = runner(agent, commands().run, { stageMs: 30 });
     await r.request("acme-login", "propose");
     await r.idle("acme-login");
@@ -580,10 +593,7 @@ describe("limits", () => {
 
   test("cancelling stops the agent and fails the run as cancelled", async () => {
     workset();
-    const agent: StageAgent = {
-      turn: ({ signal }) =>
-        new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason))),
-    };
+    const agent = untilAborted;
     const r = runner(agent, commands().run);
     await r.request("acme-login", "propose");
     await Bun.sleep(10);
@@ -597,10 +607,7 @@ describe("limits", () => {
 
   test("a second request for a busy Workset is refused", async () => {
     workset();
-    const agent: StageAgent = {
-      turn: ({ signal }) =>
-        new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason))),
-    };
+    const agent = untilAborted;
     const r = runner(agent, commands().run);
     await r.request("acme-login", "propose");
     await expect(r.request("acme-login", "apply")).rejects.toThrow(/already has a run/);

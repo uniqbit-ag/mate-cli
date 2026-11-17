@@ -140,11 +140,27 @@ describe("buildCompanionGuidance", () => {
 
     expect(withOpenspec).toContain('<rule id="openspec-publish" severity="critical">');
     expect(withOpenspec).toContain('mate artifact publish "<name>" --json');
-    expect(withOpenspec).toContain("never hand-commit or hand-tag one");
-    expect(withOpenspec).toContain("archiving is a precondition");
-    expect(withOpenspec).toContain("still-active change is an error");
-    expect(withOpenspec).toContain("never applies delta specs itself");
-    expect(withOpenspec).toContain("refuses to run anywhere but the companion's default branch");
+    expect(withOpenspec).toContain("It creates no tag.");
+    expect(withOpenspec).toContain("Never hand-commit or hand-tag one.");
+    expect(withOpenspec).toContain("submitting is a precondition (mate-submit-change");
+    expect(withOpenspec).toContain(
+      "is not the truth: only publication lands it on the companion's default branch",
+    );
+    expect(withOpenspec).toContain(
+      "mate artifact pending --json lists them with author, touched requirements, ref and path",
+    );
+    expect(withOpenspec).toContain(
+      "read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it",
+    );
+    expect(withOpenspec).toContain('mate artifact take "<name>" brings it into the checkout');
+    expect(withOpenspec).toContain("implement or revise one only when the user names it");
+    expect(withOpenspec).toContain('mate artifact project "<name>" shows the unpublished outcome');
+    expect(withOpenspec).toContain("to the inbox mate/inbox to await its merge");
+    expect(withOpenspec).not.toContain("unpublished and not yours");
+    expect(withOpenspec).not.toContain("mate-archive-change");
+    // The command enforces these itself; the guidance does not repeat them.
+    expect(withOpenspec).not.toContain("still-active change is an error");
+    expect(withOpenspec).not.toContain("refuses to run anywhere but");
 
     const withoutOpenspec = buildCompanionGuidance({
       companionPath: "/tmp/companion",
@@ -274,7 +290,10 @@ describe("buildCompanionGuidance", () => {
     } as never);
 
     expect(guidance).toContain("Agent artifacts MUST go to /tmp/companion");
-    expect(guidance).toContain("Product code (README, docs, source, tests)");
+    expect(guidance).toContain(
+      "NEVER /tmp/working, which holds product code (README, docs, source, tests)",
+    );
+    expect(guidance).not.toContain('id="product-code-location"');
     expect(guidance).not.toContain("*.md");
   });
 

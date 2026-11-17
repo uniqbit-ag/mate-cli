@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import type { StudioChange } from "@uniqbit/mate-core/studio";
+import type { StudioChange, StudioSubmittedChange } from "@uniqbit/mate-core/studio";
 import { useState } from "react";
 
 import { PathSteps } from "../../components/path-steps";
@@ -21,6 +21,7 @@ import { cn } from "../../lib/cn";
 import { PanelHead, PanelSection, SidePanel } from "../../shell/panel";
 import { ArtifactReader, Artifacts } from "./artifacts";
 import {
+  activeChanges,
   CHANGE_GROUPS,
   changeGroup,
   changeProgress,
@@ -30,7 +31,11 @@ import {
   type ChangeGroup,
 } from "./change-group";
 
-type Filter = "all" | ChangeGroup;
+type Filter = "all" | ChangeGroup | "submitted";
+
+const SUBMITTED_TITLE = "Awaiting publication";
+
+const NONE_SUBMITTED: StudioSubmittedChange[] = [];
 
 const GROUP_HINTS: Record<ChangeGroup, string> = {
   "needs-you": "Review or fix before the build goes on",
@@ -52,7 +57,7 @@ function status(change: StudioChange): { marker: Marker; word: string } {
   return { marker: "done", word: "Ready" };
 }
 
-const PATH_STAGES = ["Propose change", "Human review", "Apply change", "Archive change"];
+const PATH_STAGES = ["Propose change", "Human review", "Apply change", "Submit change"];
 
 function ChangeDetail({
   change,
@@ -165,13 +170,79 @@ function ChangeRow({
   );
 }
 
-/** Active changes in up to three groups by what they need; detail opens in the panel. */
+/** A submitted change: whose it is, its delivery and whether its group is blocked. */
+function SubmittedRow({ change }: { change: StudioSubmittedChange }) {
+  return (
+    <li
+      className={cn(ROW, "grid grid-cols-[minmax(0,1fr)_max-content] hover:bg-transparent")}
+      data-submitted={change.name}
+    >
+      <span className="grid min-w-0 gap-0.5">
+        <span className="truncate font-mono text-sm">{change.name}</span>
+        <span className="truncate text-xs text-muted">
+          <span className={change.mine ? "font-semibold text-accent" : undefined}>
+            {change.mine ? "Yours" : (change.author ?? "Someone else")}
+          </span>
+          {` · ${change.group || "no delivery branch"}`}
+        </span>
+      </span>
+      {change.blocked ? (
+        <StatusWord marker="issue">Blocked</StatusWord>
+      ) : (
+        <StatusWord marker="idle">Submitted</StatusWord>
+      )}
+    </li>
+  );
+}
+
+/** Submitted changes awaiting publication; nothing when there are none. */
+function SubmittedCard({ submitted }: { submitted: StudioSubmittedChange[] }) {
+  if (submitted.length === 0) return null;
+  return (
+    <ListCard
+      title={SUBMITTED_TITLE}
+      count={submitted.length}
+      hint="Publish with /mate-publish-artifact once merged"
+    >
+      <ul className="m-0 list-none p-0">
+        {submitted.map((change) => (
+          <SubmittedRow key={change.name} change={change} />
+        ))}
+      </ul>
+    </ListCard>
+  );
+}
+
+/** The filter pills: all, each active group, and the submitted card when it has any. */
+function filterOptions(groups: Record<ChangeGroup, StudioChange[]>, submittedCount: number) {
+  const active = CHANGE_GROUPS.reduce((sum, group) => sum + groups[group].length, 0);
+  return [
+    { value: "all" as Filter, label: "All", count: active + submittedCount },
+    ...CHANGE_GROUPS.map((group) => ({
+      value: group as Filter,
+      label: GROUP_TITLES[group],
+      count: groups[group].length,
+      tone: group === "needs-you" ? ("warn" as const) : undefined,
+    })),
+    ...(submittedCount > 0
+      ? [{ value: "submitted" as Filter, label: SUBMITTED_TITLE, count: submittedCount }]
+      : []),
+  ];
+}
+
+/**
+ * Active changes in up to three groups by what they need, then submitted changes awaiting
+ * publication; an active change's detail opens in the panel.
+ */
 export function Changes({
-  changes,
+  changes: all,
+  submitted = NONE_SUBMITTED,
   selected,
   companion,
 }: {
   changes: StudioChange[];
+  /** Submitted changes on the pending branch; a local copy is not listed as active too. */
+  submitted?: StudioSubmittedChange[];
   selected?: string;
   /** The selected companion; the panel reads artifacts through the vault. */
   companion?: string;
@@ -181,6 +252,7 @@ export function Changes({
   const [pass, setPass] = useState(false);
   // Keyed by change, so moving to another change shows its summary again.
   const [reading, setReading] = useState<{ change: string; path: string } | null>(null);
+  const changes = activeChanges(all, submitted);
   const groups = groupChanges(changes);
   const shown = CHANGE_GROUPS.filter((group) => filter === "all" || filter === group);
   const listed = shown.flatMap((group) => groups[group]);
@@ -196,7 +268,7 @@ export function Changes({
     });
   };
 
-  if (changes.length === 0) {
+  if (changes.length === 0 && submitted.length === 0) {
     return (
       <section className={cn(PAGE_PAD, "pb-10")} aria-label="Changes">
         <EmptyNote>No change is in flight in this companion.</EmptyNote>
@@ -213,15 +285,7 @@ export function Changes({
           label="Show changes"
           value={filter}
           onChange={setFilter}
-          options={[
-            { value: "all", label: "All", count: changes.length },
-            ...CHANGE_GROUPS.map((group) => ({
-              value: group,
-              label: GROUP_TITLES[group],
-              count: groups[group].length,
-              tone: group === "needs-you" ? ("warn" as const) : undefined,
-            })),
-          ]}
+          options={filterOptions(groups, submitted.length)}
         />
         {groups["needs-you"].length > 0 ? (
           <Button
@@ -263,6 +327,7 @@ export function Changes({
           </ListCard>
         ),
       )}
+      {filter === "all" || filter === "submitted" ? <SubmittedCard submitted={submitted} /> : null}
       <SidePanel
         items={walk.map((change) => change.name)}
         current={current?.name ?? null}

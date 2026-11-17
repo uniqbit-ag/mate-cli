@@ -15,7 +15,7 @@ const STAGE_NODES: { node: string; label: string }[] = [
   { node: "propose", label: "Propose change" },
   { node: "reviews", label: "Human review" },
   { node: "apply", label: "Apply change" },
-  { node: "archive", label: "Archive change" },
+  { node: "submit", label: "Submit change" },
 ];
 
 function stagesOf(changes: StudioChange[]): {

@@ -1,5 +1,5 @@
 import type { DeliveryEnvironment } from "../../../../lib/delivery/environment";
-import { sameRepository } from "../../../../lib/delivery/record";
+import { sameRepository, type MergeState } from "../../../../lib/delivery/record";
 import type { DeliveryEdit } from "../../../../lib/delivery/record-delivery";
 import { type CliFlags, malformedValueFlag, stringFlag } from "../../../parse-flags";
 
@@ -52,4 +52,22 @@ export function canonicalRepository(
 ): string | undefined {
   const own = environment.workingRepo?.slug;
   return own && requested !== undefined && sameRepository(requested, own) ? own : requested;
+}
+
+const CONFIRMATIONS: Record<string, MergeState> = {
+  "confirm-merged": "merged",
+  "confirm-open": "open",
+  "confirm-dropped": "closed-unmerged",
+};
+
+/** Presence flags carrying the user's merge answer. */
+export const CONFIRM_FLAGS: readonly string[] = Object.keys(CONFIRMATIONS);
+
+/** The user's answer from `--confirm-*`, or the refusal for more than one. */
+export function confirmFlag(flags: CliFlags): { confirm?: MergeState } | { error: string } {
+  const given = CONFIRM_FLAGS.filter((flag) => flags[flag] === true);
+  if (given.length > 1) {
+    return { error: "mate: pass one of --confirm-merged, --confirm-open, or --confirm-dropped." };
+  }
+  return given.length === 1 ? { confirm: CONFIRMATIONS[given[0]] } : {};
 }
