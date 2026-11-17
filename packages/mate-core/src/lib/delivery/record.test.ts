@@ -48,17 +48,49 @@ describe("delivery record", () => {
       pr: "https://github.com/acme/acme-app/pull/70",
       merge: {
         state: "merged",
-        source: "forge",
+        source: "git",
         checkedAt: "2026-10-28T10:00:00.000Z",
         mergedAt: "2026-10-27T09:00:00Z",
         mergeCommit: "abc123",
-        mergedBy: "octocat",
       },
     });
     await writeDeliveryRecord(companion, record);
     const raw = await fs.readFile(path.join(companion, DELIVERY_FILE), "utf8");
     expect(raw).toContain("feature/studio-graph");
     expect(await readDeliveryRecord(companion)).toEqual(record);
+  });
+
+  test("the submission state and block round-trip, written before the deliveries", async () => {
+    const record: DeliveryRecord = {
+      ...unlinkedRecord("acme-login"),
+      state: "submitted",
+      blocked: {
+        reason: 'acme-auth "Login" changed since the delta base',
+        paths: ["openspec/specs/acme-auth/spec.md"],
+        since: "2026-11-15T10:00:00.000Z",
+        tip: "a".repeat(40),
+      },
+    };
+    await writeDeliveryRecord(companion, record);
+    const raw = await fs.readFile(path.join(companion, DELIVERY_FILE), "utf8");
+    expect(raw.indexOf("state: submitted")).toBeLessThan(raw.indexOf("deliveries:"));
+    expect(await readDeliveryRecord(companion)).toEqual(record);
+  });
+
+  test("an unknown state or a block without a reason is malformed", async () => {
+    const file = path.join(companion, DELIVERY_FILE);
+    await fs.writeFile(file, "version: 1\nchange: acme\ndeliveries: []\nstate: merged\n");
+    await expect(readDeliveryRecord(companion)).rejects.toThrow("state must be one of");
+    await fs.writeFile(
+      file,
+      "version: 1\nchange: acme\ndeliveries: []\nblocked:\n  paths: []\n  since: 2026-11-15T10:00:00.000Z\n",
+    );
+    await expect(readDeliveryRecord(companion)).rejects.toThrow("blocked.reason");
+    await fs.writeFile(
+      file,
+      "version: 1\nchange: acme\ndeliveries: []\nblocked:\n  reason: acme\n  since: 2026-11-15T10:00:00.000Z\n  tip: main\n",
+    );
+    await expect(readDeliveryRecord(companion)).rejects.toThrow("blocked.tip");
   });
 
   test("an unlinked record has no deliveries and settles as unlinked", () => {
@@ -250,12 +282,59 @@ describe("delivery record", () => {
     expect((await readDeliveryRecord(companion))?.deliveries[0].head).toBeUndefined();
   });
 
-  test("a head that is not a full commit id is malformed", async () => {
+  test("a head that is not a full commit id reads as absent", async () => {
+    for (const head of ["abc123", "--output=/tmp/acme"]) {
+      // oxlint-disable-next-line no-await-in-loop -- one file at a time
+      await fs.writeFile(
+        path.join(companion, DELIVERY_FILE),
+        `deliveries:\n  - repository: ${REPO}\n    branch: b\n    head: "${head}"\n`,
+      );
+      // oxlint-disable-next-line no-await-in-loop -- same file
+      expect((await readDeliveryRecord(companion))?.deliveries[0]).toEqual({
+        repository: REPO,
+        branch: "b",
+      });
+    }
+  });
+
+  test("the unpushed mark is read, written, and dropped with a new branch", async () => {
+    const head = "a".repeat(40);
     await fs.writeFile(
       path.join(companion, DELIVERY_FILE),
-      `deliveries:\n  - repository: ${REPO}\n    branch: b\n    head: abc123\n`,
+      `deliveries:\n  - repository: ${REPO}\n    branch: b\n    head: ${head}\n    unpushed: true\n`,
     );
-    await expect(readDeliveryRecord(companion)).rejects.toThrow(/head must be a full commit id/);
+    const record = await readDeliveryRecord(companion);
+    expect(record?.deliveries[0]).toEqual({ repository: REPO, branch: "b", head, unpushed: true });
+    await writeDeliveryRecord(companion, record!);
+    expect((await readDeliveryRecord(companion))?.deliveries[0].unpushed).toBe(true);
+
+    expect(upsertDelivery(record!, REPO, { unpushed: false }).deliveries[0]).toEqual({
+      repository: REPO,
+      branch: "b",
+      head,
+    });
+    expect(upsertDelivery(record!, REPO, { branch: "c" }).deliveries[0]).toEqual({
+      repository: REPO,
+      branch: "c",
+    });
+  });
+
+  test("an earlier Mate's forge result parses, counts as merged, and loses mergedBy on write", async () => {
+    await fs.writeFile(
+      path.join(companion, DELIVERY_FILE),
+      `state: submitted\ndeliveries:\n  - repository: ${REPO}\n    branch: change/x\n    merge:\n      state: merged\n      source: forge\n      mergedBy: acme-bot\n      checkedAt: "2026-10-28T10:00:00.000Z"\n`,
+    );
+    const record = await readDeliveryRecord(companion);
+    expect(record?.deliveries[0].merge).toEqual({
+      state: "merged",
+      source: "forge",
+      checkedAt: "2026-10-28T10:00:00.000Z",
+    });
+    expect(isPublishable(settleDelivery(record).status)).toBe(true);
+    await writeDeliveryRecord(companion, record!);
+    const raw = await fs.readFile(path.join(companion, DELIVERY_FILE), "utf8");
+    expect(raw).toContain("source: forge");
+    expect(raw).not.toContain("mergedBy");
   });
 
   test("a new branch drops the old head", () => {

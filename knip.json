@@ -1,0 +1,25 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreExportsUsedInFile": true,
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/**/*.ts", "test/**/*.ts"]
+    },
+    "packages/mate-core": {
+      "entry": [
+        "src/**/*.test.{ts,tsx}",
+        "src/**/*.typecheck.ts",
+        "test/**/*.ts",
+        "opencode-plugin/**/*.ts",
+        "claude-capability-plugins/*/hooks/**/*.{ts,js,mjs}",
+        "src/hooks/*.ts",
+        "src/tools/setup/capabilities/graphify-gate.ts"
+      ],
+      "project": ["src/**/*.{ts,tsx}", "test/**/*.ts"]
+    },
+    "apps/mate-cli": {
+      "entry": ["src/**/*.test.ts", "scripts/**/*.ts", "src/test/openspec-stub-preload.ts"],
+      "project": ["src/**/*.{ts,tsx,cjs}", "scripts/**/*.ts"]
+    }
+  }
+}

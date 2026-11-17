@@ -23,8 +23,8 @@ const COMMAND_REWRITES: Record<string, string> = {
   "/openspec-propose": "/mate-propose-change",
   "/opsx:apply": "/mate-apply-change",
   "/openspec-apply-change": "/mate-apply-change",
-  "/opsx:archive": "/mate-archive-change",
-  "/openspec-archive-change": "/mate-archive-change",
+  "/opsx:archive": "/mate-submit-change",
+  "/openspec-archive-change": "/mate-submit-change",
   "/opsx:update": "/mate-propose-change",
   "/openspec-update-change": "/mate-propose-change",
 };

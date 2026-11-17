@@ -1,3 +1,7 @@
+import { isBranchName } from "../../runtime/pending-records";
+
+export { isBranchName };
+
 /** A Delivery Branch template: a fixed prefix ending in `/`, `{workset}`, and optional `{ticket}`. */
 export type BranchTemplate = string;
 
@@ -12,18 +16,6 @@ export interface BranchTemplateSetting {
   template: BranchTemplate;
   /** Set for an invalid value, which counts as the default. */
   diagnostic: string | null;
-}
-
-/** True when `name` passes `git check-ref-format --branch`, checked without Git. */
-function isBranchName(name: string): boolean {
-  if (!name || name === "@" || name.startsWith("-") || name.endsWith("/") || name.endsWith(".")) {
-    return false;
-  }
-  // oxlint-disable-next-line no-control-regex -- control characters are invalid in refs
-  if (/[\u0000- \u007f~^:?*[\\]|\.\.|@\{|\/\//.test(name)) return false;
-  return name
-    .split("/")
-    .every((part) => part !== "" && !part.startsWith(".") && !part.endsWith(".lock"));
 }
 
 /** The rule a template breaks, or null when it is valid. */

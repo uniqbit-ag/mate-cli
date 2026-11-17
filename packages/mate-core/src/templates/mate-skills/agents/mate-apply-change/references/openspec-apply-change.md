@@ -151,7 +151,7 @@ Working on task 4/7: <task description>
 ...
 
 All tracked tasks are complete. Review or verify the change as appropriate
-before archiving. You can archive this change with `/mate-archive-change`.
+before archiving. You can archive this change with `/mate-submit-change`.
 ```
 
 **Output On Pause (Issue Encountered)**

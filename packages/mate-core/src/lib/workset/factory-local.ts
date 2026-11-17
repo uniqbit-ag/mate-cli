@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { parse, stringify } from "yaml";
 
-import { parseRemote, repositoryPath } from "../delivery/forge";
+import { parseRemote, repositoryPath } from "../delivery/remote";
 import { KeyedSerial } from "../factory/keyed-serial";
 
 /**

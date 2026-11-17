@@ -47,7 +47,7 @@ describe("workflowGraph", () => {
       ["apply", 5, 0, 2],
       ["inspect-outcome", 6, 0, 1],
       ["refine-code", 6, 1, 1],
-      ["archive", 7, 0, 2],
+      ["submit", 7, 0, 2],
       ["publish", 8, 0, 2],
     ]);
     const reviews = graph.nodes.find((node) => node.kind === "review-group");
@@ -69,14 +69,14 @@ describe("workflowGraph", () => {
       "reviews>apply",
       "apply>inspect-outcome",
       "apply>refine-code",
-      "inspect-outcome>archive",
-      "refine-code>archive",
-      "archive>publish",
+      "inspect-outcome>submit",
+      "refine-code>submit",
+      "submit>publish",
     ]);
-    expect(edges(graph, "bypass")).toEqual(["start>explore", "apply>archive"]);
+    expect(edges(graph, "bypass")).toEqual(["start>explore", "apply>submit"]);
   });
 
-  it("frames the columns each change repeats, from the start to Archive change", () => {
+  it("frames the columns each change repeats, from the start to Submit change", () => {
     expect(workflowGraph(FULL).cycle).toEqual({ from: 0, to: 8 });
     expect(workflowGraph(MINIMAL).cycle).toEqual({ from: 0, to: 8 });
     expect(workflowGraph(UNKNOWN).cycle).toEqual({ from: 0, to: 7 });
@@ -102,7 +102,7 @@ describe("workflowGraph", () => {
       "review-specs",
       "review-tasks",
     ]);
-    expect(edges(graph, "bypass")).toEqual(["start>explore", "apply>archive"]);
+    expect(edges(graph, "bypass")).toEqual(["start>explore", "apply>submit"]);
   });
 
   it("groups a custom schema's reviews", () => {
@@ -132,7 +132,7 @@ describe("graph geometry", () => {
   });
 
   it("routes a bypass through the lane beside the node rows", () => {
-    expect(edgePath(graph, edge("apply", "archive"))).toBe("M 2 5.5 C 5 5.5, 5 7.5, 2 7.5");
+    expect(edgePath(graph, edge("apply", "submit"))).toBe("M 2 5.5 C 5 5.5, 5 7.5, 2 7.5");
   });
 
   it("puts a session mark at the middle of its edge", () => {

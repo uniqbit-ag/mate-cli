@@ -67,10 +67,10 @@ export interface GitOps {
   /** Throws `RemoteFetchError` once transient failures have used up their retries. */
   fetch(): Promise<void>;
   rebaseOntoUpstream(): Promise<RebaseResult>;
-  tagExists(name: string): Promise<boolean>;
-  tag(name: string, message: string): Promise<void>;
-  /** Push the branch and any annotated tags (`--follow-tags`). */
+  /** Push the branch, with any annotated tag an older Mate version created (`--follow-tags`). */
   push(): Promise<PushResult>;
+  /** The commit `HEAD` names; null without one. */
+  headCommit?(): Promise<string | null>;
 }
 
 export interface GitOpsOptions {
@@ -330,11 +330,9 @@ export function defaultGitOps(
         conflictedPaths: conflicts.out.length > 0 ? conflicts.out.split("\n") : [],
       };
     },
-    async tagExists(name) {
-      return (await exec(["tag", "--list", name])).out.length > 0;
-    },
-    async tag(name, message) {
-      await execOrThrow(["tag", "-a", name, "-m", message]);
+    async headCommit() {
+      const res = await exec(["rev-parse", "--verify", "-q", "HEAD"]);
+      return res.out.length > 0 ? res.out : null;
     },
     async push() {
       const res = await withRemoteRetry(() => git.push(["--follow-tags"]), sleep);

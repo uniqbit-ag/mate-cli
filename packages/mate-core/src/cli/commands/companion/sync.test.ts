@@ -41,6 +41,7 @@ beforeEach(() => {
   process.exitCode = 0;
   companionSyncDeps.createProgress = (title) =>
     createStartupProgress(title, { interactive: false });
+  companionSyncDeps.settleLinked = async () => ({ recorded: [], warning: null });
 });
 
 afterEach(() => {
@@ -77,6 +78,36 @@ describe("mate companion sync", () => {
     ]);
     expect(captured.out.join("")).toContain("/tmp/acme-companion");
     expect(captured.out.join("")).toContain("updated");
+    expect(process.exitCode ?? 0).toBe(0);
+  });
+
+  test("records the merges linked checkouts settle and warns when recording fails", async () => {
+    const settleLinked = mock(async () => ({
+      recorded: ["acme-login"],
+      warning: "recording merges on mate/inbox failed",
+    }));
+    Object.assign(companionSyncDeps, {
+      resolveCompanionPath: async () => "/tmp/acme-companion",
+      resolveRepoPath: async () => "/tmp/acme",
+      readCompanionPolicy: () => policy(true),
+      syncCompanionGit: async () => ({
+        skipped: false,
+        changed: false,
+        companionPath: "/tmp/acme-companion",
+      }),
+      settleLinked,
+    });
+
+    const captured = captureOutput();
+    try {
+      await runCompanionSyncCommand();
+    } finally {
+      captured.restore();
+    }
+
+    expect(settleLinked).toHaveBeenCalledWith("/tmp/acme-companion", "/tmp/acme");
+    expect(captured.out.join("")).toContain("mate: recorded the merge of acme-login.\n");
+    expect(captured.err.join("")).toContain("mate: recording merges on mate/inbox failed\n");
     expect(process.exitCode ?? 0).toBe(0);
   });
 
