@@ -1,15 +1,13 @@
 import os from "node:os";
+import path from "node:path";
 
 import { isCommandOnPath, runCommand, runShellCommand } from "../utils";
 import type { Plugin } from "../plugin";
 
+/** PATH plus where Bun's own installer puts the binary: $BUN_INSTALL/bin, else ~/.bun/bin. */
 function bunPath(): string {
-  const extra = process.platform === "win32" ? pathSeparator() : `${os.homedir()}/.bun/bin`;
-  return [process.env.PATH ?? "", extra].filter(Boolean).join(pathSeparator());
-}
-
-function pathSeparator(): string {
-  return process.platform === "win32" ? ";" : ":";
+  const installBin = path.join(process.env.BUN_INSTALL || path.join(os.homedir(), ".bun"), "bin");
+  return [process.env.PATH ?? "", installBin].filter(Boolean).join(path.delimiter);
 }
 
 function bunInstallPlan(): { command: string; install: () => Promise<void> } {
@@ -57,9 +55,11 @@ export function createBunPlugin(): Plugin {
           source: "Mate runtime",
           command: plan.command,
           fingerprint: `bun:${process.platform}:${plan.command}`,
-          detect: () => isCommandOnPath("bun", bunPath()),
+          detect: () =>
+            isCommandOnPath(process.platform === "win32" ? "bun.exe" : "bun", bunPath()),
           install: plan.install,
-          verify: () => isCommandOnPath("bun", bunPath()),
+          verify: () =>
+            isCommandOnPath(process.platform === "win32" ? "bun.exe" : "bun", bunPath()),
         },
       ];
     },

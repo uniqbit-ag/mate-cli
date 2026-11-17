@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { which } from "bun";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import { buildCompanionGuidance } from "../../../playbooks/companion-guidance";
@@ -272,7 +274,12 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
 
   async prepareLaunch(context: ClaudeLaunchContext, args: string[]): Promise<PreparedLaunch> {
     const launch = await super.prepareLaunch(context, args);
-    return isBackgroundLaunch(args) ? backgroundLaunch(context, launch) : launch;
+    const prepared = isBackgroundLaunch(args) ? await backgroundLaunch(context, launch) : launch;
+    if (process.platform === "win32" && !which("claude", { PATH: prepared.env.PATH ?? "" })) {
+      const nativeClaude = path.join(os.homedir(), ".local", "bin", "claude.exe");
+      if (existsSync(nativeClaude)) return { ...prepared, command: nativeClaude };
+    }
+    return prepared;
   }
 
   /** A failed Claude wrap pass names the entry that failed. */
