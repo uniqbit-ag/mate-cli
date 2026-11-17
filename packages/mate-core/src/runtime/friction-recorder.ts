@@ -6,8 +6,10 @@ import {
   type FrictionRuntime,
   type NewFrictionEvent,
 } from "./friction-log";
+import { mateVersion } from "./install";
 import { isCapabilityEnabled, readCompanionPolicy } from "./policy";
 import type { SecretToolCall } from "./secret-guard";
+import { maskSecretValues } from "./secret-values";
 
 /**
  * Turns Mate's own refusals and failed agent-run commands into Friction Events.
@@ -126,12 +128,16 @@ export function recordRefusal(refusal: RefusalRecord): RecordedFriction | null {
       {
         kind: "refusal",
         fingerprint: refusalFingerprint(refusal.check, refusal.toolKind),
-        mateVersion: refusal.env.MATE_VERSION || "unknown",
+        mateVersion: refusal.env.MATE_VERSION || mateVersion(),
         runtime: refusal.runtime,
         sessionId: refusal.sessionId,
         companion: refusal.companionPath,
         repositoryPath: refusal.repositoryPath || null,
-        detail: refusalDetail(refusal),
+        detail: refusalDetail({
+          ...refusal,
+          message: maskSecretValues(refusal.message, refusal.env),
+          command: refusal.command && maskSecretValues(refusal.command, refusal.env),
+        }),
       },
       refusal.env,
     );

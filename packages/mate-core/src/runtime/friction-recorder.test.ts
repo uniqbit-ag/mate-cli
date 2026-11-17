@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { frictionLogDir, readEvents } from "./friction-log";
+import { mateVersion } from "./install";
 import {
   commandDetail,
   commandFingerprint,
@@ -141,12 +142,28 @@ describe("recordRefusal", () => {
     expect(event).toMatchObject({
       kind: "refusal",
       fingerprint: "refusal:artifact:write",
-      mateVersion: "unknown",
+      mateVersion: mateVersion(),
       runtime: "claude",
       sessionId: "s1",
       companion: selected,
       detail: { check: "artifact", toolKind: "write", paths: ["/acme/repo/notes.md"] },
     });
+  });
+
+  test("keeps no value of a secret-named variable in a refused command", () => {
+    const home = tempDir("mate-friction-home-");
+    const secret = "acme-secret-value-123";
+    record(companion(["friction"]), home, {
+      check: "attribution",
+      toolKind: "shell",
+      message: `refused: git push https://x:${secret}@example.com/acme`,
+      command: `git push https://x:${secret}@example.com/acme`,
+      env: { HOME: home, ACME_TOKEN: secret },
+    });
+
+    const [event] = readEvents({ sinceDays: 1, homeDir: home });
+    expect(JSON.stringify(event.detail)).not.toContain(secret);
+    expect(event.detail.command).toBe("git push https://x:***@example.com/acme");
   });
 
   test("a refused secret read leaves neither file name nor message", () => {

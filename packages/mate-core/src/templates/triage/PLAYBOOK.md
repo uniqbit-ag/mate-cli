@@ -94,6 +94,7 @@ Then file it:
 
 - **With `gh` and triage permission.** Run `gh auth status`. When `gh` is authenticated, run `gh api repos/<issue-repository> --jq .permissions.triage`. Only when that prints `true`, create the issue with `gh issue create --repo <issue-repository> --title "<title>" --body-file <file> --label via-triage`, or comment with `gh issue comment`. When `gh` refuses the label because it does not exist, create the issue without `--label`.
 - **Otherwise, a prefilled URL.** When `gh` is missing, not authenticated, or lacks triage permission, build a prefilled new-issue URL: `https://github.com/<issue-repository>/issues/new?template=via-triage.yml&title=<title>` with one query parameter per field id above, each value URL-encoded. Keep the URL shorter than 6,000 characters: shorten the longest fields, and give the rest to the person as text to paste. Print the URL. Open it in a browser only after the person approves.
+- **A comment without `gh` and triage permission.** GitHub has no prefilled comment URL. Print the approved comment text and the issue URL; the person pastes the comment.
 
 ### 10. No issue repository: write a local report
 

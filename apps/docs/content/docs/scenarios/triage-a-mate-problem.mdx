@@ -33,6 +33,9 @@ starts the agent's own CLI directly, not through `mate claude` or
 - With both installed, Mate asks which one. Without a terminal, pass
   `--agent claude` or `--agent opencode`.
 - With neither installed, Mate prints the session paths and exits non-zero.
+- Inside an agent session, Mate writes the folder but starts no agent: nobody
+  could approve a post. It prints the paths and exits zero. Run `mate triage`
+  in your own terminal.
 
 To start your agent yourself, run `mate triage --no-launch`. It prints the
 session paths. Open your agent in the session folder and give it the text of
@@ -53,6 +56,13 @@ Each run writes a new folder at `~/.mate/triage/<UTC time>/`. Folders older than
 | `prompt.md`              | The seed prompt that points the agent at `PLAYBOOK.md` and `context.md`.                                                                       |
 | `friction-events.jsonl`  | The [friction](/docs/capabilities#friction) events of the last 30 days, when there are any.                                                    |
 | `friction-reports.jsonl` | The agents' friction reports of the last 30 days, when there are any.                                                                          |
+
+The friction files hold only the records of the companion the folder belongs
+to, and the reports on those events. Run `mate triage` in the affected
+repository: outside a companion, Mate copies no friction. Mate scans the events
+for secrets first; an event the scan flags keeps its message, command and error
+text as `[withheld: <rule>]`. When the scan fails, Mate withholds those fields
+in every event.
 
 `context.md` holds no environment variable values. The playbook never changes:
 Mate does not fetch a newer one. Run `mate update` to get the playbook of a

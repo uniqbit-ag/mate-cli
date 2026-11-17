@@ -13,6 +13,7 @@ import {
   seedPrompt,
   type TriageSessionFiles,
 } from "../../lib/triage/prepare";
+import { currentSession } from "../../runtime/session-id";
 import { collectDoctorReport } from "./doctor";
 
 interface TriageArgs {
@@ -122,6 +123,13 @@ export async function runTriageCommand(argv: string[] = [], deps: TriageDeps = {
   });
   printPaths(files);
   if (!args.launch) return;
+  // Inside an agent session nobody could give the playbook's yes.
+  if (currentSession(env)) {
+    console.log(
+      `No agent started: this is an agent session. Run \`${FRAMEWORK_NAME} triage\` in your own terminal.`,
+    );
+    return;
+  }
 
   const ask = deps.ask === undefined ? (process.stdin.isTTY ? askAgent : null) : deps.ask;
   const choice = await chooseAgent(args.agent, agents, ask);

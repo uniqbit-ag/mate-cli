@@ -5,7 +5,8 @@ import { getActiveDistribution } from "../../distribution";
 import { FRAMEWORK_NAME } from "../../framework";
 import { errorMessage } from "../../runtime/error-message";
 import { getTriagePlaybookPath } from "../package-paths";
-import { maskSecretValues, renderTriageContext, writeFrictionSnapshot } from "./context";
+import { maskSecretValues } from "../../runtime/secret-values";
+import { renderTriageContext, writeFrictionSnapshot } from "./context";
 import { findAgents, type FoundAgent } from "./launch";
 import { createTriageSession } from "./session";
 
@@ -46,6 +47,12 @@ async function doctorSection(
   }
 }
 
+function companionOf(doctor: { report: unknown } | { error: string }): string | null {
+  if (!("report" in doctor) || !doctor.report || typeof doctor.report !== "object") return null;
+  const { companionPath } = doctor.report as { companionPath?: unknown };
+  return typeof companionPath === "string" && companionPath ? companionPath : null;
+}
+
 /** Writes a fresh triage session; nothing is written outside its folder except pruning old ones. */
 export async function prepareTriageSession(
   options: PrepareTriageOptions,
@@ -59,8 +66,12 @@ export async function prepareTriageSession(
     prompt: path.join(dir, "prompt.md"),
   };
   const agents = findAgents(options.pathValue);
-  const friction = writeFrictionSnapshot(dir, { homeDir: options.homeDir, now });
   const doctor = await doctorSection(cwd, options.collectDoctor);
+  const friction = await writeFrictionSnapshot(dir, {
+    companion: companionOf(doctor),
+    homeDir: options.homeDir,
+    now,
+  });
   const { config } = getActiveDistribution();
   fs.writeFileSync(
     files.context,

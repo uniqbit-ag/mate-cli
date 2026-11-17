@@ -212,6 +212,27 @@ describe("createMate records a failed agent-run command as friction", () => {
     expect(event.detail.errorText).toBe("Unsupported argument: --token=…");
   });
 
+  test("keeps no value of a secret-named variable that the error text echoes", async () => {
+    const { home, companion } = companionSelectingFriction();
+    const secret = "acme-secret-value-123";
+
+    await runFailing(
+      {
+        ...noSession,
+        HOME: home,
+        MATE_ARTIFACT_PATH: companion,
+        CLAUDE_CODE_SESSION_ID: "s1",
+        ACME_TOKEN: secret,
+      },
+      1,
+      ["bun", "mate", "companion", "sync"],
+      () => process.stderr.write(`fatal: https://x:${secret}@example.com/acme\n`),
+    );
+
+    const [event] = readEvents({ sinceDays: 1, homeDir: home });
+    expect(event.detail.errorText).toBe("fatal: https://x:***@example.com/acme");
+  });
+
   test("a failed JSON command keeps its stdout; a repeat and a failed report get no nudge", async () => {
     const { home, companion } = companionSelectingFriction();
     const env = {

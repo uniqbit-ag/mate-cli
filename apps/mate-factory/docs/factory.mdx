@@ -90,7 +90,10 @@ docker run \
   current one on its next start, keeping its worktree, home and branches; a
   container from before this volume existed has its home copied over first. The
   nested daemon's own images are not kept: they are a cache. Workset containers
-  share one Bun install cache.
+  share one Bun install cache. With the `friction` capability selected, a
+  Workset's Friction Events and Reports land in that home's `.mate/friction/`.
+  They go with the home at Done, and `mate doctor`, `mate cap friction list` and
+  `mate triage` on the host do not see them.
 - **Reclaimed at Done.** When every change of a Workset is Done, Studio removes
   its container, worktree, home and run files. Its branches and its record stay.
   A Workset with unpushed commits keeps everything, and its card names the

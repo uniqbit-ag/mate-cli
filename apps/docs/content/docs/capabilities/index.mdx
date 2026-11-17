@@ -311,7 +311,8 @@ While it is selected, Mate records one Friction Event:
   sets. A command you run in your own terminal is not recorded.
 
 Refusals from hooks Mate does not own, such as TokenSave's or RTK's, are not
-recorded.
+recorded. Neither is a `mate session prepare` that Mate's own session hook
+starts: the agent did not run it.
 
 The log lives on your machine only, in `~/.mate/friction/`, one
 `events-<YYYY-MM>.jsonl` file per month. Mate keeps the current month and the
@@ -325,7 +326,9 @@ refused write keeps only its paths. It never holds:
 
 - the content a tool call would write,
 - the value of a flag (`--token abc123` is recorded as `--token`),
-- the value of an environment variable,
+- the value of an environment variable whose name marks a secret (`TOKEN`,
+  `SECRET`, `PASSW`, `KEY`, `CREDENTIAL`, `AUTH`) and that is at least 8
+  characters long; Mate replaces it with `***`,
 - anything beyond the check and the tool kind for a refusal by the secret
   check: no message, no command and no path.
 

@@ -9,6 +9,7 @@ import { resetActiveDistribution, setActiveDistribution } from "../../distributi
 import { appendEvent, appendReport } from "../../runtime/friction-log";
 import { PluginRegistry } from "../../tools/setup/registry";
 import { getTriagePlaybookPath } from "../package-paths";
+import { writeFrictionSnapshot } from "./context";
 import { prepareTriageSession } from "./prepare";
 
 const now = new Date("2027-03-14T12:00:00.000Z");
@@ -49,7 +50,12 @@ function prepare(
   });
 }
 
-function event(companion: string, at: Date) {
+function event(
+  companion: string,
+  at: Date,
+  home = companion,
+  detail: Record<string, unknown> = {},
+) {
   appendEvent(
     {
       kind: "refusal",
@@ -59,11 +65,13 @@ function event(companion: string, at: Date) {
       sessionId: "s1",
       companion,
       repositoryPath: null,
-      detail: {},
+      detail,
     },
-    { homeDir: companion, now: at },
+    { homeDir: home, now: at },
   );
 }
+
+const inCompanion = (companionPath: string) => async (cwd: string) => ({ cwd, companionPath });
 
 beforeEach(() => useDistribution("acme/mate"));
 
@@ -158,6 +166,7 @@ describe("prepareTriageSession", () => {
     const f = await fixture();
     event(f.home, new Date("2027-03-10T00:00:00Z"));
     event(f.home, new Date("2027-01-20T00:00:00Z"));
+    event(path.join(f.root, "other-companion"), new Date("2027-03-10T00:00:00Z"), f.home);
     appendReport(
       {
         eventId: null,
@@ -175,7 +184,7 @@ describe("prepareTriageSession", () => {
       { homeDir: f.home, now: new Date("2027-03-11T00:00:00Z") },
     );
 
-    const { files } = await prepare(f);
+    const { files } = await prepare(f, inCompanion(f.home));
     const events = fs.readFileSync(path.join(files.dir, "friction-events.jsonl"), "utf8");
     const reports = fs.readFileSync(path.join(files.dir, "friction-reports.jsonl"), "utf8");
     const context = fs.readFileSync(files.context, "utf8");
@@ -186,10 +195,64 @@ describe("prepareTriageSession", () => {
     expect(context).toContain("`friction-reports.jsonl`: 1 agent report");
   });
 
+  test("copies no friction outside a companion and says where to run", async () => {
+    const f = await fixture();
+    event(f.home, new Date("2027-03-10T00:00:00Z"));
+
+    const { files } = await prepare(f);
+
+    expect(fs.existsSync(path.join(files.dir, "friction-events.jsonl"))).toBe(false);
+    expect(fs.readFileSync(files.context, "utf8")).toContain("run `mate triage` in the affected");
+  });
+
+  test("withholds the evidence of an event the scanner flags", async () => {
+    const f = await fixture();
+    const at = new Date("2027-03-10T00:00:00Z");
+    event(f.home, at, f.home, { message: "clean" });
+    event(f.home, at, f.home, { message: "flagged", command: "flagged" });
+    const dir = path.join(f.root, "session");
+    fs.mkdirSync(dir);
+
+    await writeFrictionSnapshot(dir, {
+      companion: f.home,
+      homeDir: f.home,
+      now,
+      scan: async (file) => [{ path: file, line: 2, ruleId: "acme-rule" }],
+    });
+
+    const [clean, flagged] = fs
+      .readFileSync(path.join(dir, "friction-events.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line).detail);
+    expect(clean).toEqual({ message: "clean" });
+    expect(flagged).toEqual({ message: "[withheld: acme-rule]", command: "[withheld: acme-rule]" });
+  });
+
+  test("withholds every event's evidence when the scanner fails", async () => {
+    const f = await fixture();
+    event(f.home, new Date("2027-03-10T00:00:00Z"), f.home, { errorText: "clean" });
+    const dir = path.join(f.root, "session");
+    fs.mkdirSync(dir);
+
+    await writeFrictionSnapshot(dir, {
+      companion: f.home,
+      homeDir: f.home,
+      now,
+      scan: async () => {
+        throw new Error("engine failed");
+      },
+    });
+
+    expect(fs.readFileSync(path.join(dir, "friction-events.jsonl"), "utf8")).toContain(
+      '"errorText":"[withheld: scan-failed]"',
+    );
+  });
+
   test("writes no friction file without recorded friction", async () => {
     const f = await fixture();
 
-    const { files } = await prepare(f);
+    const { files } = await prepare(f, inCompanion(f.home));
 
     expect(fs.readdirSync(files.dir).toSorted()).toEqual([
       "PLAYBOOK.md",

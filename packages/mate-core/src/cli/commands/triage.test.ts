@@ -99,6 +99,16 @@ describe("mate triage", () => {
     expect(process.exitCode).toBe(3);
   });
 
+  test("starts no agent inside an agent session and exits zero", async () => {
+    const { deps, launches } = await setup(["claude"]);
+
+    await runTriageCommand([], { ...deps, env: { ...deps.env, CLAUDE_CODE_SESSION_ID: "s1" } });
+
+    expect(launches).toEqual([]);
+    expect(process.exitCode || 0).toBe(0);
+    expect(out.join("\n")).toContain("in your own terminal");
+  });
+
   test("starts the agent named by --agent", async () => {
     const { deps, launches } = await setup(["claude", "opencode"]);
 

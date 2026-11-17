@@ -3,7 +3,13 @@ import os from "node:os";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
-import { readEvents, readReports } from "../../runtime/friction-log";
+import {
+  companionFilter,
+  readEvents,
+  readReports,
+  type FrictionEvent,
+} from "../../runtime/friction-log";
+import { scanContent } from "../../runtime/secret-scan";
 import { TRIAGE_AGENT_NAMES, TRIAGE_AGENTS, type FoundAgent } from "./launch";
 
 const FRICTION_SNAPSHOT_DAYS = 30;
@@ -11,18 +17,65 @@ const FRICTION_EVENTS_FILE = "friction-events.jsonl";
 const FRICTION_REPORTS_FILE = "friction-reports.jsonl";
 
 interface FrictionSnapshot {
+  /** The companion the records were scoped to; none means nothing was copied. */
+  companion: string | null;
   events: number;
   reports: number;
 }
 
-/** Copies the window's records into the session; a family without records gets no file. */
-export function writeFrictionSnapshot(
+const EVIDENCE_FIELDS = ["message", "command", "errorText"] as const;
+
+/** Evidence text the scanner flags, or every event's when it cannot scan, is withheld. */
+async function withoutFlaggedEvidence(
+  events: FrictionEvent[],
+  scan: typeof scanContent,
+): Promise<FrictionEvent[]> {
+  const lines = events.map((event) => JSON.stringify(event));
+  let flagged: Map<number, string[]> | null = new Map();
+  try {
+    for (const finding of await scan(FRICTION_EVENTS_FILE, lines.join("\n"))) {
+      const index = finding.line - 1;
+      flagged.set(index, [...(flagged.get(index) ?? []), finding.ruleId]);
+    }
+  } catch {
+    flagged = null;
+  }
+  return events.map((event, index) => {
+    const rules = flagged ? flagged.get(index) : ["scan-failed"];
+    if (!rules) return event;
+    const detail = { ...event.detail };
+    for (const field of EVIDENCE_FIELDS) {
+      if (field in detail) detail[field] = `[withheld: ${[...new Set(rules)].join(", ")}]`;
+    }
+    return { ...event, detail };
+  });
+}
+
+/**
+ * Copies the companion's records of the window into the session; a family without records gets
+ * no file. Only that companion's: the copy feeds a public issue draft.
+ */
+export async function writeFrictionSnapshot(
   sessionDir: string,
-  options: { homeDir?: string; now?: Date },
-): FrictionSnapshot {
+  options: {
+    companion: string | null;
+    homeDir?: string;
+    now?: Date;
+    scan?: typeof scanContent;
+  },
+): Promise<FrictionSnapshot> {
+  const { companion } = options;
+  if (!companion) return { companion: null, events: 0, reports: 0 };
   const window = { sinceDays: FRICTION_SNAPSHOT_DAYS, homeDir: options.homeDir, now: options.now };
-  const events = readEvents(window);
-  const reports = readReports(window);
+  const events = await withoutFlaggedEvidence(
+    readEvents({ ...window, companion }),
+    options.scan ?? scanContent,
+  );
+  const ids = new Set(events.map((event) => event.id));
+  const inCompanion = companionFilter(companion);
+  const reports = readReports(window).filter((report) =>
+    report.eventId ? ids.has(report.eventId) : inCompanion(report.companion),
+  );
   const write = (name: string, records: object[]) => {
     if (records.length === 0) return;
     const lines = records.map((record) => `${JSON.stringify(record)}\n`).join("");
@@ -30,7 +83,7 @@ export function writeFrictionSnapshot(
   };
   write(FRICTION_EVENTS_FILE, events);
   write(FRICTION_REPORTS_FILE, reports);
-  return { events: events.length, reports: reports.length };
+  return { companion, events: events.length, reports: reports.length };
 }
 
 interface TriageContextInput {
@@ -43,23 +96,6 @@ interface TriageContextInput {
   agents: FoundAgent[];
   friction: FrictionSnapshot;
   doctor: { report: unknown } | { error: string };
-}
-
-const SECRET_NAME = /TOKEN|SECRET|PASSW|KEY|CREDENTIAL|AUTH/i;
-
-/**
- * Plugin configs interpolate `${VAR}`, so a plugin's error text in the doctor report may echo a
- * secret, raw or JSON-escaped. Short values stay: masking them would garble the facts.
- */
-export function maskSecretValues(text: string, env: Record<string, string | undefined>): string {
-  let masked = text;
-  for (const [name, value] of Object.entries(env)) {
-    if (!value || value.length < 8 || !SECRET_NAME.test(name)) continue;
-    for (const form of new Set([JSON.stringify(value).slice(1, -1), value])) {
-      masked = masked.split(form).join("***");
-    }
-  }
-  return masked;
 }
 
 function runtimeVersion(): string {
@@ -79,10 +115,19 @@ function count(n: number, noun: string): string {
 }
 
 function frictionLines(friction: FrictionSnapshot): string[] {
-  if (friction.events === 0 && friction.reports === 0) {
-    return [`No friction was recorded in the last ${FRICTION_SNAPSHOT_DAYS} days.`];
+  if (!friction.companion) {
+    return [
+      `No friction was copied: this folder belongs to no companion. To include it, run \`${FRAMEWORK_NAME} triage\` in the affected repository.`,
+    ];
   }
-  const lines = [`Records from the last ${FRICTION_SNAPSHOT_DAYS} days, one JSON object per line:`];
+  if (friction.events === 0 && friction.reports === 0) {
+    return [
+      `No friction was recorded for ${friction.companion} in the last ${FRICTION_SNAPSHOT_DAYS} days.`,
+    ];
+  }
+  const lines = [
+    `Records for ${friction.companion} from the last ${FRICTION_SNAPSHOT_DAYS} days, one JSON object per line:`,
+  ];
   if (friction.events > 0) {
     lines.push(`- \`${FRICTION_EVENTS_FILE}\`: ${count(friction.events, "Friction Event")}`);
   }

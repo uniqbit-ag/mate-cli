@@ -9,6 +9,7 @@ import {
   recordCommandFailure,
   withoutArgumentValues,
 } from "./runtime/friction-recorder";
+import { maskSecretValues } from "./runtime/secret-values";
 import { createBunPlugin } from "./tools/setup/package-managers/bun";
 import { createUvPlugin } from "./tools/setup/package-managers/uv";
 import type { PluginRegistration } from "./tools/setup/plugin";
@@ -50,7 +51,11 @@ export function createMate({ config, plugins, main: runMain = main }: CreateMate
     run: async (argv = process.argv) => {
       const session = currentSession(process.env);
       const args = argv.slice(2);
-      const errors = session ? captureErrorTail((text) => withoutArgumentValues(text, args)) : null;
+      const errors = session
+        ? captureErrorTail((text) =>
+            maskSecretValues(withoutArgumentValues(text, args), process.env),
+          )
+        : null;
       const record = (exitCode: number) => {
         if (!session || !errors || exitCode === 0) return;
         const recorded = recordCommandFailure({
