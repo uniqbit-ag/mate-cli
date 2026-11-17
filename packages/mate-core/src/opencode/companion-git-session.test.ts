@@ -190,6 +190,19 @@ describe("the OpenCode plugin repairs the companion at session start", () => {
     expect(fs.existsSync(path.join(fixture.home, ".mate"))).toBe(false);
   });
 
+  test("runs the unattended synchronization when only a Capability variable is set", async () => {
+    const fixture = makeFixture();
+    process.env.HOME = fixture.home;
+    commitUpstream(fixture, "remote");
+
+    const notes = await repairCompanionGitOnce(context(fixture), {
+      MATE_REACT_DOCTOR_BIN_PATH: "/opt/acme/react-doctor",
+    });
+
+    expect(git(fixture.companion, "log", "-1", "--pretty=%s")).toBe("remote");
+    expect(notes).toEqual([]);
+  });
+
   test("performs no Git work in a managed session", async () => {
     const fixture = makeFixture();
     process.env.HOME = fixture.home;

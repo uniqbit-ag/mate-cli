@@ -25,12 +25,13 @@ export type CompanionRuntimeContext = {
 };
 
 /**
- * Any non-empty `MATE_*` variable means a Mate launch configured this process,
- * so the environment is authoritative and the projection is not read. A
- * background launch sets every name, empty when unset.
+ * A non-empty `MATE_ARTIFACT_PATH` means a Mate launch configured this process,
+ * so the environment is authoritative and the projection is not read. Every
+ * launch writes it; other `MATE_*` names alone (e.g. a Capability variable set in
+ * Agent Runtime settings) are data, not a launch.
  */
 export function hasLaunchEnvironment(env: Record<string, string | undefined>): boolean {
-  return Object.values(MATE_ENV).some((name) => env[name] !== undefined && env[name] !== "");
+  return Boolean(env[MATE_ENV.companionPath]);
 }
 
 function fromEnvironment(env: Record<string, string | undefined>): CompanionRuntimeContext {
@@ -57,8 +58,8 @@ export interface CompanionRuntimeResolution {
 }
 
 /**
- * The environment always wins: the projection is consulted only when no
- * `MATE_*` variable is set, so a managed session never reads it and no stale
+ * The environment always wins: the projection is consulted only when
+ * `MATE_ARTIFACT_PATH` is unset, so a managed session never reads it and no stale
  * or malformed projection can degrade a session a Mate launch configured.
  * Only a session moved into a linked worktree of its repository reads that
  * worktree's projection, for its repository path alone. `borrow: false` answers

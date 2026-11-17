@@ -4,8 +4,8 @@
  * every managed session; plugins must consume them through this module instead
  * of hard-coding variable names.
  *
- * Every name is `MATE_`-prefixed, which is what lets a reader treat "any of
- * these present" as "a Mate launch configured this process".
+ * Only a non-empty `MATE_ARTIFACT_PATH` marks "a Mate launch configured this
+ * process"; every launch writes it. The other names carry data.
  */
 export const MATE_ENV = {
   frameworkName: "MATE_NAME",

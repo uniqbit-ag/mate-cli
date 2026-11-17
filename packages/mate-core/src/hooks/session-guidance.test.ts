@@ -111,6 +111,17 @@ describe("session-guidance hook module", () => {
     expect(result).toEqual({ exitCode: 0, stdout: "" });
   });
 
+  test("a Capability variable alone is no launch: the guidance is emitted", () => {
+    const { repoRoot, companionPath } = wrapRepo();
+
+    const result = buildSessionGuidance(
+      { MATE_REACT_DOCTOR_BIN_PATH: "/opt/acme/react-doctor" },
+      repoRoot,
+    );
+
+    expect(additionalContext(result.stdout)).toContain(companionPath);
+  });
+
   test("emits nothing in an unwrapped repository", () => {
     const result = buildSessionGuidance({}, makeTempDir("session-guidance-bare-"));
 
