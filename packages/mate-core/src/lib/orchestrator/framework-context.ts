@@ -74,6 +74,14 @@ function makeContext(
   };
 }
 
+/** The context of a companion already resolved, e.g. by a launch, with its Working Repository. */
+export function companionContext(
+  companionPath: string,
+  repository?: LinkedRepository,
+): FrameworkContext {
+  return makeContext(companionPath, "working-repo", repository);
+}
+
 function isStrictChildPath(parentPath: string, candidatePath: string): boolean {
   const relative = path.relative(parentPath, candidatePath);
   return relative !== "" && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative);

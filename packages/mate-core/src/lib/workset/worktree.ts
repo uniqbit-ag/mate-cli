@@ -21,7 +21,7 @@ import {
   worktreeAddArgs,
   type BranchSource,
 } from "../delivery/resolve-branch";
-import { repositoryPath } from "../delivery/forge";
+import { repositoryPath } from "../delivery/remote";
 import { scopedRepositories } from "../openspec-scopes";
 import { attendedLockOptions } from "../orchestrator/companion-git-sync";
 import { readCompanionConfig } from "../orchestrator/config-store";

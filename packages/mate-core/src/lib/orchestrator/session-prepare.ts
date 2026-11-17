@@ -410,7 +410,17 @@ async function runAttended(
         input.repository?.path,
         deps.isInteractiveTerminal(),
       );
-      run.push({ step: "git-sync", outcome: "ok" });
+      const notes = [
+        ...(synced?.discarded ?? []).map(
+          (folder) => `discarded ${folder}: its submitted copy arrived`,
+        ),
+        ...(synced?.warnings ?? []),
+      ];
+      run.push({
+        step: "git-sync",
+        outcome: "ok",
+        ...(notes.length > 0 ? { detail: notes.join("; ") } : {}),
+      });
       /** A pull may have changed the companion's own selection. */
       if (synced?.changed) config = await deps.readCompanionConfig(input.companionPath);
     } catch (error) {

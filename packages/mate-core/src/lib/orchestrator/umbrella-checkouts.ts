@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { gitEnvironment } from "../../runtime/companion-git";
 import { readGitLayout } from "../../runtime/git-layout";
 import { umbrellaChildFolders } from "../../runtime/umbrella-folder";
-import { parseRemote, type ForgeRepo } from "../delivery/forge";
+import { parseRemote, type RemoteRepo } from "../delivery/remote";
 
 export {
   mirroredUmbrellaOf,
@@ -25,8 +25,8 @@ export interface EntryCheckout {
   path: string;
   /** The `origin` URL as `readOrigin` returned it; null without one. */
   origin: string | null;
-  /** The forge repository `origin` names; null without one or for another host form. */
-  remote: ForgeRepo | null;
+  /** The repository `origin` names; null without one or for another host form. */
+  remote: RemoteRepo | null;
   /** The Umbrella Repository holding the checkout; absent for the entry itself. */
   umbrella?: string;
 }
@@ -49,7 +49,7 @@ const rawOrigin: OriginReader = async (checkout) => {
 
 /**
  * The Umbrella Repository's children at `folder`, in name order: direct child folders
- * with a Git layout, an `origin` that names a forge repository, and no Repository
+ * with a Git layout, an `origin` that names a repository, and no Repository
  * Link of their own (theirs wins). Empty when `folder` is a Git checkout, so it is no
  * umbrella.
  */

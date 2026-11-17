@@ -1,35 +1,34 @@
-import type { ForgeAdapter, ForgeFailure, ForgeRepo, PullCandidate } from "./forge";
-import type { FetchResult, MergeGit, PatchMatch } from "./merge-git";
+import type { FetchResult, MergeGit, PatchMatch, PullRef } from "./merge-git";
 import {
-  pickProvenance,
+  findDelivery,
+  isCommitId,
   sameRepository,
   upsertDelivery,
+  type Delivery,
   type DeliveryRecord,
   type MergeProvenance,
   type MergeState,
 } from "./record";
+import { pullRequestOf, pullRequestUrl, type RemoteRepo } from "./remote";
 
-/** Why a branch's merge state must come from the user instead of the forge. */
+/** Why a branch's merge state must come from the user instead of Git. */
 export type AnswerReason =
-  | "no-token"
-  | "unsupported-host"
-  | "forge-failure"
-  | "no-pr"
-  | "ambiguous"
   | "direct"
-  /** Local Git matched the changes on the default branch by patch identity only. */
+  /** Git matched the changes on the default branch by patch identity only, or a fast-forward. */
   | "likely-merged"
-  /** Local Git found the head nowhere on the default branch, as of the last fetch. */
-  | "not-on-default";
+  /** Git found the head nowhere on the default branch, as of the last fetch. */
+  | "not-on-default"
+  /** The repository has no checkout linked on this machine. */
+  | "no-checkout"
+  /** The branch is gone from the remote and its content is on no default-branch commit. */
+  | "branch-deleted";
 
 export interface BranchOutcome {
   repository: string;
   branch: string;
-  /** What is now known; `unknown` when the forge could not answer. */
-  result: MergeState | "ambiguous" | "none" | "unknown";
+  /** What is now known; `unknown` when Git could not settle it. */
+  result: MergeState | "unknown";
   pr?: string;
-  candidates?: PullCandidate[];
-  failure?: ForgeFailure;
   /** True when the user has to answer merged, not yet merged, or dropped. */
   needsAnswer: boolean;
   answerReason?: AnswerReason;
@@ -41,25 +40,27 @@ export interface BranchOutcome {
   fetch?: FetchResult;
 }
 
-export type ForgeAccess =
-  | { adapter: ForgeAdapter; repo: ForgeRepo }
-  | { unavailable: "no-token" | "unsupported-host" };
-
-/** A local checkout of a repository, for merge checks the forge did not settle. */
+/** A local checkout of a repository linked on this machine, for merge checks. */
 export interface LocalMergeAccess {
   git: MergeGit;
   defaultBranch: string;
   /** Fetches the default branch and `branch`, at most once per branch. */
   fetch(branch: string): Promise<FetchResult>;
+  /** The checkout's parsed `origin`, which alone names the host for a PR URL. */
+  remote(): Promise<RemoteRepo | null>;
+  /** The remote's pull and merge request heads, listed at most once. */
+  pullRefs(): Promise<PullRef[] | null>;
 }
 
-/** The clock, forge, and local Git a refresh reads. */
+/** The clock and the local Git a refresh reads. */
 export interface RefreshAccess {
   now: () => Date;
-  forgeAccess: (repository: string) => Promise<ForgeAccess>;
-  /** The repository's local checkout, or null without one. */
+  /** The repository's linked checkout, or null without one. */
   localAccess?: (repository: string) => Promise<LocalMergeAccess | null>;
-  /** Fetch before a local check: the companion's Git mode is `auto`, or `--fetch` was passed. */
+  /**
+   * Fetch, and list pull refs, before a local check: the companion's Git mode is `auto`, or
+   * `--fetch` was passed.
+   */
   fetch?: boolean;
 }
 
@@ -70,19 +71,21 @@ export interface RefreshOptions extends RefreshAccess {
   cache?: RefreshCache;
 }
 
-/** The PR number in a `…/pull/<n>` URL. */
-function prNumberFrom(url: string | undefined): number | undefined {
-  const match = url ? /\/pull\/(\d+)/.exec(url) : null;
-  return match ? Number(match[1]) : undefined;
+/**
+ * True when a delivery's merge result is final: merged or dropped, by any source. Only
+ * "not yet merged" is checked again; Git records nothing but merged.
+ */
+export function isSettled(delivery: Delivery): boolean {
+  return delivery.merge !== undefined && delivery.merge.state !== "open";
 }
 
 /**
- * Asks the forge, then a local checkout, about every branch delivery of a record (or the
- * one repository named) and records each definite answer with its source (`forge` or
- * `git`) and the branch head Git resolved. A direct delivery is never settled here: it
- * always needs the user's answer. Nothing is recorded for an ambiguous, suggested,
- * missing, or failed lookup: those come back as outcomes needing an answer. A delivery the
- * user answered as merged or dropped is skipped.
+ * Checks every unsettled branch delivery of a record (or the one repository named) in its
+ * linked checkout and records each merge Git proves, with source `git`, the merge commit and
+ * time, the branch head Git resolved, and a PR the remote advertises for it. A direct
+ * delivery is never settled here: it always needs the user's answer. Nothing is recorded for
+ * a suggestion or a branch Git found nowhere: those come back as outcomes needing an answer.
+ * A delivery already merged or dropped is skipped without a Git command.
  */
 export async function refreshRecord(
   record: DeliveryRecord,
@@ -95,194 +98,252 @@ export async function refreshRecord(
   for (const delivery of record.deliveries) {
     if (delivery.notApplicable !== undefined || !delivery.branch) continue;
     if (options.repository && !sameRepository(delivery.repository, options.repository)) continue;
-    // A user answer of merged or dropped stands; the forge may still settle a "not yet merged".
-    if (delivery.merge?.source === "user" && delivery.merge.state !== "open") continue;
+    if (isSettled(delivery)) continue;
     const { repository, branch } = delivery;
-    // A recorded PR URL picks that PR when several have the branch as head, unless it was dropped.
-    const prNumber = prNumberFrom(delivery.pr);
+    const head = delivery.head && isCommitId(delivery.head) ? delivery.head : undefined;
     const direct = Boolean(delivery.direct);
-    // A direct delivery is checked in Git, a PR delivery on the forge: never share an answer.
-    const key = JSON.stringify([repository, branch, prNumber ?? null, direct, delivery.head]);
+    const unpushed = delivery.unpushed === true;
+    const key = JSON.stringify([
+      repository.toLowerCase(),
+      branch,
+      direct,
+      head,
+      delivery.pr,
+      unpushed,
+    ]);
 
     let outcome = cache.get(key);
     if (!outcome) {
-      outcome = await lookup(repository, branch, direct, prNumber, delivery.head, options);
+      // oxlint-disable-next-line no-await-in-loop -- one branch at a time, so the cache is shared
+      outcome = await lookup(repository, branch, direct, { head, unpushed }, delivery.pr, options);
       cache.set(key, outcome);
     }
     outcomes.push(outcome);
 
-    if (
-      outcome.result === "merged" ||
-      outcome.result === "open" ||
-      outcome.result === "closed-unmerged"
-    ) {
+    if (outcome.result === "merged") {
       const merge = {
         state: outcome.result,
-        source: outcome.source ?? "forge",
+        source: "git" as const,
         checkedAt: options.now().toISOString(),
         ...outcome.provenance,
       };
-      next = upsertDelivery(next, repository, { merge, ...(outcome.pr ? { pr: outcome.pr } : {}) });
+      next = upsertDelivery(next, repository, { merge });
     }
     if (outcome.head && outcome.head !== delivery.head) {
       next = upsertDelivery(next, repository, { head: outcome.head });
+    }
+    if (outcome.unpushed !== undefined && outcome.unpushed !== unpushed) {
+      next = upsertDelivery(next, repository, { unpushed: outcome.unpushed });
+    }
+    // A recorded PR is kept; a found one is added without dropping the merge just recorded.
+    if (outcome.pr && !delivery.pr) {
+      const merge = findDelivery(next, repository)?.merge;
+      next = upsertDelivery(next, repository, { pr: outcome.pr, ...(merge ? { merge } : {}) });
     }
   }
   return { record: next, outcomes: outcomes.map(publicOutcome) };
 }
 
-/** Lookups by repository, branch, and PR number. */
+/** Lookups by repository, branch, mode, head, PR and the unpushed mark. */
 export type RefreshCache = Map<string, LookupOutcome>;
 
 interface LookupOutcome extends BranchOutcome {
   provenance?: MergeProvenance;
-  source?: "forge" | "git";
-  /** The branch tip Git resolved, recorded as the delivery's `head`. */
+  /** The branch head Git resolved, recorded as the delivery's `head`. */
   head?: string;
+  /** Whether `head` is missing from `origin/<branch>`; absent when this checkout cannot tell. */
+  unpushed?: boolean;
 }
 
 function publicOutcome(outcome: LookupOutcome): BranchOutcome {
-  const { provenance: _provenance, source: _source, head: _head, ...rest } = outcome;
+  const { provenance: _provenance, head: _head, unpushed: _unpushed, ...rest } = outcome;
   return rest;
+}
+
+/** Whether `head` is missing from `origin/<branch>`; undefined when no ref can tell. */
+async function unpushedHead(
+  git: MergeGit,
+  branch: string,
+  head: string,
+): Promise<boolean | undefined> {
+  const remote = await git.remoteTip(branch);
+  if (remote) return remote !== head && !(await git.aheadOf(head, remote));
+  // A branch that exists only locally was never pushed.
+  return (await git.localTip(branch)) === head ? true : undefined;
 }
 
 async function lookup(
   repository: string,
   branch: string,
   direct: boolean,
-  prNumber: number | undefined,
-  recordedHead: string | undefined,
+  recorded: { head: string | undefined; unpushed: boolean },
+  recordedPr: string | undefined,
   options: RefreshOptions,
 ): Promise<LookupOutcome> {
+  const recordedHead = recorded.head;
+  const base = { repository, branch };
   if (direct) {
     // Git cannot tell this change's commits from the user's other pushes, so the user decides.
-    return { repository, branch, result: "unknown", needsAnswer: true, answerReason: "direct" };
+    return { ...base, result: "unknown", needsAnswer: true, answerReason: "direct" };
   }
-  const forge = await forgeLookup(repository, branch, prNumber, options);
+  // Only a checkout linked on this machine is inspected; a record never names one.
   const local = await options.localAccess?.(repository);
-  if (!local) return forge;
-  // The forge's answer is final, and an ambiguous PR is the user's choice; Git only adds the head.
-  if (!forge.needsAnswer || forge.answerReason === "ambiguous") {
-    const head = await local.git.tip(branch);
-    return head ? { ...forge, head } : forge;
-  }
-  const checked = await localLookup(local, repository, branch, recordedHead, options);
-  return forge.failure ? { ...checked, failure: forge.failure } : checked;
-}
+  if (!local) return { ...base, result: "unknown", needsAnswer: true, answerReason: "no-checkout" };
 
-/** The answer of a local checkout: merged by ancestry, a patch-identity suggestion, or none. */
-async function localLookup(
-  local: LocalMergeAccess,
-  repository: string,
-  branch: string,
-  recordedHead: string | undefined,
-  options: RefreshOptions,
-): Promise<LookupOutcome> {
-  const base = { repository, branch };
   const fetch = options.fetch ? await local.fetch(branch) : undefined;
   const withFetch = fetch ? { fetch } : {};
-  const { live, head, merged, suggestion } = await localMergeEvidence(
-    local.git,
-    local.defaultBranch,
-    branch,
-    recordedHead,
-  );
-  if (merged && head) {
-    return { ...base, ...withFetch, result: "merged", needsAnswer: false, source: "git", head };
-  }
   const fetchedAt = await local.git.lastFetchedAt();
+  let pullHead: string | null = null;
+  const tip = await local.git.tip(branch);
+  const known = recordedHead && (await local.git.hasCommit(recordedHead)) ? recordedHead : null;
+  // A recorded head this checkout lacks is newer than its refs: an older tip settles nothing,
+  // unless a fetch just showed the branch as the remote has it. A head recorded as unpushed is
+  // not what the remote has, so there neither the fetched tip nor the PR's head stands in for it.
+  const behind =
+    Boolean(recordedHead) && !known && (recorded.unpushed || !(fetch?.ok && !fetch.branchDeleted));
+  const live = behind ? null : tip;
+  if (!live && !known && options.fetch && !recorded.unpushed) {
+    const pr = await recordedPullRequest(local, recordedPr);
+    pullHead = pr ? await local.git.fetchPullHead(pr.number, pr.ref) : null;
+  }
+  const evidence = await localMergeEvidence(local.git, local.defaultBranch, branch, recordedHead, {
+    live,
+    fallback: pullHead,
+    unpushed: recorded.unpushed,
+  });
+  const head = evidence.head ?? undefined;
+  const pr = head && options.fetch && !recordedPr ? await pullRequestFor(local, head) : null;
+  const unpushed = head && !behind ? await unpushedHead(local.git, branch, head) : undefined;
+  const found = {
+    ...(head ? { head } : {}),
+    ...(pr ? { pr } : {}),
+    ...(unpushed !== undefined ? { unpushed } : {}),
+  };
+
+  if (evidence.merged) {
+    const provenance: MergeProvenance = evidence.containing
+      ? { mergeCommit: evidence.containing.commit, mergedAt: evidence.containing.committedAt }
+      : {};
+    return { ...base, ...withFetch, ...found, result: "merged", needsAnswer: false, provenance };
+  }
+  const suggestion = evidence.suggestion;
+  // Without a fetch a missing `origin/<branch>` is no evidence of deletion.
+  const deleted = fetch?.branchDeleted === true && evidence.uncontained;
   return {
     ...base,
     ...withFetch,
+    ...found,
     result: "unknown",
     needsAnswer: true,
-    answerReason: suggestion ? "likely-merged" : "not-on-default",
+    answerReason: suggestion ? "likely-merged" : deleted ? "branch-deleted" : "not-on-default",
     ...(suggestion ? { suggestion } : {}),
     fetchedAt,
-    ...(live ? { head: live } : {}),
   };
 }
 
-/** What a local checkout alone knows about a branch's merge; no fetch, no forge. */
+/**
+ * The recorded PR, only when its URL is the one this checkout's remote builds for its number:
+ * a record a teammate edited must not make Mate fetch another repository's PR of that number.
+ */
+async function recordedPullRequest(
+  local: LocalMergeAccess,
+  recordedPr: string | undefined,
+): Promise<ReturnType<typeof pullRequestOf>> {
+  const pr = pullRequestOf(recordedPr);
+  const remote = pr ? await local.remote() : null;
+  const expected = remote && pr ? pullRequestUrl(remote, pr.number) : null;
+  return expected && sameUrl(expected, recordedPr!) ? pr : null;
+}
+
+/** A PR URL without query, fragment or trailing slash, lower-cased. */
+function normalizeUrl(url: string): string {
+  return url
+    .replace(/[?#].*$/, "")
+    .replace(/\/+$/, "")
+    .toLowerCase();
+}
+
+function sameUrl(a: string, b: string): boolean {
+  return normalizeUrl(a) === normalizeUrl(b);
+}
+
+/**
+ * The URL of the one PR whose head is `head`, built from the checkout's remote. Anyone may open
+ * a PR from a fork on the same commit, so several are no answer.
+ */
+async function pullRequestFor(local: LocalMergeAccess, head: string): Promise<string | null> {
+  const refs = await local.pullRefs();
+  const matches = (refs ?? []).filter((entry) => entry.commit === head);
+  if (matches.length !== 1) return null;
+  const match = matches[0]!;
+  const remote = await local.remote();
+  return remote ? pullRequestUrl(remote, match.number) : null;
+}
+
+/** What a local checkout alone knows about a branch's merge; no fetch. */
 export interface LocalMergeEvidence {
   /** The branch tip, on `origin` or local; null when the branch is gone. */
   live: string | null;
-  /** `live`, else the recorded head while the commit still exists. */
+  /**
+   * `live`, or the local branch or recorded head while it is ahead of `live`; without `live`
+   * the recorded head while the commit exists, else a fetched PR head.
+   */
   head: string | null;
-  /** A merge commit on the default branch settles it. */
+  /** A merge commit, or a default-branch commit holding the head's content, settles it. */
   merged: boolean;
-  /** Short of `merged`: a head on the default branch's own line, else a patch match. */
+  /** The first default-branch commit containing the head, when containment settled it. */
+  containing?: { commit: string; committedAt: string };
+  /** Short of `merged`: a head on the default branch's own line, else a patch match on old Git. */
   suggestion: PatchMatch | null;
+  /** Containment ran and found no default-branch commit holding the head. */
+  uncontained: boolean;
 }
 
+/**
+ * The merge evidence for a branch: ancestry first (a merge commit settles, unless the head is
+ * recorded as unpushed, which it only suggests; a first-parent position is a fast-forward
+ * suggestion), then content containment, else on Git without
+ * `merge-tree --write-tree` (or when containment cannot tell) a patch-identity suggestion. A
+ * recorded head is used only when it is a full commit ID present in the checkout. A local
+ * branch or recorded head ahead of the remote tip is the head; a rewritten remote wins.
+ */
 export async function localMergeEvidence(
   git: MergeGit,
   defaultBranch: string,
   branch: string,
   recordedHead: string | undefined,
+  known: { live?: string | null; fallback?: string | null; unpushed?: boolean } = {},
 ): Promise<LocalMergeEvidence> {
-  const live = await git.tip(branch);
-  const head = live ?? (recordedHead && (await git.hasCommit(recordedHead)) ? recordedHead : null);
-  const onDefault = head !== null && (await git.isAncestor(head, defaultBranch));
-  // A fast-forward and a branch without commits of its own look the same: only a merge
-  // commit settles by itself.
-  if (onDefault && !(await git.onFirstParent(head, defaultBranch))) {
-    return { live, head, merged: true, suggestion: null };
+  const live = known.live !== undefined ? known.live : await git.tip(branch);
+  const recorded =
+    recordedHead && isCommitId(recordedHead) && (await git.hasCommit(recordedHead))
+      ? recordedHead
+      : null;
+  let head = live ?? recorded ?? known.fallback ?? null;
+  if (live) {
+    // Unpushed work: the remote tip alone would settle a merge of the branch's earlier commits.
+    for (const candidate of [await git.localTip(branch), recorded]) {
+      // oxlint-disable-next-line no-await-in-loop -- the second candidate is compared to the first
+      if (candidate && (await git.aheadOf(head!, candidate))) head = candidate;
+    }
   }
-  let suggestion: PatchMatch | null = null;
-  if (head && onDefault) suggestion = { commit: head, style: "fast-forward" };
-  else if (head) suggestion = await git.patchMatch(head, defaultBranch);
-  return { live, head, merged: false, suggestion };
-}
-
-async function forgeLookup(
-  repository: string,
-  branch: string,
-  prNumber: number | undefined,
-  options: RefreshOptions,
-): Promise<LookupOutcome> {
-  const base = { repository, branch };
-  const access = await options.forgeAccess(repository);
-  if ("unavailable" in access) {
-    return { ...base, result: "unknown", needsAnswer: true, answerReason: access.unavailable };
+  const unsettled = { live, head, merged: false, uncontained: false };
+  if (!head) return { ...unsettled, suggestion: null };
+  if (await git.isAncestor(head, defaultBranch)) {
+    // A fast-forward and a branch without commits of its own look the same: only a merge
+    // commit settles by itself, and a check Git could not run settles nothing.
+    if ((await git.onFirstParent(head, defaultBranch)) === false) {
+      // A head never pushed as its branch may be the tip the branch started from: the merge of
+      // that other branch brought it, not this delivery's work.
+      if (known.unpushed) return { ...unsettled, suggestion: { commit: head, style: "merge" } };
+      return { ...unsettled, merged: true, suggestion: null };
+    }
+    return { ...unsettled, suggestion: { commit: head, style: "fast-forward" } };
   }
-  let answer = await access.adapter.pullsForBranch(access.repo, branch, prNumber);
-  // A recorded PR that is closed or gone must not hide a newer PR from the same branch.
-  if (
-    prNumber !== undefined &&
-    answer.ok &&
-    (answer.value.kind === "none" || answer.value.kind === "closed-unmerged")
-  ) {
-    const wider = await access.adapter.pullsForBranch(access.repo, branch);
-    if (wider.ok && wider.value.kind !== "none") answer = wider;
+  const containing = await git.firstContaining(head, defaultBranch);
+  if (typeof containing === "object") {
+    return { ...unsettled, merged: true, containing, suggestion: null };
   }
-  if (!answer.ok) {
-    return {
-      ...base,
-      result: "unknown",
-      failure: answer.failure,
-      needsAnswer: true,
-      answerReason: "forge-failure",
-    };
-  }
-  const value = answer.value;
-  if (value.kind === "none") {
-    return { ...base, result: "none", needsAnswer: true, answerReason: "no-pr" };
-  }
-  if (value.kind === "ambiguous") {
-    return {
-      ...base,
-      result: "ambiguous",
-      candidates: value.candidates,
-      needsAnswer: true,
-      answerReason: "ambiguous",
-    };
-  }
-  return {
-    ...base,
-    result: value.kind,
-    pr: value.pr.url,
-    needsAnswer: false,
-    provenance: pickProvenance(value.pr),
-  };
+  if (containing === "none") return { ...unsettled, uncontained: true, suggestion: null };
+  return { ...unsettled, suggestion: await git.patchMatch(head, defaultBranch) };
 }

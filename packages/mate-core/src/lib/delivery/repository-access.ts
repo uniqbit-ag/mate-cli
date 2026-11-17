@@ -1,19 +1,17 @@
 import { classifyBranch, workingRepoGit, type BranchProtection } from "./branches";
 import { sameRepository } from "./record";
 import type { DeliveryEnvironment } from "./environment";
-import { forgeFor, forgeRepoOf, type ForgeDeps, type ForgeRepo } from "./forge";
-import { mergeGit, type FetchResult, type MergeGit } from "./merge-git";
-import type { ForgeAccess, LocalMergeAccess } from "./refresh";
-import { resolveForgeToken, type ForgeToken } from "./token";
+import { mergeGit, type FetchResult, type MergeGit, type PullRef } from "./merge-git";
+import type { LocalMergeAccess } from "./refresh";
+import { parseRemote, type RemoteRepo } from "./remote";
 
-/** What delivery needs to know about one repository, from local Git or the forge. */
+/** What delivery needs to know about one repository, from its checkout linked on this machine. */
 export interface RepositoryAccess {
-  /** The Working Repository's from local Git; another's from the forge, else `main`. */
+  /** The Working Repository's from local Git; another's from its linked checkout, else `main`. */
   defaultBranch(): Promise<string>;
   /** Protected when it is the default branch or matches a configured pattern. */
   protection(branch: string): Promise<BranchProtection>;
-  forge(): Promise<ForgeAccess>;
-  /** The repository's local checkout for merge checks; absent or null without one. */
+  /** The repository's linked checkout for merge checks; absent or null without one. */
   local?(): Promise<LocalMergeAccess | null>;
 }
 
@@ -24,8 +22,6 @@ export interface Checkout {
 }
 
 export interface RepositoryAccessDeps {
-  resolveToken?: () => Promise<ForgeToken | null>;
-  forge?: ForgeDeps;
   openCheckout?: (path: string) => Checkout;
 }
 
@@ -34,16 +30,14 @@ function defaultOpenCheckout(path: string): Checkout {
 }
 
 /**
- * Access per repository, the Working Repository's through local Git first. The forge token
- * is resolved at most once, and only when a lookup needs it.
+ * Access per repository, only through a checkout the environment links on this machine (the
+ * Working Repository, a Repository Link, or an Umbrella Repository child). A repository named
+ * only by a record is never inspected: it gets `main` as default branch and no local access.
  */
 export function repositoryAccessFor(
   environment: DeliveryEnvironment,
   deps: RepositoryAccessDeps = {},
 ): (repository: string) => RepositoryAccess {
-  let token: Promise<ForgeToken | null> | undefined;
-  const resolveToken = (): Promise<ForgeToken | null> =>
-    (token ??= (deps.resolveToken ?? (() => resolveForgeToken()))());
   const accesses = new Map<string, RepositoryAccess>();
 
   return (repository) => {
@@ -52,15 +46,13 @@ export function repositoryAccessFor(
     if (!access) {
       const slug = environment.workingRepo?.slug;
       const working = slug && sameRepository(slug, repository) ? environment.workingRepo : null;
-      const forgeRepo = async (): Promise<ForgeRepo | null> =>
-        working?.forgeRepo ?? otherForgeRepo(environment, repository);
-      let forgeAccess: Promise<ForgeAccess> | undefined;
-      const forge = (): Promise<ForgeAccess> =>
-        (forgeAccess ??= connect(forgeRepo, resolveToken, deps.forge));
-      const defaultBranch = working ? () => working.git.defaultBranch() : forgeDefaultBranch(forge);
       let localAccess: Promise<LocalMergeAccess | null> | undefined;
       const local = (): Promise<LocalMergeAccess | null> =>
         (localAccess ??= openLocal(environment, repository, deps.openCheckout));
+      let otherDefault: Promise<string> | undefined;
+      const defaultBranch = working
+        ? () => working.git.defaultBranch()
+        : () => (otherDefault ??= local().then((checkout) => checkout?.defaultBranch ?? "main"));
       access = {
         defaultBranch,
         protection: async (branch) =>
@@ -68,7 +60,6 @@ export function repositoryAccessFor(
             defaultBranch: await defaultBranch(),
             patterns: environment.protectedPatterns,
           }),
-        forge,
         local,
       };
       accesses.set(key, access);
@@ -77,32 +68,7 @@ export function repositoryAccessFor(
   };
 }
 
-/**
- * Another repository's host comes from a linked checkout's remote, else the Working
- * Repository's; never assumed. Null when no host is known.
- */
-async function otherForgeRepo(
-  environment: DeliveryEnvironment,
-  repository: string,
-): Promise<ForgeRepo | null> {
-  const host = (await environment.hostOf?.(repository)) ?? environment.workingRepo?.forgeRepo?.host;
-  return host ? forgeRepoOf(host, repository) : null;
-}
-
-async function connect(
-  forgeRepo: () => Promise<ForgeRepo | null>,
-  resolveToken: () => Promise<ForgeToken | null>,
-  deps: ForgeDeps | undefined,
-): Promise<ForgeAccess> {
-  const repo = await forgeRepo();
-  if (!repo) return { unavailable: "unsupported-host" };
-  const resolved = await resolveToken();
-  if (!resolved) return { unavailable: "no-token" };
-  const adapter = forgeFor(repo, resolved.token, deps);
-  return adapter ? { adapter, repo } : { unavailable: "unsupported-host" };
-}
-
-/** The checkout's merge access; each branch is fetched at most once per run. */
+/** The linked checkout's merge access; each branch is fetched and the pull refs listed once. */
 async function openLocal(
   environment: DeliveryEnvironment,
   repository: string,
@@ -114,6 +80,8 @@ async function openLocal(
   if (!(await checkout.git.isRepository())) return null;
   const defaultBranch = await checkout.defaultBranch();
   const fetched = new Map<string, Promise<FetchResult>>();
+  let remote: Promise<RemoteRepo | null> | undefined;
+  let pullRefs: Promise<PullRef[] | null> | undefined;
   return {
     git: checkout.git,
     defaultBranch,
@@ -125,17 +93,8 @@ async function openLocal(
       }
       return result;
     },
+    remote: () =>
+      (remote ??= checkout.git.originUrl().then((url) => (url ? parseRemote(url) : null))),
+    pullRefs: () => (pullRefs ??= checkout.git.pullRefs()),
   };
-}
-
-/** Another repository's default branch from the forge, asked once; `main` when it cannot answer. */
-function forgeDefaultBranch(forge: () => Promise<ForgeAccess>): () => Promise<string> {
-  let known: Promise<string> | undefined;
-  return () =>
-    (known ??= (async () => {
-      const access = await forge();
-      if (!("adapter" in access)) return "main";
-      const answer = await access.adapter.defaultBranch(access.repo);
-      return answer.ok ? answer.value : "main";
-    })());
 }

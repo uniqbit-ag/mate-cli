@@ -6,7 +6,7 @@ import path from "node:path";
 
 import type { ProtectionReason, TicketFormat, WorkingRepoGit } from "./branches";
 import type { DeliveryEnvironment } from "./environment";
-import type { ForgeAdapter, PullClassification } from "./forge";
+import type { MergeGit } from "./merge-git";
 import {
   DELIVERY_FILE,
   readDeliveryRecord,
@@ -21,43 +21,72 @@ import {
   type DeliveryRequest,
   type DeliveryResult,
 } from "./record-delivery";
+import type { LocalMergeAccess } from "./refresh";
+import { parseRemote } from "./remote";
 import type { RepositoryAccess } from "./repository-access";
 
 const APP = "acme/acme-app";
 const LIB = "acme/acme-lib";
 const NOW = "2026-10-28T10:00:00.000Z";
+const TIP = "d".repeat(40);
+const SQUASH = "e".repeat(40);
 
 let companion: string;
 
 interface FakeRepository {
   protectedBranches?: Record<string, ProtectionReason>;
-  pulls?: PullClassification;
-  noToken?: boolean;
+  /** A checkout linked on this machine: its branch heads are contained, or nowhere yet. */
+  checkout?: "merged" | "waiting";
 }
 
-/** One fake RepositoryAccess per repository, counting forge pull lookups. */
+/** A linked checkout whose heads are `TIP`, advertised as PR 70; counts branch lookups. */
+function fakeLocal(repository: string, merged: boolean, lookups: string[]): LocalMergeAccess {
+  const git: MergeGit = {
+    isRepository: async () => true,
+    originUrl: async () => `git@github.com:${repository}.git`,
+    tip: async (branch) => {
+      lookups.push(`${repository}#${branch}`);
+      return TIP;
+    },
+    localTip: async () => null,
+    remoteTip: async () => null,
+    dirtyWorktree: async () => null,
+    aheadOf: async () => false,
+    hasCommit: async () => true,
+    isAncestor: async () => false,
+    onFirstParent: async () => false,
+    patchMatch: async () => null,
+    supportsContainment: async () => true,
+    contains: async () => merged,
+    firstContaining: async () => (merged ? { commit: SQUASH, committedAt: NOW } : "none"),
+    lastFetchedAt: async () => null,
+    fetch: async () => ({ ok: true }),
+    pullRefs: async () => [{ number: 70, ref: "pull", commit: TIP }],
+    fetchPullHead: async () => null,
+  };
+  return {
+    git,
+    defaultBranch: "main",
+    fetch: async () => ({ ok: true }),
+    remote: async () => parseRemote(`git@github.com:${repository}.git`),
+    pullRefs: () => git.pullRefs(),
+  };
+}
+
+/** One fake RepositoryAccess per repository, counting Git branch lookups. */
 function fakeAccess(repositories: Record<string, FakeRepository> = {}) {
   const lookups: string[] = [];
   const accessFor = (repository: string): RepositoryAccess => {
     const fake = repositories[repository] ?? {};
-    const adapter: ForgeAdapter = {
-      id: "github",
-      defaultBranch: async () => ({ ok: true, value: "main" }),
-      pullsForBranch: async (_repo, branch) => {
-        lookups.push(`${repository}#${branch}`);
-        return { ok: true, value: fake.pulls ?? { kind: "none" } };
-      },
-    };
     return {
       defaultBranch: async () => "main",
       protection: async (branch) => {
         const reason = fake.protectedBranches?.[branch] ?? null;
         return { protected: reason !== null, reason };
       },
-      forge: async () =>
-        fake.noToken
-          ? { unavailable: "no-token" }
-          : { adapter, repo: { host: "github.com", owner: "acme", repo: repository } },
+      ...(fake.checkout
+        ? { local: async () => fakeLocal(repository, fake.checkout === "merged", lookups) }
+        : {}),
     };
   };
   return { accessFor, lookups };
@@ -92,7 +121,6 @@ function environment(
     workingRepo: {
       path: "/repo",
       slug,
-      forgeRepo: null,
       git: git(options.branches, options.current),
     },
     protectedPatterns: [],
@@ -129,6 +157,58 @@ async function workset(id: string, changes: string[]): Promise<void> {
     `id: ${id}\nrepositories: [${APP}]\nchanges: ${JSON.stringify(changes)}\n`,
   );
 }
+
+describe("spec base", () => {
+  const HEAD = "a".repeat(40);
+  const record = (request: DeliveryRequest, head: string | null = HEAD) =>
+    recordDelivery(environment(), request, {
+      now: () => new Date(NOW),
+      repositoryAccess: fakeAccess().accessFor,
+      companionHead: async () => head,
+    });
+
+  test("the first write keeps the companion's HEAD, later writes leave it", async () => {
+    await record({ changes: ["x"], edit: { delivery: { branch: "change/x", direct: false } } });
+    expect((await written("x"))?.specBase).toBe(HEAD);
+
+    await record(
+      { changes: ["x"], edit: { pr: "https://github.com/acme/acme-app/pull/1" } },
+      "b".repeat(40),
+    );
+    expect((await written("x"))?.specBase).toBe(HEAD);
+  });
+
+  test("--spec-base writes a record with only the base", async () => {
+    await record({ changes: ["x"], specBase: true });
+    expect(await written("x")).toMatchObject({ change: "x", specBase: HEAD, deliveries: [] });
+  });
+
+  test("--spec-base needs no repository", async () => {
+    const outcome = await recordDelivery(
+      environment({ slug: null }),
+      { changes: ["x"], specBase: true },
+      { repositoryAccess: fakeAccess().accessFor, companionHead: async () => HEAD },
+    );
+    expect("refusal" in outcome).toBe(false);
+    expect((await written("x"))?.specBase).toBe(HEAD);
+  });
+
+  test("a settlement outside the user's checkout leaves a missing base unset", async () => {
+    await record({
+      changes: ["x"],
+      edit: { delivery: { branch: "change/x", direct: false } },
+      leaveSpecBase: true,
+    });
+    const settled = await written("x");
+    expect(settled?.deliveries).toHaveLength(1);
+    expect(settled?.specBase).toBeUndefined();
+  });
+
+  test("a read writes nothing", async () => {
+    await record({ changes: ["x"] });
+    expect(await written("x")).toBeNull();
+  });
+});
 
 describe("Workset branch defaults", () => {
   test("read-only resolution exposes a default without writing delivery", async () => {
@@ -386,39 +466,35 @@ describe("recordDelivery edits", () => {
 });
 
 describe("recordDelivery refresh", () => {
-  const merged: PullClassification = {
-    kind: "merged",
-    pr: { number: 70, url: "https://github.com/acme/acme-app/pull/70", mergedBy: "acme-bot" },
-  };
-
-  test("a merged PR is recorded with source forge", async () => {
+  test("a head the default branch contains is recorded as merged with source git", async () => {
     await link("x", "change/x");
     const [result] = results(
-      await run({ changes: ["x"], refresh: true }, { [APP]: { pulls: merged } }),
+      await run({ changes: ["x"], refresh: true }, { [APP]: { checkout: "merged" } }),
     );
     expect(result.record.deliveries[0]).toMatchObject({
-      pr: "https://github.com/acme/acme-app/pull/70",
-      merge: { state: "merged", source: "forge", mergedBy: "acme-bot", checkedAt: NOW },
+      head: TIP,
+      merge: { state: "merged", source: "git", mergeCommit: SQUASH, mergedAt: NOW, checkedAt: NOW },
     });
+    expect(result.record.deliveries[0].merge).not.toHaveProperty("mergedBy");
     expect((await written("x"))?.deliveries[0].merge?.state).toBe("merged");
   });
 
-  test("without a token the outcome asks for an answer and the forge is not asked", async () => {
+  test("without a linked checkout the outcome asks for an answer and Git is not asked", async () => {
     await link("x", "change/x");
-    const outcome = await run({ changes: ["x"], refresh: true }, { [APP]: { noToken: true } });
+    const outcome = await run({ changes: ["x"], refresh: true });
     expect(outcome.lookups).toEqual([]);
     expect(results(outcome)[0].outcomes[0]).toMatchObject({
       needsAnswer: true,
-      answerReason: "no-token",
+      answerReason: "no-checkout",
     });
   });
 
-  test("a confirmation after a refresh wins over the forge answer", async () => {
+  test("a confirmation after a refresh wins over the Git answer", async () => {
     await link("x", "change/x");
     const [result] = results(
       await run(
         { changes: ["x"], refresh: true, edit: { confirm: "closed-unmerged" } },
-        { [APP]: { pulls: merged } },
+        { [APP]: { checkout: "merged" } },
       ),
     );
     expect(result.record.deliveries[0].merge).toMatchObject({
@@ -432,7 +508,7 @@ describe("recordDelivery refresh", () => {
       changeDir("x"),
       upsertDelivery(unlinkedRecord("x"), APP, { branch: "main", direct: true }),
     );
-    const outcome = await run({ changes: ["x"], refresh: true }, { [APP]: { pulls: merged } });
+    const outcome = await run({ changes: ["x"], refresh: true }, { [APP]: { checkout: "merged" } });
     const [result] = results(outcome);
     expect(result.record.deliveries[0].merge).toBeUndefined();
     expect(result.outcomes[0]).toEqual({
@@ -445,10 +521,13 @@ describe("recordDelivery refresh", () => {
     expect(outcome.lookups).toEqual([]);
   });
 
-  test("changes sharing a branch ask the forge once", async () => {
+  test("changes sharing a branch are checked once", async () => {
     await link("a", "feature/f");
     await link("b", "feature/f");
-    const outcome = await run({ changes: ["a", "b"], refresh: true }, { [APP]: { pulls: merged } });
+    const outcome = await run(
+      { changes: ["a", "b"], refresh: true },
+      { [APP]: { checkout: "merged" } },
+    );
     expect(outcome.lookups).toEqual([`${APP}#feature/f`]);
     expect(results(outcome).map((result) => result.settlement.status)).toEqual([
       "merged",
@@ -463,65 +542,35 @@ describe("recordDelivery refresh", () => {
         branch: "b",
       }),
     );
-    const outcome = await run({ changes: ["x"], repository: LIB, refresh: true });
+    const outcome = await run(
+      { changes: ["x"], repository: LIB, refresh: true },
+      { [APP]: { checkout: "waiting" }, [LIB]: { checkout: "waiting" } },
+    );
     expect(outcome.lookups).toEqual([`${LIB}#b`]);
   });
 
-  test("the PR number of an edited PR picks the lookup", async () => {
-    await link("x", "change/x");
-    const asked: Array<number | undefined> = [];
-    const { accessFor } = fakeAccess();
-    const access = accessFor(APP);
-    const forge = await access.forge();
-    if (!("adapter" in forge)) throw new Error("expected an adapter");
-    forge.adapter.pullsForBranch = async (_repo, _branch, prNumber) => {
-      asked.push(prNumber);
-      return { ok: true, value: { kind: "none" } };
-    };
-    await recordDelivery(
-      environment(),
-      { changes: ["x"], refresh: true, edit: { pr: "https://github.com/acme/acme-app/pull/12" } },
-      {
-        now: () => new Date(NOW),
-        repositoryAccess: () => ({ ...access, forge: async () => forge }),
-      },
-    );
-    // No PR #12 on the forge, so the branch is asked about without it.
-    expect(asked).toEqual([12, undefined]);
-  });
-
-  test("an edited PR number is not applied to another repository's delivery", async () => {
+  test("an edited PR is kept; a PR the remote advertises fills only a delivery without one", async () => {
     await writeDeliveryRecord(
       changeDir("x"),
       upsertDelivery(upsertDelivery(unlinkedRecord("x"), APP, { branch: "a" }), LIB, {
         branch: "b",
       }),
     );
-    const asked: Record<string, Array<number | undefined>> = {};
-    const { accessFor } = fakeAccess();
-    await recordDelivery(
-      environment(),
-      { changes: ["x"], refresh: true, edit: { pr: "https://github.com/acme/acme-app/pull/12" } },
-      {
-        now: () => new Date(NOW),
-        repositoryAccess: (repository) => {
-          const access = accessFor(repository);
-          return {
-            ...access,
-            forge: async () => {
-              const forge = await access.forge();
-              if (!("adapter" in forge)) throw new Error("expected an adapter");
-              forge.adapter.pullsForBranch = async (_repo, _branch, prNumber) => {
-                (asked[repository] ??= []).push(prNumber);
-                return { ok: true, value: { kind: "none" } };
-              };
-              return forge;
-            },
-          };
+    const [result] = results(
+      await run(
+        {
+          changes: ["x"],
+          refresh: true,
+          fetch: true,
+          edit: { pr: "https://github.com/acme/acme-app/pull/12" },
         },
-      },
+        { [APP]: { checkout: "waiting" }, [LIB]: { checkout: "waiting" } },
+      ),
     );
-    expect(asked).toEqual({ [APP]: [12, undefined], [LIB]: [undefined] });
+    expect(result.record.deliveries.map((delivery) => delivery.pr)).toEqual([
+      "https://github.com/acme/acme-app/pull/12",
+      "https://github.com/acme/acme-lib/pull/70",
+    ]);
   });
 });
 
@@ -571,27 +620,21 @@ describe("recordDelivery with a local checkout", () => {
 
   /** The fake access, plus a checkout whose head is never on main; counts fetches. */
   function withCheckout() {
-    const { accessFor } = fakeAccess({ [APP]: { noToken: true } });
+    const { accessFor } = fakeAccess();
     const fetches: string[] = [];
     const repositoryAccess = (repository: string): RepositoryAccess => ({
       ...accessFor(repository),
-      local: async () => ({
-        defaultBranch: "main",
-        fetch: async (branch) => {
-          fetches.push(branch);
-          return { ok: true };
-        },
-        git: {
-          isRepository: async () => true,
-          tip: async () => HEAD,
-          hasCommit: async () => true,
-          isAncestor: async () => false,
-          onFirstParent: async () => false,
-          patchMatch: async () => null,
-          lastFetchedAt: async () => null,
-          fetch: async () => ({ ok: true }),
-        },
-      }),
+      local: async () => {
+        const local = fakeLocal(repository, false, []);
+        return {
+          ...local,
+          git: { ...local.git, tip: async () => HEAD },
+          fetch: async (branch) => {
+            fetches.push(branch);
+            return { ok: true };
+          },
+        };
+      },
     });
     return { repositoryAccess, fetches };
   }
@@ -781,7 +824,6 @@ describe("recordDelivery in an Umbrella Repository", () => {
     workingRepo: {
       path: "/acme",
       slug: null,
-      forgeRepo: null,
       git: git(["workset/x"], "workset/x"),
       umbrellaChildren: [APP, LIB],
     },

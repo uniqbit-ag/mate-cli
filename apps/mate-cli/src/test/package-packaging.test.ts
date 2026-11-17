@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import {
   packRelease,
   withPublishedPackageVersions,
@@ -14,7 +14,13 @@ import {
   type PackedTarball,
 } from "../../../mate-container/src/image-pins";
 
+import { lockStudioDist, unlockStudioDist } from "./studio-dist-lock";
+
 const tempRoots: string[] = [];
+
+// Packing rebuilds the Studio app the Studio e2e tests serve.
+beforeAll(lockStudioDist, 180_000);
+afterAll(unlockStudioDist);
 
 function smokeInputs(
   manifest: string,

@@ -124,7 +124,7 @@ describe("runWorkingCleanupCommand in an Umbrella Repository", () => {
     const cleanups: string[] = [];
     const logs = await run(depsFor(fixture.umbrella, fixture, cleanups));
 
-    expect(process.exitCode).toBe(0);
+    expect(process.exitCode ?? 0).toBe(0);
     expect(cleanups).toEqual([await fs.realpath(fixture.umbrella)]);
     expect(logs.join("\n")).toContain("cleaned working repository");
     expect(await exists(path.join(fixture.umbrella, ".mate"))).toBe(false);
@@ -160,7 +160,7 @@ describe("runWorkingCleanupCommand in an Umbrella Repository", () => {
     const cleanups: string[] = [];
     await run(depsFor(mirrored, fixture, cleanups));
 
-    expect(process.exitCode).toBe(0);
+    expect(process.exitCode ?? 0).toBe(0);
     expect(cleanups).toEqual([await fs.realpath(mirrored)]);
     expect(await exists(path.join(mirrored, ".mate"))).toBe(false);
     expect(await exists(path.join(fixture.umbrella, ".mate"))).toBe(true);

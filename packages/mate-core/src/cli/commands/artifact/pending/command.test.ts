@@ -10,8 +10,16 @@ import { WorkingRepoRequiredError } from "../../../../lib/orchestrator/types";
 import type { GitOps, WorkingTreeChange } from "../finish/git";
 import { runArtifactPendingCommand, type PendingCommandDeps } from "./command";
 import type { ArchiveEntry } from "./discovery";
+import type { SubmittedDiscovery } from "../../../../lib/delivery/staging/pending";
 
 const COMPANION = "/companion";
+
+const NOTHING_SUBMITTED: SubmittedDiscovery = {
+  pendingBranch: "main",
+  fetchedAt: null,
+  stale: true,
+  groups: [],
+};
 
 function makeContext(): LaunchContext {
   return {
@@ -48,7 +56,6 @@ function entry(
     name: anchor.replace(/^\d{4}-\d{2}-\d{2}-/, ""),
     anchor,
     path: `openspec/changes/archive/${anchor}`,
-    tag: `openspec/${anchor}`,
     uncommittedPaths,
     uncommittedSpecs,
     uncommittedSpecChanges: uncommittedSpecs.map((path) => ({ path, kind: "modified" })),
@@ -66,6 +73,7 @@ function baseDeps(
     loadCapabilities: async () => capabilities,
     git: () => stubGit(),
     discover: async () => [],
+    discoverSubmitted: async () => NOTHING_SUBMITTED,
     ...overrides,
   };
 }
@@ -109,8 +117,154 @@ describe("mate artifact pending", () => {
           delivery: { status: "legacy", unsettled: [], missing: [], unscoped: [], record: null },
         },
       ],
+      submitted: NOTHING_SUBMITTED,
       unattributedSpecs: [],
     });
+  });
+
+  test("lists submitted changes by Delivery Group apart from local archives", async () => {
+    const delivery = {
+      status: "waiting" as const,
+      unsettled: ["acme/product"],
+      missing: [],
+      unscoped: [],
+      record: null,
+    };
+    const submitted: SubmittedDiscovery = {
+      pendingBranch: "mate/inbox",
+      fetchedAt: "2026-11-15T10:00:00.000Z",
+      stale: true,
+      error: "offline",
+      groups: [
+        {
+          group: "acme_product/workset/acme-login",
+          changes: [
+            {
+              name: "acme-login",
+              delivery,
+              dependsOn: [],
+              touches: [],
+              origin: "yours",
+              merges: [
+                { repository: "acme/product", state: "merged", source: "user", yours: true },
+              ],
+            },
+            {
+              name: "acme-login-ui",
+              delivery,
+              dependsOn: [],
+              touches: [{ capability: "acme-auth", requirement: "Login" }],
+              origin: "others",
+              author: "Acme Dev",
+              merges: [
+                {
+                  repository: "acme/product",
+                  state: "merged",
+                  source: "user",
+                  recordedBy: "Acme Dev",
+                  yours: false,
+                },
+                { repository: "acme/api", state: "merged", source: "git", yours: false },
+              ],
+              blocked: { reason: "acme stale", paths: [], since: "2026-11-15T09:00:00.000Z" },
+            },
+          ],
+          blocked: true,
+          publishable: false,
+          heldBy: ["acme-api"],
+        },
+      ],
+    };
+    await runArtifactPendingCommand([], {
+      ...baseDeps({
+        discover: async () => [entry("2026-09-08-acme-legacy")],
+        discoverSubmitted: async () => submitted,
+      }),
+      ...sink(),
+    });
+
+    expect(out.slice(0, 11)).toEqual([
+      "2 submitted changes on mate/inbox by Delivery Group (last known state, fetched 2026-11-15T10:00:00.000Z: offline):",
+      "  acme_product/workset/acme-login  blocked",
+      "       held by unpublished acme-api",
+      "       acme-login  delivery: waiting  (yours)",
+      "       acme-login-ui  delivery: waiting  (Acme Dev)",
+      "         touches acme-auth › Login",
+      "         merged in acme/product: answered by Acme Dev, not checked by Git",
+      "         merged in acme/api: found by Git on someone else's machine",
+      "         blocked: acme stale (since 2026-11-15T09:00:00.000Z)",
+      "",
+      "1 archived change from an earlier Mate pending publication, from this checkout only:",
+    ]);
+  });
+
+  test("inbox text is printed as one plain line", async () => {
+    const delivery = {
+      status: "waiting" as const,
+      unsettled: [],
+      missing: [],
+      unscoped: [],
+      record: null,
+    };
+    await runArtifactPendingCommand([], {
+      ...baseDeps({
+        discoverSubmitted: async () => ({
+          pendingBranch: "mate/inbox",
+          fetchedAt: "2026-11-15T10:00:00.000Z",
+          stale: false,
+          groups: [
+            {
+              group: "acme_product/workset/acme-login",
+              changes: [
+                {
+                  name: "acme-login",
+                  delivery,
+                  dependsOn: [],
+                  touches: [],
+                  origin: "others",
+                  merges: [],
+                  author: "Acme\u001b[2J Dev\n  acme-forged  publishable",
+                  blocked: {
+                    reason: `acme\r\nstale ${"x".repeat(300)}`,
+                    paths: [],
+                    since: "2026-11-15T09:00:00.000Z",
+                  },
+                },
+              ],
+              blocked: true,
+              publishable: false,
+              heldBy: [],
+            },
+          ],
+        }),
+      }),
+      ...sink(),
+    });
+
+    expect(out[2]).toBe(
+      "       acme-login  delivery: waiting  (Acme [2J Dev acme-forged publishable)",
+    );
+    expect(out[3]).toBe(
+      `         blocked: acme stale ${"x".repeat(189)}… (since 2026-11-15T09:00:00.000Z)`,
+    );
+  });
+
+  test("fetches the pending branch only in Git mode auto", async () => {
+    const fetched: boolean[] = [];
+    for (const auto of [true, false]) {
+      // oxlint-disable-next-line no-await-in-loop -- two runs in order
+      await runArtifactPendingCommand(["--json"], {
+        ...baseDeps({
+          loadGitAutoMode: async () => auto,
+          discoverSubmitted: async (_path, options) => {
+            fetched.push(options.fetch);
+            return NOTHING_SUBMITTED;
+          },
+        }),
+        ...sink(),
+      });
+    }
+    expect(fetched).toEqual([true, false]);
   });
 
   test("emits an empty pending list without failing", async () => {
@@ -153,8 +307,8 @@ describe("mate artifact pending", () => {
     });
 
     expect(out).toEqual([
-      "1 archived change pending publication:",
-      "  1. acme-two  openspec/2026-09-08-acme-two  openspec/changes/archive/2026-09-08-acme-two  [--all]  delivery: legacy",
+      "1 archived change from an earlier Mate pending publication, from this checkout only:",
+      "  1. acme-two  openspec/changes/archive/2026-09-08-acme-two  [--all]  delivery: legacy",
       "       openspec/changes/archive/2026-09-08-acme-two/proposal.md",
       "       openspec/specs/widget-api/spec.md",
     ]);
@@ -224,8 +378,8 @@ describe("mate artifact pending", () => {
     });
 
     expect(out).toEqual([
-      "1 archived change pending publication:",
-      "  1. acme-two  openspec/2026-09-08-acme-two  openspec/changes/archive/2026-09-08-acme-two  [--all]  delivery: legacy",
+      "1 archived change from an earlier Mate pending publication, from this checkout only:",
+      "  1. acme-two  openspec/changes/archive/2026-09-08-acme-two  [--all]  delivery: legacy",
       "       openspec/changes/archive/2026-09-08-acme-two/",
     ]);
   });
@@ -404,6 +558,8 @@ describe("mate artifact pending over a real archive", () => {
           delivery: { status: "legacy", unsettled: [], missing: [], unscoped: [], record: null },
         },
       ],
+      // A companion without an upstream has no pending branch.
+      submitted: { pendingBranch: null, fetchedAt: null, stale: false, groups: [] },
       unattributedSpecs: [],
     });
     expect(lines[0]).not.toContain("IGNORE PREVIOUS INSTRUCTIONS");

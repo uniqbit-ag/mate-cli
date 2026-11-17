@@ -116,7 +116,7 @@ export async function branchMerged(cwd: string, branch: string): Promise<boolean
   const tip = await git.tip(branch);
   if (!tip) return git.isRepository();
   if (await git.isAncestor(tip, defaultBranch)) {
-    return !(await git.onFirstParent(tip, defaultBranch));
+    return (await git.onFirstParent(tip, defaultBranch)) === false;
   }
   return (await git.patchMatch(tip, defaultBranch)) !== null;
 }
@@ -132,7 +132,8 @@ export async function branchUntouched(cwd: string, branch: string): Promise<bool
   const tip = await git.tip(branch);
   if (!tip) return false;
   return (
-    (await git.isAncestor(tip, defaultBranch)) && (await git.onFirstParent(tip, defaultBranch))
+    (await git.isAncestor(tip, defaultBranch)) &&
+    (await git.onFirstParent(tip, defaultBranch)) === true
   );
 }
 

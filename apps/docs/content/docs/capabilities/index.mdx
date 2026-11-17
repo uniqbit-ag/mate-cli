@@ -109,7 +109,7 @@ OpenSpec records the selected profile in the change's `.openspec.yaml`.
 
 Mate ships the OpenSpec CLI (`@fission-ai/openspec`) at one exact version per
 Mate release. Every OpenSpec process Mate starts runs that copy: setup,
-`mate companion update`, `mate cap openspec`, `mate artifact archive`, and the
+`mate companion update`, `mate cap openspec`, `mate artifact submit` and `publish`, and the
 `openspec` wrapper agents call. Mate does not install, upgrade, or use a
 globally installed `openspec`; a global install of another version stays as it
 is for your other projects. A new OpenSpec version arrives with a new Mate
@@ -146,11 +146,16 @@ Do not edit canonical specs while planning a change.
 
 `openspec archive` is the bridge: it merges the delta requirement blocks into the
 canonical spec and moves the change into `openspec/changes/archive/<date>-<name>/`.
-Use `mate-archive-change` (`mate artifact archive`) to archive: it also records
-the change's delivery branch in `delivery.yaml`, and it may run before that
-branch is merged. `mate-publish-artifact`, built on `mate artifact publish`, is
-the sanctioned terminal flow for the archive and its follow-up Git work; it
-holds an archive back until its delivery branch is merged. The whole sequence,
+Mate runs it at publication, never before the merge. Use `mate-submit-change`
+(`mate artifact submit`) when a change is done: it records the change's delivery
+branch in `delivery.yaml`, validates the change, and pushes its folder to the
+companion's pending branch before that branch is merged; `mate-archive-change`
+remains as a deprecated alias. `mate-publish-artifact`, built on
+`mate artifact publish`, is the sanctioned terminal flow, from any machine: it
+archives the submitted changes of a Delivery Group once its delivery branch is
+merged and pushes them in one commit, without tags. For a change that builds on
+an unpublished one, `mate artifact project` shows the canonical specs as they
+will be. The whole sequence,
 from clarifying intent to publication, is walked through in
 [Your First Change](/docs/scenarios/first-change).
 

@@ -1,4 +1,4 @@
-import { parseRemote } from "../delivery/forge";
+import { parseRemote } from "../delivery/remote";
 import { FactoryError, hasSpaceOrControl } from "./ids";
 
 /** A Git URL a person may ask the factory to clone: where it is, and what it names. */

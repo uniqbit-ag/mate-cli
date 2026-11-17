@@ -12,8 +12,14 @@ metadata:
 # Mate Apply Change
 
 The Apply change stage of the Delivery Path. Before any code changes, it records the
-Working Repository branch the change is delivered through, so archive and publication
+Working Repository branch the change is delivered through, so submit and publication
 later know which merge to wait for. Then it runs the OpenSpec apply workflow.
+
+**Selecting the change.** `openspec list` also names changes awaiting
+publication. A change whose `openspec/changes/<name>/delivery.yaml` says
+`state: submitted` is finished: when the user named no change, leave it out of
+auto-selection and of the choices you offer, and never pick it because it is the only
+one. Check only that `state` line. Apply one only when the user names it.
 
 ## Step 1: Read the branch and the record
 
@@ -68,8 +74,8 @@ a mismatch is informational, and relinking requires explicit user confirmation.
 
 A branch is **protected** when it is the repository's default branch or matches a configured
 protected pattern; `mate artifact link` refuses a
-protected branch unless it is recorded as a direct delivery. Mate never asks the forge,
-so a branch only the forge protects looks unprotected; hence the menu below.
+protected branch unless it is recorded as a direct delivery. Mate never asks the Git host,
+so a branch only the host protects looks unprotected; hence the menu below.
 
 **Isolated session.** When the link result's `session.isolated` is `true` (a Claude
 Code background session outside a linked worktree), Claude Code refuses writes here, so
@@ -169,7 +175,10 @@ its message and ask; never work around it.
 When its result lists `warnings`, a `dependsOn` change is not implemented yet, so this
 change would be built without the code it builds on. Report each warning and ask
 whether to apply the dependency first or continue here. A dependency that is
-implemented but unarchived is no such warning; it only affects archive order.
+implemented but unsubmitted is no such warning; it only affects submit order. A
+submitted or locally active dependency counts as satisfied. For a change with
+`dependsOn`, read the specs it builds on with `mate artifact project "<change-name>" --json`:
+its requirements are not in the canonical specs until the chain is published.
 
 ## Step 3: Apply
 
@@ -194,24 +203,22 @@ folder or an older example. Arguments, commands, paths, and order stay, and nami
 never invokes.
 
 - Above the section, label `/mate-show-me` and `/mate-simplify-code` as optional, in
-  any order; they are not prerequisites for archive.
-- In the section, list `/mate-archive-change <change-name>`, after any required work
-  still open (a failing check, an unanswered question). Name the archive action only
+  any order; they are not prerequisites for submit.
+- In the section, list `/mate-submit-change <change-name>`, after any required work
+  still open (a failing check, an unanswered question). Name the submit action only
   there: omit the reference's completion sentence that also points to
-  `/mate-archive-change`.
-- Several changes on one branch: list their archives in dependency order, and say above
-  the section that this order avoids an advisory archive warning; it is not a gate.
+  `/mate-submit-change`.
+- Several changes on one branch: list their submits in dependency order, and say above
+  the section that this order avoids an advisory submit warning; it is not a gate.
 
 ```text
 Optional, any order: /mate-show-me acme-queue, /mate-simplify-code.
 
 ## Next steps
-1. /mate-archive-change acme-queue
+1. /mate-submit-change acme-queue
 ```
 
 ## Guardrails
 
 - Never push, open a PR, or merge on the user's behalf.
 - Never record a protected branch except as an explicit direct delivery.
-- The forge token, when one is used by `mate artifact link`, is never printed or
-  written; do not read or echo `MATE_GIT_TOKEN`.
