@@ -111,6 +111,27 @@ describe("mate cap friction list", () => {
     expect(document.groups[0].companions).toEqual({ [COMPANION]: 1, "/acme/other": 1 });
   });
 
+  test("shows the paths refusals named and the flags failed commands carried", async () => {
+    record("refusal:artifact:shell", "a", { detail: { paths: ["notes.md"] } });
+    record("refusal:artifact:shell", "b", { detail: { paths: ["/tmp/plan.md"] } });
+    for (let index = 0; index < 2; index++) {
+      record("command:cap acme:1", "c", { kind: "command-failure", detail: { flags: ["--help"] } });
+    }
+
+    await list(["--json"]);
+    const groups = JSON.parse(stdout[0]).groups;
+    stdout = [];
+    await list([]);
+
+    expect(groups).toMatchObject([
+      { fingerprint: "command:cap acme:1", flags: { "--help": 2 }, paths: {} },
+      { fingerprint: "refusal:artifact:shell", paths: { "notes.md": 1, "/tmp/plan.md": 1 } },
+    ]);
+    const text = stdout.join("\n");
+    expect(text).toContain("paths: notes.md ×1, /tmp/plan.md ×1");
+    expect(text).toContain("flags: --help ×2");
+  });
+
   test("lists the groups in the same order as text", async () => {
     record("refusal:secret:read", "a");
     record("refusal:artifact:write", "b");
@@ -183,7 +204,7 @@ describe("mate cap friction list", () => {
     stdout = [];
     await list([]);
     const text = stdout.join("\n");
-    expect(text).toContain(`1 reports; latest expected: ${EXPECTED}`);
+    expect(text).toContain(`1 report; latest expected: ${EXPECTED}`);
     expect(text).toContain("Free reports: 1");
   });
 

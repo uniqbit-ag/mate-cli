@@ -34,6 +34,10 @@ interface FrictionGroup {
   versions: Record<string, number>;
   /** Companion path → event count. */
   companions: Record<string, number>;
+  /** Path a refused call named → event count. */
+  paths: Record<string, number>;
+  /** Flag a failed command carried → event count. */
+  flags: Record<string, number>;
   /** Reports on the group's events, newest first. */
   reports: FrictionReport[];
 }
@@ -48,6 +52,15 @@ interface FrictionSummary {
 
 const newestFirst = (reports: FrictionReport[]) =>
   reports.toSorted((a, b) => b.at.localeCompare(a.at));
+
+/** `detail` is not validated on read. */
+const strings = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+
+/** Counts each name once per event. */
+function tally(counts: Record<string, number>, names: string[]): void {
+  for (const name of new Set(names)) counts[name] = (counts[name] ?? 0) + 1;
+}
 
 /** Grouped by fingerprint; repeats within one session rank first, then the event count. */
 function summarizeFriction(events: FrictionEvent[], reports: FrictionReport[]): FrictionSummary {
@@ -65,10 +78,14 @@ function summarizeFriction(events: FrictionEvent[], reports: FrictionReport[]): 
     const perSession = new Map<string, number>();
     const versions: Record<string, number> = {};
     const companions: Record<string, number> = {};
+    const paths: Record<string, number> = {};
+    const flags: Record<string, number> = {};
     for (const event of grouped) {
       perSession.set(event.sessionId, (perSession.get(event.sessionId) ?? 0) + 1);
       versions[event.mateVersion] = (versions[event.mateVersion] ?? 0) + 1;
       companions[event.companion] = (companions[event.companion] ?? 0) + 1;
+      tally(paths, strings(event.detail.paths));
+      tally(flags, strings(event.detail.flags));
     }
     const times = grouped.map((event) => event.at).toSorted();
     return {
@@ -80,6 +97,8 @@ function summarizeFriction(events: FrictionEvent[], reports: FrictionReport[]): 
       lastSeen: times[times.length - 1],
       versions,
       companions,
+      paths,
+      flags,
       reports: newestFirst(grouped.flatMap((event) => reportsByEvent.get(event.id) ?? [])),
     };
   });
@@ -118,20 +137,29 @@ const counted = (counts: Record<string, number>) =>
     .map(([name, count]) => `${name} ×${count}`)
     .join(", ");
 
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+const minute = (at: string) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`;
+
 function renderGroup(group: FrictionGroup, all: boolean): string {
   const [latest] = group.reports;
+  const named = (label: string, counts: Record<string, number>) =>
+    Object.keys(counts).length > 0 ? [`    ${label}: ${counted(counts)}`] : [];
   return [
     `  ${group.fingerprint}`,
-    `    ${group.events} events in ${group.sessions} sessions, at most ${group.maxPerSession} in one session`,
-    `    first ${group.firstSeen}, last ${group.lastSeen}; mate ${counted(group.versions)}`,
+    `    ${plural(group.events, "event")} in ${plural(group.sessions, "session")}, at most ${group.maxPerSession} in one session`,
+    `    first ${minute(group.firstSeen)}, last ${minute(group.lastSeen)}; mate ${counted(group.versions)}`,
     ...(all ? [`    companions: ${counted(group.companions)}`] : []),
-    ...(latest ? [`    ${group.reports.length} reports; latest expected: ${latest.expected}`] : []),
+    ...named("paths", group.paths),
+    ...named("flags", group.flags),
+    ...(latest
+      ? [`    ${plural(group.reports.length, "report")}; latest expected: ${latest.expected}`]
+      : []),
   ].join("\n");
 }
 
 function renderFreeReport(report: FrictionReport, all: boolean): string {
   return [
-    `  ${report.subject} (${report.kind}${report.cost ? `, ${report.cost}` : ""}) ${report.at}`,
+    `  ${report.subject} (${report.kind}${report.cost ? `, ${report.cost}` : ""}) ${minute(report.at)}`,
     ...(all ? [`    companion: ${report.companion}`] : []),
     `    expected: ${report.expected}`,
     `    evidence: ${report.evidence ?? ""}`,
@@ -188,7 +216,7 @@ export async function runFrictionListCommand(
     return;
   }
   console.log(
-    `Friction in the last ${args.days} days${args.all ? " in all companions" : ""}: ${summary.events} events in ${summary.sessions} sessions`,
+    `Friction in the last ${args.days} days${args.all ? " in all companions" : ""}: ${plural(summary.events, "event")} in ${plural(summary.sessions, "session")}`,
   );
   for (const group of summary.groups) console.log(renderGroup(group, args.all));
   if (summary.freeReports.length > 0) {

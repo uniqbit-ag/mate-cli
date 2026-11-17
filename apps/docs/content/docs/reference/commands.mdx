@@ -845,10 +845,12 @@ repository.
 
 `mate cap friction list` needs the [`friction`](/docs/capabilities#friction)
 capability. It reads the events of the last `N` days, default 30, recorded for
-the resolved companion, and groups them by fingerprint. For each group it shows
-the event count, the number of sessions, the highest count in one session, the
-first and last time seen, the Mate versions, and the number of reports on its
-events with the latest `expected` text. Groups with the most repeats in one
+the resolved companion, and groups them by fingerprint. A fingerprint is
+`refusal:<check>:<tool kind>` or `command:<command> <subcommand>:<exit code>`.
+For each group it shows the event count, the number of sessions, the highest
+count in one session, the first and last time seen, the Mate versions, the paths
+its refusals named and the flags its failed commands carried, and the number of
+reports on its events with the latest `expected` text. Groups with the most repeats in one
 session come first, then those with the most events. Free reports of the
 companion follow in their own section, newest first. With `--json` it prints
 one document with `kind` `friction-list` and `version` 1; each group carries its
