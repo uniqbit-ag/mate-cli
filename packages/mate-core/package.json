@@ -84,7 +84,8 @@
     "@types/bun": "^1.3.14",
     "@types/node": "^26.0.1",
     "@types/react": "^19.2.17",
-    "@types/semver": "^7.7.1"
+    "@types/semver": "^7.7.1",
+    "typescript": "^7.0.2"
   },
   "peerDependencies": {
     "@opentui/core": ">=0.5.14",
