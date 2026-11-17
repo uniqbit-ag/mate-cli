@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { frictionLogDir, readEvents } from "../runtime/friction-log";
 import { nudgeLine } from "../runtime/friction-recorder";
+import { writeFrictionSwitch } from "../runtime/friction-switch";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
 import { evaluate } from "./validate-artifact-path";
@@ -18,7 +19,7 @@ afterEach(() => {
 });
 
 /** A wrapped repository and no launch environment: the guard resolves the companion from the projection. */
-function fixture(capabilities: string[]) {
+function fixture(recording: boolean) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "mate-hook-friction-"));
   tempRoots.push(root);
   const home = path.join(root, "home");
@@ -27,10 +28,8 @@ function fixture(capabilities: string[]) {
   fs.mkdirSync(home);
   fs.mkdirSync(repo);
   fs.mkdirSync(path.join(companion, ".mate", "config"), { recursive: true });
-  fs.writeFileSync(
-    path.join(companion, ".mate", "config", "framework.yaml"),
-    `capabilities:\n${capabilities.map((name) => `  - name: ${name}\n`).join("")}`,
-  );
+  fs.writeFileSync(path.join(companion, ".mate", "config", "framework.yaml"), "capabilities: []\n");
+  if (recording) writeFrictionSwitch(true, home);
   spawnSync("git", ["init", "-q"], { cwd: repo, stdio: "ignore" });
   const registryPath = repoLocalRegistryPath(repo);
   fs.mkdirSync(path.dirname(registryPath), { recursive: true });
@@ -56,7 +55,7 @@ const TRAILER = "Co-Authored-By: Claude <noreply@anthropic.com>";
 
 describe("the Claude guard records refusals as friction", () => {
   test("records one event per check, without a launch environment", async () => {
-    const { home, repo, companion, run } = fixture(["friction"]);
+    const { home, repo, companion, run } = fixture(true);
     fs.writeFileSync(path.join(repo, ".env"), "API_KEY=supersecret\n");
 
     await run("Read", { file_path: path.join(repo, ".env") });
@@ -80,8 +79,8 @@ describe("the Claude guard records refusals as friction", () => {
   });
 
   test("keeps the exit code and message, and adds the nudge line after it", async () => {
-    const selected = fixture(["friction"]);
-    const plain = fixture([]);
+    const selected = fixture(true);
+    const plain = fixture(false);
     const target = (repo: string) => ({ file_path: path.join(repo, "design.md") });
 
     const recorded = await selected.run("Write", target(selected.repo));
@@ -94,26 +93,26 @@ describe("the Claude guard records refusals as friction", () => {
     expect(recorded.stderr.replaceAll(root(selected.repo), "")).toBe(
       `${unrecorded.stderr.replaceAll(root(plain.repo), "")}${nudgeLine(event.id)}\n`,
     );
-    expect(unrecorded.stderr).not.toContain("cap friction report");
+    expect(unrecorded.stderr).not.toContain("friction report");
     expect(fs.existsSync(frictionLogDir(plain.home))).toBe(false);
   });
 
   test("a repeated refusal gets no nudge line", async () => {
-    const { repo, run } = fixture(["friction"]);
+    const { repo, run } = fixture(true);
     const write = () => run("Write", { file_path: path.join(repo, "design.md") });
 
-    expect((await write()).stderr).toContain("cap friction report");
+    expect((await write()).stderr).toContain("friction report");
     const second = await write();
     expect(second.exitCode).toBe(2);
-    expect(second.stderr).not.toContain("cap friction report");
+    expect(second.stderr).not.toContain("friction report");
   });
 
   test("an allowed call records nothing", async () => {
-    const { home, repo, run } = fixture(["friction"]);
+    const { home, repo, run } = fixture(true);
 
     expect((await run("Write", { file_path: path.join(repo, "src", "index.ts") })).exitCode).toBe(
       0,
     );
-    expect(fs.existsSync(frictionLogDir(home))).toBe(false);
+    expect(fs.readdirSync(frictionLogDir(home))).toEqual(["settings.json"]);
   });
 });

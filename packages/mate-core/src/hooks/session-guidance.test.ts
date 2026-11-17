@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { writeFrictionSwitch } from "../runtime/friction-switch";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
 import { buildSessionGuidance } from "./session-guidance";
@@ -60,6 +61,18 @@ afterEach(() => {
 });
 
 describe("session-guidance hook module", () => {
+  test("follows a changed Friction Switch in the next session, with no sync", () => {
+    const { repoRoot } = wrapRepo();
+    const env = { HOME: makeTempDir("session-guidance-home-") };
+
+    writeFrictionSwitch(true, env.HOME);
+    expect(additionalContext(buildSessionGuidance(env, repoRoot).stdout)).toContain("## Friction");
+    writeFrictionSwitch(false, env.HOME);
+    expect(additionalContext(buildSessionGuidance(env, repoRoot).stdout)).not.toContain(
+      "## Friction",
+    );
+  });
+
   test("emits the companion policy as SessionStart additionalContext", () => {
     const { repoRoot, companionPath } = wrapRepo();
 

@@ -6,22 +6,20 @@ import {
   type FrictionRuntime,
   type NewFrictionEvent,
 } from "./friction-log";
+import { readFrictionSwitch } from "./friction-switch";
 import { mateVersion } from "./install";
-import { isCapabilityEnabled, readCompanionPolicy } from "./policy";
 import type { SecretToolCall } from "./secret-guard";
 import { maskSecretValues } from "./secret-values";
 
 /**
  * Turns Mate's own refusals and failed agent-run commands into Friction Events.
  * Called only on the failure path, so an allowed call or a successful command
- * never reads a companion policy or the log. Never throws.
+ * never reads the Friction Switch or the log. Never throws.
  */
 
 export type FrictionCheck = "secret" | "attribution" | "artifact" | "fork";
 /** The adapters' secret-guard classification; "other" for a tool it does not classify. */
 export type ToolKind = SecretToolCall["kind"] | "other";
-
-export const FRICTION_CAPABILITY = "friction";
 
 const MESSAGE_LIMIT = 1_000;
 const COMMAND_LIMIT = 500;
@@ -43,16 +41,12 @@ function record(event: NewFrictionEvent, env: Env): RecordedFriction | null {
 
 /** One line, appended after a refusal or a failed command's own output. */
 export function nudgeLine(id: string): string {
-  return `Wrong or unclear? Run: ${FRAMEWORK_NAME} cap friction report ${id} --kind <bug|unclear> --expected "<what you expected>". Then continue with your task.`;
+  return `Wrong or unclear? Run: ${FRAMEWORK_NAME} friction report ${id} --kind <bug|unclear> --expected "<what you expected>". Then continue with your task.`;
 }
 
-export function frictionSelected(companionPath: string | undefined | null): boolean {
-  if (!companionPath) return false;
-  try {
-    return isCapabilityEnabled(readCompanionPolicy(companionPath), FRICTION_CAPABILITY);
-  } catch {
-    return false;
-  }
+/** An event without a companion would be unreachable: the list and triage filter by companion. */
+export function recordingFor(companionPath: string | undefined | null, env: Env): boolean {
+  return Boolean(companionPath) && readFrictionSwitch(env.HOME);
 }
 
 interface RefusalEvidence {
@@ -123,7 +117,7 @@ export interface RefusalRecord extends RefusalEvidence {
 
 export function recordRefusal(refusal: RefusalRecord): RecordedFriction | null {
   try {
-    if (!frictionSelected(refusal.companionPath)) return null;
+    if (!recordingFor(refusal.companionPath, refusal.env)) return null;
     return record(
       {
         kind: "refusal",
@@ -225,7 +219,7 @@ export function recordCommandFailure(failure: CommandFailureRecord): RecordedFri
       failure.env,
       failure.cwd,
     ).context;
-    if (!frictionSelected(companionPath)) return null;
+    if (!recordingFor(companionPath, failure.env)) return null;
     const detail = commandDetail(failure);
     const recorded = record(
       {
@@ -240,8 +234,8 @@ export function recordCommandFailure(failure: CommandFailureRecord): RecordedFri
       },
       failure.env,
     );
-    // A failed report gets no nudge, so reporting cannot loop.
-    const reporting = detail.command === "cap" && detail.subcommand === "friction";
+    // A failed friction command gets no nudge, so reporting cannot loop.
+    const reporting = detail.command === "friction";
     return recorded && reporting ? { ...recorded, firstInSession: false } : recorded;
   } catch {
     // recording never changes the command's outcome

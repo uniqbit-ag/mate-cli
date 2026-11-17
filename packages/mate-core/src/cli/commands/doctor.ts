@@ -7,7 +7,7 @@ import { parse as parseYaml } from "yaml";
 import { FRAMEWORK_NAME } from "../../framework";
 import { gitEnvironment } from "../../runtime/companion-git";
 import { readEvents } from "../../runtime/friction-log";
-import { FRICTION_CAPABILITY } from "../../runtime/friction-recorder";
+import { readFrictionSwitch } from "../../runtime/friction-switch";
 import { checkoutCommonDir, checkoutAt, sameClone } from "../../runtime/git-layout";
 import { physicalPath } from "../../runtime/physical-path";
 import { otherServingClaudeWrapRoot } from "../../runtime/serving-claude-wrap";
@@ -136,7 +136,7 @@ export interface DoctorReport {
   resolutionFailures: Array<{ companionPath: string; message: string }>;
   /** Present inside a Git Checkout of a linked clone, or a worktree Git no longer recognizes. */
   checkout?: DoctorCheckout;
-  /** Present when the companion selects the `friction` capability. */
+  /** Present while the Friction Switch is on. */
   friction?: DoctorFriction;
 }
 
@@ -589,10 +589,7 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
     report.pluginCapabilities = inspection.capabilities;
   }
 
-  if (
-    root.rootPath &&
-    (root.config?.capabilities ?? []).some((entry) => entry.name === FRICTION_CAPABILITY)
-  ) {
+  if (root.rootPath && readFrictionSwitch(env.HOME)) {
     report.friction = collectFriction(root.rootPath, env, deps.now);
   }
 

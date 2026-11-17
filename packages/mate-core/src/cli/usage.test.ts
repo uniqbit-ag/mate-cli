@@ -40,3 +40,9 @@ test("lists studio", () => {
 test("lists companion update", () => {
   expect(usage()).toContain("mate companion update [--yes]");
 });
+
+test("lists the friction commands", () => {
+  for (const subcommand of ["on", "off", "status", "list", "report"]) {
+    expect(usage()).toContain(`mate friction ${subcommand}`);
+  }
+});

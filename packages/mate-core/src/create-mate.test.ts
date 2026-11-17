@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { withEnv } from "../../../test/fixtures";
 import { frictionLogDir, readEvents } from "./runtime/friction-log";
 import { nudgeLine } from "./runtime/friction-recorder";
+import { writeFrictionSwitch } from "./runtime/friction-switch";
 
 let mainImpl: (argv?: string[]) => Promise<void> = async () => {};
 
@@ -123,9 +124,11 @@ describe("createMate records a failed agent-run command as friction", () => {
     fs.mkdirSync(path.join(companion, ".mate", "config"), { recursive: true });
     fs.writeFileSync(
       path.join(companion, ".mate", "config", "framework.yaml"),
-      "capabilities:\n  - name: friction\n",
+      "capabilities: []\n",
     );
-    return { home: path.join(root, "home"), companion };
+    const home = path.join(root, "home");
+    writeFrictionSwitch(true, home);
+    return { home, companion };
   }
 
   /** Runs `argv` with a main that prints and exits `exitCode`; returns what went to stderr and stdout. */
@@ -233,7 +236,7 @@ describe("createMate records a failed agent-run command as friction", () => {
     expect(event.detail.errorText).toBe("fatal: https://x:***@example.com/acme");
   });
 
-  test("a failed JSON command keeps its stdout; a repeat and a failed report get no nudge", async () => {
+  test("a failed JSON command keeps its stdout; a repeat and a failed friction command get no nudge", async () => {
     const { home, companion } = companionSelectingFriction();
     const env = {
       ...noSession,
@@ -247,14 +250,16 @@ describe("createMate records a failed agent-run command as friction", () => {
 
     const first = await runFailing(env, 1, json, printJson);
     const repeat = await runFailing(env, 1, json, printJson);
-    const report = await runFailing(env, 1, ["bun", "mate", "cap", "friction", "report", "F-0"]);
+    const report = await runFailing(env, 1, ["bun", "mate", "friction", "report", "F-0"]);
+    const off = await runFailing(env, 1, ["bun", "mate", "friction", "off"]);
 
     expect(first.stdout).toEqual([document]);
     expect(first.printed).toHaveLength(1);
-    expect(String(first.printed[0])).toContain("cap friction report");
+    expect(String(first.printed[0])).toContain("friction report");
     expect(repeat.printed).toEqual([]);
     expect(report.printed).toEqual(["Unknown flag: --bogus"]);
-    expect(readEvents({ sinceDays: 1, homeDir: home })).toHaveLength(3);
+    expect(off.printed).toEqual(["Unknown flag: --bogus"]);
+    expect(readEvents({ sinceDays: 1, homeDir: home })).toHaveLength(4);
   });
 
   test("records nothing without an agent session id", async () => {
@@ -262,7 +267,7 @@ describe("createMate records a failed agent-run command as friction", () => {
 
     await runFailing({ ...noSession, HOME: home, MATE_ARTIFACT_PATH: companion }, 1);
 
-    expect(fs.existsSync(frictionLogDir(home))).toBe(false);
+    expect(fs.readdirSync(frictionLogDir(home))).toEqual(["settings.json"]);
   });
 
   test("records a command that ends with process.exit()", async () => {
@@ -293,6 +298,6 @@ describe("createMate records a failed agent-run command as friction", () => {
       0,
     );
 
-    expect(fs.existsSync(frictionLogDir(home))).toBe(false);
+    expect(fs.readdirSync(frictionLogDir(home))).toEqual(["settings.json"]);
   });
 });

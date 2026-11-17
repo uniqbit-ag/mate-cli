@@ -1,13 +1,13 @@
-import { getActiveDistribution } from "../../../distribution";
-import { FRAMEWORK_NAME } from "../../../framework";
-import { resolveInstallContext } from "../../../lib/install";
-import type { FrameworkConfig } from "../../../lib/orchestrator/types";
-import { currentSession } from "../../../lib/session-attribution";
-import { usageDays } from "../../../lib/usage/window";
+import { getActiveDistribution } from "../../distribution";
+import { FRAMEWORK_NAME } from "../../framework";
+import { resolveInstallContext } from "../../lib/install";
+import { currentSession } from "../../lib/session-attribution";
+import { usageDays } from "../../lib/usage/window";
 import {
   appendReport,
   companionFilter,
   findEvent,
+  frictionLogDir,
   readEvents,
   readReports,
   REPORT_COSTS,
@@ -16,11 +16,10 @@ import {
   type FrictionReport,
   type ReportCost,
   type ReportKind,
-} from "../../../runtime/friction-log";
-import { FRICTION_CAPABILITY } from "../../../runtime/friction-recorder";
-import { scanContent, type SecretFinding } from "../../../runtime/secret-scan";
-import { ensureCapabilityEnabled } from "../../plugin-commands";
-import { writeJsonStdout } from "../../write-json-stdout";
+} from "../../runtime/friction-log";
+import { readFrictionSwitch, writeFrictionSwitch } from "../../runtime/friction-switch";
+import { scanContent, type SecretFinding } from "../../runtime/secret-scan";
+import { writeJsonStdout } from "../write-json-stdout";
 
 interface FrictionGroup {
   fingerprint: string;
@@ -166,11 +165,15 @@ function renderFreeReport(report: FrictionReport, all: boolean): string {
   ].join("\n");
 }
 
+type ResolveContext = () => Promise<{ companionPath?: string }>;
+
 export interface FrictionListDeps {
-  resolveContext?: () => Promise<{ companionPath?: string; config: FrameworkConfig }>;
+  resolveContext?: ResolveContext;
   homeDir?: string;
   now?: Date;
 }
+
+const RECORDING_OFF_LINE = `Friction recording is off on this machine: nothing new is recorded. Turn it on with ${FRAMEWORK_NAME} friction on.`;
 
 export async function runFrictionListCommand(
   argv: string[],
@@ -183,12 +186,6 @@ export async function runFrictionListCommand(
     return;
   }
   const context = await (deps.resolveContext ?? (() => resolveInstallContext()))();
-  if (
-    !(await ensureCapabilityEnabled(FRICTION_CAPABILITY, {
-      loadConfig: async () => context.config,
-    }))
-  )
-    return;
   const companion = args.all ? "" : (context.companionPath ?? "");
   const window = { sinceDays: args.days, homeDir: deps.homeDir, now: deps.now };
   const inCompanion = companionFilter(companion);
@@ -211,6 +208,7 @@ export async function runFrictionListCommand(
     });
     return;
   }
+  if (!readFrictionSwitch(deps.homeDir)) console.log(RECORDING_OFF_LINE);
   if (summary.events === 0 && summary.freeReports.length === 0) {
     console.log(`No friction recorded in the last ${args.days} days.`);
     return;
@@ -309,19 +307,19 @@ const cut = (text: string) => text.slice(0, TEXT_LIMIT);
 const cutOrNull = (text: string | undefined) => (text === undefined ? null : cut(text));
 
 export interface FrictionReportDeps {
-  resolveContext?: () => Promise<{ companionPath?: string; config: FrameworkConfig }>;
+  resolveContext?: ResolveContext;
   homeDir?: string;
   now?: Date;
   env?: Record<string, string | undefined>;
   scan?: (filePath: string, content: string) => Promise<SecretFinding[]>;
 }
 
-const REPORT_USAGE = `${FRAMEWORK_NAME} cap friction report [<event-id>] --kind <${REPORT_KINDS.join("|")}> --expected <text>`;
+const REPORT_USAGE = `${FRAMEWORK_NAME} friction report [<event-id>] --kind <${REPORT_KINDS.join("|")}> --expected <text>`;
 
 async function buildReport(
   args: ReportArgs,
   deps: FrictionReportDeps,
-): Promise<Omit<FrictionReport, "v" | "id" | "at"> | null> {
+): Promise<Omit<FrictionReport, "v" | "id" | "at">> {
   const kind = oneOf<ReportKind>(REPORT_KINDS, args.kind, "--kind");
   if (!kind) {
     throw new ReportRefusal(
@@ -335,14 +333,13 @@ async function buildReport(
   }
   const cost = oneOf<ReportCost>(REPORT_COSTS, args.cost, "--cost") ?? null;
 
-  const context = await (deps.resolveContext ?? (() => resolveInstallContext()))();
-  if (
-    !(await ensureCapabilityEnabled(FRICTION_CAPABILITY, {
-      loadConfig: async () => context.config,
-    }))
-  ) {
-    return null;
+  if (!readFrictionSwitch(deps.homeDir)) {
+    throw new ReportRefusal(
+      "recording-off",
+      `Friction recording is off on this machine; nothing was recorded. A person turns it on with ${FRAMEWORK_NAME} friction on.`,
+    );
   }
+  const context = await (deps.resolveContext ?? (() => resolveInstallContext()))();
 
   let subject: string;
   const evidence = present(args.evidence);
@@ -435,10 +432,6 @@ export async function runFrictionReportCommand(
   const json = argv.includes("--json");
   try {
     const report = await buildReport(parseReportArgs(argv), deps);
-    if (!report) {
-      if (json) await writeError("capability-disabled", "The friction capability is not enabled.");
-      return;
-    }
     let recorded: FrictionReport;
     try {
       recorded = appendReport(report, { homeDir: deps.homeDir, now: deps.now });
@@ -468,4 +461,83 @@ export async function runFrictionReportCommand(
 
 async function writeError(code: string, message: string): Promise<void> {
   await writeJsonStdout({ kind: "error", version: 1, error: { code, message } });
+}
+
+export interface FrictionSwitchDeps {
+  homeDir?: string;
+  env?: Record<string, string | undefined>;
+}
+
+function refuseArguments(argv: string[], allowed: string[]): boolean {
+  const unknown = argv.find((arg) => !allowed.includes(arg));
+  if (unknown === undefined) return false;
+  console.error(`Unknown argument: ${unknown}`);
+  process.exitCode = 1;
+  return true;
+}
+
+/** Only a person changes the switch: Mate's base permission lets an agent run any mate command unprompted. */
+export function runFrictionSwitchCommand(
+  recording: boolean,
+  argv: string[],
+  deps: FrictionSwitchDeps = {},
+): void {
+  if (refuseArguments(argv, [])) return;
+  const command = `${FRAMEWORK_NAME} friction ${recording ? "on" : "off"}`;
+  if (currentSession(deps.env ?? process.env)) {
+    console.error(
+      `${command} changes a person's setting: run it in your own terminal, not in an agent session. Nothing was changed.`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+  writeFrictionSwitch(recording, deps.homeDir);
+  const dir = frictionLogDir(deps.homeDir);
+  console.log(
+    recording
+      ? `Friction recording is on: Mate records its refusals and failed commands in agent sessions in ${dir}.`
+      : `Friction recording is off. The records made so far stay in ${dir}; delete that folder to remove them.`,
+  );
+}
+
+export async function runFrictionStatusCommand(
+  argv: string[],
+  deps: { homeDir?: string } = {},
+): Promise<void> {
+  if (refuseArguments(argv, ["--json"])) return;
+  const recording = readFrictionSwitch(deps.homeDir);
+  const logDir = frictionLogDir(deps.homeDir);
+  if (argv.includes("--json")) {
+    await writeJsonStdout({ kind: "friction-status", version: 1, recording, logDir });
+    return;
+  }
+  console.log(`Friction recording is ${recording ? "on" : "off"}. Friction Log: ${logDir}`);
+}
+
+export const FRICTION_SUBCOMMANDS = ["on", "off", "status", "list", "report"] as const;
+
+export async function runFrictionCommand(
+  subcommand: string | undefined,
+  argv: string[],
+): Promise<void> {
+  switch (subcommand) {
+    case "on":
+    case "off":
+      runFrictionSwitchCommand(subcommand === "on", argv);
+      return;
+    case "status":
+      await runFrictionStatusCommand(argv);
+      return;
+    case "list":
+      await runFrictionListCommand(argv);
+      return;
+    case "report":
+      await runFrictionReportCommand(argv);
+      return;
+    default:
+      console.error(
+        `${subcommand ? `Unknown friction subcommand: ${subcommand}. ` : ""}Usage: ${FRAMEWORK_NAME} friction <${FRICTION_SUBCOMMANDS.join("|")}>`,
+      );
+      process.exitCode = 1;
+  }
 }

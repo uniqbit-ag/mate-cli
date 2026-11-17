@@ -69,24 +69,25 @@ describe("mate CLI e2e: setup, link and doctor", () => {
     expect(config).not.toContain("react-doctor");
   });
 
-  test("setup omits friction by default and saves it when selected", async () => {
-    const configOf = async (scenario: E2EScenario) =>
-      fs.readFile(path.join(scenario.companion, ".mate", "config", "framework.yaml"), "utf8");
-    const plain = await createScenario("mate-cli-e2e-setup-friction-default-");
-    const selected = await createScenario("mate-cli-e2e-setup-friction-");
+  /** Setup saves an unknown name as given; no plugin acts on it. */
+  test("setup offers no friction capability: selecting it writes no friction guidance", async () => {
+    const scenario = await createScenario("mate-cli-e2e-setup-retired-capability-");
 
-    expect((await setupCompanion(plain)).exitCode).toBe(0);
-    expect(
-      (
-        await setupCompanion(selected, [], {
-          allowedAgents: ["claude"],
-          capabilities: ["friction"],
-        })
-      ).exitCode,
-    ).toBe(0);
+    const result = await setupCompanion(scenario, [], {
+      allowedAgents: ["claude", "opencode"],
+      capabilities: ["openspec", "rtk", "friction"],
+    });
+    expect(result.exitCode).toBe(0);
+    expect((await installCompanion(scenario)).exitCode).toBe(0);
 
-    expect(await configOf(plain)).not.toContain("friction");
-    expect(await configOf(selected)).toContain("name: friction");
+    const read = (name: string) =>
+      fs.readFile(path.join(scenario.companion, name), "utf8").catch(() => "");
+    // rtk's entry shows that capability contributions were reconciled.
+    expect(await read(".claude/settings.local.json")).toContain("Bash(rtk:*)");
+    expect(await read(".claude/settings.local.json")).not.toContain("cap friction");
+    for (const name of ["CLAUDE.md", "AGENTS.md"]) {
+      expect(await read(name)).not.toContain("## Friction");
+    }
   });
 
   test("flagged setup persists selected package managers", async () => {

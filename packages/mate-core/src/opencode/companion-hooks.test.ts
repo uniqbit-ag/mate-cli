@@ -16,6 +16,7 @@ import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { MATE_ENV } from "../runtime/env-names";
 import { frictionLogDir, readEvents } from "../runtime/friction-log";
 import { nudgeLine } from "../runtime/friction-recorder";
+import { writeFrictionSwitch } from "../runtime/friction-switch";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
 import { ROUTE_SYNC_MARKER, TOKENSAVE_DB } from "../runtime/tokensave-route";
@@ -485,7 +486,7 @@ describe("OpenCode tokensave routing", () => {
 
 describe("OpenCode companion hooks record refusals as friction", () => {
   /** A wrapped repository and no launch environment, as in a plain `opencode` run. */
-  async function wrappedWithFriction(capabilities: string[]) {
+  async function wrappedWithFriction(recording: boolean) {
     const root = await makeTempDir("mate-opencode-friction-");
     const repo = path.join(root, "repo");
     const companion = path.join(root, "companion");
@@ -495,8 +496,9 @@ describe("OpenCode companion hooks record refusals as friction", () => {
     await fs.mkdir(home);
     await fs.writeFile(
       path.join(companion, ".mate", "config", "framework.yaml"),
-      `capabilities:\n${capabilities.map((name) => `  - name: ${name}\n`).join("")}`,
+      "capabilities: []\n",
     );
+    if (recording) writeFrictionSwitch(true, home);
     spawnSync("git", ["init", "-q"], { cwd: repo, stdio: "ignore" });
     await wrapRepo(repo, companion);
     const context = readContext(noLaunchEnvironment(), repo);
@@ -514,7 +516,7 @@ describe("OpenCode companion hooks record refusals as friction", () => {
   }
 
   test("records one event per check, without a launch environment", async () => {
-    const { repo, companion, home, call } = await wrappedWithFriction(["friction"]);
+    const { repo, companion, home, call } = await wrappedWithFriction(true);
     const trailer = "Co-Authored-By: Claude <noreply@anthropic.com>";
 
     await call("read", { filePath: path.join(repo, ".env") });
@@ -534,8 +536,8 @@ describe("OpenCode companion hooks record refusals as friction", () => {
   });
 
   test("rethrows the refusal with its message, and the nudge line after it", async () => {
-    const selected = await wrappedWithFriction(["friction"]);
-    const plain = await wrappedWithFriction([]);
+    const selected = await wrappedWithFriction(true);
+    const plain = await wrappedWithFriction(false);
 
     const recorded = await selected.call("write", {
       filePath: path.join(selected.repo, "spec.md"),
@@ -548,17 +550,17 @@ describe("OpenCode companion hooks record refusals as friction", () => {
       `${unrecorded?.message.replaceAll(root(plain.repo), "")}\n${nudgeLine(event.id)}`,
     );
     expect(unrecorded?.message).toContain(ARTIFACT_REFUSAL_HEADLINE);
-    expect(unrecorded?.message).not.toContain("cap friction report");
+    expect(unrecorded?.message).not.toContain("friction report");
     await expect(fs.access(frictionLogDir(plain.home))).rejects.toThrow();
   });
 
   test("a repeated refusal gets no nudge line", async () => {
-    const { repo, call } = await wrappedWithFriction(["friction"]);
+    const { repo, call } = await wrappedWithFriction(true);
     const write = () => call("write", { filePath: path.join(repo, "spec.md") });
 
-    expect((await write())?.message).toContain("cap friction report");
+    expect((await write())?.message).toContain("friction report");
     const second = await write();
     expect(second?.message).toContain(ARTIFACT_REFUSAL_HEADLINE);
-    expect(second?.message).not.toContain("cap friction report");
+    expect(second?.message).not.toContain("friction report");
   });
 });

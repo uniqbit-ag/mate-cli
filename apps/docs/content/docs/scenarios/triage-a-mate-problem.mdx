@@ -54,7 +54,7 @@ Each run writes a new folder at `~/.mate/triage/<UTC time>/`. Folders older than
 | `context.md`             | Mate version, how it was invoked, operating system, JavaScript runtime, the agents found, the folder, the issue repository, the doctor report. |
 | `PLAYBOOK.md`            | The instructions the agent follows, shipped with your Mate version.                                                                            |
 | `prompt.md`              | The seed prompt that points the agent at `PLAYBOOK.md` and `context.md`.                                                                       |
-| `friction-events.jsonl`  | The [friction](/docs/capabilities#friction) events of the last 30 days, when there are any.                                                    |
+| `friction-events.jsonl`  | The [friction](/docs/concepts/friction) events of the last 30 days, when there are any.                                                        |
 | `friction-reports.jsonl` | The agents' friction reports of the last 30 days, when there are any.                                                                          |
 
 The friction files hold only the records of the companion the folder belongs

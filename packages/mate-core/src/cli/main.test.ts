@@ -11,6 +11,7 @@ import * as companionCmd from "./commands/companion/companion";
 import * as hubCmd from "./commands/companion/hub";
 import * as configCmd from "./commands/config";
 import * as doctorCmd from "./commands/doctor";
+import * as frictionCmd from "./commands/friction";
 import * as installCmd from "./commands/install";
 import * as claudeCmd from "./commands/launch/claude";
 import * as opencodeCmd from "./commands/launch/opencode";
@@ -38,6 +39,7 @@ const BUILT_IN_COMMANDS = [
   "studio",
   "config",
   "doctor",
+  "friction",
   "cap",
   "update",
   "working",
@@ -63,6 +65,7 @@ describe("command gating", () => {
     spies.push(
       spyOn(updateCmd, "runUpdateCommand").mockImplementation(record("update")),
       spyOn(doctorCmd, "runDoctorCommand").mockImplementation(record("doctor")),
+      spyOn(frictionCmd, "runFrictionCommand").mockImplementation(record("friction")),
       spyOn(companionCmd, "runCompanionCommand").mockImplementation(record("companion")),
       spyOn(hubCmd, "runHubCommand").mockImplementation(record("hub")),
       spyOn(configCmd, "runConfigCommand").mockImplementation(record("config")),
@@ -313,6 +316,23 @@ describe("command gating", () => {
     await main(["node", "mate", "working", "cleanup"], deps);
     expect(gateCalls).toEqual([]);
     expect(dispatched).toEqual(["working"]);
+  });
+
+  test("friction on, off and status run without companion selection or install preflight", async () => {
+    for (const subcommand of ["on", "off", "status"]) {
+      const { gateCalls, deps } = recordingDeps({ companion: false, installOk: false });
+      await main(["node", "mate", "friction", subcommand], deps);
+      expect(gateCalls).toEqual([]);
+    }
+    expect(dispatched).toEqual(["friction", "friction", "friction"]);
+  });
+
+  test("friction list and report keep companion selection and install preflight", async () => {
+    for (const subcommand of ["list", "report"]) {
+      const { gateCalls, deps } = recordingDeps();
+      await main(["node", "mate", "friction", subcommand], deps);
+      expect(gateCalls).toEqual(["companion", "install"]);
+    }
   });
 
   test("wrap declares companion selection and install preflight", async () => {
@@ -837,6 +857,25 @@ describe("plugin CLI commands", () => {
 
       await main(["node", "mate", "cap", "acme-discovery", "mcp"], okDeps);
       expect(received).toEqual([[]]);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      stderrSpy.mockRestore();
+      process.exitCode = originalExitCode ?? 0;
+    }
+  });
+
+  test("cap friction names no command", async () => {
+    const originalExitCode = process.exitCode;
+    const writes: string[] = [];
+    const stderrSpy = spyOn(process.stderr, "write").mockImplementation((chunk: unknown) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    activate(makePlugin("acme"));
+
+    try {
+      await main(["node", "mate", "cap", "friction", "list"], okDeps);
+      expect(writes.join("")).toContain("unknown capability command: friction");
       expect(process.exitCode).toBe(1);
     } finally {
       stderrSpy.mockRestore();

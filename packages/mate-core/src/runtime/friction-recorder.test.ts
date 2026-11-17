@@ -5,16 +5,16 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { frictionLogDir, readEvents } from "./friction-log";
-import { mateVersion } from "./install";
 import {
   commandDetail,
   commandFingerprint,
-  frictionSelected,
   nudgeLine,
   recordRefusal,
   refusalDetail,
   type RefusalRecord,
 } from "./friction-recorder";
+import { writeFrictionSwitch } from "./friction-switch";
+import { mateVersion } from "./install";
 
 const tempRoots: string[] = [];
 
@@ -28,23 +28,19 @@ afterEach(() => {
   for (const dir of tempRoots.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-function companion(capabilities: string[]): string {
+/** A companion whose configuration lists no capability. */
+function companion(): string {
   const dir = tempDir("mate-friction-companion-");
   fs.mkdirSync(path.join(dir, ".mate", "config"), { recursive: true });
-  fs.writeFileSync(
-    path.join(dir, ".mate", "config", "framework.yaml"),
-    `capabilities:\n${capabilities.map((name) => `  - name: ${name}\n`).join("")}`,
-  );
+  fs.writeFileSync(path.join(dir, ".mate", "config", "framework.yaml"), "capabilities: []\n");
   return dir;
 }
 
-describe("frictionSelected", () => {
-  test("follows the companion's capability selection", () => {
-    expect(frictionSelected(companion(["friction"]))).toBe(true);
-    expect(frictionSelected(companion(["rtk"]))).toBe(false);
-    expect(frictionSelected("")).toBe(false);
-  });
-});
+function recordingHome(): string {
+  const home = tempDir("mate-friction-home-");
+  writeFrictionSwitch(true, home);
+  return home;
+}
 
 describe("refusalDetail", () => {
   test("cuts message, command and paths to their limits", () => {
@@ -133,9 +129,9 @@ describe("recordRefusal", () => {
     });
   }
 
-  test("appends one refusal event when the companion selects friction", () => {
-    const home = tempDir("mate-friction-home-");
-    const selected = companion(["friction"]);
+  test("appends one refusal event while recording is on, whatever the companion configures", () => {
+    const home = recordingHome();
+    const selected = companion();
     record(selected, home);
 
     const [event] = readEvents({ sinceDays: 1, homeDir: home });
@@ -151,9 +147,9 @@ describe("recordRefusal", () => {
   });
 
   test("keeps no value of a secret-named variable in a refused command", () => {
-    const home = tempDir("mate-friction-home-");
+    const home = recordingHome();
     const secret = "acme-secret-value-123";
-    record(companion(["friction"]), home, {
+    record(companion(), home, {
       check: "attribution",
       toolKind: "shell",
       message: `refused: git push https://x:${secret}@example.com/acme`,
@@ -167,8 +163,8 @@ describe("recordRefusal", () => {
   });
 
   test("a refused secret read leaves neither file name nor message", () => {
-    const home = tempDir("mate-friction-home-");
-    record(companion(["friction"]), home, {
+    const home = recordingHome();
+    record(companion(), home, {
       check: "secret",
       toolKind: "read",
       message: "Mate refused to read .env.production",
@@ -184,8 +180,8 @@ describe("recordRefusal", () => {
   });
 
   test("returns the event's id; only a session's first refusal of a kind is first", () => {
-    const home = tempDir("mate-friction-home-");
-    const selected = companion(["friction"]);
+    const home = recordingHome();
+    const selected = companion();
 
     const first = record(selected, home);
     const second = record(selected, home);
@@ -197,9 +193,9 @@ describe("recordRefusal", () => {
     expect(otherSession?.firstInSession).toBe(true);
   });
 
-  test("a companion without friction creates no folder", () => {
+  test("recording off writes nothing and creates no folder", () => {
     const home = tempDir("mate-friction-home-");
-    expect(record(companion(["rtk"]), home)).toBeNull();
+    expect(record(companion(), home)).toBeNull();
 
     expect(fs.existsSync(frictionLogDir(home))).toBe(false);
   });
@@ -255,7 +251,8 @@ describe("nudgeLine", () => {
     const line = nudgeLine("F-12ab");
 
     expect(line).toContain("F-12ab");
-    expect(line).toContain("mate cap friction report");
+    expect(line).toContain("mate friction report");
+    expect(line).not.toContain("cap friction");
     expect(line).toContain("continue with your task");
     expect(line).not.toContain("\n");
   });

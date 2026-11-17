@@ -4,7 +4,6 @@ import {
   createClaudePlugin,
   createCompanionMentionsPlugin,
   createContextModePlugin,
-  createFrictionPlugin,
   createGraphifyPlugin,
   createOpenCodePlugin,
   createOpenspecPlugin,
@@ -27,7 +26,6 @@ const graphify = createGraphifyPlugin();
 const context7 = createContext7Plugin();
 const contextMode = createContextModePlugin();
 const companionMentions = createCompanionMentionsPlugin();
-const friction = createFrictionPlugin();
 
 const cli = createMate({
   config: {
@@ -51,7 +49,6 @@ const cli = createMate({
     { plugin: context7, policy: "optional" },
     { plugin: contextMode, policy: "optional" },
     { plugin: companionMentions, policy: "optional" },
-    { plugin: friction, policy: "optional" },
   ],
 });
 

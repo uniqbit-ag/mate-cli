@@ -20,7 +20,9 @@ import type {
 } from "../../tools/setup/plugin";
 import { inspectClaudePluginDirectories } from "../../tools/setup";
 import { createClaudePlugin } from "../../tools/setup/providers/claude";
+import * as frictionLog from "../../runtime/friction-log";
 import { appendEvent, frictionLogFile } from "../../runtime/friction-log";
+import { writeFrictionSwitch } from "../../runtime/friction-switch";
 import { createStartupProgress } from "../../lib/components/startup-progress";
 import { collectDoctorReport, runDoctorCommand, type DoctorReport } from "./doctor";
 
@@ -1343,9 +1345,11 @@ describe("Claude plugins of a distribution's Capabilities", () => {
 describe("doctor friction", () => {
   const now = new Date("2027-03-14T12:00:00Z");
 
-  async function companion(capabilities: FrameworkConfig["capabilities"]) {
+  /** The configuration lists no friction capability: the switch alone decides. */
+  async function companion(capabilities: FrameworkConfig["capabilities"] = [], recording = true) {
     const root = await makeTempDir("doctor-friction-");
     const home = path.join(root, "home");
+    if (recording) writeFrictionSwitch(true, home);
     const configPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
     await fs.mkdir(path.dirname(configPath), { recursive: true });
     await new ConfigStore(configPath).save({ allowedAgents: ["claude"], capabilities });
@@ -1381,7 +1385,7 @@ describe("doctor friction", () => {
   }
 
   test("reports the week's events and the most frequent fingerprint", async () => {
-    const fixture = await companion([{ name: "friction" }]);
+    const fixture = await companion();
     record(fixture.root, fixture.home, "refusal:secret:read");
     record(fixture.root, fixture.home, "refusal:artifact:write");
     record(fixture.root, fixture.home, "refusal:artifact:write");
@@ -1400,7 +1404,7 @@ describe("doctor friction", () => {
   });
 
   test("reports zero events and a null top fingerprint without events", async () => {
-    const fixture = await companion([{ name: "friction" }]);
+    const fixture = await companion();
 
     const report = JSON.parse(await doctor(fixture, ["--json"])) as DoctorReport;
     expect(report.friction).toEqual({ days: 7, events: 0, top: null });
@@ -1408,20 +1412,26 @@ describe("doctor friction", () => {
   });
 
   test("an unreadable log counts as zero events", async () => {
-    const fixture = await companion([{ name: "friction" }]);
+    const fixture = await companion();
     await fs.mkdir(frictionLogFile("2027-03", fixture.home), { recursive: true });
 
     const report = JSON.parse(await doctor(fixture, ["--json"])) as DoctorReport;
     expect(report.friction).toEqual({ days: 7, events: 0, top: null });
   });
 
-  test("reports nothing when the capability is not selected", async () => {
-    const fixture = await companion([{ name: "openspec" }]);
+  test("reports nothing and reads no log while recording is off", async () => {
+    const fixture = await companion([{ name: "openspec" }], false);
     record(fixture.root, fixture.home, "refusal:secret:read");
+    const reads = spyOn(frictionLog, "readEvents");
 
-    const report = JSON.parse(await doctor(fixture, ["--json"])) as DoctorReport;
-    expect(report.friction).toBeUndefined();
-    expect(await doctor(fixture, [])).not.toContain("Friction");
+    try {
+      const report = JSON.parse(await doctor(fixture, ["--json"])) as DoctorReport;
+      expect(report.friction).toBeUndefined();
+      expect(await doctor(fixture, [])).not.toContain("Friction");
+      expect(reads).not.toHaveBeenCalled();
+    } finally {
+      reads.mockRestore();
+    }
   });
 });
 

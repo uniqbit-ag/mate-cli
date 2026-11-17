@@ -4,17 +4,23 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
-import { resetActiveDistribution, setActiveDistribution } from "../../../distribution";
+import { resetActiveDistribution, setActiveDistribution } from "../../distribution";
 import {
   appendEvent,
   appendReport,
   frictionLogDir,
   readReports,
   type NewFrictionEvent,
-} from "../../../runtime/friction-log";
-import { createFrictionPlugin } from "../../../tools/setup/capabilities/friction";
-import { PluginRegistry } from "../../../tools/setup/registry";
-import { runFrictionListCommand, runFrictionReportCommand } from "./friction";
+} from "../../runtime/friction-log";
+import { readFrictionSwitch, writeFrictionSwitch } from "../../runtime/friction-switch";
+import { PluginRegistry } from "../../tools/setup/registry";
+import {
+  runFrictionCommand,
+  runFrictionListCommand,
+  runFrictionReportCommand,
+  runFrictionStatusCommand,
+  runFrictionSwitchCommand,
+} from "./friction";
 
 const COMPANION = "/acme/companion";
 const EXPECTED = "editing a tracked Markdown file is allowed";
@@ -37,8 +43,9 @@ beforeEach(() => {
   }) as never;
   setActiveDistribution({
     config: { runtime: "bun", version: "1.0.0" },
-    registry: new PluginRegistry([{ plugin: createFrictionPlugin(), policy: "optional" }]),
+    registry: new PluginRegistry([]),
   });
+  writeFrictionSwitch(true, home);
 });
 
 afterEach(() => {
@@ -67,15 +74,15 @@ function record(fingerprint: string, sessionId: string, overrides: Partial<NewFr
   );
 }
 
-function list(argv: string[], capabilities = [{ name: "friction" }]) {
+function list(argv: string[]) {
   return runFrictionListCommand(argv, {
-    resolveContext: async () => ({ companionPath: COMPANION, config: { capabilities } as never }),
+    resolveContext: async () => ({ companionPath: COMPANION }),
     homeDir: home,
     now,
   });
 }
 
-describe("mate cap friction list", () => {
+describe("mate friction list", () => {
   test("ranks repeats within one session first and reports a group's counts", async () => {
     for (const session of ["a", "b", "c", "d", "e", "f"]) record("refusal:secret:read", session);
     for (let index = 0; index < 4; index++) record("refusal:artifact:write", "g");
@@ -238,12 +245,37 @@ describe("mate cap friction list", () => {
     },
   );
 
-  test("refuses without the capability and reads no log", async () => {
-    await list([], []);
+  test("recording off still lists earlier records after one line naming friction on", async () => {
+    record("refusal:artifact:write", "a");
+    record("refusal:secret:read", "b");
+    writeFrictionSwitch(false, home);
 
-    expect(stderr.join("\n")).toContain('"friction" capability is not enabled');
-    expect(process.exitCode).toBe(1);
-    expect(stdout).toEqual([]);
+    await list([]);
+
+    expect(stdout[0]).toContain("recording is off");
+    expect(stdout[0]).toContain("mate friction on");
+    expect(stdout.join("\n")).toContain("refusal:artifact:write");
+    expect(stdout.join("\n")).toContain("refusal:secret:read");
+  });
+
+  test("recording off with an empty window says both", async () => {
+    writeFrictionSwitch(false, home);
+
+    await list([]);
+
+    expect(stdout).toHaveLength(2);
+    expect(stdout[0]).toContain("recording is off");
+    expect(stdout[1]).toBe("No friction recorded in the last 30 days.");
+  });
+
+  test("the JSON document is the same whether recording is on or off", async () => {
+    record("refusal:artifact:write", "a");
+    await list(["--json"]);
+    writeFrictionSwitch(false, home);
+    await list(["--json"]);
+
+    expect(stdout).toHaveLength(2);
+    expect(JSON.parse(stdout[1])).toEqual(JSON.parse(stdout[0]));
   });
 });
 
@@ -251,10 +283,7 @@ const GITHUB_TOKEN = ["ghp", "wWPw5k4aXcaT4fNP0UcnZwJUVFk6LO0pINUx"].join("_");
 
 function report(argv: string[], env: Record<string, string | undefined> = {}) {
   return runFrictionReportCommand(argv, {
-    resolveContext: async () => ({
-      companionPath: COMPANION,
-      config: { capabilities: [{ name: "friction" }] } as never,
-    }),
+    resolveContext: async () => ({ companionPath: COMPANION }),
     homeDir: home,
     now,
     env,
@@ -263,7 +292,7 @@ function report(argv: string[], env: Record<string, string | undefined> = {}) {
 
 const reports = () => readReports({ sinceDays: 30, homeDir: home, now });
 
-describe("mate cap friction report", () => {
+describe("mate friction report", () => {
   test("records a report on an event, taking its subject from the event", async () => {
     const event = record("refusal:artifact:write", "a")!;
 
@@ -329,7 +358,7 @@ describe("mate cap friction report", () => {
 
     expect(stderr.join("\n")).toContain(message);
     expect(process.exitCode).toBe(1);
-    expect(fs.existsSync(frictionLogDir(home))).toBe(false);
+    expect(fs.readdirSync(frictionLogDir(home))).toEqual(["settings.json"]);
   });
 
   test("refuses a secret without printing it, and cuts long text", async () => {
@@ -367,6 +396,109 @@ describe("mate cap friction report", () => {
         error: { code: "event-not-found", message: expect.stringContaining("F-0") },
       },
     ]);
+    expect(process.exitCode).toBe(1);
+  });
+
+  test.each([[[]], [["--json"]]])(
+    "recording off refuses %j and writes no line and no file",
+    async (extra) => {
+      fs.rmSync(frictionLogDir(home), { recursive: true });
+
+      await report([
+        "--subject",
+        "docs:acme",
+        "--kind",
+        "missing",
+        "--expected",
+        EXPECTED,
+        "--evidence",
+        "x",
+        ...extra,
+      ]);
+
+      expect(stderr.join("\n")).toContain("recording is off");
+      expect(process.exitCode).toBe(1);
+      expect(fs.existsSync(frictionLogDir(home))).toBe(false);
+      if (extra.length > 0) {
+        expect(JSON.parse(stdout[0])).toMatchObject({
+          kind: "error",
+          error: { code: "recording-off" },
+        });
+      }
+    },
+  );
+});
+
+describe("mate friction on, off and status", () => {
+  const agent = { CLAUDE_CODE_SESSION_ID: "s1" };
+
+  test("on and off set the switch, also when it already has that state", () => {
+    fs.rmSync(frictionLogDir(home), { recursive: true });
+
+    runFrictionSwitchCommand(true, [], { homeDir: home, env: {} });
+    runFrictionSwitchCommand(true, [], { homeDir: home, env: {} });
+    expect(readFrictionSwitch(home)).toBe(true);
+    expect(stdout).toHaveLength(2);
+    expect(stdout[0]).toContain("recording is on");
+    expect(stdout[1]).toBe(stdout[0]);
+
+    runFrictionSwitchCommand(false, [], { homeDir: home, env: {} });
+    expect(readFrictionSwitch(home)).toBe(false);
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("off keeps the records and names the log folder", () => {
+    for (const session of ["a", "b", "c"]) record("refusal:artifact:write", session);
+
+    runFrictionSwitchCommand(false, [], { homeDir: home, env: {} });
+
+    expect(stdout[0]).toContain("recording is off");
+    expect(stdout[0]).toContain(`stay in ${frictionLogDir(home)}`);
+    expect(
+      fs.readdirSync(frictionLogDir(home)).filter((name) => name.startsWith("events-")),
+    ).toHaveLength(1);
+  });
+
+  test.each([
+    [false, agent],
+    [true, { OPENCODE_SESSION_ID: "s2" }],
+  ])("an agent session cannot set the switch to %p", (recording, env) => {
+    writeFrictionSwitch(!recording, home);
+
+    runFrictionSwitchCommand(recording, [], { homeDir: home, env });
+
+    expect(stderr.join("\n")).toContain("your own terminal");
+    expect(process.exitCode).toBe(1);
+    expect(readFrictionSwitch(home)).toBe(!recording);
+  });
+
+  test("status names the state and the folder, also inside an agent session", async () => {
+    const previous = process.env.CLAUDE_CODE_SESSION_ID;
+    process.env.CLAUDE_CODE_SESSION_ID = "s1";
+    try {
+      await runFrictionStatusCommand([], { homeDir: home });
+      writeFrictionSwitch(false, home);
+      await runFrictionStatusCommand(["--json"], { homeDir: home });
+    } finally {
+      if (previous === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+      else process.env.CLAUDE_CODE_SESSION_ID = previous;
+    }
+
+    expect(stdout[0]).toBe(`Friction recording is on. Friction Log: ${frictionLogDir(home)}`);
+    expect(JSON.parse(stdout[1])).toEqual({
+      kind: "friction-status",
+      version: 1,
+      recording: false,
+      logDir: frictionLogDir(home),
+    });
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("an unknown subcommand names the friction subcommands", async () => {
+    await runFrictionCommand("frobnicate", []);
+
+    expect(stderr.join("\n")).toContain("Unknown friction subcommand: frobnicate");
+    expect(stderr.join("\n")).toContain("on|off|status|list|report");
     expect(process.exitCode).toBe(1);
   });
 });

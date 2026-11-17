@@ -5,6 +5,7 @@ import path from "node:path";
 import { parse } from "yaml";
 
 import { buildCompanionGuidance } from "../../../playbooks/companion-guidance";
+import { readFrictionSwitch } from "../../../runtime/friction-switch";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import { deployReactDoctorSkill } from "../../../tools/setup/capabilities/react-doctor";
 import { applyMateSkills } from "../../../tools/setup/mate";
@@ -156,12 +157,16 @@ export async function companionSession(
 ): Promise<{ instructions: string; env: Record<string, string> }> {
   config ??= await readCompanionConfig(companionPath);
   const capabilities = config.capabilities ?? [];
-  const policy = buildCompanionGuidance({
-    companionPath,
-    repository,
-    capabilities,
-    secretGuardrails: resolveSecretPolicy(companionPath).guardrails,
-  });
+  const policy = buildCompanionGuidance(
+    {
+      companionPath,
+      repository,
+      capabilities,
+      secretGuardrails: resolveSecretPolicy(companionPath).guardrails,
+    },
+    // The Workset's own home: its switch is separate from the host's.
+    { friction: readFrictionSwitch() },
+  );
   const agents = await textFile(path.join(companionPath, "AGENTS.md"));
   const env = mateSessionEnvironment({
     repository,

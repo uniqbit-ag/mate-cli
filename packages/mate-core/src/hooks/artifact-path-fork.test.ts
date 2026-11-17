@@ -10,6 +10,7 @@ import { readContext } from "../opencode/companion-policy";
 import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { COMPANION_SYNC_COMMAND } from "../runtime/companion-sync";
 import { readEvents } from "../runtime/friction-log";
+import { writeFrictionSwitch } from "../runtime/friction-switch";
 import { mateVersion } from "../runtime/install";
 import { computeProjectionStamp, writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
@@ -347,10 +348,7 @@ describe("both runtimes return the same verdict", () => {
 
 describe("a forked-companion refusal is recorded as friction", () => {
   function selectFriction(fixture: Fixture): void {
-    fs.appendFileSync(
-      path.join(fixture.companion, ".mate", "config", "framework.yaml"),
-      "capabilities:\n  - name: friction\n",
-    );
+    writeFrictionSwitch(true, fixture.home);
   }
 
   test("by the Claude guard", async () => {

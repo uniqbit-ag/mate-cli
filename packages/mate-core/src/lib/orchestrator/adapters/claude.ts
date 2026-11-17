@@ -12,6 +12,7 @@ import {
 } from "../../../runtime/claude-delivery-plan";
 import { hookGroupKey, type ClaudeHookGroup } from "../../../runtime/claude-hook-group";
 import { MATE_ENV } from "../../../runtime/env-names";
+import { readFrictionSwitch } from "../../../runtime/friction-switch";
 import { SESSION_ORIGIN_ENV } from "../../../runtime/session-registry";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import { managedSessionKind } from "../../../runtime/session-kind";
@@ -322,10 +323,10 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
     const mcpConfigArgs =
       plan.mcp === "mcp-config" && mcpConfigPath ? ["--mcp-config", mcpConfigPath] : [];
 
-    const guidance = buildCompanionGuidance({
-      ...context,
-      secretGuardrails: resolveSecretPolicy(context.companionPath).guardrails,
-    });
+    const guidance = buildCompanionGuidance(
+      { ...context, secretGuardrails: resolveSecretPolicy(context.companionPath).guardrails },
+      { friction: readFrictionSwitch() },
+    );
     const { args: passthrough, prompts, boundary } = liftAppendedPrompts(args);
     const promptArgs = [APPEND_PROMPT_FLAG, [guidance, ...prompts].filter(Boolean).join("\n\n")];
     const launchArgs = [...settingsArgs, ...mcpConfigArgs, ...pluginDirArgs];
