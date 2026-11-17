@@ -223,6 +223,10 @@ export async function runFrictionListCommand(
     console.log(`Free reports: ${summary.freeReports.length}`);
     for (const report of summary.freeReports) console.log(renderFreeReport(report, args.all));
   }
+  // Triage copies only the current companion's friction and starts no agent inside an agent session.
+  console.log(
+    `Next: run ${FRAMEWORK_NAME} triage in your own terminal, inside the affected repository.`,
+  );
 }
 
 const SUBJECT_TYPES = ["command", "hook", "skill", "guidance", "capability", "docs"] as const;

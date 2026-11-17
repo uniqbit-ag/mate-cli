@@ -855,7 +855,10 @@ count in one session, the first and last time seen, the Mate versions, the paths
 its refusals named and the flags its failed commands carried, and the number of
 reports on its events with the latest `expected` text. Groups with the most repeats in one
 session come first, then those with the most events. Free reports of the
-companion follow in their own section, newest first. With `--json` it prints
+companion follow in their own section, newest first. When it lists anything,
+the output ends with a line that names
+[`mate triage`](/docs/scenarios/triage-a-mate-problem), to run in your own
+terminal inside the affected repository. With `--json` it prints
 one document with `kind` `friction-list` and `version` 1; each group carries its
 `reports`, and the document carries `freeReports`. It writes nothing to the
 log. With `--all` it lists the friction of every companion on this machine,

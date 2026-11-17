@@ -208,6 +208,36 @@ describe("mate cap friction list", () => {
     expect(text).toContain("Free reports: 1");
   });
 
+  test.each(["one event", "only a free report"])(
+    "text output with %s ends by naming triage",
+    async (kind) => {
+      if (kind === "one event") record("refusal:artifact:write", "a");
+      else
+        appendReport(
+          {
+            eventId: null,
+            kind: "missing",
+            subject: "docs:acme",
+            expected: EXPECTED,
+            evidence: "no page names it",
+            cost: null,
+            workaround: null,
+            mateVersion: "1.0.0",
+            companion: COMPANION,
+            sessionId: "a",
+            runtime: "claude",
+          },
+          { homeDir: home, now: new Date(now.getTime() - 30_000) },
+        );
+
+      await list([]);
+
+      expect(stdout.at(-1)).toBe(
+        "Next: run mate triage in your own terminal, inside the affected repository.",
+      );
+    },
+  );
+
   test("refuses without the capability and reads no log", async () => {
     await list([], []);
 
