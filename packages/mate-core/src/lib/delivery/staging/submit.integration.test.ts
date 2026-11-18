@@ -4,7 +4,12 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { git } from "../../../../test/git-checkouts";
-import { makeProductRepo, productEnvironment, PRODUCT } from "../../../../test/product-repo";
+import {
+  makeProductRepo,
+  productEnvironment,
+  PRODUCT,
+  type ProductRepo,
+} from "../../../../test/product-repo";
 import {
   changeLocally,
   makeStagingFixture,
@@ -13,8 +18,10 @@ import {
 } from "../../../../test/staging-fixture";
 import { companionGit } from "../../../runtime/companion-git";
 import { readSubmittedFolders } from "../../../runtime/companion-git-state";
+import type { RunOpenSpec } from "../../openspec-cli";
 import { readDeliveryRecord, upsertDelivery, writeDeliveryRecord } from "../record";
-import { submitChanges } from "../submit-change";
+import { submitChanges, type SubmitOutcome } from "../submit-change";
+import { openspecArtifactType } from "./openspec-type";
 import {
   dropSubmitted,
   folderDigest,
@@ -863,6 +870,64 @@ describe("submitGroups", () => {
   );
 });
 
+const LOGIN_BRANCH = "workset/acme-login";
+
+interface SubmittedLogin {
+  companion: string;
+  product: ProductRepo;
+  /** The folders of the changes already submitted, in the order given. */
+  dirs: string[];
+  /** The delivery branch's tip when they were submitted. */
+  head: string;
+}
+
+/** `names` submitted in the login group, and `acme-login-ui` joining it, still active. */
+async function submittedLogin(
+  fixture: StagingFixture,
+  names: string[] = ["acme-login-api"],
+): Promise<SubmittedLogin> {
+  const companion = fixture.clone("acme-companion");
+  const product = makeProductRepo(fixture.root);
+  const head = product.commitOn(LOGIN_BRANCH, "login.txt", "login\n");
+  const dirs = names.map((name) => changeLocally(companion, name, { branch: LOGIN_BRANCH }));
+  await submitGroups(companion, names, deps(fixture));
+  changeLocally(companion, "acme-login-ui", { branch: LOGIN_BRANCH });
+  return { companion, product, dirs, head };
+}
+
+function submitUi(
+  fixture: StagingFixture,
+  login: SubmittedLogin,
+  runOpenSpec: RunOpenSpec,
+  extra: Partial<SubmitDeps> = {},
+): Promise<SubmitOutcome> {
+  return submitChanges(
+    productEnvironment(login.companion, login.product),
+    { changes: ["acme-login-ui"] },
+    { ...deps(fixture, extra), runOpenSpec },
+  );
+}
+
+/** `status` fails; `validate` appends its change to `checked` and fails for `invalid`. */
+function recordingOpenSpec(
+  checked: string[],
+  options: { invalid?: string[]; onCheck?: (change: string) => void } = {},
+): RunOpenSpec {
+  return async (args) => {
+    if (args.includes("status")) return { code: 1, stdout: "", stderr: "no status" };
+    const change = args.at(-1)!;
+    checked.push(change);
+    options.onCheck?.(change);
+    return options.invalid?.includes(change)
+      ? { code: 1, stdout: "", stderr: `${change}: invalid delta` }
+      : { code: 0, stdout: "", stderr: "" };
+  };
+}
+
+function inboxTip(fixture: StagingFixture): string {
+  return git(fixture.remote, "rev-parse", INBOX).trim();
+}
+
 describe("submitChanges", () => {
   test(
     "the pushed delivery.yaml records the branch's final head on origin",
@@ -893,6 +958,189 @@ describe("submitChanges", () => {
       const pushed = showAt(fixture.remote, INBOX, "openspec/changes/acme-login/delivery.yaml");
       expect(pushed).toContain(`head: ${final}`);
       expect(pushed).toContain("state: submitted");
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "an edited submitted member is refreshed, checked, pushed and listed with the group",
+    async () => {
+      const fixture = await setup();
+      const login = await submittedLogin(fixture);
+      fs.appendFileSync(path.join(login.dirs[0]!, "proposal.md"), "\nEdited.\n");
+      const final = login.product.commitOn(LOGIN_BRANCH, "login.txt", "login, reviewed\n");
+      const before = inboxTip(fixture);
+      const checked: string[] = [];
+
+      const outcome = await submitUi(fixture, login, recordingOpenSpec(checked));
+
+      expect(outcome).toMatchObject({
+        results: [
+          { change: "acme-login-ui", status: "submitted", pushed: true },
+          { change: "acme-login-api", status: "submitted", pushed: true, state: "submitted" },
+        ],
+      });
+      expect(checked).toEqual(["acme-login-ui", "acme-login-api"]);
+      expect(git(fixture.remote, "rev-list", "--count", `${before}..${INBOX}`).trim()).toBe("1");
+      const touched = tipPaths(fixture, INBOX);
+      expect(touched).toContain("openspec/changes/acme-login-api/proposal.md");
+      expect(touched).toContain("openspec/changes/acme-login-ui/proposal.md");
+      expect(
+        showAt(fixture.remote, INBOX, "openspec/changes/acme-login-api/delivery.yaml"),
+      ).toContain(`head: ${final}`);
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "an edited submitted member that fails its check holds the group back",
+    async () => {
+      const fixture = await setup();
+      const login = await submittedLogin(fixture);
+      fs.appendFileSync(path.join(login.dirs[0]!, "proposal.md"), "\nEdited.\n");
+      const before = inboxTip(fixture);
+
+      const outcome = await submitUi(
+        fixture,
+        login,
+        recordingOpenSpec([], { invalid: ["acme-login-api"] }),
+      );
+
+      expect(outcome).toMatchObject({
+        results: [
+          { change: "acme-login-ui", status: "waiting", waitingFor: ["acme-login-api"] },
+          {
+            change: "acme-login-api",
+            status: "failed",
+            reason: "check-failed",
+            state: "submitted",
+            pushed: false,
+          },
+        ],
+      });
+      expect(inboxTip(fixture)).toBe(before);
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "an unedited submitted member stays out of the run",
+    async () => {
+      const fixture = await setup();
+      const login = await submittedLogin(fixture);
+      const checked: string[] = [];
+
+      const outcome = await submitUi(fixture, login, recordingOpenSpec(checked));
+
+      expect(outcome).toMatchObject({ results: [{ change: "acme-login-ui", pushed: true }] });
+      expect("results" in outcome && outcome.results).toHaveLength(1);
+      expect(checked).toEqual(["acme-login-ui"]);
+      expect(tipPaths(fixture, INBOX).filter((file) => file.includes("/acme-login-api/"))).toEqual(
+        [],
+      );
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "an edited member whose delivery cannot be refreshed holds the group back",
+    async () => {
+      const fixture = await setup();
+      const login = await submittedLogin(fixture, ["acme-login-api", "acme-login-db"]);
+      const [api, db] = login.dirs;
+      fs.appendFileSync(path.join(api!, "proposal.md"), "\nEdited.\n");
+      fs.appendFileSync(path.join(db!, "proposal.md"), "\nEdited.\n");
+      const before = inboxTip(fixture);
+
+      // Gone once it was found edited, so recording its delivery is refused.
+      const outcome = await submitUi(
+        fixture,
+        login,
+        recordingOpenSpec([], {
+          onCheck: (change) => {
+            if (change === "acme-login-api") fs.rmSync(db!, { recursive: true });
+          },
+        }),
+      );
+
+      expect(outcome).toMatchObject({
+        results: [
+          { change: "acme-login-ui", status: "waiting", waitingFor: ["acme-login-db"] },
+          { change: "acme-login-api", status: "waiting", waitingFor: ["acme-login-db"] },
+        ],
+      });
+      expect(inboxTip(fixture)).toBe(before);
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "an edited member nobody named does not accept its block on the pending branch",
+    async () => {
+      const fixture = await setup();
+      const login = await submittedLogin(fixture);
+      const base = git(fixture.remote, "rev-parse", "main").trim();
+      git(login.companion, "commit", "-q", "--allow-empty", "-m", "acme later");
+      git(login.companion, "push", "-q", "origin", "HEAD:main");
+      const publisher = fixture.clone("acme-publisher");
+      git(publisher, "checkout", "-q", INBOX);
+      fs.appendFileSync(
+        path.join(publisher, "openspec/changes/acme-login-api/delivery.yaml"),
+        "blocked:\n  reason: acme stale\n  paths: []\n  since: 2026-11-15T10:00:00.000Z\n",
+      );
+      git(publisher, "commit", "-qam", "block");
+      git(publisher, "push", "-q", "origin", INBOX);
+      fs.appendFileSync(path.join(login.dirs[0]!, "proposal.md"), "\nEdited.\n");
+      const runOpenSpec = recordingOpenSpec([]);
+
+      // Its stale part overwrites nothing, so only being named could accept the block.
+      const outcome = await submitUi(fixture, login, runOpenSpec, {
+        artifactType: {
+          ...openspecArtifactType(runOpenSpec),
+          stale: async (_git, _ref, _source, _base, _current, skip = []) =>
+            skip.length > 0 ? null : { capability: "acme", requirement: "Acme", overwrites: false },
+        },
+      });
+
+      expect(outcome).toMatchObject({
+        results: [
+          { change: "acme-login-ui", status: "submitted" },
+          { change: "acme-login-api", status: "submitted", pushed: true },
+        ],
+      });
+      expect(
+        showAt(fixture.remote, INBOX, "openspec/changes/acme-login-api/delivery.yaml"),
+      ).toContain(`specBase: ${base}`);
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "a member differing only in its local record reports no push when the pending copy stands",
+    async () => {
+      const fixture = await setup();
+      const login = await submittedLogin(fixture);
+      const [api] = login.dirs;
+      const teammate = fixture.clone("acme-teammate");
+      const theirs = deps(fixture, { stateHome: path.join(fixture.root, "home-teammate") });
+      await takeSubmitted(teammate, "acme-login-api", theirs);
+      const revised = "# acme-login-api, revised\n";
+      fs.writeFileSync(path.join(teammate, "openspec/changes/acme-login-api/proposal.md"), revised);
+      await submitGroups(teammate, ["acme-login-api"], theirs);
+      const record = await readDeliveryRecord(api!);
+      await writeDeliveryRecord(api!, upsertDelivery(record!, PRODUCT, { head: login.head }));
+
+      const outcome = await submitUi(fixture, login, recordingOpenSpec([]));
+
+      expect(outcome).toMatchObject({
+        results: [
+          { change: "acme-login-ui", status: "submitted", pushed: true },
+          { change: "acme-login-api", status: "submitted", pushed: false },
+        ],
+      });
+      expect(showAt(fixture.remote, INBOX, "openspec/changes/acme-login-api/proposal.md")).toBe(
+        revised,
+      );
     },
     TIMEOUT,
   );

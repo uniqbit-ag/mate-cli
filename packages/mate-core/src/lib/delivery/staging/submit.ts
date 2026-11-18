@@ -660,6 +660,34 @@ export async function hasUnsubmittedWork(
   return (await editedSinceSubmit(git, companionPath, relative, submitted)) === true;
 }
 
+/**
+ * The `submitted` members of `groups`, those in `named` left out, that {@link submitGroups} pushes
+ * as edited. Call it before refreshing them: a refresh rewrites `delivery.yaml`, which the
+ * comparison covers. A member Git cannot judge is left out, since {@link submitGroups} fails its
+ * group.
+ */
+export async function editedSubmittedMembers(
+  companionPath: string,
+  groups: ReadonlySet<string>,
+  named: readonly string[],
+  deps: Pick<SubmitDeps, "git" | "artifactType" | "stateHome"> = {},
+): Promise<LocalMember[]> {
+  const type = deps.artifactType ?? defaultArtifactType();
+  const git = (deps.git ?? defaultGit)(companionPath);
+  const submitted = readSubmittedFolders(companionPath, deps.stateHome);
+  const edited: LocalMember[] = [];
+  for (const member of await localMembers(companionPath, type)) {
+    if (member.state !== "submitted" || !groups.has(member.group)) continue;
+    if (named.includes(member.name)) continue;
+    const relative = sourcePathOf(type, member.name);
+    // oxlint-disable-next-line no-await-in-loop -- a few members per group
+    if ((await editedSinceSubmit(git, companionPath, relative, submitted)) === true) {
+      edited.push(member);
+    }
+  }
+  return edited;
+}
+
 export type GroupStatus = "pushed" | "unchanged" | "waiting" | "failed";
 
 export interface GroupSubmission {
