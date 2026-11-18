@@ -158,13 +158,19 @@ function recordOf<T>(fields: string[]): (value: unknown) => value is T {
   };
 }
 
-const isFrictionEvent = recordOf<FrictionEvent>([
+const hasEventStrings = recordOf<FrictionEvent>([
   "id",
   "at",
   "fingerprint",
   "sessionId",
   "companion",
 ]);
+
+/** Readers index into `detail`, so a line without one counts as unparseable. */
+function isFrictionEvent(value: unknown): value is FrictionEvent {
+  return hasEventStrings(value) && typeof value.detail === "object" && value.detail !== null;
+}
+
 const isFrictionReport = recordOf<FrictionReport>([
   "id",
   "at",

@@ -106,7 +106,9 @@ describe("readEvents", () => {
   test("skips a line it cannot parse", () => {
     const home = tempHome();
     appendEvent(event(), { homeDir: home, now });
-    fs.appendFileSync(frictionLogFile("2027-03", home), '{"v":2}\nnot json\n');
+    const { detail: _detail, ...withoutDetail } = event({ sessionId: "no-detail" });
+    const noDetail = JSON.stringify({ ...withoutDetail, v: 1, id: "x", at: now.toISOString() });
+    fs.appendFileSync(frictionLogFile("2027-03", home), `{"v":2}\nnot json\n${noDetail}\n`);
     appendEvent(event({ sessionId: "s2" }), { homeDir: home, now });
 
     expect(

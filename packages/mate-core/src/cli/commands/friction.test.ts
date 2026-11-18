@@ -294,6 +294,15 @@ describe("mate friction list", () => {
     expect(stdout).toEqual([]);
   });
 
+  test("with --json a bad argument prints an error document", async () => {
+    await list(["--json", "--acme"]);
+
+    expect(process.exitCode).toBe(1);
+    expect(stdout.map((chunk) => JSON.parse(chunk))).toEqual([
+      { kind: "error", version: 1, error: { code: "usage", message: "Unknown argument: --acme" } },
+    ]);
+  });
+
   test("the JSON document is the same whether recording is on or off", async () => {
     record("refusal:artifact:write", "a");
     await list(["--json"]);

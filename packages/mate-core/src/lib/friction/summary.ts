@@ -36,7 +36,7 @@ export interface FrictionSummary {
 const newestFirst = (reports: FrictionReport[]) =>
   reports.toSorted((a, b) => b.at.localeCompare(a.at));
 
-/** `detail` is not validated on read. */
+/** The fields inside `detail` are not validated on read. */
 const strings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 

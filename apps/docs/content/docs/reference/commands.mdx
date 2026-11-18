@@ -906,7 +906,8 @@ including companions no repository resolves to any more: each group names its
 companions with their event counts, and the JSON `companion` is `null`. Without
 `--all`, in a folder that resolves no companion, it lists nothing and exits 1
 with a message that names `--all` and the affected repository; with `--json` it
-prints `kind` `error` with the code `no-companion`. While
+prints `kind` `error` with the code `no-companion`. With `--json`, a bad argument
+exits 1 and prints `kind` `error` with the code `usage`. While
 recording is off, the list still shows what was recorded, after a first line
 that says recording is off and names `mate friction on`; the `--json` document
 does not change.

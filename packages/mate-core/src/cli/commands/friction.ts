@@ -99,6 +99,7 @@ export async function runFrictionListCommand(
   if (typeof args === "string") {
     console.error(args);
     process.exitCode = 1;
+    if (argv.includes("--json")) await writeError("usage", args);
     return;
   }
   const context = await (deps.resolveContext ?? (() => resolveInstallContext()))();
