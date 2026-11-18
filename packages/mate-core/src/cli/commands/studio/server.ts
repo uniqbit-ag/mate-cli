@@ -633,6 +633,10 @@ export function createStudioFetch(
       const { readFrictionView } = await import("../../../lib/friction/view");
       return readFrictionView(companionPath, { days, homeDir: deps.homeDir });
     },
+    frictionRecording: async () => {
+      const { readFrictionSwitch } = await import("../../../runtime/friction-switch");
+      return { recording: readFrictionSwitch(deps.homeDir) };
+    },
     setFrictionRecording: async (recording) => {
       const { writeFrictionSwitch } = await import("../../../runtime/friction-switch");
       writeFrictionSwitch(recording, deps.homeDir);

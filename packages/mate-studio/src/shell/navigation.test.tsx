@@ -87,6 +87,17 @@ describe("navigation", () => {
     expect(getRouter().options.defaultPendingComponent).toBe(ViewPlaceholder);
   });
 
+  it("shows no global features once a companion is selected", async () => {
+    const { page } = await mount({
+      overview: async () => "acme overview",
+      specs: async () => "acme specs",
+    });
+    await settle();
+    expect(page.container.querySelector("nav#studio-rail")).not.toBeNull();
+    expect(page.container.textContent).not.toContain("Global features");
+    page.unmount();
+  });
+
   it("switches at once to a placeholder while the next view's data loads", async () => {
     const { page, instance } = await mount({
       overview: async () => "acme overview",

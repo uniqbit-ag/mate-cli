@@ -10,16 +10,19 @@ const { frictionFixture, frictionGroup, frictionReport } = await import("./fixtu
 const server = {
   read: async (_input: { companion: string; days: number }): Promise<FrictionView> =>
     frictionFixture(),
+  readSwitch: async (): Promise<{ recording: boolean }> => ({ recording: false }),
   write: async ({ recording }: { recording: boolean }) => ({ recording }),
 };
 const real = await import("../../server/friction");
 mock.module("../../server/friction", () => ({
   ...real,
   getFriction: ({ data }: { data: { companion: string; days: number } }) => server.read(data),
+  getFrictionRecording: () => server.readSwitch(),
   setFrictionRecording: ({ data }: { data: { recording: boolean } }) => server.write(data),
 }));
 const { Friction, FrictionPanel } = await import("./friction-view");
-const { frictionQuery } = await import("../../lib/friction-query");
+const { GlobalFeatures } = await import("../../shell/global-features");
+const { frictionQuery, frictionRecordingQuery } = await import("../../lib/friction-query");
 
 afterEach(cleanup);
 
@@ -344,6 +347,70 @@ describe("the recording control", () => {
     expect(page.getByText("Recording is on")).toBeDefined();
     expect(client.getQueryState(frictionQuery("9876543210", 7).queryKey)?.isInvalidated).toBe(true);
     client.clear();
+  });
+
+  test("a change reaches another companion's friction and the start page's state", async () => {
+    server.read = async () => frictionFixture({ recording: false });
+    server.write = async ({ recording }) => ({ recording });
+    const client = new QueryClient();
+    const other = frictionQuery("9876543210", 7).queryKey;
+    client.setQueryData(other, frictionFixture({ recording: false }));
+    client.setQueryData(frictionRecordingQuery.queryKey, { recording: false });
+    const page = mount(client);
+    await settle();
+    fireEvent.click(page.getByRole("button", { name: "Turn recording on" }));
+    await settle();
+    expect(client.getQueryData(other)?.recording).toBe(true);
+    expect(client.getQueryData(frictionRecordingQuery.queryKey)).toEqual({ recording: true });
+    client.clear();
+  });
+
+  describe("while a change made here is saving, the start page", () => {
+    async function leaveDuringSave(client: InstanceType<typeof QueryClient>) {
+      server.read = async () => frictionFixture({ recording: false });
+      const written = Promise.withResolvers<{ recording: boolean }>();
+      server.write = () => written.promise;
+      const page = mount(client);
+      await settle();
+      fireEvent.click(page.getByRole("button", { name: "Turn recording on" }));
+      await settle();
+      page.unmount();
+      const start = render(
+        <QueryClientProvider client={client}>
+          <GlobalFeatures />
+        </QueryClientProvider>,
+      );
+      await settle();
+      return { written, startPage: within(start.container) };
+    }
+
+    test("holds its control too", async () => {
+      server.readSwitch = async () => ({ recording: false });
+      const client = new QueryClient();
+      client.setQueryData(frictionRecordingQuery.queryKey, { recording: false });
+      const { written, startPage } = await leaveDuringSave(client);
+      const control = startPage.getByRole<HTMLButtonElement>("button", {
+        name: "Turn recording on",
+      });
+      expect(control.disabled).toBe(true);
+      written.resolve({ recording: true });
+      await settle();
+      client.clear();
+    });
+
+    test("does not keep a first read that started before the change landed", async () => {
+      const early = Promise.withResolvers<{ recording: boolean }>();
+      server.readSwitch = () => early.promise;
+      const client = new QueryClient();
+      const { written, startPage } = await leaveDuringSave(client);
+      server.readSwitch = async () => ({ recording: true });
+      written.resolve({ recording: true });
+      await settle();
+      early.resolve({ recording: false });
+      await settle();
+      expect(startPage.getByText("Recording is on")).toBeDefined();
+      client.clear();
+    });
   });
 
   test("a failed change keeps the earlier state and shows an error", async () => {

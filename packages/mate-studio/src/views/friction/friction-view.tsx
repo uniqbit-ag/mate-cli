@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   FRAMEWORK_NAME,
   FRICTION_VIEW_DAYS,
@@ -8,6 +8,11 @@ import {
   type FrictionViewGroup,
 } from "@uniqbit/mate-core/studio";
 
+import {
+  RecordingButton,
+  RecordingReach,
+  RecordingState,
+} from "../../components/friction-recording";
 import { Icon } from "../../components/icon";
 import { Button } from "../../components/ui/button";
 import {
@@ -17,19 +22,20 @@ import {
   ListCard,
   PAGE_PAD,
   Pills,
-  StatusWord,
   ViewLoading,
 } from "../../components/view-parts";
 import { cn } from "../../lib/cn";
-import { frictionQuery, isFrictionQuery } from "../../lib/friction-query";
+import {
+  frictionQuery,
+  type RecordingToggle,
+  useSetFrictionRecording,
+} from "../../lib/friction-query";
 import { useBrowser } from "../../lib/use-browser";
-import { setFrictionRecording } from "../../server/friction";
 
 const PERIODS = FRICTION_VIEW_DAYS.map((days) => ({ value: String(days), label: `${days} days` }));
 
 const RECORDED_SECTION = { id: "friction-recorded", title: "Recorded friction" };
 const REPORTS_SECTION = { id: "friction-agent-reports", title: "Agent reports" };
-const RECORDING_REACH = "friction-recording-reach";
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
@@ -178,32 +184,14 @@ function Overview({ view, days }: { view: FrictionView; days: FrictionViewDays }
   );
 }
 
-interface RecordingToggle {
-  pending: boolean;
-  error?: string;
-  onChange: (recording: boolean) => void;
-}
-
 function Recording({ recording, toggle }: { recording: boolean; toggle: RecordingToggle }) {
   return (
     <div className="grid gap-1">
       <div className="flex flex-wrap items-center gap-3">
-        <StatusWord marker={recording ? "build" : "idle"}>
-          Recording is {recording ? "on" : "off"}
-        </StatusWord>
-        <Button
-          size="sm"
-          variant={recording ? "default" : "primary"}
-          disabled={toggle.pending}
-          aria-describedby={RECORDING_REACH}
-          onClick={() => toggle.onChange(!recording)}
-        >
-          Turn recording {recording ? "off" : "on"}
-        </Button>
+        <RecordingState recording={recording} />
+        <RecordingButton recording={recording} toggle={toggle} />
       </div>
-      <p id={RECORDING_REACH} className="m-0 text-xs text-muted">
-        Applies to all companions on the machine that runs Studio.
-      </p>
+      <RecordingReach />
     </div>
   );
 }
@@ -293,18 +281,8 @@ export function Friction({
   days: FrictionViewDays;
   onDays: (days: FrictionViewDays) => void;
 }) {
-  const client = useQueryClient();
   const query = useQuery({ ...frictionQuery(companion, days), enabled: useBrowser() });
-  const toggle = useMutation({
-    mutationFn: (recording: boolean) => setFrictionRecording({ data: { recording } }),
-    onSuccess: ({ recording }) => {
-      client.setQueriesData<FrictionView>(
-        { predicate: isFrictionQuery },
-        (view) => view && { ...view, recording },
-      );
-      return client.invalidateQueries({ predicate: isFrictionQuery });
-    },
-  });
+  const toggle = useSetFrictionRecording();
   if (!query.data && !query.isError) return <ViewLoading title="Reading the Friction Log…" />;
   const failed = query.isError ? (
     <div className={cn(PAGE_PAD, "pt-3 text-sm")} role="alert">
@@ -318,18 +296,7 @@ export function Friction({
   return (
     <>
       {failed}
-      <FrictionPanel
-        view={query.data}
-        days={days}
-        onDays={onDays}
-        toggle={{
-          pending: toggle.isPending,
-          error: toggle.isError
-            ? `Recording could not be turned ${toggle.variables ? "on" : "off"}: ${toggle.error.message}`
-            : undefined,
-          onChange: (recording) => toggle.mutate(recording),
-        }}
-      />
+      <FrictionPanel view={query.data} days={days} onDays={onDays} toggle={toggle} />
     </>
   );
 }

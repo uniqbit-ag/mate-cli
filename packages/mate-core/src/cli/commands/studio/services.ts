@@ -75,6 +75,8 @@ export interface StudioServices {
   usage(companionDigest: string, request: UsageRequest): Promise<UsageResponse>;
   /** The friction recorded for a registered companion on this machine; read-only. */
   friction(companionDigest: string, request: { days: FrictionViewDays }): Promise<FrictionView>;
+  /** This machine's Friction Switch alone: reads no Friction Log and writes nothing. */
+  frictionRecording(): Promise<{ recording: boolean }>;
   /**
    * Sets this machine's Friction Switch. Needs no `writable`: it writes only the switch's
    * settings file, never a companion, repository, registry or log.

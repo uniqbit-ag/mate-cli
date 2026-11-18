@@ -31,6 +31,10 @@ export const getFriction = createServerFn({ method: "GET" })
     context.studio.friction(data.companion, { days: data.days }),
   );
 
+export const getFrictionRecording = createServerFn({ method: "GET" }).handler(
+  ({ context }): Promise<{ recording: boolean }> => context.studio.frictionRecording(),
+);
+
 /** A write by method, so core's guard asks for Studio's own page and the token; no `--writable`. */
 export const setFrictionRecording = createServerFn({ method: "POST" })
   .validator(validateRecordingInput)

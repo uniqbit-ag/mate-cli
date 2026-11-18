@@ -266,6 +266,16 @@ describe("friction", () => {
     await expect(studio(null).services.friction("0".repeat(10), { days: 30 })).rejects.toThrow();
   });
 
+  test("reading the switch creates nothing and reports the value last set", async () => {
+    const { services } = studio(null);
+    expect(await services.frictionRecording()).toEqual({ recording: false });
+    expect(fs.readdirSync(home)).toEqual([]);
+    await services.setFrictionRecording(true);
+    expect(await services.frictionRecording()).toEqual({ recording: true });
+    await services.setFrictionRecording(false);
+    expect(await services.frictionRecording()).toEqual({ recording: false });
+  });
+
   test("setting the switch without --writable writes only the settings file", async () => {
     const handler = studio(null);
     expect(handler.services.writable).toBe(false);

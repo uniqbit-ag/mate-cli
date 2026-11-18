@@ -1,9 +1,19 @@
 import { expect, test } from "bun:test";
+import type { Query } from "@tanstack/react-query";
 
+import { frictionQuery, frictionRecordingQuery, isFrictionQuery } from "./friction-query";
 import { validateStudioSearch } from "./search";
 import { validateFrictionInput, validateRecordingInput } from "../server/friction";
 
 const companion = "0123456789";
+
+test("the machine's recording query is a friction query, beside every companion's", () => {
+  const matches = (queryKey: readonly unknown[]) => isFrictionQuery({ queryKey } as Query);
+  expect([...frictionRecordingQuery.queryKey]).toEqual(["machine", "friction", "recording"]);
+  expect(matches(frictionRecordingQuery.queryKey)).toBe(true);
+  expect(matches(frictionQuery(companion, 30).queryKey)).toBe(true);
+  expect(matches([companion, "specs"])).toBe(false);
+});
 
 test("the friction period in the address is 7, 30 or 90 days, else absent", () => {
   expect(validateStudioSearch({ frictionDays: "90" })).toEqual({ frictionDays: 90 });

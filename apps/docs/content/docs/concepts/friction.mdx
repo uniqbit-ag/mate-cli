@@ -22,9 +22,8 @@ mate friction status   # say whether recording is on, and where the log is
 
 Only you change the switch. `mate friction on` and `mate friction off` refuse
 inside an agent session, so an agent cannot turn recording on or off for you.
-Run them in your own terminal, or use the control in
-[Studio's Friction view](#in-studio). `mate friction status` also runs inside an
-agent session.
+Run them in your own terminal, or use the control in [Studio](#in-studio).
+`mate friction status` also runs inside an agent session.
 
 The switch takes effect in the next agent session, with no sync and no new
 wrap. Mate keeps it in `~/.mate/friction/settings.json`.
@@ -131,6 +130,10 @@ the same Friction Switch as `mate friction on` and `off`. It works in every
 Studio start, also without `--writable`, and needs Studio's own page and its
 access token like every other change. It writes only
 `~/.mate/friction/settings.json`.
+
+You do not need a companion to change the switch. Studio's start page, shown
+before you choose a companion, has the same control under **Global features**,
+also when no companion is registered. The start page shows no friction records.
 
 The view reads the Friction Log of the machine that runs Studio. Under
 `mate studio serve`, that is the server, not the machine of the person who
