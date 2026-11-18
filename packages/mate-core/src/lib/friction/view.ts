@@ -5,7 +5,7 @@ import type { FrictionView } from "./view-model";
 
 /** Reads only: no file or folder is created. */
 export function readFrictionView(companionPath: string, window: FrictionWindow): FrictionView {
-  const summary = readFrictionSummary(companionPath, window);
+  const summary = readFrictionSummary({ companion: companionPath }, window);
   return {
     ...summary,
     recording: readFrictionSwitch(window.homeDir),

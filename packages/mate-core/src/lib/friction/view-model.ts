@@ -1,6 +1,7 @@
+import { FRICTION_RETENTION_DAYS } from "../../runtime/friction-retention";
 import type { FrictionGroup, FrictionSummary } from "./summary";
 
-export const FRICTION_VIEW_DAYS = [7, 30, 90] as const;
+export const FRICTION_VIEW_DAYS = [7, 30, FRICTION_RETENTION_DAYS] as const;
 export type FrictionViewDays = (typeof FRICTION_VIEW_DAYS)[number];
 
 /** The period a value names, as a number or its text; `undefined` for any other. */

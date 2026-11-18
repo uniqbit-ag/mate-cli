@@ -886,7 +886,8 @@ complete installation.
 boolean `recording` and the folder as `logDir`. It runs inside an agent session
 too.
 
-`mate friction list` reads the events of the last `N` days, default 30, recorded for
+`mate friction list` reads the events of the last `N` days, default 30 and at
+most 90 (the time the log keeps a record), recorded for
 the resolved companion, and groups them by fingerprint. A fingerprint is
 `refusal:<check>:<tool kind>` or `command:<command> <subcommand>:<exit code>`.
 For each group it shows the event count, the number of sessions, the highest
@@ -902,7 +903,10 @@ one document with `kind` `friction-list` and `version` 1; each group carries its
 `reports`, and the document carries `freeReports`. It writes nothing to the
 log. With `--all` it lists the friction of every companion on this machine,
 including companions no repository resolves to any more: each group names its
-companions with their event counts, and the JSON `companion` is `null`. While
+companions with their event counts, and the JSON `companion` is `null`. Without
+`--all`, in a folder that resolves no companion, it lists nothing and exits 1
+with a message that names `--all` and the affected repository; with `--json` it
+prints `kind` `error` with the code `no-companion`. While
 recording is off, the list still shows what was recorded, after a first line
 that says recording is off and names `mate friction on`; the `--json` document
 does not change.
@@ -935,6 +939,7 @@ null outside a session. With `--json` it prints `kind` `friction-report`,
 | `event-not-found`                                        | No event in the log has that id.                                               |
 | `missing-subject`, `invalid-subject`, `missing-evidence` | A free report lacks its subject or evidence, or names an unknown subject type. |
 | `secret`, `scan-failed`                                  | The text holds a secret, or it could not be scanned. The text is not printed.  |
+| `no-companion`                                           | A free report was made in a folder that resolves no companion.                 |
 | `recording-off`                                          | Friction recording is off on this machine.                                     |
 | `usage`, `write-failed`                                  | An argument is unknown, or the log cannot be written.                          |
 

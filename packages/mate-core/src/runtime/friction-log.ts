@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
+import { FRICTION_RETENTION_DAYS } from "./friction-retention";
 import { realPath } from "./git-layout";
 import { mateHome } from "./runtime-directory";
 import type { SessionRuntime } from "./session-registry";
@@ -61,8 +62,7 @@ export type NewFrictionReport = Omit<FrictionReport, "v" | "id" | "at">;
 
 type Family = "events" | "reports";
 
-/** Months kept before the current one. */
-const RETAINED_PREVIOUS_MONTHS = 2;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function familyPattern(family: Family): RegExp {
   return new RegExp(`^${family}-(\\d{4}-\\d{2})\\.jsonl$`);
@@ -74,11 +74,6 @@ export function frictionLogDir(homeDir?: string): string {
 
 function monthOf(date: Date): string {
   return date.toISOString().slice(0, 7);
-}
-
-function monthsBefore(month: string, count: number): string {
-  const [year, monthNumber] = month.split("-").map(Number);
-  return monthOf(new Date(Date.UTC(year, monthNumber - 1 - count, 1)));
 }
 
 function familyFile(family: Family, month: string, homeDir?: string): string {
@@ -126,7 +121,10 @@ function appendRecord<T extends object>(
   fs.mkdirSync(dir, { recursive: true });
   const created = !fs.existsSync(file);
   fs.appendFileSync(file, `${JSON.stringify(record)}\n`, "utf8");
-  if (created) pruneBefore(family, monthsBefore(month, RETAINED_PREVIOUS_MONTHS), options.homeDir);
+  if (created) {
+    const oldestKept = monthOf(new Date(now.getTime() - FRICTION_RETENTION_DAYS * DAY_MS));
+    pruneBefore(family, oldestKept, options.homeDir);
+  }
   return record;
 }
 
@@ -187,23 +185,24 @@ function parseLine<T>(line: string, accept: (value: unknown) => value is T): T |
 
 interface ReadOptions {
   sinceDays: number;
-  /** Only records for this companion. */
-  companion?: string;
   homeDir?: string;
   now?: Date;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+/** One companion's records, or every companion's. */
+export type FrictionScope = { companion: string } | "all";
 
 /**
- * Whether a recorded companion is this one; any companion without a target. The guard
- * records the companion as it resolved it, which may be a link to the one asked for.
+ * Whether a recorded companion is this one. The guard records the companion as it
+ * resolved it, which may be a link to the one asked for.
  */
-export function companionFilter(target?: string): (candidate: string) => boolean {
-  if (!target) return () => true;
+function companionFilter(target: string): (candidate: string) => boolean {
+  // An empty path would resolve to the current folder.
+  if (!target) return () => false;
   const wanted = realPath(target);
   const seen = new Map<string, boolean>();
   return (candidate) => {
+    if (!candidate) return false;
     let same = seen.get(candidate);
     if (same === undefined) {
       same = realPath(candidate) === wanted;
@@ -233,7 +232,7 @@ function readMonth<T>(
     .filter((record): record is T => record !== null);
 }
 
-function readFamily<T extends { at: string; companion: string }>(
+function readFamily<T extends { at: string }>(
   family: Family,
   accept: (value: unknown) => value is T,
   options: ReadOptions,
@@ -241,7 +240,6 @@ function readFamily<T extends { at: string; companion: string }>(
   const now = options.now ?? new Date();
   const since = new Date(now.getTime() - options.sinceDays * DAY_MS);
   const dir = frictionLogDir(options.homeDir);
-  const inCompanion = companionFilter(options.companion);
   let months: string[];
   try {
     months = logMonths(dir, family).filter((month) => month >= monthOf(since));
@@ -253,19 +251,35 @@ function readFamily<T extends { at: string; companion: string }>(
     .flatMap((month) => readMonth(family, month, accept, options.homeDir))
     .filter((record) => {
       const at = Date.parse(record.at);
-      if (Number.isNaN(at) || at < since.getTime()) return false;
-      return inCompanion(record.companion);
+      return !Number.isNaN(at) && at >= since.getTime();
     });
 }
 
-/** Events in the window, oldest file first. */
+/** Every companion's events in the window, oldest file first. */
 export function readEvents(options: ReadOptions): FrictionEvent[] {
   return readFamily("events", isFrictionEvent, options);
 }
 
-/** Reports in the window, oldest file first. */
+/** Every companion's reports in the window, oldest file first. */
 export function readReports(options: ReadOptions): FrictionReport[] {
   return readFamily("reports", isFrictionReport, options);
+}
+
+/**
+ * A scope's events in the window, the reports on those events wherever they were made,
+ * and the scope's free reports.
+ */
+export function readFriction(
+  scope: FrictionScope,
+  options: ReadOptions,
+): { events: FrictionEvent[]; reports: FrictionReport[] } {
+  const inScope = scope === "all" ? () => true : companionFilter(scope.companion);
+  const events = readEvents(options).filter((event) => inScope(event.companion));
+  const ids = new Set(events.map((event) => event.id));
+  const reports = readReports(options).filter((report) =>
+    report.eventId ? ids.has(report.eventId) : inScope(report.companion),
+  );
+  return { events, reports };
 }
 
 /** The event with this id in any retained month, or null. */

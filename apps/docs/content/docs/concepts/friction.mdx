@@ -49,9 +49,10 @@ Neither is a `mate session prepare` that Mate's own session hook starts: the
 agent did not run it.
 
 The log lives on your machine only, in `~/.mate/friction/`, one
-`events-<YYYY-MM>.jsonl` file per month. Mate keeps the current month and the
-two months before it. It never writes the log into a companion or a working
-repository and never sends it anywhere.
+`events-<YYYY-MM>.jsonl` file per month. Mate keeps every record for at least
+90 days: when it starts a new month's file, it deletes the files of months that
+ended more than 90 days ago. It never writes the log into a companion or a
+working repository and never sends it anywhere.
 
 An event holds the check or the command, the tool kind, the refusal message or
 the last error text (up to 1,000 characters) and up to five paths the call
@@ -88,7 +89,9 @@ The agent answers with
 Friction Report to `reports-<YYYY-MM>.jsonl` beside the events, with the same
 retention. A report on an event takes its evidence from the event. For friction
 without an event, such as a skill step that does not fit, the session guidance
-asks the agent for a free report with a subject and evidence. Mate adds that
+asks the agent for a free report with a subject and evidence. A free report
+belongs to the companion the command resolves, so outside a companion it is
+refused. Mate adds that
 short Friction section to the guidance of each Claude Code and OpenCode session
 while recording is on. A report is cut to 1,000 characters per field and refused
 when it holds a secret. While recording is off, the command records nothing.
@@ -96,7 +99,8 @@ when it holds a secret. While recording is off, the command records nothing.
 ## Read the Log
 
 [`mate friction list`](/docs/reference/commands#friction) shows the current
-companion's friction, or every companion's with `--all`. To investigate what it
+companion's friction, or every companion's with `--all`. Outside a companion it
+lists nothing without `--all`. The period is at most 90 days. To investigate what it
 lists, run [`mate triage`](/docs/scenarios/triage-a-mate-problem) in the
 affected repository. While recording is on, `mate doctor` shows the current
 companion's count of the last seven days.

@@ -13,6 +13,7 @@ import {
   frictionLogFile,
   frictionReportFile,
   readEvents,
+  readFriction,
   readReports,
   type NewFrictionEvent,
   type NewFrictionReport,
@@ -70,18 +71,22 @@ describe("appendEvent", () => {
     expect(() => appendEvent(event(), { homeDir: home })).not.toThrow();
   });
 
-  test("the first event of a month deletes files older than the two months before it", () => {
+  test("the first event of a month deletes only the months wholly older than 90 days", () => {
     const home = tempHome();
-    for (const month of ["2027-01", "2027-02", "2027-03"]) {
-      appendEvent(event(), { homeDir: home, now: new Date(`${month}-15T00:00:00Z`) });
+    for (const day of ["2026-12-15", "2027-01-15", "2027-02-10", "2027-03-15", "2027-04-15"]) {
+      appendEvent(event({ sessionId: day }), { homeDir: home, now: new Date(`${day}T00:00:00Z`) });
     }
-    appendEvent(event(), { homeDir: home, now: new Date("2027-04-01T00:00:00Z") });
+    const now = new Date("2027-05-01T00:00:00Z");
+    appendEvent(event(), { homeDir: home, now });
 
     expect(fs.readdirSync(frictionLogDir(home)).sort()).toEqual([
+      "events-2027-01.jsonl",
       "events-2027-02.jsonl",
       "events-2027-03.jsonl",
       "events-2027-04.jsonl",
+      "events-2027-05.jsonl",
     ]);
+    expect(readEvents({ sinceDays: 90, homeDir: home, now })[0].sessionId).toBe("2027-02-10");
   });
 
   test("an append to an existing file deletes nothing", () => {
@@ -132,18 +137,6 @@ describe("readEvents", () => {
     ).toEqual(["february", "old", "edge"]);
   });
 
-  test("filters by companion", () => {
-    const home = tempHome();
-    appendEvent(event({ companion: "/acme/one" }), { homeDir: home, now });
-    appendEvent(event({ companion: "/acme/two" }), { homeDir: home, now });
-
-    expect(
-      readEvents({ sinceDays: 30, companion: "/acme/two", homeDir: home, now }).map(
-        (entry) => entry.companion,
-      ),
-    ).toEqual(["/acme/two"]);
-  });
-
   test("returns nothing when no log exists", () => {
     expect(readEvents({ sinceDays: 30, homeDir: tempHome(), now })).toEqual([]);
   });
@@ -179,13 +172,14 @@ describe("appendReport", () => {
     expect(fs.existsSync(frictionLogFile("2027-03", home))).toBe(false);
   });
 
-  test("a new month deletes report files older than the two months before it", () => {
+  test("a new month deletes the report files wholly older than 90 days", () => {
     const home = tempHome();
-    for (const month of ["2027-01", "2027-02", "2027-03", "2027-04"]) {
+    for (const month of ["2026-12", "2027-01", "2027-02", "2027-03", "2027-04"]) {
       appendReport(report(), { homeDir: home, now: new Date(`${month}-15T00:00:00Z`) });
     }
 
     expect(fs.readdirSync(frictionLogDir(home)).sort()).toEqual([
+      "reports-2027-01.jsonl",
       "reports-2027-02.jsonl",
       "reports-2027-03.jsonl",
       "reports-2027-04.jsonl",
@@ -196,18 +190,45 @@ describe("appendReport", () => {
 describe("readReports", () => {
   const now = new Date("2027-03-14T12:00:00Z");
 
-  test("skips a malformed line and filters by companion", () => {
+  test("skips a malformed line", () => {
     const home = tempHome();
     appendReport(report({ companion: "/acme/one" }), { homeDir: home, now });
     fs.appendFileSync(frictionReportFile("2027-03", home), '{"v":1,"id":"x"}\nnot json\n');
     appendReport(report({ companion: "/acme/two" }), { homeDir: home, now });
 
     expect(readReports({ sinceDays: 30, homeDir: home, now })).toHaveLength(2);
-    expect(
-      readReports({ sinceDays: 30, companion: "/acme/two", homeDir: home, now }).map(
-        (entry) => entry.companion,
-      ),
-    ).toEqual(["/acme/two"]);
+  });
+});
+
+describe("readFriction", () => {
+  const now = new Date("2027-03-14T12:00:00Z");
+  const window = { sinceDays: 30, now };
+
+  test("a companion's events, the reports on them wherever made, and its free reports", () => {
+    const home = tempHome();
+    const at = { homeDir: home, now };
+    const one = appendEvent(event({ companion: "/acme/one" }), at)!;
+    const two = appendEvent(event({ companion: "/acme/two" }), at)!;
+    appendReport(report({ eventId: one.id, companion: "/acme/one", subject: "on one" }), at);
+    appendReport(report({ eventId: two.id, companion: "/acme/one", subject: "on two" }), at);
+    appendReport(report({ companion: "/acme/one", subject: "free one" }), at);
+    appendReport(report({ companion: "/acme/two", subject: "free two" }), at);
+
+    const scoped = readFriction({ companion: "/acme/two" }, { ...window, homeDir: home });
+
+    expect(scoped.events.map((entry) => entry.id)).toEqual([two.id]);
+    expect(scoped.reports.map((entry) => entry.subject)).toEqual(["on two", "free two"]);
+    expect(readFriction("all", { ...window, homeDir: home }).reports).toHaveLength(4);
+  });
+
+  test("a record without a companion matches no companion, only all", () => {
+    const home = tempHome();
+    appendReport(report({ companion: "" }), { homeDir: home, now });
+
+    const here = readFriction({ companion: process.cwd() }, { ...window, homeDir: home });
+
+    expect(here.reports).toEqual([]);
+    expect(readFriction("all", { ...window, homeDir: home }).reports).toHaveLength(1);
   });
 });
 

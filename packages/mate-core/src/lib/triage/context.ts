@@ -3,12 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
-import {
-  companionFilter,
-  readEvents,
-  readReports,
-  type FrictionEvent,
-} from "../../runtime/friction-log";
+import { readFriction, type FrictionEvent } from "../../runtime/friction-log";
 import { scanContent } from "../../runtime/secret-scan";
 import { TRIAGE_AGENT_NAMES, TRIAGE_AGENTS, type FoundAgent } from "./launch";
 
@@ -66,16 +61,11 @@ export async function writeFrictionSnapshot(
 ): Promise<FrictionSnapshot> {
   const { companion } = options;
   if (!companion) return { companion: null, events: 0, reports: 0 };
-  const window = { sinceDays: FRICTION_SNAPSHOT_DAYS, homeDir: options.homeDir, now: options.now };
-  const events = await withoutFlaggedEvidence(
-    readEvents({ ...window, companion }),
-    options.scan ?? scanContent,
+  const { events: recorded, reports } = readFriction(
+    { companion },
+    { sinceDays: FRICTION_SNAPSHOT_DAYS, homeDir: options.homeDir, now: options.now },
   );
-  const ids = new Set(events.map((event) => event.id));
-  const inCompanion = companionFilter(companion);
-  const reports = readReports(window).filter((report) =>
-    report.eventId ? ids.has(report.eventId) : inCompanion(report.companion),
-  );
+  const events = await withoutFlaggedEvidence(recorded, options.scan ?? scanContent);
   const write = (name: string, records: object[]) => {
     if (records.length === 0) return;
     const lines = records.map((record) => `${JSON.stringify(record)}\n`).join("");

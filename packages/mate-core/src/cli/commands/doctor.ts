@@ -6,7 +6,7 @@ import { parse as parseYaml } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { gitEnvironment } from "../../runtime/companion-git";
-import { readEvents } from "../../runtime/friction-log";
+import { readFriction } from "../../runtime/friction-log";
 import { readFrictionSwitch } from "../../runtime/friction-switch";
 import { checkoutCommonDir, checkoutAt, sameClone } from "../../runtime/git-layout";
 import { physicalPath } from "../../runtime/physical-path";
@@ -148,18 +148,16 @@ export interface DoctorFriction {
 
 const DOCTOR_FRICTION_DAYS = 7;
 
-/** `readEvents` skips what it cannot read, so an unreadable log counts as no events. */
+/** `readFriction` skips what it cannot read, so an unreadable log counts as no events. */
 function collectFriction(
   companionPath: string,
   env: Record<string, string | undefined>,
   now?: Date,
 ): DoctorFriction {
-  const events = readEvents({
-    sinceDays: DOCTOR_FRICTION_DAYS,
-    companion: companionPath,
-    homeDir: env.HOME,
-    now,
-  });
+  const { events } = readFriction(
+    { companion: companionPath },
+    { sinceDays: DOCTOR_FRICTION_DAYS, homeDir: env.HOME, now },
+  );
   const counts = new Map<string, number>();
   for (const event of events) {
     counts.set(event.fingerprint, (counts.get(event.fingerprint) ?? 0) + 1);

@@ -8,6 +8,7 @@ import {
   appendReport,
   findEvent,
   frictionLogDir,
+  type FrictionScope,
   REPORT_COSTS,
   REPORT_KINDS,
   type FrictionEvent,
@@ -15,6 +16,7 @@ import {
   type ReportCost,
   type ReportKind,
 } from "../../runtime/friction-log";
+import { FRICTION_RETENTION_DAYS } from "../../runtime/friction-retention";
 import { readFrictionSwitch, writeFrictionSwitch } from "../../runtime/friction-switch";
 import { scanContent, type SecretFinding } from "../../runtime/secret-scan";
 import { writeJsonStdout } from "../write-json-stdout";
@@ -34,6 +36,9 @@ function parseArgs(argv: string[]): { days: number; json: boolean; all: boolean 
         days = usageDays(arg === "--days" ? argv[++index] : arg.slice("--days=".length));
       } catch (error) {
         return error instanceof Error ? error.message : String(error);
+      }
+      if (days > FRICTION_RETENTION_DAYS) {
+        return `--days is at most ${FRICTION_RETENTION_DAYS}: the Friction Log keeps ${FRICTION_RETENTION_DAYS} days.`;
       }
     } else return `Unknown argument: ${arg}`;
   }
@@ -82,6 +87,7 @@ export interface FrictionListDeps {
   now?: Date;
 }
 
+const NO_COMPANION = "no-companion";
 const RECORDING_OFF_LINE = `Friction recording is off on this machine: nothing new is recorded. Turn it on with ${FRAMEWORK_NAME} friction on.`;
 
 export async function runFrictionListCommand(
@@ -95,8 +101,16 @@ export async function runFrictionListCommand(
     return;
   }
   const context = await (deps.resolveContext ?? (() => resolveInstallContext()))();
-  const companion = args.all ? "" : (context.companionPath ?? "");
-  const summary = readFrictionSummary(companion, {
+  const companion = args.all ? null : context.companionPath;
+  if (companion === undefined) {
+    const message = `No companion resolves from this folder. Run ${FRAMEWORK_NAME} friction list inside the affected repository, or pass --all to list every companion's friction.`;
+    console.error(message);
+    process.exitCode = 1;
+    if (args.json) await writeError(NO_COMPANION, message);
+    return;
+  }
+  const scope: FrictionScope = companion === null ? "all" : { companion };
+  const summary = readFrictionSummary(scope, {
     days: args.days,
     homeDir: deps.homeDir,
     now: deps.now,
@@ -107,7 +121,7 @@ export async function runFrictionListCommand(
       kind: "friction-list",
       version: 1,
       days: args.days,
-      companion: args.all ? null : companion,
+      companion,
       events: summary.events,
       sessions: summary.sessions,
       groups: summary.groups,
@@ -250,7 +264,7 @@ async function buildReport(
 
   let subject: string;
   const evidence = present(args.evidence);
-  let companion = context.companionPath ?? "";
+  let companion = context.companionPath;
   if (args.eventId !== undefined) {
     const event = findEvent(args.eventId, { homeDir: deps.homeDir });
     if (!event) {
@@ -260,7 +274,7 @@ async function buildReport(
       );
     }
     subject = eventSubject(event);
-    companion ||= event.companion;
+    companion ??= event.companion;
   } else {
     const named = present(args.subject);
     if (!named) {
@@ -279,6 +293,12 @@ async function buildReport(
       throw new ReportRefusal(
         "missing-evidence",
         "A free report needs --evidence: quote what you saw, such as the message or instruction.",
+      );
+    }
+    if (companion === undefined) {
+      throw new ReportRefusal(
+        NO_COMPANION,
+        `A free report needs a companion and none resolves from this folder; nothing was recorded. Run ${FRAMEWORK_NAME} friction report inside the affected repository.`,
       );
     }
     subject = named;

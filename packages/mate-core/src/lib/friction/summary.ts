@@ -1,9 +1,8 @@
 import {
-  companionFilter,
-  readEvents,
-  readReports,
+  readFriction,
   type FrictionEvent,
   type FrictionReport,
+  type FrictionScope,
 } from "../../runtime/friction-log";
 
 export interface FrictionGroup {
@@ -99,13 +98,11 @@ export interface FrictionWindow {
   now?: Date;
 }
 
-/** One companion's friction, or every companion's for an empty `companion`. */
-export function readFrictionSummary(companion: string, window: FrictionWindow): FrictionSummary {
-  const options = { sinceDays: window.days, homeDir: window.homeDir, now: window.now };
-  const inCompanion = companionFilter(companion);
-  // A report on an event joins by id, wherever it was made; free reports are this companion's.
-  return summarizeFriction(
-    readEvents({ ...options, companion }),
-    readReports(options).filter((report) => report.eventId || inCompanion(report.companion)),
-  );
+export function readFrictionSummary(scope: FrictionScope, window: FrictionWindow): FrictionSummary {
+  const { events, reports } = readFriction(scope, {
+    sinceDays: window.days,
+    homeDir: window.homeDir,
+    now: window.now,
+  });
+  return summarizeFriction(events, reports);
 }

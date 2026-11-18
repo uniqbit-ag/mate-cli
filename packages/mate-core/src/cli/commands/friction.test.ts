@@ -268,6 +268,32 @@ describe("mate friction list", () => {
     expect(stdout[1]).toBe("No friction recorded in the last 30 days.");
   });
 
+  test.each([[[]], [["--json"]]])(
+    "outside a companion %j refuses, names --all and lists nothing",
+    async (argv) => {
+      record("refusal:artifact:write", "a");
+
+      await runFrictionListCommand(argv, { resolveContext: async () => ({}), homeDir: home, now });
+
+      expect(stderr.join("\n")).toContain("--all");
+      expect(stderr.join("\n")).toContain("inside the affected repository");
+      expect(process.exitCode).toBe(1);
+      expect(stdout.map((chunk) => JSON.parse(chunk))).toEqual(
+        argv.length > 0
+          ? [{ kind: "error", version: 1, error: { code: "no-companion", message: stderr[0] } }]
+          : [],
+      );
+    },
+  );
+
+  test("refuses a period longer than the log keeps", async () => {
+    await list(["--days", "91"]);
+
+    expect(stderr).toEqual(["--days is at most 90: the Friction Log keeps 90 days."]);
+    expect(process.exitCode).toBe(1);
+    expect(stdout).toEqual([]);
+  });
+
   test("the JSON document is the same whether recording is on or off", async () => {
     record("refusal:artifact:write", "a");
     await list(["--json"]);
@@ -359,6 +385,27 @@ describe("mate friction report", () => {
     expect(stderr.join("\n")).toContain(message);
     expect(process.exitCode).toBe(1);
     expect(fs.readdirSync(frictionLogDir(home))).toEqual(["settings.json"]);
+  });
+
+  test("refuses a free report outside a companion and records nothing", async () => {
+    await runFrictionReportCommand(
+      [
+        "--subject",
+        "docs:acme",
+        "--kind",
+        "missing",
+        "--expected",
+        EXPECTED,
+        "--evidence",
+        "x",
+        "--json",
+      ],
+      { resolveContext: async () => ({}), homeDir: home, now, env: {} },
+    );
+
+    expect(JSON.parse(stdout[0])).toMatchObject({ kind: "error", error: { code: "no-companion" } });
+    expect(process.exitCode).toBe(1);
+    expect(reports()).toEqual([]);
   });
 
   test("refuses a secret without printing it, and cuts long text", async () => {
