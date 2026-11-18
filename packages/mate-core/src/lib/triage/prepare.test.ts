@@ -209,7 +209,12 @@ describe("prepareTriageSession", () => {
     const f = await fixture();
     const at = new Date("2027-03-10T00:00:00Z");
     event(f.home, at, f.home, { message: "clean" });
-    event(f.home, at, f.home, { message: "flagged", command: "flagged" });
+    event(f.home, at, f.home, {
+      message: "flagged",
+      command: "flagged",
+      paths: ["flagged"],
+      flags: ["--flagged"],
+    });
     const dir = path.join(f.root, "session");
     fs.mkdirSync(dir);
 
@@ -226,7 +231,12 @@ describe("prepareTriageSession", () => {
       .split("\n")
       .map((line) => JSON.parse(line).detail);
     expect(clean).toEqual({ message: "clean" });
-    expect(flagged).toEqual({ message: "[withheld: acme-rule]", command: "[withheld: acme-rule]" });
+    expect(flagged).toEqual({
+      message: "[withheld: acme-rule]",
+      command: "[withheld: acme-rule]",
+      paths: "[withheld: acme-rule]",
+      flags: "[withheld: acme-rule]",
+    });
   });
 
   test("withholds every event's evidence when the scanner fails", async () => {

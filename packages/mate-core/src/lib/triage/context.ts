@@ -23,7 +23,7 @@ interface FrictionSnapshot {
   reports: number;
 }
 
-const EVIDENCE_FIELDS = ["message", "command", "errorText"] as const;
+const EVIDENCE_FIELDS = ["message", "command", "errorText", "paths", "flags"] as const;
 
 /** Evidence text the scanner flags, or every event's when it cannot scan, is withheld. */
 async function withoutFlaggedEvidence(

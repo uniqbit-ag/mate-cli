@@ -60,9 +60,9 @@ Each run writes a new folder at `~/.mate/triage/<UTC time>/`. Folders older than
 The friction files hold only the records of the companion the folder belongs
 to, and the reports on those events. Run `mate triage` in the affected
 repository: outside a companion, Mate copies no friction. Mate scans the events
-for secrets first; an event the scan flags keeps its message, command and error
-text as `[withheld: <rule>]`. When the scan fails, Mate withholds those fields
-in every event.
+for secrets first; an event the scan flags keeps its message, command, error
+text, paths and flags as `[withheld: <rule>]`. When the scan fails, Mate
+withholds those fields in every event.
 
 `context.md` holds no environment variable values. The playbook never changes:
 Mate does not fetch a newer one. Run `mate update` to get the playbook of a
