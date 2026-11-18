@@ -17,6 +17,11 @@ export interface SetupContext {
   config: FrameworkConfig;
   mode: "setup" | "sync";
   activeProviders: string[];
+  /**
+   * The selection before this setup run; absent on every sync. Lets a teardown with
+   * machine-wide effects act only on what this run actually deselected.
+   */
+  previousSetup?: { config: FrameworkConfig; activeProviders: string[] };
   /** Hub setup runs providers but excludes companion-only surfaces. */
   scope?: SetupScope;
   /** Working repository path when syncing from a linked repo (e.g. during launch). */

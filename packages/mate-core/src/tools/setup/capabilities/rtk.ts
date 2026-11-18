@@ -5,6 +5,7 @@ import path from "node:path";
 
 import type { CapabilityPlugin, RuntimeContributionsByRuntime, SetupContext } from "../plugin";
 import type { InstallRequirement } from "../install-contract";
+import type { FrameworkConfig } from "../../../lib/orchestrator/types";
 import {
   isCommandOnPath,
   resolveCommandOnPath,
@@ -96,10 +97,24 @@ export type RtkDeps = {
   homeDir?: () => string;
 };
 
-const hasOtherActiveRtkProvider = (currentProviderId: string, activeProviders: string[]) =>
-  Object.keys(RTK_INIT_COMMANDS).some(
-    (providerId) => providerId !== currentProviderId && activeProviders.includes(providerId),
-  );
+const selectsRtk = (config: FrameworkConfig) =>
+  (config.capabilities ?? []).some((capability) => capability.name === "rtk");
+
+/**
+ * Whether this setup run ends the provider's RTK use. The uninstall edits the member's
+ * global agent config, which other companions rely on, so only such a transition may run it.
+ */
+function endsRtkUse(providerId: string, ctx: SetupContext): boolean {
+  const previous = ctx.previousSetup;
+  if (!previous || !selectsRtk(previous.config)) return false;
+  if (!previous.activeProviders.includes(providerId)) return false;
+  const otherProviderStays =
+    selectsRtk(ctx.config) &&
+    Object.keys(RTK_INIT_COMMANDS).some(
+      (id) => id !== providerId && ctx.activeProviders.includes(id),
+    );
+  return !otherProviderStays;
+}
 
 export function createRtkPlugin(deps: RtkDeps = {}): CapabilityPlugin {
   const askConfirm = deps.confirm ?? confirm;
@@ -144,8 +159,7 @@ export function createRtkPlugin(deps: RtkDeps = {}): CapabilityPlugin {
     label: "RTK",
     description: "Patch supported agent providers with RTK when selected.",
     defaultSelected: false,
-    isEnabled: (config) =>
-      (config.capabilities ?? []).some((capability) => capability.name === "rtk"),
+    isEnabled: selectsRtk,
     getRuntimeContributions(): RuntimeContributionsByRuntime {
       return { claude: { permissionEntries: ["Bash(rtk:*)"] } };
     },
@@ -186,7 +200,7 @@ export function createRtkPlugin(deps: RtkDeps = {}): CapabilityPlugin {
           await run(RTK_INIT_COMMANDS.claude);
         },
         async teardown(ctx: SetupContext) {
-          if (checkRtkPath() && !hasOtherActiveRtkProvider("claude", ctx.activeProviders)) {
+          if (checkRtkPath() && endsRtkUse("claude", ctx)) {
             await runRtkInstall(RTK_UNINSTALL_COMMANDS.claude);
           }
         },
@@ -198,7 +212,7 @@ export function createRtkPlugin(deps: RtkDeps = {}): CapabilityPlugin {
           await run(RTK_INIT_COMMANDS.opencode);
         },
         async teardown(ctx: SetupContext) {
-          if (checkRtkPath() && !hasOtherActiveRtkProvider("opencode", ctx.activeProviders)) {
+          if (checkRtkPath() && endsRtkUse("opencode", ctx)) {
             await runRtkInstall(RTK_UNINSTALL_COMMANDS.opencode);
           }
         },

@@ -127,24 +127,55 @@ describe("createRtkPlugin", () => {
       expect(runInstallMock).not.toHaveBeenCalled();
     });
 
-    test(`${provider} teardown uninstalls only when no other provider is active`, async () => {
-      const runRtkMock = mock(async () => {});
-      const plugin = createRtkPlugin({ isRtkOnPath: () => true, runRtkInstallCmd: runRtkMock });
+    describe(`${provider} teardown`, () => {
+      const other = provider === "claude" ? "opencode" : "claude";
+      const uninstall =
+        provider === "claude" ? "rtk init -g --uninstall" : "rtk init -g --uninstall --opencode";
+      const withRtk = { allowedAgents: [], capabilities: [{ name: "rtk" }] };
+      const withoutRtk = { allowedAgents: [], capabilities: [] };
 
-      await plugin.forProvider![provider].teardown({
-        ...makeCtx(),
-        activeProviders: [],
-      });
-      expect(runRtkMock).toHaveBeenCalledWith(
-        provider === "claude" ? "rtk init -g --uninstall" : "rtk init -g --uninstall --opencode",
-      );
+      async function teardownCommands(ctx: Partial<SetupContext>): Promise<string[]> {
+        const ran: string[] = [];
+        const plugin = createRtkPlugin({
+          isRtkOnPath: () => true,
+          runRtkInstallCmd: async (cmd) => {
+            ran.push(cmd);
+          },
+        });
+        await plugin.forProvider![provider].teardown({ ...makeCtx(), ...ctx });
+        return ran;
+      }
 
-      runRtkMock.mockClear();
-      await plugin.forProvider![provider].teardown({
-        ...makeCtx(),
-        activeProviders: [provider === "claude" ? "opencode" : "claude"],
+      test("leaves the integration alone without an earlier selection", async () => {
+        expect(await teardownCommands({ mode: "sync", config: withoutRtk })).toEqual([]);
       });
-      expect(runRtkMock).not.toHaveBeenCalled();
+
+      test("leaves the integration alone when the provider did not use RTK before", async () => {
+        const unselected = { config: withoutRtk, activeProviders: [provider] };
+        expect(await teardownCommands({ config: withoutRtk, previousSetup: unselected })).toEqual(
+          [],
+        );
+        const inactive = { config: withRtk, activeProviders: [other] };
+        expect(await teardownCommands({ previousSetup: inactive })).toEqual([]);
+      });
+
+      test("uninstalls when the provider leaves RTK use", async () => {
+        const previousSetup = { config: withRtk, activeProviders: [provider] };
+        expect(await teardownCommands({ previousSetup })).toEqual([uninstall]);
+      });
+
+      test("keeps the integration while another provider stays active for RTK", async () => {
+        const previousSetup = { config: withRtk, activeProviders: [provider, other] };
+        expect(await teardownCommands({ previousSetup, activeProviders: [other] })).toEqual([]);
+      });
+
+      test("uninstalls when RTK is deselected with both providers active", async () => {
+        const activeProviders = [provider, other];
+        const previousSetup = { config: withRtk, activeProviders };
+        expect(
+          await teardownCommands({ config: withoutRtk, activeProviders, previousSetup }),
+        ).toEqual([uninstall]);
+      });
     });
   }
 });

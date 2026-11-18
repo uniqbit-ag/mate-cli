@@ -27,9 +27,9 @@ import type { Plugin, SetupContext } from "./setup/plugin";
 
 const tempRoots: string[] = [];
 
-// Guard stubs: executeSetup runs teardown for every deselected capability, and
-// the rtk/tokensave teardowns shell out to whatever binary is on PATH
-// (`rtk init -g --uninstall` edits the developer's real global agent config).
+// Guard stubs: executeSetup runs apply or teardown for every capability, and the
+// rtk/tokensave handlers shell out to whatever binary is on PATH (`rtk init -g`
+// edits the developer's real global agent config).
 // Shadow both binaries for the whole file so no test can reach the real ones.
 // Restored in afterAll: Bun runs every test file in one process, so a leaked
 // stub `tokensave` breaks later files that start a real `tokensave serve`.
@@ -251,6 +251,38 @@ describe("executeSetup", () => {
 
     // No plugins are declared, so there is no install phase.
     expect(phases).toEqual(["Applying capabilities", "Registering companion"]);
+  });
+
+  test("removes the global RTK integration only when setup ends its use", async () => {
+    const root = await makeTempDir("mate-setup-rtk-transition-");
+    const globalConfigStore = new GlobalConfigStore(
+      path.join(root, "home", ".mate", "config.yaml"),
+    );
+    await installOpenSpecStub(root);
+    const log = path.join(root, "rtk.log");
+    await fs.writeFile(path.join(root, "bin", "rtk"), `#!/bin/sh\necho "$*" >> "${log}"\n`, {
+      mode: 0o755,
+    });
+    const uninstalls = async () =>
+      (await fs.readFile(log, "utf8")).split("\n").filter((line) => line.includes("--uninstall"));
+    const setup = (capabilities: { name: string }[]) =>
+      executeSetup({ allowedAgents: ["claude"], capabilities }, { cwd: root, globalConfigStore });
+
+    await setup([{ name: "rtk" }]);
+    expect(await uninstalls()).toEqual([]);
+
+    await syncCompanionFiles(root, {
+      allowedAgents: ["claude"],
+      packageManagers: ["bun"],
+      capabilities: [],
+    });
+    expect(await uninstalls()).toEqual([]);
+
+    await setup([]);
+    expect(await uninstalls()).toEqual(["init -g --uninstall"]);
+
+    await setup([]);
+    expect(await uninstalls()).toEqual(["init -g --uninstall"]);
   });
 
   test("replaces saved providers and capabilities with the selected set", async () => {

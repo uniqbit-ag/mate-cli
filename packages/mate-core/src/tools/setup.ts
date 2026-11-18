@@ -92,6 +92,8 @@ export interface SetupDependencies {
 export interface CompanionSyncOptions {
   /** Regenerates OpenSpec CLI output; set only by `mate companion update`. */
   regenerateOpenSpec?: boolean;
+  /** The saved config before this run's input; set only by `executeSetup`. */
+  previousConfig?: FrameworkConfig;
 }
 
 export interface CompanionSyncOutcome extends SetupInstallationOutcome {
@@ -119,6 +121,15 @@ export async function applySetupCompatibilities(
     repoPath,
     scope,
     ...(options.regenerateOpenSpec ? { regenerateOpenSpec: true } : {}),
+    ...(options.previousConfig
+      ? {
+          previousSetup: {
+            config: options.previousConfig,
+            activeProviders: buildSetupInstallationPlan(options.previousConfig, plugins)
+              .activeProviders,
+          },
+        }
+      : {}),
     managedOutput: managedOutput.recorder,
   };
   const outcome = await executeSetupInstallationPlan(ctx, plugins, plan);
@@ -292,6 +303,7 @@ export async function executeSetup(
     deps.configStore ??
     new ConfigStore(path.join(cwd, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"));
   const config = mergeWithDefaults(await configStore.load());
+  const previousConfig = structuredClone(config);
   const audience = resolveAudience(config, readAudienceSelection(process.env));
   if (!audience.ok) throw new ConfigError(describeUnknownAudience(audience));
   if (input.allowedAgents !== undefined) {
@@ -340,7 +352,9 @@ export async function executeSetup(
   if (declaresPlugins) await progress.step("plugins", "Installing plugins", installPlugins);
   else await installPlugins();
   await progress.step("capabilities", "Applying capabilities", () =>
-    applySetupCompatibilities(companionPath, config, "setup"),
+    applySetupCompatibilities(companionPath, config, "setup", undefined, undefined, undefined, {
+      previousConfig,
+    }),
   );
   await progress.step("register", "Registering companion", async () => {
     const untracked = await untrackManagedSkillCopies(companionPath, config);
