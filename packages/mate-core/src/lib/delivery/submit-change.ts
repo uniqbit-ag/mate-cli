@@ -29,7 +29,6 @@ import {
   submitGroups,
   type DropResult,
   type GroupSubmission,
-  type LocalMember,
   type PendingFailure,
   type SubmitDeps,
 } from "./staging/submit";
@@ -284,36 +283,33 @@ export async function submitChanges(
     request.changes,
     deps.openTasks ?? openTasks,
   );
-  for (const change of siblings) {
-    // oxlint-disable-next-line no-await-in-loop -- warnings reach stderr change by change
+  const prepareUnnamed = async (
+    change: string,
+    extra: Pick<SubmitRequest, "skipBranch"> = {},
+  ): Promise<void> => {
     const step = await prepare(
       environment,
-      { changes: [change], ...(request.fetch ? { fetch: true } : {}) },
+      { changes: [change], ...extra, ...(request.fetch ? { fetch: true } : {}) },
       change,
       type,
       deps,
     );
-    // One that cannot be prepared stays active, so its group waits for it.
     if ("prepared" in step) steps.push(step);
+  };
+  // One that cannot be prepared stays active, so its group waits for it.
+  for (const change of siblings) {
+    // oxlint-disable-next-line no-await-in-loop -- warnings reach stderr change by change
+    await prepareUnnamed(change);
   }
-  const edited = await editedSubmittedMembers(cwd, groups, request.changes, {
-    ...deps,
-    artifactType: type,
-  });
+  // The archive alias pushes nothing, and its `--json` stays one object for one change.
+  const edited = request.holdPush
+    ? []
+    : await editedSubmittedMembers(cwd, groups, request.changes, { ...deps, artifactType: type });
   const editedNames = new Set(edited.map((member) => member.name));
-  const unprepared: LocalMember[] = [];
+  // Accepted once already, so a change nobody named never answers `needs-branch`.
   for (const member of edited) {
     // oxlint-disable-next-line no-await-in-loop -- warnings reach stderr change by change
-    const step = await prepare(
-      environment,
-      // Accepted once already, so a change nobody named never answers `needs-branch`.
-      { changes: [member.name], skipBranch: true, ...(request.fetch ? { fetch: true } : {}) },
-      member.name,
-      type,
-      deps,
-    );
-    if ("prepared" in step) steps.push(step);
-    else unprepared.push(member);
+    await prepareUnnamed(member.name, { skipBranch: true });
   }
   const prepared = steps.flatMap((step) => ("prepared" in step ? [step.prepared] : []));
 
@@ -323,8 +319,10 @@ export async function submitChanges(
     failing.set(group, [...(failing.get(group) ?? []), change]);
   };
   for (const entry of prepared.filter((each) => each.failure)) hold(entry.group, entry.change);
-  // `submitGroups` would push it unprepared: a `submitted` member never makes a group wait there.
-  for (const member of unprepared) hold(member.group, member.name);
+  // `submitGroups` would push one unprepared: a `submitted` member never makes a group wait there.
+  for (const member of edited) {
+    if (!prepared.some((entry) => entry.change === member.name)) hold(member.group, member.name);
+  }
   // Left unnamed: `submitGroups` pushes them anyway, and a name would accept a pending block.
   const ready = prepared.filter(
     (entry) => !failing.has(entry.group) && !editedNames.has(entry.change),

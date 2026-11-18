@@ -20,7 +20,7 @@ import { companionGit } from "../../../runtime/companion-git";
 import { readSubmittedFolders } from "../../../runtime/companion-git-state";
 import type { RunOpenSpec } from "../../openspec-cli";
 import { readDeliveryRecord, upsertDelivery, writeDeliveryRecord } from "../record";
-import { submitChanges, type SubmitOutcome } from "../submit-change";
+import { submitChanges, type SubmitOutcome, type SubmitRequest } from "../submit-change";
 import { openspecArtifactType } from "./openspec-type";
 import {
   dropSubmitted,
@@ -92,6 +92,18 @@ function protectBranch(fixture: StagingFixture, ref: string): void {
 /** Marks `name` submitted, as submit does after its check. */
 async function markSubmitted(companion: string, name: string): Promise<void> {
   await writeSubmissionState(path.join(companion, "openspec", "changes", name), name, "submitted");
+}
+
+/** Records a block on `name` on the inbox, as a publication does. */
+function blockOnInbox(fixture: StagingFixture, name: string): void {
+  const publisher = fixture.clone("acme-publisher");
+  git(publisher, "checkout", "-q", INBOX);
+  fs.appendFileSync(
+    path.join(publisher, "openspec", "changes", name, "delivery.yaml"),
+    "blocked:\n  reason: acme stale\n  paths: []\n  since: 2026-11-15T10:00:00.000Z\n",
+  );
+  git(publisher, "commit", "-qam", "block");
+  git(publisher, "push", "-q", "origin", INBOX);
 }
 
 function stagingDirs(fixture: StagingFixture): string[] {
@@ -515,14 +527,7 @@ describe("submitGroups", () => {
       // A later default tip never replaces it; a block a publication recorded is cleared.
       git(companion, "commit", "-q", "--allow-empty", "-m", "acme later");
       git(companion, "push", "-q", "origin", "HEAD:main");
-      const publisher = fixture.clone("acme-publisher");
-      git(publisher, "checkout", "-q", INBOX);
-      fs.appendFileSync(
-        path.join(publisher, "openspec", "changes", "acme-login", "delivery.yaml"),
-        "blocked:\n  reason: acme stale\n  paths: []\n  since: 2026-11-15T10:00:00.000Z\n",
-      );
-      git(publisher, "commit", "-qam", "block");
-      git(publisher, "push", "-q", "origin", INBOX);
+      blockOnInbox(fixture, "acme-login");
       // Unedited, it stays as the inbox has it; the fixed change is pushed.
       const [unedited] = await submitGroups(companion, ["acme-login"], deps(fixture));
       expect(unedited?.status).toBe("unchanged");
@@ -895,28 +900,37 @@ async function submittedLogin(
   return { companion, product, dirs, head };
 }
 
+function editProposal(dir: string): void {
+  fs.appendFileSync(path.join(dir, "proposal.md"), "\nEdited.\n");
+}
+
 function submitUi(
   fixture: StagingFixture,
   login: SubmittedLogin,
-  runOpenSpec: RunOpenSpec,
-  extra: Partial<SubmitDeps> = {},
+  options: {
+    runOpenSpec?: RunOpenSpec;
+    request?: Partial<SubmitRequest>;
+    deps?: Partial<SubmitDeps>;
+  } = {},
 ): Promise<SubmitOutcome> {
   return submitChanges(
     productEnvironment(login.companion, login.product),
-    { changes: ["acme-login-ui"] },
-    { ...deps(fixture, extra), runOpenSpec },
+    { changes: ["acme-login-ui"], ...options.request },
+    {
+      ...deps(fixture, options.deps),
+      runOpenSpec: options.runOpenSpec ?? recordingOpenSpec(),
+    },
   );
 }
 
 /** `status` fails; `validate` appends its change to `checked` and fails for `invalid`. */
 function recordingOpenSpec(
-  checked: string[],
-  options: { invalid?: string[]; onCheck?: (change: string) => void } = {},
+  options: { checked?: string[]; invalid?: string[]; onCheck?: (change: string) => void } = {},
 ): RunOpenSpec {
   return async (args) => {
     if (args.includes("status")) return { code: 1, stdout: "", stderr: "no status" };
     const change = args.at(-1)!;
-    checked.push(change);
+    options.checked?.push(change);
     options.onCheck?.(change);
     return options.invalid?.includes(change)
       ? { code: 1, stdout: "", stderr: `${change}: invalid delta` }
@@ -947,10 +961,7 @@ describe("submitChanges", () => {
         { changes: ["acme-login"] },
         {
           ...deps(fixture),
-          runOpenSpec: async (args) =>
-            args.includes("status")
-              ? { code: 1, stdout: "", stderr: "no status" }
-              : { code: 0, stdout: "", stderr: "" },
+          runOpenSpec: recordingOpenSpec(),
         },
       );
 
@@ -967,12 +978,14 @@ describe("submitChanges", () => {
     async () => {
       const fixture = await setup();
       const login = await submittedLogin(fixture);
-      fs.appendFileSync(path.join(login.dirs[0]!, "proposal.md"), "\nEdited.\n");
+      editProposal(login.dirs[0]!);
       const final = login.product.commitOn(LOGIN_BRANCH, "login.txt", "login, reviewed\n");
       const before = inboxTip(fixture);
       const checked: string[] = [];
 
-      const outcome = await submitUi(fixture, login, recordingOpenSpec(checked));
+      const outcome = await submitUi(fixture, login, {
+        runOpenSpec: recordingOpenSpec({ checked }),
+      });
 
       expect(outcome).toMatchObject({
         results: [
@@ -997,14 +1010,12 @@ describe("submitChanges", () => {
     async () => {
       const fixture = await setup();
       const login = await submittedLogin(fixture);
-      fs.appendFileSync(path.join(login.dirs[0]!, "proposal.md"), "\nEdited.\n");
+      editProposal(login.dirs[0]!);
       const before = inboxTip(fixture);
 
-      const outcome = await submitUi(
-        fixture,
-        login,
-        recordingOpenSpec([], { invalid: ["acme-login-api"] }),
-      );
+      const outcome = await submitUi(fixture, login, {
+        runOpenSpec: recordingOpenSpec({ invalid: ["acme-login-api"] }),
+      });
 
       expect(outcome).toMatchObject({
         results: [
@@ -1024,13 +1035,36 @@ describe("submitChanges", () => {
   );
 
   test(
+    "the archive alias, which pushes nothing, leaves an edited member out of its result",
+    async () => {
+      const fixture = await setup();
+      const login = await submittedLogin(fixture);
+      editProposal(login.dirs[0]!);
+      const checked: string[] = [];
+
+      const outcome = await submitUi(fixture, login, {
+        request: { holdPush: true },
+        runOpenSpec: recordingOpenSpec({ checked }),
+      });
+
+      expect("results" in outcome && outcome.results.map((result) => result.change)).toEqual([
+        "acme-login-ui",
+      ]);
+      expect(checked).toEqual(["acme-login-ui"]);
+    },
+    TIMEOUT,
+  );
+
+  test(
     "an unedited submitted member stays out of the run",
     async () => {
       const fixture = await setup();
       const login = await submittedLogin(fixture);
       const checked: string[] = [];
 
-      const outcome = await submitUi(fixture, login, recordingOpenSpec(checked));
+      const outcome = await submitUi(fixture, login, {
+        runOpenSpec: recordingOpenSpec({ checked }),
+      });
 
       expect(outcome).toMatchObject({ results: [{ change: "acme-login-ui", pushed: true }] });
       expect("results" in outcome && outcome.results).toHaveLength(1);
@@ -1048,20 +1082,18 @@ describe("submitChanges", () => {
       const fixture = await setup();
       const login = await submittedLogin(fixture, ["acme-login-api", "acme-login-db"]);
       const [api, db] = login.dirs;
-      fs.appendFileSync(path.join(api!, "proposal.md"), "\nEdited.\n");
-      fs.appendFileSync(path.join(db!, "proposal.md"), "\nEdited.\n");
+      editProposal(api!);
+      editProposal(db!);
       const before = inboxTip(fixture);
 
       // Gone once it was found edited, so recording its delivery is refused.
-      const outcome = await submitUi(
-        fixture,
-        login,
-        recordingOpenSpec([], {
+      const outcome = await submitUi(fixture, login, {
+        runOpenSpec: recordingOpenSpec({
           onCheck: (change) => {
             if (change === "acme-login-api") fs.rmSync(db!, { recursive: true });
           },
         }),
-      );
+      });
 
       expect(outcome).toMatchObject({
         results: [
@@ -1082,23 +1114,21 @@ describe("submitChanges", () => {
       const base = git(fixture.remote, "rev-parse", "main").trim();
       git(login.companion, "commit", "-q", "--allow-empty", "-m", "acme later");
       git(login.companion, "push", "-q", "origin", "HEAD:main");
-      const publisher = fixture.clone("acme-publisher");
-      git(publisher, "checkout", "-q", INBOX);
-      fs.appendFileSync(
-        path.join(publisher, "openspec/changes/acme-login-api/delivery.yaml"),
-        "blocked:\n  reason: acme stale\n  paths: []\n  since: 2026-11-15T10:00:00.000Z\n",
-      );
-      git(publisher, "commit", "-qam", "block");
-      git(publisher, "push", "-q", "origin", INBOX);
-      fs.appendFileSync(path.join(login.dirs[0]!, "proposal.md"), "\nEdited.\n");
-      const runOpenSpec = recordingOpenSpec([]);
+      blockOnInbox(fixture, "acme-login-api");
+      editProposal(login.dirs[0]!);
+      const runOpenSpec = recordingOpenSpec();
 
       // Its stale part overwrites nothing, so only being named could accept the block.
-      const outcome = await submitUi(fixture, login, runOpenSpec, {
-        artifactType: {
-          ...openspecArtifactType(runOpenSpec),
-          stale: async (_git, _ref, _source, _base, _current, skip = []) =>
-            skip.length > 0 ? null : { capability: "acme", requirement: "Acme", overwrites: false },
+      const outcome = await submitUi(fixture, login, {
+        runOpenSpec,
+        deps: {
+          artifactType: {
+            ...openspecArtifactType(runOpenSpec),
+            stale: async (_git, _ref, _source, _base, _current, skip = []) =>
+              skip.length > 0
+                ? null
+                : { capability: "acme", requirement: "Acme", overwrites: false },
+          },
         },
       });
 
@@ -1130,7 +1160,7 @@ describe("submitChanges", () => {
       const record = await readDeliveryRecord(api!);
       await writeDeliveryRecord(api!, upsertDelivery(record!, PRODUCT, { head: login.head }));
 
-      const outcome = await submitUi(fixture, login, recordingOpenSpec([]));
+      const outcome = await submitUi(fixture, login);
 
       expect(outcome).toMatchObject({
         results: [
@@ -1382,10 +1412,7 @@ describe("takeSubmitted", () => {
         { changes: ["acme-login"] },
         {
           ...deps(fixture),
-          runOpenSpec: async (args) =>
-            args.includes("status")
-              ? { code: 1, stdout: "", stderr: "no status" }
-              : { code: 0, stdout: "", stderr: "" },
+          runOpenSpec: recordingOpenSpec(),
         },
       );
 
@@ -1412,10 +1439,7 @@ describe("takeSubmitted", () => {
           { changes: ["acme-login"] },
           {
             ...deps(fixture),
-            runOpenSpec: async (args) =>
-              args.includes("status")
-                ? { code: 1, stdout: "", stderr: "no status" }
-                : { code: 0, stdout: "", stderr: "" },
+            runOpenSpec: recordingOpenSpec(),
           },
         );
       git(product.clone, "switch", "-q", "workset/acme-login");
