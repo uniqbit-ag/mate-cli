@@ -109,23 +109,21 @@ export function collectManagedGitignoreEntries(ctx: SetupContext, plugins: Plugi
     // Listed before a member's first local plugin, so that one never shows in `git status`.
     LOCAL_PLUGINS_FILE_GITIGNORE_ENTRY,
     LOCAL_PLUGINS_WORKSPACE_GITIGNORE_ENTRY,
+    // Unconditional: it can name a local plugin that `framework.yaml` does not declare.
+    PLUGIN_LOCAL_OVERRIDES_GITIGNORE_ENTRY,
     ...plugins
       .filter((p) => p.kind !== "root" && (p.isEnabled(ctx.config) || p.persistGitignoreEntries))
       .flatMap((p) => p.gitignoreEntries?.(ctx) ?? []),
   ];
-  // Dynamic-plugin loading artifacts: the local override file and the local
-  // registry credentials (the shared workspace's file and its link in every
-  // audience workspace) never version. A workspace's installed tree
+  // Dynamic-plugin loading artifacts: the local registry credentials (the
+  // shared workspace's file and its link in every audience workspace) never
+  // version. A workspace's installed tree
   // (node_modules) is already covered by the baseline node_modules/ rule
   // above, since the workspaces live outside the dependencies tree wildcard;
   // each package.json and committed package-lock.json is the
   // pin/reproducibility record and is never touched by any ignore rule.
   if (ctx.config.plugins?.length || audiencePluginPackages(ctx.config).size > 0) {
-    entries.push(
-      PLUGIN_WORKSPACE_NPMRC_GITIGNORE_ENTRY,
-      PLUGIN_AUDIENCE_NPMRC_GITIGNORE_ENTRY,
-      PLUGIN_LOCAL_OVERRIDES_GITIGNORE_ENTRY,
-    );
+    entries.push(PLUGIN_WORKSPACE_NPMRC_GITIGNORE_ENTRY, PLUGIN_AUDIENCE_NPMRC_GITIGNORE_ENTRY);
   }
   return entries;
 }

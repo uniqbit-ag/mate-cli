@@ -34,6 +34,7 @@ import {
   LOCAL_PLUGINS_FILE_GITIGNORE_ENTRY as LOCAL_FILE,
   LOCAL_PLUGINS_WORKSPACE_GITIGNORE_ENTRY as LOCAL_WORKSPACE,
   localPluginsFilePath,
+  PLUGIN_LOCAL_OVERRIDES_GITIGNORE_ENTRY,
 } from "./paths";
 
 export interface LocalPluginProblem {
@@ -182,6 +183,7 @@ async function ensureLocalPluginIgnores(companionPath: string): Promise<void> {
   await addManagedGitignoreEntries(path.join(companionPath, ".gitignore"), [
     LOCAL_FILE,
     LOCAL_WORKSPACE,
+    PLUGIN_LOCAL_OVERRIDES_GITIGNORE_ENTRY,
   ]);
 }
 

@@ -209,7 +209,7 @@ describe("local install step", () => {
     expect(before.join("")).not.toContain(GATED);
   });
 
-  test("adds both ignore entries inside the managed block, keeping other lines", async () => {
+  test("adds the ignore entries inside the managed block, keeping other lines", async () => {
     const dir = await companion(localEntry());
     const gitignore = path.join(dir, ".gitignore");
     await fs.writeFile(
@@ -220,7 +220,7 @@ describe("local install step", () => {
     await install(dir, fakeNpm());
 
     expect(await fs.readFile(gitignore, "utf8")).toBe(
-      `mine\n\n# mate managed: start\nnode_modules/\n${LOCAL_FILE}\n.mate/local-plugins/\n# mate managed: end\n\nlast\n`,
+      `mine\n\n# mate managed: start\nnode_modules/\n${LOCAL_FILE}\n.mate/local-plugins/\n.mate/config/plugins.local.yaml\n# mate managed: end\n\nlast\n`,
     );
   });
 
