@@ -4,7 +4,7 @@ import path from "node:path";
 
 import * as vscode from "vscode";
 
-import { readOpenChanges, readyToArchive, type OpenChange } from "./changes";
+import { readOpenChanges, readyToSubmit, type OpenChange } from "./changes";
 import {
   groupSessions,
   latestSession,
@@ -122,8 +122,8 @@ async function loadRepositoryView(repository: WindowRepository) {
     changes,
     // Sessions and Worktrees still group by every active change's Workset.
     worksets: worksetsOf(active),
-    openWorksets: worksetsOf(active.filter((change) => !readyToArchive(change))),
-    ready: active.filter(readyToArchive),
+    openWorksets: worksetsOf(active.filter((change) => !readyToSubmit(change))),
+    ready: active.filter(readyToSubmit),
     defaultBranch: base,
   };
 }
@@ -167,7 +167,7 @@ const changeItem = (change: OpenChange): SectionItem => ({
     : {}),
 });
 
-/** A Ready to archive item: the change with its Workset label. */
+/** A Ready to submit item: the change with its Workset label. */
 function readyItem(change: OpenChange): SectionItem {
   const item = changeItem(change);
   const workset = change.deliveryBranch ? worksetLabel(change.deliveryBranch) : undefined;
@@ -427,8 +427,8 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  const readyToArchiveChanges = new Section(
-    "mate.readyToArchive",
+  const readyToSubmitChanges = new Section(
+    "mate.readyToSubmit",
     forRepository(async (repository) => {
       const view = await repositoryView(repository);
       if (!view.changes.linked) return { message: NOT_LINKED };
@@ -448,7 +448,7 @@ export function activate(context: vscode.ExtensionContext): void {
     })),
   );
 
-  const sections = [sessions, worktrees, openChanges, readyToArchiveChanges, readyToPublish];
+  const sections = [sessions, worktrees, openChanges, readyToSubmitChanges, readyToPublish];
 
   /** Asked once per window; without `--bg`, Claude sessions start in the foreground as before. */
   let backgroundSupport: Promise<boolean> | undefined;

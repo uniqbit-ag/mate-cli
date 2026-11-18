@@ -331,9 +331,9 @@ export function mergeGit(repoPath: string, deps: MergeGitDeps = {}): MergeGit {
       }
       return null;
     },
-    async aheadOf(base, candidate) {
-      if (base === candidate) return false;
-      return (await git(["merge-base", "--is-ancestor", base, candidate])).code === 0;
+    async aheadOf(ancestor, candidate) {
+      if (ancestor === candidate) return false;
+      return (await git(["merge-base", "--is-ancestor", ancestor, candidate])).code === 0;
     },
     async hasCommit(commit) {
       return (await git(["cat-file", "-e", `${commit}^{commit}`])).code === 0;

@@ -112,8 +112,10 @@ export async function refreshFromTemplate(
    * so without this it would be prepended again on every refresh. Consuming
    * every leading copy also heals a file an earlier refresh already grew.
    */
-  while (template && remaining.startsWith(template)) {
-    remaining = remaining.slice(template.length).trimStart();
+  if (template) {
+    while (remaining.startsWith(template)) {
+      remaining = remaining.slice(template.length).trimStart();
+    }
   }
 
   const sections = [

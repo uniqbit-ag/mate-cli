@@ -9,7 +9,7 @@ If the repository's Mate workspace is not open, the sidebar shows one **Open wor
   - **OpenCode sessions run in the background** (`mate opencode -- --bg`, OpenCode 2.x): the terminal is a client of the repository's Mate OpenCode server, one `opencode serve` per repository and its worktrees. Closing the terminal detaches; the turn keeps running. _Attach_ and _Resume_ reconnect a terminal; _Stop_ interrupts the running turn (`mate session stop`). The server stops itself after an hour without a running turn; the conversation is kept, and the next session starts it again.
 - **Worktrees**: the repository's Git worktrees; Workset branches are marked. A worktree's _New session_ button asks only for the Agent Runtime and starts the session in that worktree, as **New session** does.
 - **Open changes**: active OpenSpec changes of the linked Companion Repository that still have unchecked tasks, grouped by Workset. Groups start collapsed and show combined completed/total task progress (for example, `5/12 tasks`) plus the Workset's session count; resume the latest session from the group. Expanding reveals each change's own progress, and refresh preserves your expansion state. Opening a change opens `proposal.md`, or `tasks.md` when there is no proposal, as with `mate-minimal` changes.
-- **Ready to archive**: active changes whose tasks are all checked, with their Workset; opening one opens it as in Open changes. Archive with `/mate-archive-change`.
+- **Ready to submit**: active changes whose tasks are all checked, with their Workset; opening one opens it as in Open changes. Submit with `/mate-submit-change`.
 - **Ready to publish**: archived changes `mate artifact pending` reports.
 
 ## Refresh

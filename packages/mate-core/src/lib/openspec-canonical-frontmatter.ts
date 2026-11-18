@@ -1,3 +1,4 @@
+// oxlint-disable no-await-in-loop -- one canonical spec at a time
 import fs from "node:fs/promises";
 import path from "node:path";
 

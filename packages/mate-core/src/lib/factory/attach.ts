@@ -64,6 +64,10 @@ export function handleAttach(socket: net.Socket, options: AttachServerOptions): 
     if (!socket.destroyed) socket.end(encodeControl({ type: "error", reason }));
   };
 
+  const onData = (data: Uint8Array) => {
+    if (!socket.destroyed) socket.write(encodeData(data));
+  };
+
   const start = async (message: Record<string, unknown>) => {
     starting = true;
     const extra = Object.keys(message).filter((key) => !START_FIELDS.has(key));
@@ -104,9 +108,6 @@ export function handleAttach(socket: net.Socket, options: AttachServerOptions): 
       TERM: "xterm-256color",
     });
     if (credential) env[credential.name] = credential.value;
-    const onData = (data: Uint8Array) => {
-      if (!socket.destroyed) socket.write(encodeData(data));
-    };
     pty = tty
       ? spawn({ argv, env, cols: message.cols as number, rows: message.rows as number, onData })
       : spawnPipe({

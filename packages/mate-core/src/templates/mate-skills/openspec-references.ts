@@ -96,6 +96,7 @@ export async function renderOpenSpecReferences(cliPath: string): Promise<Map<str
       for (const vendored of VENDORED_WORKFLOWS) {
         const { workflow } = vendored;
         const generated = path.join(workdir, `.${tool}`, "skills", workflow, "SKILL.md");
+        // oxlint-disable-next-line no-await-in-loop -- a few generated files, in order
         const source = await fs.readFile(generated, "utf8");
         if (!FRONTMATTER.test(source)) {
           throw new Error(`OpenSpec ${workflow} (${tool}) has no skill frontmatter to strip.`);

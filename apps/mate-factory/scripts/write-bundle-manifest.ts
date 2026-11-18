@@ -29,7 +29,7 @@ export function fingerprint(root: string): string {
   const walk = (directory: string, prefix: string): void => {
     for (const entry of fs
       .readdirSync(directory, { withFileTypes: true })
-      .sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      .toSorted((a, b) => (a.name < b.name ? -1 : 1))) {
       const full = path.join(directory, entry.name);
       const relative = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
       if (entry.isSymbolicLink()) {

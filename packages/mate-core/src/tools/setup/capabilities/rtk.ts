@@ -96,6 +96,11 @@ export type RtkDeps = {
   homeDir?: () => string;
 };
 
+const hasOtherActiveRtkProvider = (currentProviderId: string, activeProviders: string[]) =>
+  Object.keys(RTK_INIT_COMMANDS).some(
+    (providerId) => providerId !== currentProviderId && activeProviders.includes(providerId),
+  );
+
 export function createRtkPlugin(deps: RtkDeps = {}): CapabilityPlugin {
   const askConfirm = deps.confirm ?? confirm;
   const checkRtkPath = deps.isRtkOnPath ?? defaultIsRtkOnPath;
@@ -132,10 +137,6 @@ export function createRtkPlugin(deps: RtkDeps = {}): CapabilityPlugin {
       );
     }
   };
-  const hasOtherActiveRtkProvider = (currentProviderId: string, activeProviders: string[]) =>
-    Object.keys(RTK_INIT_COMMANDS).some(
-      (providerId) => providerId !== currentProviderId && activeProviders.includes(providerId),
-    );
 
   return {
     id: "rtk",

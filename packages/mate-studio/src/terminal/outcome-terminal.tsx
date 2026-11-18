@@ -94,22 +94,22 @@ class OutcomeSession {
   private connect(): void {
     const ws = openTerminalSocket();
     this.ws = ws;
-    ws.onopen = () => {
+    ws.addEventListener("open", () => {
       if (!this.term) return;
       const { cols, rows } = this.term;
       if (this.sessionId) {
         this.attaching = true;
         this.send({ type: "attach", sessionId: this.sessionId, cols, rows });
       } else this.start();
-    };
-    ws.onmessage = (event) => this.receive(event.data);
-    ws.onclose = () => {
+    });
+    ws.addEventListener("message", (event) => this.receive(event.data));
+    ws.addEventListener("close", () => {
       if (this.ws !== ws) return;
       this.ws = null;
       if (!this.live && !this.closed) {
         this.show({ kind: "refused", reason: "The connection closed before the session started." });
       }
-    };
+    });
   }
 
   private receive(data: unknown): void {

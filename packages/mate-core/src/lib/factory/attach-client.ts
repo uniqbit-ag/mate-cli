@@ -76,11 +76,11 @@ export function runAttach(
   streams: AttachStreams,
   connect: (path: string) => net.Socket = (path) => net.connect(path),
 ): Promise<number> {
+  const size = () => ({ cols: streams.output.columns ?? 80, rows: streams.output.rows ?? 24 });
   return new Promise((resolve) => {
     const socket = connect(socketPath);
     const decoder = new FrameDecoder();
     let status: number | null = null;
-    const size = () => ({ cols: streams.output.columns ?? 80, rows: streams.output.rows ?? 24 });
 
     const finish = (code: number) => {
       if (streams.input.isTTY) streams.input.setRawMode?.(false);

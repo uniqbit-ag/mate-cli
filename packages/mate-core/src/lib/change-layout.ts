@@ -113,28 +113,29 @@ export interface DeltaSpec {
   capability: string | null;
 }
 
+const walkFiles = async (current: string, relative: string): Promise<string[]> => {
+  let entries;
+  try {
+    entries = await fs.readdir(current, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const nested = await Promise.all(
+    entries.map(async (entry) => {
+      const entryRelative = relative ? `${relative}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) return walkFiles(path.join(current, entry.name), entryRelative);
+      return entry.isFile() ? [entryRelative] : [];
+    }),
+  );
+  return nested.flat();
+};
+
 /**
  * Every file below `dir` at any depth, as sorted POSIX paths relative to it. Reads directory
  * entry names only, never contents; an unreadable directory contributes nothing.
  */
 export async function filesBelow(dir: string): Promise<string[]> {
-  const walk = async (current: string, relative: string): Promise<string[]> => {
-    let entries;
-    try {
-      entries = await fs.readdir(current, { withFileTypes: true });
-    } catch {
-      return [];
-    }
-    const nested = await Promise.all(
-      entries.map(async (entry) => {
-        const entryRelative = relative ? `${relative}/${entry.name}` : entry.name;
-        if (entry.isDirectory()) return walk(path.join(current, entry.name), entryRelative);
-        return entry.isFile() ? [entryRelative] : [];
-      }),
-    );
-    return nested.flat();
-  };
-  return (await walk(dir, "")).toSorted();
+  return (await walkFiles(dir, "")).toSorted();
 }
 
 /**

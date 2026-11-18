@@ -457,6 +457,7 @@ export async function applyStage(
     if (counts.open === 0 && counts.done > 0) continue;
     if (!linked.has(change))
       check(
+        // oxlint-disable-next-line no-await-in-loop -- changes are applied one at a time
         await deps.run(
           "mate",
           ["artifact", "link", change, "--repository", repository, "--branch", branch, "--json"],
@@ -464,6 +465,7 @@ export async function applyStage(
         ),
         `recording ${branch} for ${change}`,
       );
+    // oxlint-disable-next-line no-await-in-loop -- one agent turn at a time
     const outcome = await turn(deps, id, PROMPTS.apply(change));
     if (outcome.kind === "question") return outcome;
     // oxlint-disable-next-line no-await-in-loop -- verify each turn before committing its work

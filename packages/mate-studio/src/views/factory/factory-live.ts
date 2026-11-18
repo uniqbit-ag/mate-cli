@@ -134,6 +134,7 @@ export function useNeedsYou(count: number): void {
       /* a blocked store only costs the de-duplication */
     }
     if (count > seen) {
+      // oxlint-disable-next-line no-new -- constructing it shows the notification
       new Notification("Mate factory", {
         body: count === 1 ? "1 decision needs you" : `${count} decisions need you`,
       });
