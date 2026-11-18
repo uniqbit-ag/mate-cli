@@ -6,7 +6,12 @@ import path from "node:path";
 import { parse } from "yaml";
 
 import type { CommandResult } from "../command";
-import { unlinkedRecord, upsertDelivery, writeDeliveryRecord } from "../../delivery/record";
+import {
+  readDeliveryRecord,
+  unlinkedRecord,
+  upsertDelivery,
+  writeDeliveryRecord,
+} from "../../delivery/record";
 import { FactoryRunner } from "./scheduler";
 import { Run } from "./run";
 import { RunStore } from "./state";
@@ -69,6 +74,17 @@ function archive(name: string): void {
     path.join(companion, "openspec", "changes", name),
     path.join(companion, "openspec", "changes", "archive", `2026-10-29-${name}`),
   );
+}
+
+/** What Submit change leaves: the folder stays active, its Delivery Record says `submitted`. */
+async function submit(name: string, branch = "workset/acme-login"): Promise<void> {
+  const dir = path.join(companion, "openspec", "changes", name);
+  const delivery = upsertDelivery(
+    (await readDeliveryRecord(dir)) ?? unlinkedRecord(name),
+    "acme/web",
+    { branch },
+  );
+  await writeDeliveryRecord(dir, { ...delivery, state: "submitted" });
 }
 
 /** Each prompt maps to what the agent does in the companion, and what the turn returns. */
@@ -349,15 +365,15 @@ describe("apply", () => {
     expect(fake.calls.some((call) => call.includes("push"))).toBe(false);
   });
 
-  test("applies in dependency order on workset/<workset>, pushes from the appliance, then archives", async () => {
+  test("applies in dependency order on workset/<workset>, pushes from the appliance, then submits", async () => {
     change("acme-login-b", { dependsOn: ["acme-login-a"] });
     change("acme-login-a");
     workset(["acme-login-b", "acme-login-a"]);
-    const { agent, prompts } = scriptedAgent((prompt) => {
+    const { agent, prompts } = scriptedAgent(async (prompt) => {
       const applied = /^\/mate-apply-change (.+)$/m.exec(prompt)?.[1];
       if (applied) complete(applied);
-      const archived = /^\/mate-archive-change (.+)$/.exec(prompt)?.[1];
-      if (archived) archive(archived);
+      const submitted = /^\/mate-submit-change (.+)$/.exec(prompt)?.[1];
+      if (submitted) await submit(submitted);
     });
     const { run, calls } = commands();
     const r = runner(agent, run);
@@ -366,8 +382,8 @@ describe("apply", () => {
     expect(prompts).toEqual([
       PROMPTS.apply("acme-login-a"),
       PROMPTS.apply("acme-login-b"),
-      "/mate-archive-change acme-login-a",
-      "/mate-archive-change acme-login-b",
+      "/mate-submit-change acme-login-a",
+      "/mate-submit-change acme-login-b",
     ]);
     expect(calls.filter((call) => !call.includes("symbolic-ref"))).toEqual([
       [
@@ -406,6 +422,42 @@ describe("apply", () => {
       ],
     ]);
     expect((await runs.facts("acme-login")).execution.state).toBe("idle");
+    // Both folders stay active and submitted: the Workset waits for the merge.
+    expect(fs.readdirSync(path.join(companion, "openspec", "changes")).toSorted()).toEqual([
+      "acme-login-a",
+      "acme-login-b",
+      "archive",
+    ]);
+
+    // Repeated with nothing new: no turn, no push, no second submit.
+    const again = scriptedAgent(() => {});
+    const repeated = commands();
+    const second = runner(again.agent, repeated.run);
+    await second.request("acme-login", "apply");
+    await second.idle("acme-login");
+    expect(again.prompts).toEqual([]);
+    expect(repeated.calls.filter((call) => !call.includes("symbolic-ref"))).toEqual([]);
+    expect((await runs.facts("acme-login")).execution.state).toBe("idle");
+  });
+
+  test("a change its Delivery Group's submit already carried gets no turn of its own", async () => {
+    change("acme-login-a");
+    change("acme-login-b");
+    workset(["acme-login-a", "acme-login-b"]);
+    const { agent, prompts } = scriptedAgent(async (prompt) => {
+      const applied = /^\/mate-apply-change (.+)$/m.exec(prompt)?.[1];
+      if (applied) complete(applied);
+      if (prompt.startsWith("/mate-submit-change")) {
+        await submit("acme-login-a");
+        await submit("acme-login-b");
+      }
+    });
+    const r = runner(agent, commands().run);
+    await r.request("acme-login", "apply");
+    await r.idle("acme-login");
+    expect(prompts.filter((prompt) => prompt.startsWith("/mate-submit-change"))).toEqual([
+      "/mate-submit-change acme-login-a",
+    ]);
   });
 
   test("the agent's work is committed before the push, with a Workset trailer", async () => {
@@ -451,7 +503,7 @@ describe("apply", () => {
     );
   });
 
-  test("open tasks stop the run before push and archive, naming the change", async () => {
+  test("open tasks stop the run before push and submit, naming the change", async () => {
     change("acme-login-a");
     workset(["acme-login-a"]);
     const { agent, prompts } = scriptedAgent(() => {});
@@ -466,10 +518,10 @@ describe("apply", () => {
     expect(
       calls.filter((call) => call[0] === "git").every((call) => call.includes("symbolic-ref")),
     ).toBe(true);
-    expect(prompts.some((prompt) => prompt.startsWith("/mate-archive-change"))).toBe(false);
+    expect(prompts.some((prompt) => prompt.startsWith("/mate-submit-change"))).toBe(false);
   });
 
-  test("a rejected push stops the run before archive with the remote's reason", async () => {
+  test("a rejected push stops the run before submit with the remote's reason", async () => {
     change("acme-login-a");
     workset(["acme-login-a"]);
     const { agent, prompts } = scriptedAgent((prompt) => {
@@ -488,7 +540,7 @@ describe("apply", () => {
       reason:
         "pushing workset/acme-login failed: ! [rejected] workset/acme-login (non-fast-forward)",
     });
-    expect(prompts.some((prompt) => prompt.startsWith("/mate-archive-change"))).toBe(false);
+    expect(prompts.some((prompt) => prompt.startsWith("/mate-submit-change"))).toBe(false);
   });
 });
 
@@ -526,15 +578,79 @@ describe("questions", () => {
 });
 
 describe("publish", () => {
-  test("publishes each linked archived change through the publish command", async () => {
-    change("acme-login-a");
-    archive("acme-login-a");
-    workset(["acme-login-a"]);
-    const { run, calls } = commands();
+  /** Runs publish with `stdout` as the publish command's output; returns its calls. */
+  async function publish(stdout = "{}"): Promise<string[][]> {
+    const calls: string[][] = [];
+    const run = async (command: string, args: string[]): Promise<CommandResult> => {
+      calls.push([command, ...args]);
+      return { status: 0, stdout, stderr: "" };
+    };
     const r = runner(scriptedAgent(() => {}).agent, run);
     await r.request("acme-login", "publish");
     await r.idle("acme-login");
-    expect(calls).toEqual([["mate", "artifact", "publish", "acme-login-a", "--json"]]);
+    return calls;
+  }
+
+  test("submitted changes of one Delivery Group are published once", async () => {
+    change("acme-login-a", { open: 0, done: 2 });
+    change("acme-login-b", { open: 0, done: 2 });
+    await submit("acme-login-a");
+    await submit("acme-login-b");
+    workset(["acme-login-a", "acme-login-b"]);
+    expect(await publish()).toEqual([["mate", "artifact", "publish", "acme-login-a", "--json"]]);
+    expect((await runs.facts("acme-login")).execution.state).toBe("idle");
+  });
+
+  test("changes delivered on different branches are published per group", async () => {
+    change("acme-login-a", { open: 0, done: 2 });
+    change("acme-login-b", { open: 0, done: 2 });
+    await submit("acme-login-a");
+    await submit("acme-login-b", "feature/acme-other");
+    workset(["acme-login-a", "acme-login-b"]);
+    expect(await publish()).toEqual([
+      ["mate", "artifact", "publish", "acme-login-a", "--json"],
+      ["mate", "artifact", "publish", "acme-login-b", "--json"],
+    ]);
+  });
+
+  test("an archive an earlier Mate left is published by its change name", async () => {
+    change("acme-login-a");
+    archive("acme-login-a");
+    workset(["acme-login-a"]);
+    expect(await publish()).toEqual([["mate", "artifact", "publish", "acme-login-a", "--json"]]);
+  });
+
+  test("a group published elsewhere ends the run without an error", async () => {
+    change("acme-login-a", { open: 0, done: 2 });
+    await submit("acme-login-a");
+    workset(["acme-login-a"]);
+    await publish(
+      JSON.stringify([
+        { status: "ok", resumed: true, message: "already published; nothing to do." },
+      ]),
+    );
+    expect((await runs.facts("acme-login")).execution.state).toBe("idle");
+  });
+
+  test("a held publication fails the run with the command's reason", async () => {
+    change("acme-login-a", { open: 0, done: 2 });
+    await submit("acme-login-a");
+    workset(["acme-login-a"]);
+    await publish(JSON.stringify([{ status: "held", message: "acme-login-a is not merged." }]));
+    expect((await runs.facts("acme-login")).execution).toMatchObject({
+      state: "failed",
+      reason: "publishing acme-login-a failed: acme-login-a is not merged.",
+    });
+  });
+
+  test("a change that is not submitted stops publication before any command", async () => {
+    change("acme-login-a", { open: 0, done: 2 });
+    workset(["acme-login-a"]);
+    expect(await publish()).toEqual([]);
+    expect((await runs.facts("acme-login")).execution).toMatchObject({
+      state: "failed",
+      reason: "acme-login-a is not submitted; apply submits it before publication",
+    });
   });
 });
 
@@ -776,8 +892,6 @@ describe("review reports", () => {
     workset(["acme-login-a"]);
     const { agent, prompts } = scriptedAgent((prompt) => {
       if (prompt.startsWith("/mate-apply-change")) complete("acme-login-a");
-      const archived = /^\/mate-archive-change (.+)$/.exec(prompt)?.[1];
-      if (archived) archive(archived);
     });
     const { run, calls } = commands();
     const r = runner(agent, run);
@@ -814,7 +928,9 @@ describe("review reports", () => {
     expect(prompts[1]).toBe("yes");
   });
 
-  test("feedback after archive proposes a follow-up change for the same Outcome", async () => {
+  test("feedback after submit proposes a follow-up change for the same Outcome", async () => {
+    change("acme-login-a", { open: 0, done: 2 });
+    await submit("acme-login-a");
     workset(["acme-login-a"]);
     const { agent, prompts } = scriptedAgent((prompt) => {
       if (prompt.includes("follow-up change")) change("acme-login-b");
