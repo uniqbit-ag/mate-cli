@@ -18,7 +18,10 @@ import {
   readAudienceSelection,
   resolveAudience,
 } from "../../tools/setup/dynamic-plugins/audiences";
-import { hydrateDynamicPlugins } from "../../tools/setup/dynamic-plugins/hydrate";
+import {
+  dynamicPluginDeprecations,
+  hydrateDynamicPlugins,
+} from "../../tools/setup/dynamic-plugins/hydrate";
 import type { PluginInstallResult } from "../../tools/setup/dynamic-plugins/install";
 import { registryConfigHint } from "../../tools/setup/dynamic-plugins/registry-hint";
 import { FrozenInstallError } from "../../tools/setup/dynamic-plugins/frozen";
@@ -223,6 +226,9 @@ export async function runInstallCommand(
     }
     if (outcome.declared) {
       await hydrateDynamicPlugins({ companionPath: context.companionPath });
+      for (const notice of dynamicPluginDeprecations()) {
+        process.stderr.write(`${FRAMEWORK_NAME}: ${notice}\n`);
+      }
       if (frozen) {
         const failures = await verifyDeclaredPlugins(context.companionPath);
         if (failures.length > 0) {

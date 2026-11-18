@@ -316,6 +316,7 @@ describe("runDoctorCommand", () => {
             return {
               failures: [{ package: "@acme/reader", reason: "not installed" }],
               capabilities: [],
+              deprecations: [],
             };
           },
         }),
@@ -346,7 +347,7 @@ describe("runDoctorCommand", () => {
         runDoctorCommand([], {
           cwd: root,
           globalConfigStore,
-          inspectPlugins: async () => ({ failures: [], capabilities: [] }),
+          inspectPlugins: async () => ({ failures: [], capabilities: [], deprecations: [] }),
         }),
       );
 
@@ -846,7 +847,7 @@ describe("doctor OpenSpec rules keys", () => {
       runDoctorCommand(["--json"], {
         cwd: root,
         globalConfigStore,
-        inspectPlugins: async () => ({ failures: [], capabilities: [] }),
+        inspectPlugins: async () => ({ failures: [], capabilities: [], deprecations: [] }),
       }),
     );
     return JSON.parse(output) as {
@@ -866,7 +867,7 @@ describe("doctor OpenSpec rules keys", () => {
         runDoctorCommand([], {
           cwd: root,
           globalConfigStore,
-          inspectPlugins: async () => ({ failures: [], capabilities: [] }),
+          inspectPlugins: async () => ({ failures: [], capabilities: [], deprecations: [] }),
         }),
       );
 
@@ -935,7 +936,7 @@ describe("doctor companion CLAUDE.md text", () => {
   const options = (root: string, globalConfigStore: GlobalConfigStore) => ({
     cwd: root,
     globalConfigStore,
-    inspectPlugins: async () => ({ failures: [], capabilities: [] }),
+    inspectPlugins: async () => ({ failures: [], capabilities: [], deprecations: [] }),
   });
 
   async function doctorJson(root: string, globalConfigStore: GlobalConfigStore) {
@@ -1050,7 +1051,7 @@ describe("contributed Claude plugins", () => {
     const deps = {
       cwd: root,
       globalConfigStore: new GlobalConfigStore(path.join(root, "config.yaml")),
-      inspectPlugins: async () => ({ failures: [], capabilities: [] }),
+      inspectPlugins: async () => ({ failures: [], capabilities: [], deprecations: [] }),
     };
     return { folder, deps };
   }
@@ -1217,7 +1218,7 @@ describe("Claude plugins of a distribution's Capabilities", () => {
           globalConfigStore: new GlobalConfigStore(path.join(root, "config.yaml")),
           inspectPlugins: async (companionPath) => {
             verified.push(companionPath);
-            return { failures: [], capabilities: [] };
+            return { failures: [], capabilities: [], deprecations: [] };
           },
           hydratePlugins: async () => {},
           inspectClaudePlugins: (companionPath, config) =>

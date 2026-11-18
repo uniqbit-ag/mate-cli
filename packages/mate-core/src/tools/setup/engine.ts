@@ -13,6 +13,7 @@ import type {
   RuntimeContributionsByRuntime,
   SetupContext,
 } from "./plugin";
+import { isSetupScope } from "./plugin";
 import {
   declaredHookMarkers,
   reconcileClaudeContributions,
@@ -130,7 +131,7 @@ export async function executeSetupInstallationPlan(
   plan: SetupInstallationPlan,
 ): Promise<SetupInstallationOutcome> {
   // An unknown scope would otherwise dispatch nothing, silently.
-  if (ctx.scope !== "companion" && ctx.scope !== "hub") {
+  if (!isSetupScope(ctx.scope)) {
     throw new Error(`unknown setup scope: ${String(ctx.scope)}`);
   }
   const plugins = registrations.map((entry) => normalizeRegistration(entry).plugin);

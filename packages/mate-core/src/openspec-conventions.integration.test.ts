@@ -414,7 +414,7 @@ describe.skipIf(!REAL_OPENSPEC)("Mate OpenSpec conventions with the real CLI", (
       const report = await collectDoctorReport({
         cwd: sandbox.companion,
         globalConfigStore: new GlobalConfigStore(path.join(sandbox.root, "global.yaml")),
-        inspectPlugins: async () => ({ failures: [], capabilities: [] }),
+        inspectPlugins: async () => ({ failures: [], capabilities: [], deprecations: [] }),
       });
 
       expect(ignoredByOpenSpec.toSorted()).toEqual(["brief", "implementation"]);

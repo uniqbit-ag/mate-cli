@@ -903,8 +903,11 @@ export async function removeClaudeHookGroupsWhere(
   await writeClaudeSettings(settingsLocalPath, settings);
 }
 
-async function teardownClaudeProvider(ctx: SetupContext): Promise<void> {
-  await teardownClaude(ctx.companionPath, ctx.config.allowedAgents ?? []);
+/** Removes only what hub apply writes; a hub root's guidance files and shared settings are not Mate's. */
+async function teardownClaudeHub(ctx: SetupContext): Promise<void> {
+  await fs.rm(getCompanionClaudeSettingsPath(ctx.companionPath), { force: true });
+  await fs.rm(getCompanionClaudeMcpConfigPath(ctx.companionPath), { force: true });
+  await pruneEmptyAncestors(path.join(ctx.companionPath, ".claude"), ctx.companionPath);
 }
 
 export function createClaudePlugin(): ProviderPlugin {
@@ -945,13 +948,15 @@ export function createClaudePlugin(): ProviderPlugin {
           await teardownLegacyClaudeBin(ctx.companionPath);
           await syncCompanionClaudeSettings(ctx.companionPath, ctx.config);
         },
-        teardown: teardownClaudeProvider,
+        async teardown(ctx) {
+          await teardownClaude(ctx.companionPath, ctx.config.allowedAgents ?? []);
+        },
       },
       hub: {
         async apply(ctx) {
           await syncCompanionClaudeSettings(ctx.companionPath, ctx.config);
         },
-        teardown: teardownClaudeProvider,
+        teardown: teardownClaudeHub,
       },
     },
   };

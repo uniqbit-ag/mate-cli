@@ -41,7 +41,7 @@ function depsIn(clone: LinkedClone, cwd: string) {
     globalConfigStore: clone.store,
     pathValue: "",
     hydratePlugins: async () => {},
-    inspectPlugins: async () => ({ failures: [], capabilities: [] }),
+    inspectPlugins: async () => ({ failures: [], capabilities: [], deprecations: [] }),
     inspectClaudePlugins: () => ({ plugins: [], failures: [] }),
   };
 }

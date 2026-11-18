@@ -99,6 +99,37 @@ describe("hub setup scope", () => {
     }
   });
 
+  test("Claude hub teardown removes only what hub apply wrote", async () => {
+    const hubPath = await makeTempDir();
+    const config: FrameworkConfig = {
+      type: "hub",
+      allowedAgents: [],
+      packageManagers: [],
+      capabilities: [],
+    };
+    const userFiles = ["AGENTS.md", "CLAUDE.md", path.join(".claude", "settings.json")];
+    await fs.mkdir(path.join(hubPath, ".claude"), { recursive: true });
+    for (const file of userFiles) await fs.writeFile(path.join(hubPath, file), "user\n");
+    const hub = createClaudePlugin().lifecycle.hub!;
+    const ctx: SetupContext = {
+      companionPath: hubPath,
+      config,
+      mode: "setup",
+      activeProviders: ["claude"],
+      scope: "hub",
+    };
+
+    await hub.apply(ctx);
+    await hub.teardown(ctx);
+
+    for (const file of userFiles) {
+      expect(await fs.readFile(path.join(hubPath, file), "utf8")).toBe("user\n");
+    }
+    for (const file of [path.join(".claude", "settings.local.json"), ".mcp.json"]) {
+      await expect(fs.access(path.join(hubPath, file))).rejects.toThrow();
+    }
+  });
+
   test("materializes and prunes agent definition files without other companion surfaces", async () => {
     const hubPath = await makeTempDir();
     const capability: CapabilityPlugin = {

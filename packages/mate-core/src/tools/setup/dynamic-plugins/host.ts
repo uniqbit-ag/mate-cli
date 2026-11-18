@@ -5,8 +5,8 @@ import { PLUGIN_API_VERSION, type PluginHost } from "./api";
 
 export { PLUGIN_API_VERSION, type CreatePlugin, type PluginHost } from "./api";
 
-/** Plugin API versions this core can load. */
-export const SUPPORTED_PLUGIN_API_VERSIONS: readonly number[] = [PLUGIN_API_VERSION];
+/** Plugin API versions this core can load; v1 is adapted on load and deprecated. */
+export const SUPPORTED_PLUGIN_API_VERSIONS: readonly number[] = [1, PLUGIN_API_VERSION];
 
 /** Builds the host bound to the running core instance. */
 export function createPluginHost(): PluginHost {

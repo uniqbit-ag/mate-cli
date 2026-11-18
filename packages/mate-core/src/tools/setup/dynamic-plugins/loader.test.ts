@@ -132,38 +132,49 @@ describe("loadDynamicPlugin", () => {
     const result = await loadDynamicPlugin(companionPath, declaration(), { host: fakeHost });
     if (result.ok) throw new Error("expected refusal");
     expect(result.warning).toContain("99");
-    expect(result.warning).toContain("supports: 2");
+    expect(result.warning).toContain("supports: 1, 2");
   });
 
-  for (const [label, manifestExtra, warning] of [
-    [
-      "declared API v1",
-      { mate: { pluginApiVersion: 1 } },
-      `plugin "${PACKAGE}" requires plugin API version 1; this CLI supports: 2.`,
-    ],
-    [
-      "no declared API version",
-      {},
-      `plugin "${PACKAGE}" declares no mate.pluginApiVersion, so it requires plugin API version 1; this CLI supports: 2.`,
-    ],
-    [
-      "a non-number API version",
-      { mate: { pluginApiVersion: "2" } },
-      `plugin "${PACKAGE}" declares an invalid mate.pluginApiVersion ("2"); expected a number, this CLI supports: 2.`,
-    ],
-  ] as const) {
-    test(`${label} is refused before import`, async () => {
-      const companionPath = await makeTempDir("plugin-load-apiv1-");
-      await writeInstalledPlugin(companionPath, {
-        manifestExtra,
-        source: `throw new Error("must never execute");`,
-      });
-
-      const result = await loadDynamicPlugin(companionPath, declaration(), { host: fakeHost });
-      if (result.ok) throw new Error("expected refusal");
-      expect(result.warning).toBe(warning);
+  test("a non-number API version is refused before import", async () => {
+    const companionPath = await makeTempDir("plugin-load-apinan-");
+    await writeInstalledPlugin(companionPath, {
+      manifestExtra: { mate: { pluginApiVersion: "2" } },
+      source: `throw new Error("must never execute");`,
     });
-  }
+
+    const result = await loadDynamicPlugin(companionPath, declaration(), { host: fakeHost });
+    if (result.ok) throw new Error("expected refusal");
+    expect(result.warning).toBe(
+      `plugin "${PACKAGE}" declares an invalid mate.pluginApiVersion ("2"); expected a number, this CLI supports: 1, 2.`,
+    );
+  });
+
+  test("an undeclared API version loads as deprecated v1 with its handlers mapped onto lifecycle", async () => {
+    const companionPath = await makeTempDir("plugin-load-apiv1-");
+    await writeInstalledPlugin(companionPath, {
+      manifestExtra: {},
+      source: `export default () => ({ id: "acme-custom", kind: "capability", label: "x", description: "x", defaultSelected: false, isEnabled: () => false,
+        calls: [],
+        async apply() { this.calls.push("apply"); }, async teardown() { this.calls.push("teardown"); },
+        async applyHub() { this.calls.push("applyHub"); } });`,
+    });
+
+    const result = await loadDynamicPlugin(companionPath, declaration(), { host: fakeHost });
+    if (!result.ok) throw new Error(result.warning);
+    expect(result.warnings).toEqual([]);
+    expect(result.deprecation).toContain("deprecated plugin API version 1");
+    const { companion, hub } = result.plugin.lifecycle;
+    const ctx = {} as Parameters<NonNullable<typeof companion>["apply"]>[0];
+    await companion?.apply(ctx);
+    await companion?.teardown(ctx);
+    await hub?.apply(ctx);
+    await hub?.teardown(ctx);
+    expect((result.plugin as { calls?: string[] }).calls).toEqual([
+      "apply",
+      "teardown",
+      "applyHub",
+    ]);
+  });
 
   const pluginSource = (members: string) =>
     `export default () => ({ id: "acme-custom", kind: "capability", label: "x", description: "x", defaultSelected: false, isEnabled: () => false, ${members} });`;
