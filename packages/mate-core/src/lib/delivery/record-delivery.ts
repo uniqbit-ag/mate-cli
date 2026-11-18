@@ -6,7 +6,8 @@ import {
   type WorkingRepoGit,
 } from "./branches";
 import { companionGit } from "../../runtime/companion-git";
-import { changeNameOf, locateChange, type ChangeLocation } from "../change-layout";
+import { changeNameOf, isChangeName, locateChange, type ChangeLocation } from "../change-layout";
+import { pathIsDirectory } from "../fs-utils";
 import { scopedRepositories } from "../openspec-scopes";
 import { companionRelative, type DeliveryEnvironment } from "./environment";
 import {
@@ -32,6 +33,7 @@ import {
 } from "./refresh";
 import { probeMerge, type DeliveryCheckout } from "./checkout";
 import { resolveDeliveryBranch } from "./resolve-branch";
+import { sourceDir } from "./staging/artifact-type";
 import { defaultRef, stagingRemote } from "./staging/refs";
 import {
   repositoryAccessFor,
@@ -93,6 +95,8 @@ export interface DeliveryRequest {
 
 export type DeliveryRefusal =
   | { reason: "unknown-change"; change: string }
+  /** A change of a declared artifact type whose folder, companion-relative `path`, does not exist. */
+  | { reason: "missing-folder"; change: string; path: string }
   | { reason: "no-repository" }
   /** An edit in an Umbrella Repository whose changes are scoped to not exactly one child. */
   | { reason: "umbrella-repository"; umbrella: string; scoped: string[]; children: string[] }
@@ -250,6 +254,22 @@ function hasDeliveryBranch(record: DeliveryRecord, repository: string): boolean 
 }
 
 /**
+ * Where change `name` lives: for the built-in type as {@link locateChange} finds it; for a
+ * declared type its folder below the type's source, or the path that folder is expected at.
+ */
+export async function locateTypedChange(
+  environment: Pick<DeliveryEnvironment, "companionPath" | "artifactType">,
+  name: string,
+): Promise<ChangeLocation | { path: string } | null> {
+  const type = environment.artifactType;
+  if (!type) return locateChange(environment.companionPath, name);
+  if (!isChangeName(name)) return null;
+  const dir = sourceDir(environment.companionPath, type, name);
+  if (await pathIsDirectory(dir)) return { dir, archived: false };
+  return { path: `${type.source}/${name}/` };
+}
+
+/**
  * Reads, edits, refreshes, and writes the Delivery Records of `request.changes`. Every
  * change resolves before any record is written, so a refusal leaves no partial update; a
  * request without an edit or refresh only reads. Network Git runs only in a linked checkout,
@@ -267,7 +287,10 @@ export async function recordDelivery(
 
   const located: Array<ChangeLocation & { change: string }> = [];
   for (const change of request.changes) {
-    const location = await locateChange(environment.companionPath, change);
+    const location = await locateTypedChange(environment, change);
+    if (location && "path" in location) {
+      return { refusal: { reason: "missing-folder", change, path: location.path } };
+    }
     if (!location || (location.archived && !request.includeArchived)) {
       return { refusal: { reason: "unknown-change", change } };
     }

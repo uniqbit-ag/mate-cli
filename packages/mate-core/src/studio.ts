@@ -151,10 +151,27 @@ export {
   deliveryPath,
   isMateSchema,
   SCHEMA_ARTIFACTS,
+  type DeliveryPath,
   type DeliveryStage,
   type MateSchema,
+  type ReviewStage,
+  type SkillStage,
   type SkillStageId,
 } from "./lib/delivery/stages";
+// The workflow model imports nothing, so the browser bundle can resolve a path with it.
+export {
+  defaultWorkflow,
+  nextStage,
+  WORKFLOW_FILE,
+  type NextStage,
+  type Workflow,
+  type WorkflowProblem,
+  type WorkflowReviewStage,
+  type WorkflowSkillStage,
+  type WorkflowStage,
+  type WorkflowStep,
+} from "./runtime/workflow/workflow";
+export { changeStage, type ChangeFacts } from "./lib/workflow/progress";
 export type { WorkflowTopology } from "./cli/commands/studio/topology";
 export {
   contrastRatio,

@@ -1051,6 +1051,34 @@ describe("executeSetup", () => {
     expect(gitignore).not.toContain("__pycache__/");
   });
 
+  test("setup and sync leave the workflow declaration alone and tracked", async () => {
+    const root = await makeTempDir("mate-setup-workflow-");
+    const globalConfigStore = new GlobalConfigStore(
+      path.join(root, "home", ".mate", "config.yaml"),
+    );
+    await installOpenSpecStub(root);
+    const declaration = path.join(root, ".mate", "config", "workflow.yaml");
+    // Written by the owner, with a comment and spacing no rewrite would keep.
+    const source =
+      "version: 1\n\n# acme's path\nstages:\n  - id: submit\n    steps: [ { skill: mate-submit-change } ]\n  - id: publish\n    steps: [ { skill: mate-publish-artifact } ]\n";
+    await fs.mkdir(path.dirname(declaration), { recursive: true });
+    await fs.writeFile(declaration, source, "utf8");
+    const config = { allowedAgents: ["claude" as const], capabilities: [{ name: "openspec" }] };
+
+    await executeSetup(config, { cwd: root, globalConfigStore });
+    expect(await fs.readFile(declaration, "utf8")).toBe(source);
+
+    // `mate companion update` synchronizes through the same call.
+    await syncCompanionFiles(root, config);
+    expect(await fs.readFile(declaration, "utf8")).toBe(source);
+
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    expect(() =>
+      execFileSync("git", ["check-ignore", "-q", ".mate/config/workflow.yaml"], { cwd: root }),
+    ).toThrow();
+    expect(await fs.readFile(path.join(root, ".gitignore"), "utf8")).not.toContain("workflow");
+  });
+
   test("setup writes the rtk capability to config when the rtk binary is present", async () => {
     const root = await makeTempDir("mate-setup-rtk-");
     const globalConfigStore = new GlobalConfigStore(

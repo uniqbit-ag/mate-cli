@@ -963,8 +963,25 @@ falls back locally. Final delivery failure returns
 | `mate artifact resolve <change> --capability --requirement --file` | Resolve a publication conflict in a submitted change, from any machine.        |
 | `mate artifact project <change> [--json]`                          | Show the canonical specs once the change's `dependsOn` chain is published.     |
 | `mate artifact apply-context <change> --json [--since <digest>]`   | Fetch fresh apply instructions as a full or compact envelope.                  |
+| `mate workflow steps <stage> [--json]`                             | Resolve a Delivery Path stage: its steps, entry skill, and next stage.         |
+| `mate workflow done <stage> <change> [--json]`                     | Record that a stage finished for a change, in its `delivery.yaml`.             |
 | `mate update`                                                      | Upgrade an npm-managed Mate installation and reinstall requirements.           |
 | `mate update --check`                                              | Check for an update without installing it.                                     |
+
+**Workflow.** A companion may declare its Delivery Path in
+`.mate/config/workflow.yaml`; see
+[Design a Team Companion](/docs/scenarios/design-a-team-companion). A session
+uses two commands to follow it. `mate workflow steps <stage>` resolves one
+skill stage and writes nothing. With `--json` it prints `ok`, `stage`, `source`
+(`declared` or `default`), `file`, `steps` (each a `skill`, with `own: true`
+for the stage's Mate stage skill), `entry` (the skill the stage is started
+with: its first step's), `artifact` for `submit`, `next`, and `warnings`.
+`mate workflow done <stage> <change>` sets `stages.<stage>: done` in the
+change's `delivery.yaml` and changes nothing else in it; `submit` and `publish`
+record nothing. Both exit 1 on an invalid declaration, an unknown stage, or a
+review stage, with every problem and its key path on stderr and, with `--json`,
+`ok: false` and `problems` on stdout. An invalid declaration never falls back
+to the default steps.
 
 **Submit.** A finished change is submitted before its delivery branch merges.
 `mate artifact submit <change>...` records and refreshes the delivery as

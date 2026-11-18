@@ -21,8 +21,13 @@ import { errorMessage } from "./error-message";
 export interface SubmittedLayout {
   /** Directory holding one folder per change, relative to the companion. */
   source: string;
-  /** Directory holding one folder per archived record, relative to the companion. */
-  archiveRoot: string;
+  /**
+   * Directory holding one folder per archived record, relative to the companion; absent for a
+   * type that keeps no archive, whose records are read from {@link trailer}.
+   */
+  archiveRoot?: string;
+  /** The type's name in `Mate-Artifact: <type>/<id>` trailers, read when it keeps no archive. */
+  trailer?: string;
   /** The change name archived record `id` was made from, or null for no record. */
   recordName: (id: string) => string | null;
 }
@@ -182,21 +187,55 @@ async function holdsExactly(
   return local.every((file, index) => ids[index] === incoming.get(file));
 }
 
-/** Archived record ids below `layout.archiveRoot` at `ref`, by change name. */
+/** Commits read for the trailers of a type without an archive. */
+const TRAILER_RECORDS_READ = 2000;
+
+/** Record ids the `Mate-Artifact` trailers of `ref`'s history name for type `trailer`. */
+export async function trailerRecordIds(
+  git: CompanionGit,
+  ref: string,
+  trailer: string,
+): Promise<string[]> {
+  const prefix = `${trailer}/`;
+  const log = await git.run([
+    "log",
+    `-n${TRAILER_RECORDS_READ}`,
+    "--fixed-strings",
+    `--grep=Mate-Artifact: ${prefix}`,
+    "--format=%(trailers:key=Mate-Artifact,valueonly,separator=%x0a)",
+    "--end-of-options",
+    ref,
+  ]);
+  if (log.status !== 0) return [];
+  return log.stdout
+    .split("\n")
+    .filter((value) => value.startsWith(prefix))
+    .map((value) => value.slice(prefix.length));
+}
+
+/**
+ * Archived record ids at `ref`, by change name: the folders below `layout.archiveRoot`, or for a
+ * type without an archive the records its history published.
+ */
 async function archivedRecords(
   git: CompanionGit,
   ref: string,
   layout: SubmittedLayout,
 ): Promise<Map<string, Set<string>>> {
-  const listed = await lines(git, [
-    "ls-tree",
-    "-z",
-    "--name-only",
-    "--end-of-options",
-    ref,
-    "--",
-    `${layout.archiveRoot}/`,
-  ]);
+  const listed =
+    layout.archiveRoot === undefined
+      ? layout.trailer === undefined
+        ? []
+        : await trailerRecordIds(git, ref, layout.trailer)
+      : await lines(git, [
+          "ls-tree",
+          "-z",
+          "--name-only",
+          "--end-of-options",
+          ref,
+          "--",
+          `${layout.archiveRoot}/`,
+        ]);
   const records = new Map<string, Set<string>>();
   for (const entry of listed ?? []) {
     const id = entry.split("/").at(-1)!;
@@ -278,7 +317,8 @@ async function newArchive(
     return !known.has(id) && (!dated || dated >= day);
   });
   if (candidates.length === 0) return false;
-  if (local.length === 0) return true;
+  // Without an archive there is nothing to compare the folder with: the record alone decides.
+  if (local.length === 0 || layout.archiveRoot === undefined) return true;
   const record = await fs.readFile(path.join(dir, DELIVERY_FILE), "utf8").catch(() => null);
   const base = specBaseOf(record);
   const branches = deliveryBranchesOf(record);

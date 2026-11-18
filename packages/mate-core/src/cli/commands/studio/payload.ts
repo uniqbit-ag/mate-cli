@@ -4,11 +4,20 @@ import path from "node:path";
 import {
   type archiveAnchors,
   archiveDirOf,
+  changesDirOf,
   parseAnchor,
   SPECS_RELATIVE_DIR,
 } from "../../../lib/change-layout";
 import { companionTicketFormat, type TicketFormat } from "../../../lib/delivery/branches";
+import { readDeliveryRecord } from "../../../lib/delivery/record";
 import { hasUnsubmittedWork } from "../../../lib/delivery/staging/submit";
+import {
+  loadWorkflow,
+  WORKFLOW_FILE,
+  type Workflow,
+  type WorkflowProblem,
+  type WorkflowVerdict,
+} from "../../../lib/workflow/declaration";
 import {
   type LinkedRepositoryCatalog,
   linkedRepositoryCatalog,
@@ -61,6 +70,10 @@ export interface StudioChange {
    * another change of that name, or edits made since it was submitted.
    */
   unsubmitted?: true;
+  /** The Delivery Path stages its Delivery Record holds as done, by id. */
+  stagesDone?: string[];
+  /** Its Delivery Record says it was withdrawn: it is at no stage. */
+  dropped?: true;
 }
 
 /** One repository/Area pair a spec binds; at least one of the two is set. */
@@ -134,6 +147,14 @@ export interface StudioCompanionPayload {
   ticketFormat: TicketFormat;
   /** Records that could not be read, by path and reason. */
   worksetProblems: WorksetProblem[];
+  /**
+   * The companion's resolved Delivery Path: its declared stages, or the built-in default without
+   * a declaration. Null when the declaration is invalid; {@link workflowProblems} then says why.
+   * Absent from a payload built before stages could be declared: the built-in default.
+   */
+  workflow?: Workflow | null;
+  /** The problems of an invalid `.mate/config/workflow.yaml`, by key path. */
+  workflowProblems?: WorkflowProblem[];
   warnings: string[];
 }
 
@@ -170,6 +191,7 @@ export interface CompanionPayloadDeps {
   ) => StudioSubmittedChange[] | Promise<StudioSubmittedChange[]>;
   /** Whether a local change holds work its submitted namesake lacks. */
   hasUnsubmittedWork?: (companionPath: string, change: string) => Promise<boolean>;
+  loadWorkflow?: typeof loadWorkflow;
 }
 
 async function submittedChanges(companionPath: string): Promise<StudioSubmittedChange[]> {
@@ -417,8 +439,43 @@ export async function assembleCompanionPayload(
     if (await work(companionPath, name).catch(() => false)) unsubmitted.add(name);
   }
 
+  const verdict = await (deps.loadWorkflow ?? loadWorkflow)(companionPath).catch(
+    (error: unknown): WorkflowVerdict => ({
+      ok: false,
+      file: WORKFLOW_FILE,
+      problems: [{ path: "", message: errorMessage(error) }],
+    }),
+  );
+  if (verdict.ok) {
+    warnings.push(...verdict.workflow.warnings.map((warning) => `${WORKFLOW_FILE}: ${warning}`));
+  } else {
+    warnings.push(
+      `${WORKFLOW_FILE} is invalid, so the built-in Delivery Path is shown and no stage runs: ${verdict.problems
+        .map((problem) => `${problem.path ? `${problem.path}: ` : ""}${problem.message}`)
+        .join("; ")}`,
+    );
+  }
+
+  const planningRoot =
+    (status.value.changes ?? []).find((entry) => entry.planningHome?.root)?.planningHome?.root ??
+    companionPath;
+  // Recorded progress; a record that cannot be read leaves the change to inference.
+  const records = new Map(
+    await Promise.all(
+      (changeList.value.changes ?? []).map(
+        async ({ name }) =>
+          [
+            name,
+            await readDeliveryRecord(path.join(changesDirOf(planningRoot), name)).catch(() => null),
+          ] as const,
+      ),
+    ),
+  );
+
   const changes: StudioChange[] = (changeList.value.changes ?? []).map((change) => {
     const changeStatus = statusByChange.get(change.name);
+    const record = records.get(change.name);
+    const stagesDone = Object.keys(record?.stages ?? {});
     return {
       name: change.name,
       ...(change.completedTasks === undefined ? {} : { completedTasks: change.completedTasks }),
@@ -432,12 +489,11 @@ export async function assembleCompanionPayload(
       })),
       ...validationOf(validationItems, change.name, "change"),
       ...(unsubmitted.has(change.name) ? { unsubmitted: true as const } : {}),
+      ...(stagesDone.length > 0 ? { stagesDone } : {}),
+      ...(record?.state === "dropped" ? { dropped: true as const } : {}),
     };
   });
 
-  const planningRoot =
-    (status.value.changes ?? []).find((entry) => entry.planningHome?.root)?.planningHome?.root ??
-    companionPath;
   const specsRoot = path.join(planningRoot, "openspec", "specs");
 
   const linkedResult = await linked;
@@ -498,6 +554,8 @@ export async function assembleCompanionPayload(
     repositoryKeys: Object.fromEntries(catalog.keys),
     ticketFormat,
     worksetProblems: worksets.problems,
+    workflow: verdict.ok ? verdict.workflow : null,
+    ...(verdict.ok ? {} : { workflowProblems: verdict.problems }),
     warnings,
   };
 }

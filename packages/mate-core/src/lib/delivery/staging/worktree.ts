@@ -31,7 +31,9 @@ const GITLINK_MODE = "160000";
 function contentRoots(types: readonly ArtifactType[]): string[] {
   return [
     ...new Set(
-      types.flatMap((type) => [type.source.split("/")[0]!, type.archiveRoot.split("/")[0]!]),
+      types.flatMap((type) =>
+        [type.source, type.archiveRoot].flatMap((root) => (root ? [root.split("/")[0]!] : [])),
+      ),
     ),
   ];
 }

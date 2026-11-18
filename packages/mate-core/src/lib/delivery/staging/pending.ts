@@ -39,6 +39,7 @@ import type { DeltaFailure } from "./replay";
 import { deliveryGroupFor } from "./naming";
 import {
   anchorsAt,
+  trailerRecordsAt,
   defaultRef,
   fetchPendingBranches,
   lastFetchedAt,
@@ -288,6 +289,8 @@ export async function publishedAs(
   name: string,
   anchors?: readonly string[],
 ): Promise<string | null> {
+  const { archiveRoot } = type;
+  if (archiveRoot === undefined) return publishedByTrailer(git, defaultTip, pendingTip, type, name);
   const records = (anchors ?? (await anchorsAt(git, defaultTip, type))).filter(
     (id) => type.recordName(id) === name,
   );
@@ -295,13 +298,54 @@ export async function publishedAs(
   return matchingArchive(
     records,
     await contentAt(git, pendingTip, sourcePathOf(type, name), type),
-    (record) => contentAt(git, defaultTip, `${type.archiveRoot}/${record}`, type),
+    (record) => contentAt(git, defaultTip, `${archiveRoot}/${record}`, type),
     async (source, archived) => {
       const texts = await git.readBlobs([source, archived]);
       const [mine, theirs] = [texts?.get(source), texts?.get(archived)];
       return mine !== undefined && theirs !== undefined && sameTextBesidesLineEndings(mine, theirs);
     },
   );
+}
+
+/** When `ref` last changed the folder `folder`, its Delivery Record aside; null when unknown. */
+async function folderWrittenAt(
+  git: CompanionGit,
+  ref: string,
+  folder: string,
+  type: Pick<ArtifactType, "deliveryFile">,
+): Promise<number | null> {
+  const written = await git.run([
+    "log",
+    "-1",
+    "--format=%ct",
+    "--end-of-options",
+    ref,
+    "--",
+    `:(literal)${folder}/`,
+    `:(exclude,literal)${folder}/${type.deliveryFile}`,
+  ]);
+  const at = Number(outputLines(written.stdout)[0]);
+  return written.status === 0 && Number.isFinite(at) && at > 0 ? at : null;
+}
+
+/**
+ * {@link publishedAs} for a type that keeps no archive: the newest record of that name a
+ * `Mate-Artifact` trailer on `defaultTip` names, published since the pending branch last wrote
+ * the change's folder, so an earlier change of the same name does not count.
+ */
+async function publishedByTrailer(
+  git: CompanionGit,
+  defaultTip: string,
+  pendingTip: string,
+  type: ArtifactType,
+  name: string,
+): Promise<string | null> {
+  const records = (await trailerRecordsAt(git, defaultTip, type)).filter(
+    (record) => type.recordName(record.id) === name,
+  );
+  if (records.length === 0) return null;
+  const written = await folderWrittenAt(git, pendingTip, sourcePathOf(type, name), type);
+  return records.find((record) => written === null || record.at >= written)?.id ?? null;
 }
 
 /** How far ahead of this clock an inbox commit's date may be and still date a delta. */

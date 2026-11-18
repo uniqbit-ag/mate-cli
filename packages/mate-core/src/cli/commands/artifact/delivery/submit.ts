@@ -106,7 +106,10 @@ export async function runArtifactSubmitCommand(
   if (flags.drop === true) {
     const environment = await resolveDeliveryEnvironment(deps);
     if ("error" in environment) return refuse(environment.error);
-    const dropped: DropResult[] = await dropChanges(environment.companionPath, changes, deps);
+    const dropped: DropResult[] = await dropChanges(environment.companionPath, changes, {
+      ...deps,
+      ...(environment.artifactType ? { artifactType: environment.artifactType } : {}),
+    });
     if (dropped.some((result) => result.status === "refused")) process.exitCode = 1;
     if (json) emitOut(JSON.stringify(dropped));
     else for (const result of dropped) emitOut(result.message);

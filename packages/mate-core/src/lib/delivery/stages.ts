@@ -1,9 +1,21 @@
+import {
+  BUILTIN_STAGES,
+  defaultWorkflow,
+  reviewableArtifacts,
+  reviewedArtifacts,
+  type BuiltinStageId,
+  type Workflow,
+  type WorkflowReviewStage,
+  type WorkflowSource,
+  type WorkflowStep,
+} from "../../runtime/workflow/workflow";
+
 /**
  * The Delivery Path stage contract: the action-named sequence Studio and the docs check
- * read. Review stages come from a schema's artifacts.
+ * read, computed from the companion's workflow. Review stages come from a schema's artifacts.
  */
 
-/** A skill stage runs a Mate skill; a human stage is a person reviewing one artifact. */
+/** A skill stage runs its steps; a human stage is a person reviewing one artifact. */
 export type DeliveryStageKind = "skill" | "human";
 
 interface StageBase {
@@ -16,28 +28,28 @@ interface StageBase {
   optional: boolean;
 }
 
-export type SkillStageId =
-  | "clarify-intent"
-  | "explore"
-  | "propose"
-  | "apply"
-  | "inspect-outcome"
-  | "refine-code"
-  | "submit"
-  | "publish";
+/** A built-in skill stage id; a declared path may hold any other id. */
+export type SkillStageId = BuiltinStageId;
 
 export interface SkillStage extends StageBase {
-  id: SkillStageId;
   kind: "skill";
-  /** The Mate skill that drives the stage. */
+  /** The skill the stage is started with: its first step's. */
   skill: string;
+  /** The stage's chain, in order. */
+  steps: WorkflowStep[];
+  /** Whether the companion declared the chain or it is the built-in default. */
+  source: WorkflowSource;
 }
 
 export interface ReviewStage extends StageBase {
   kind: "human";
   skill: null;
-  /** The schema artifact the person reviews. */
+  /** The artifact the person reviews. */
   artifact: string;
+  /** Id of the review stage it belongs to. */
+  group: string;
+  /** That review stage's label, e.g. `Human review`. */
+  groupLabel: string;
 }
 
 export type DeliveryStage = SkillStage | ReviewStage;
@@ -64,48 +76,45 @@ export function isMateSchema(schema: string): schema is MateSchema {
   return Object.hasOwn(SCHEMA_ARTIFACTS, schema);
 }
 
-function skillStage(id: SkillStageId, label: string, skill: string, optional = false): SkillStage {
-  return { id, label, kind: "skill", skill, optional };
-}
+/** The Mate stage skills, in default stage order. */
+export const DELIVERY_STAGE_SKILLS: readonly string[] = BUILTIN_STAGES.map((stage) => stage.skill);
 
-const BEFORE_REVIEWS: readonly SkillStage[] = [
-  skillStage("clarify-intent", "Clarify intent", "mate-clarify-intent", true),
-  skillStage("explore", "Explore change", "mate-explore-change"),
-  skillStage("propose", "Propose change", "mate-propose-change"),
-];
+const DEFAULT_WORKFLOW = defaultWorkflow();
 
-const AFTER_REVIEWS: readonly SkillStage[] = [
-  skillStage("apply", "Apply change", "mate-apply-change"),
-  skillStage("inspect-outcome", "Inspect outcome", "mate-show-me", true),
-  skillStage("refine-code", "Refine code", "mate-simplify-code", true),
-  skillStage("submit", "Submit change", "mate-submit-change"),
-  skillStage("publish", "Publish companion artifacts", "mate-publish-artifact"),
-];
-
-/** Every skill a Delivery Path stage is driven by, in stage order. */
-export const DELIVERY_STAGE_SKILLS: readonly string[] = [...BEFORE_REVIEWS, ...AFTER_REVIEWS].map(
-  (stage) => stage.skill,
-);
-
-function reviewStage(artifact: string): ReviewStage {
+function reviewStage(artifact: string, stage: WorkflowReviewStage): ReviewStage {
   return {
     id: `review-${artifact}`,
     label: `Review ${artifact}`,
     kind: "human",
     skill: null,
     artifact,
-    optional: false,
+    group: stage.id,
+    groupLabel: stage.label,
+    optional: stage.optional,
   };
 }
 
 /**
- * The Delivery Path for one schema. `artifacts` are its artifact ids in dependency order;
- * `undefined` means the schema could not be read, which yields the skill stages alone with
- * `reviewsKnown: false` rather than a guessed review set.
+ * The Delivery Path of `workflow` for one change. `artifacts` are the artifact ids of the
+ * change's schema in dependency order; `undefined` means the schema could not be read, which
+ * yields the skill stages alone with `reviewsKnown: false` rather than a guessed review set.
+ * A path whose submit handles a declared type reviews that type's artifacts instead.
  */
-export function deliveryPath(artifacts: readonly string[] | undefined): DeliveryPath {
+export function deliveryPath(
+  artifacts: readonly string[] | undefined,
+  workflow: Workflow = DEFAULT_WORKFLOW,
+): DeliveryPath {
+  const available = reviewableArtifacts(workflow, artifacts);
   return {
-    stages: [...BEFORE_REVIEWS, ...(artifacts ?? []).map(reviewStage), ...AFTER_REVIEWS],
-    reviewsKnown: artifacts !== undefined,
+    stages: workflow.stages.flatMap((stage): DeliveryStage[] => {
+      if (stage.kind === "review") {
+        return reviewedArtifacts(stage, available ?? []).map((artifact) =>
+          reviewStage(artifact, stage),
+        );
+      }
+      const { id, label, optional, steps, source } = stage;
+      return [{ id, label, kind: "skill", skill: stage.entry, optional, steps, source }];
+    }),
+    reviewsKnown: available !== undefined,
   };
 }

@@ -463,6 +463,126 @@ describe("assembleCompanionPayload", () => {
   });
 });
 
+describe("the Delivery Path in the payload", () => {
+  async function companion(declaration?: string): Promise<string> {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-payload-workflow-"));
+    if (declaration !== undefined) {
+      await fs.mkdir(path.join(root, ".mate", "config"), { recursive: true });
+      await fs.writeFile(path.join(root, ".mate", "config", "workflow.yaml"), declaration);
+    }
+    return root;
+  }
+
+  /** The payload of `root`, whose planning home is the companion itself. */
+  async function payloadOf(root: string) {
+    const payload = await assembleCompanionPayload(
+      root,
+      deps({ readAllChangeStatus: async () => ({ ok: true, value: { changes: [] } }) }),
+    );
+    if ("error" in payload) throw new Error(payload.error.reason);
+    return payload;
+  }
+
+  test("without a declaration it is the built-in default", async () => {
+    const root = await companion();
+    try {
+      const payload = await payloadOf(root);
+
+      expect(payload.workflow?.file).toBeNull();
+      expect(payload.workflow?.stages.map((stage) => stage.id)).toEqual([
+        "clarify-intent",
+        "explore",
+        "propose",
+        "review",
+        "apply",
+        "inspect-outcome",
+        "refine-code",
+        "submit",
+        "publish",
+      ]);
+      expect(payload.workflowProblems).toBeUndefined();
+      expect(payload.warnings).toEqual([]);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a declared path carries each stage's steps and source", async () => {
+    const root = await companion(`version: 1
+stages:
+  - id: apply
+    steps: [{ skill: mate-apply-change }, { skill: acme-verify }]
+  - id: security-review
+    label: Security review
+    steps: [{ skill: acme-security-review }]
+  - id: submit
+    steps: [{ skill: mate-submit-change }]
+  - id: publish
+    steps: [{ skill: mate-publish-artifact }]
+`);
+    try {
+      const payload = await payloadOf(root);
+
+      expect(payload.workflow?.stages[1]).toEqual({
+        id: "security-review",
+        label: "Security review",
+        kind: "skill",
+        optional: false,
+        source: "declared",
+        steps: [{ skill: "acme-security-review" }],
+        entry: "acme-security-review",
+      });
+      // A declared skill the companion does not hold is a warning, not a problem.
+      expect(payload.warnings.join("\n")).toContain("acme-security-review is not in");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("an invalid declaration yields its problems, a warning and no path", async () => {
+    const root = await companion("version: 1\npublishing: { mode: single }\n");
+    try {
+      const payload = await payloadOf(root);
+
+      expect(payload.workflow).toBeNull();
+      expect(payload.workflowProblems).toEqual([
+        { path: "publishing", message: "unknown key `publishing`" },
+      ]);
+      expect(payload.warnings).toEqual([
+        ".mate/config/workflow.yaml is invalid, so the built-in Delivery Path is shown and no stage runs: publishing: unknown key `publishing`",
+      ]);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a change carries the stages its Delivery Record holds as done", async () => {
+    const root = await companion();
+    try {
+      const dir = path.join(root, "openspec", "changes", "add-checkout");
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(
+        path.join(dir, "delivery.yaml"),
+        "version: 1\nchange: add-checkout\nstages:\n  security-review: done\ndeliveries: []\n",
+      );
+      const dropped = path.join(root, "openspec", "changes", "add-docs");
+      await fs.mkdir(dropped, { recursive: true });
+      await fs.writeFile(
+        path.join(dropped, "delivery.yaml"),
+        "version: 1\nchange: add-docs\nstate: dropped\ndeliveries: []\n",
+      );
+
+      const { changes } = await payloadOf(root);
+
+      expect(changes[0]).toMatchObject({ name: "add-checkout", stagesDone: ["security-review"] });
+      expect(changes[1]).toMatchObject({ name: "add-docs", dropped: true });
+      expect(changes[1]).not.toHaveProperty("stagesDone");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("Worksets in the payload", () => {
   test("derive each Workset's stage from its linked changes", async () => {
     const payload = await assembleCompanionPayload(

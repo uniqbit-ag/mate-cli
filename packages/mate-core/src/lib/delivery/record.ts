@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { parse, stringify } from "yaml";
+import { isMap, parse, parseDocument, stringify } from "yaml";
 import { errorMessage } from "../../runtime/error-message";
 import { changeNameOf } from "../change-layout";
 import { scopedRepositories } from "../openspec-scopes";
@@ -86,6 +86,11 @@ export interface DeliveryRecord {
    * changed after the delta was written conflicts instead of being overwritten.
    */
   specBase?: string;
+  /**
+   * The Delivery Path stages finished for the change, by stage id. Written only by
+   * {@link recordStageDone}; every other write carries it over.
+   */
+  stages?: Record<string, "done">;
 }
 
 const JIRA_KEY = /^[A-Za-z][A-Za-z0-9]+-\d+$/;
@@ -365,7 +370,18 @@ export async function readDeliveryRecord(changeDir: string): Promise<DeliveryRec
     ...stateOf(document.state, file),
     ...blockedOf(document.blocked, file),
     ...specBaseOf(document.specBase, file),
+    ...stagesOf(document.stages, file),
   };
+}
+
+function stagesOf(value: unknown, file: string): { stages?: Record<string, "done"> } {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw malformed(file, "stages must be a mapping");
+  }
+  // Only `done` is recorded; another value reads as not done.
+  const done = Object.entries(value).filter(([, state]) => state === "done");
+  return done.length > 0 ? { stages: Object.fromEntries(done.map(([id]) => [id, "done"])) } : {};
 }
 
 function stateOf(value: unknown, file: string): { state?: SubmissionState } {
@@ -418,7 +434,7 @@ export async function canaryTicketOf(changeDir: string): Promise<string | null> 
   }
 }
 
-/** Keys in file order: `version, change, state, blocked, specBase, deliveries`. */
+/** Keys in file order: `version, change, state, blocked, specBase, stages, deliveries`. */
 function orderedRecord(record: DeliveryRecord): DeliveryRecord {
   return {
     version: record.version,
@@ -426,6 +442,7 @@ function orderedRecord(record: DeliveryRecord): DeliveryRecord {
     ...(record.state ? { state: record.state } : {}),
     ...(record.blocked ? { blocked: record.blocked } : {}),
     ...(record.specBase ? { specBase: record.specBase } : {}),
+    ...(record.stages ? { stages: record.stages } : {}),
     deliveries: record.deliveries,
   };
 }
@@ -482,4 +499,30 @@ export async function writeDeliveryRecord(
   record: DeliveryRecord,
 ): Promise<void> {
   await fs.writeFile(path.join(changeDir, DELIVERY_FILE), stringify(orderedRecord(record)), "utf8");
+}
+
+/**
+ * Records stage `stage` as done for the change in `changeDir`: a write limited to the
+ * `stages.<stage>` entry, which leaves the rest of the file as it is. A change without a record
+ * gets an unlinked one. Throws on a record that cannot be read.
+ */
+export async function recordStageDone(
+  changeDir: string,
+  change: string,
+  stage: string,
+): Promise<void> {
+  const file = path.join(changeDir, DELIVERY_FILE);
+  // Read first: a damaged record is reported, never rewritten.
+  if ((await readDeliveryRecord(changeDir)) === null) {
+    await writeDeliveryRecord(changeDir, {
+      ...unlinkedRecord(changeNameOf(change)),
+      stages: { [stage]: "done" },
+    });
+    return;
+  }
+  const document = parseDocument(await fs.readFile(file, "utf8"));
+  if (document.getIn(["stages", stage]) === "done") return;
+  if (!isMap(document.get("stages", true))) document.delete("stages");
+  document.setIn(["stages", stage], "done");
+  await fs.writeFile(file, document.toString(), "utf8");
 }

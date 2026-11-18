@@ -13,8 +13,12 @@ export function sourceDir(root: string, type: ArtifactType, name: string): strin
   return path.join(root, ...type.source.split("/"), name);
 }
 
-/** Directory of `type`'s archived records below `root`, or of record `id` when given. */
-export function recordDir(root: string, type: ArtifactType, id?: string): string {
+/**
+ * Directory of `type`'s archived records below `root`, or of record `id` when given; null for a
+ * type that keeps no archive.
+ */
+export function recordDir(root: string, type: ArtifactType, id?: string): string | null {
+  if (type.archiveRoot === undefined) return null;
   return path.join(root, ...type.archiveRoot.split("/"), ...(id === undefined ? [] : [id]));
 }
 
@@ -36,8 +40,11 @@ export interface ArtifactType {
   name: string;
   /** Directory holding one source folder per change, relative to the companion. */
   source: string;
-  /** Directory holding one folder per archived record, relative to the companion. */
-  archiveRoot: string;
+  /**
+   * Directory holding one folder per archived record, relative to the companion. A type without
+   * one keeps no history: its published records are read from `Mate-Artifact` trailers.
+   */
+  archiveRoot?: string;
   /** File in a source folder or record holding its Delivery Record. */
   deliveryFile: string;
   /** True for a directory name below {@link archiveRoot} that is a record. */

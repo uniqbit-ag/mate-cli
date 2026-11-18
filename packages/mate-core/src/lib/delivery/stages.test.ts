@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { parseWorkflow, type Workflow } from "../workflow/declaration";
 import { DELIVERY_STAGE_SKILLS, deliveryPath, SCHEMA_ARTIFACTS } from "./stages";
 
 const labels = (artifacts: readonly string[] | undefined): string[] =>
@@ -88,7 +89,7 @@ describe("deliveryPath", () => {
     ).toEqual(["Review brief", "Review tasks"]);
   });
 
-  test("the skill list is the set of skill-driven stages", () => {
+  test("the skill list is the Mate stage skills", () => {
     expect(DELIVERY_STAGE_SKILLS).toEqual([
       "mate-clarify-intent",
       "mate-explore-change",
@@ -99,5 +100,103 @@ describe("deliveryPath", () => {
       "mate-submit-change",
       "mate-publish-artifact",
     ]);
+  });
+});
+
+function declared(source: string): Workflow {
+  const verdict = parseWorkflow(source);
+  if (!verdict.ok) throw new Error(JSON.stringify(verdict.problems));
+  return verdict.workflow;
+}
+
+const TAIL = `
+  - id: submit
+    steps: [{ skill: mate-submit-change }]
+  - id: publish
+    steps: [{ skill: mate-publish-artifact }]
+`;
+
+describe("deliveryPath of a declared workflow", () => {
+  test("a custom stage sits where it is declared and removed stages are gone", () => {
+    const workflow = declared(`version: 1
+stages:
+  - id: explore
+    steps: [{ skill: mate-explore-change }]
+  - id: propose
+    steps: [{ skill: mate-propose-change }]
+  - id: review
+    review: [proposal, specs, tasks]
+  - id: security-review
+    label: Security review
+    steps: [{ skill: acme-security-review }]
+  - id: apply
+    steps: [{ skill: mate-apply-change }]
+${TAIL}`);
+    const stages = deliveryPath(SCHEMA_ARTIFACTS["mate-v1"], workflow).stages;
+    expect(stages.map((stage) => stage.id)).toEqual([
+      "explore",
+      "propose",
+      "review-proposal",
+      "review-specs",
+      "review-tasks",
+      "security-review",
+      "apply",
+      "submit",
+      "publish",
+    ]);
+    expect(stages.find((stage) => stage.id === "security-review")).toMatchObject({
+      label: "Security review",
+      skill: "acme-security-review",
+      steps: [{ skill: "acme-security-review" }],
+      source: "declared",
+    });
+  });
+
+  test("a listed review skips the artifacts the change's schema lacks", () => {
+    const workflow = declared(`version: 1
+stages:
+  - id: propose
+    steps: [{ skill: mate-propose-change }]
+  - id: review
+    review: [proposal, specs, tasks]
+${TAIL}`);
+    const reviews = (artifacts: readonly string[]): string[] =>
+      deliveryPath(artifacts, workflow)
+        .stages.filter((stage) => stage.kind === "human")
+        .map((stage) => stage.id);
+    expect(reviews(SCHEMA_ARTIFACTS["mate-minimal"])).toEqual(["review-specs", "review-tasks"]);
+  });
+
+  test("a declared type's reviews replace the schema's", () => {
+    const workflow = declared(`version: 1
+artifacts:
+  acme-notes:
+    change: notes/{name}/
+    published: [notes/index.md]
+    reviews: { brief: brief.md, plan: plan.md, risks: risks.md }
+    publish:
+      apply: { run: "acme-notes merge {change}" }
+stages:
+  - id: draft
+    steps: [{ skill: acme-draft }]
+  - id: plan-review
+    review: [brief, plan]
+  - id: submit
+    artifact: acme-notes
+    steps: [{ skill: mate-submit-change }]
+  - id: publish
+    steps: [{ skill: mate-publish-artifact }]
+`);
+    const path = deliveryPath(SCHEMA_ARTIFACTS["mate-v1"], workflow);
+    expect(path.stages.map((stage) => stage.id)).toEqual([
+      "draft",
+      "review-brief",
+      "review-plan",
+      "submit",
+      "publish",
+    ]);
+    expect(path.stages[1]).toMatchObject({ group: "plan-review", artifact: "brief" });
+    // Without a readable schema the type's reviews are still known.
+    expect(deliveryPath(undefined, workflow).reviewsKnown).toBe(true);
   });
 });

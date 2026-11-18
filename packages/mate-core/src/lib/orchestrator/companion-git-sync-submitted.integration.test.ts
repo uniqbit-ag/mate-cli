@@ -485,3 +485,109 @@ describe("companion sync of submitted change folders", () => {
     TIMEOUT,
   );
 });
+
+const NOTE = "notes/acme-login";
+
+const notesWorkflow = (archive: string): string => `version: 1
+artifacts:
+  acme-notes:
+    change: notes/{name}/
+    published: [notes-index.md]
+${archive}    publish:
+      apply: { run: "true" }
+`;
+
+/**
+ * A companion declaring `acme-notes`, with `notes/acme-login` written in `mine` and recorded as
+ * submitted from it; `theirs` is the clone that publishes.
+ */
+async function submittedNoteIn(
+  fixture: StagingFixture,
+  home: string,
+  archive: string,
+): Promise<{ mine: string; theirs: string }> {
+  const setupClone = fixture.clone("acme-setup");
+  const workflow = path.join(setupClone, ".mate/config/workflow.yaml");
+  fs.mkdirSync(path.dirname(workflow), { recursive: true });
+  fs.writeFileSync(workflow, notesWorkflow(archive));
+  pushFrom(setupClone, "declare acme-notes");
+  const mine = fixture.clone("acme-mine");
+  const theirs = fixture.clone("acme-theirs");
+  const dir = path.join(mine, NOTE);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "brief.md"), "An acme login note.\n");
+  fs.writeFileSync(path.join(dir, "delivery.yaml"), "version: 1\nstate: submitted\n");
+  updateSubmittedFolders(
+    mine,
+    { [NOTE]: { digest: await folderDigest(dir), submittedAt: "2026-11-12T10:00:00.000Z" } },
+    [],
+    home,
+  );
+  return { mine, theirs };
+}
+
+describe("companion sync of a submitted folder of a declared artifact type", () => {
+  test(
+    "its archive arrives and the folder is discarded",
+    async () => {
+      const fixture = await setup();
+      const home = path.join(fixture.root, "home");
+      const { mine, theirs } = await submittedNoteIn(
+        fixture,
+        home,
+        "    archive: notes-history/{id}/\n",
+      );
+      fs.cpSync(path.join(mine, NOTE), path.join(theirs, "notes-history/2026-11-20-acme-login"), {
+        recursive: true,
+      });
+      fs.writeFileSync(path.join(theirs, "notes-index.md"), "- acme-login\n");
+      pushFrom(theirs, "publish acme-login");
+
+      const result = await new CompanionGitSync({ stateHome: home }).sync(mine);
+
+      expect(result.discarded).toEqual([NOTE]);
+      expect(fs.existsSync(path.join(mine, NOTE))).toBe(false);
+      expect(fs.existsSync(path.join(mine, "notes-history/2026-11-20-acme-login"))).toBe(true);
+      expect(git(mine, "status", "--porcelain").trim()).toBe("");
+      expect(readSubmittedFolders(mine, home)).toEqual({});
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "without an archive, its published record's trailer arrives and the folder is discarded",
+    async () => {
+      const fixture = await setup();
+      const home = path.join(fixture.root, "home");
+      const { mine, theirs } = await submittedNoteIn(fixture, home, "");
+      fs.writeFileSync(path.join(theirs, "notes-index.md"), "- acme-login\n");
+      pushFrom(theirs, "publish acme-login\n\nMate-Artifact: acme-notes/2026-11-20-acme-login");
+
+      const result = await new CompanionGitSync({ stateHome: home }).sync(mine);
+
+      expect(result.discarded).toEqual([NOTE]);
+      expect(fs.existsSync(path.join(mine, NOTE))).toBe(false);
+      expect(git(mine, "status", "--porcelain").trim()).toBe("");
+      expect(readSubmittedFolders(mine, home)).toEqual({});
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "without an archive, an upstream commit with no trailer leaves the folder",
+    async () => {
+      const fixture = await setup();
+      const home = path.join(fixture.root, "home");
+      const { mine, theirs } = await submittedNoteIn(fixture, home, "");
+      fs.writeFileSync(path.join(theirs, "acme.md"), "theirs\n");
+      pushFrom(theirs, "acme work");
+
+      const result = await new CompanionGitSync({ stateHome: home }).sync(mine);
+
+      expect(result.discarded).toBeUndefined();
+      expect(fs.existsSync(path.join(mine, NOTE, "brief.md"))).toBe(true);
+      expect(Object.keys(readSubmittedFolders(mine, home))).toEqual([NOTE]);
+    },
+    TIMEOUT,
+  );
+});

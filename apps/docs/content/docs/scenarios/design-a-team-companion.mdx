@@ -89,6 +89,142 @@ behaves for the team, copy it under a name of your own instead of editing it.
 </Step>
 <Step>
 
+### Declare your workflow
+
+Without a declaration, every change follows Mate's Delivery Path as described
+in [Your First Change](/docs/scenarios/first-change). To add a check, a stage,
+or your own skills, commit `.mate/config/workflow.yaml`. Setup, sync, and
+`mate companion update` never touch this file.
+
+```yaml
+version: 1
+stages:
+  - id: explore
+    steps: [{ skill: mate-explore-change }]
+  - id: propose
+    steps: [{ skill: mate-propose-change }, { skill: acme-plan-check }]
+  - id: review
+    review: schema
+  - id: security-review
+    label: Security review
+    steps: [{ skill: acme-security-review }]
+  - id: apply
+    steps: [{ skill: mate-apply-change }, { skill: acme-verify }]
+  - id: submit
+    steps: [{ skill: acme-pr-check }, { skill: mate-submit-change }]
+  - id: publish
+    steps: [{ skill: mate-publish-artifact }]
+```
+
+**Stages** are listed in path order. Each has a unique `id`, an optional
+`label` and `optional: true`, and either `steps` or `review`. You may add,
+remove, and reorder stages, but `submit` then `publish` end every path, are
+never optional, and keep their Mate skills, because they push and publish the
+change. Leave `stages` out to keep the default path.
+
+**Steps** are always `{ skill: <name> }` and run in order in one session. When
+a step fails, the stage stops and is not recorded. Each Mate stage skill may
+appear only in its own stage, once:
+
+| Stage             | Mate stage skill        |
+| ----------------- | ----------------------- |
+| `clarify-intent`  | `mate-clarify-intent`   |
+| `explore`         | `mate-explore-change`   |
+| `propose`         | `mate-propose-change`   |
+| `apply`           | `mate-apply-change`     |
+| `inspect-outcome` | `mate-show-me`          |
+| `refine-code`     | `mate-simplify-code`    |
+| `submit`          | `mate-submit-change`    |
+| `publish`         | `mate-publish-artifact` |
+
+**Starting a stage.** A stage is started with the skill of its first step, as
+`/<skill> <change>`: above, `/mate-apply-change acme-login` starts `apply`,
+`/acme-security-review acme-login` starts `security-review`, and
+`/acme-pr-check acme-login` starts `submit`. There is no wrapper skill, and the
+default path is run exactly as before. A skill may be the first step of one
+stage only, so the skill you run identifies its stage.
+
+When the companion declares `stages`, Mate adds one rule to the session's
+guidance that lists each stage with its entry skill. Following it, the session
+resolves the stage with `mate workflow steps`, runs the remaining steps in
+order, records the stage with `mate workflow done`, and hands off to the next
+stage. The rule is guidance, not a gate: a stage whose later steps were skipped
+is not recorded and stays open in Studio.
+
+**A step skill** receives the user's request and the change name, and the chosen
+schema in `propose`. It does its work and stops: the stage records itself and
+names the next stage, so a hand-off the step proposes is ignored.
+
+**Review stages** set `review: schema` to review every planning artifact of the
+change's schema, or list artifact ids such as `review: [proposal, specs, tasks]`.
+An artifact the change does not have is skipped. A review stage has no steps:
+people review.
+
+**Progress.** When a stage finishes, Mate records `stages.<id>: done` in the
+change's `delivery.yaml`. A change is at its first stage that is neither
+optional nor done. Built-in stages of an OpenSpec change are still read from
+its validation and tasks, so existing changes keep their place; a stage you
+added is done only once it is recorded. Studio draws the declared path and
+places each change on it.
+
+**Validation** is strict: unknown keys, duplicate keys, anchors, and aliases are
+errors, and an invalid file stops every stage instead of falling back to the
+default. `mate workflow steps <stage>` reports each problem with its key path,
+such as `stages[3].steps[1].skill`.
+
+#### A fully custom path
+
+A companion that does not plan with OpenSpec declares its own artifact type and
+names it on `submit`:
+
+```yaml
+version: 1
+artifacts:
+  acme-notes:
+    change: notes/{name}/
+    published: [notes/index.md]
+    archive: notes-history/{id}/
+    reviews: { brief: brief.md, plan: plan.md }
+    submit:
+      check: { run: "acme-notes lint {change}" }
+    publish:
+      apply: { run: "acme-notes merge {change}" }
+      validate: { run: "acme-notes verify {files}" }
+stages:
+  - id: draft
+    steps: [{ skill: acme-draft-plan }]
+  - id: plan-review
+    review: [brief, plan]
+  - id: build
+    steps: [{ skill: acme-build }]
+  - id: submit
+    artifact: acme-notes
+    steps: [{ skill: mate-submit-change }]
+  - id: publish
+    steps: [{ skill: mate-publish-artifact }]
+```
+
+- `change` is the folder of a change while it is worked on and after it is
+  submitted; Mate keeps its `delivery.yaml` there. A skill of yours creates the
+  folder.
+- `published` lists the files publication writes. Agents read these as current,
+  and never a submitted folder unless you name it.
+- `archive` is optional. With it, publication moves the change's folder there
+  as history; without it, the folder is deleted.
+- `reviews` names the files a review stage can list.
+- `submit.check`, `publish.apply` (required), and `publish.validate` are
+  commands run with `sh -c` in the companion. `{name}`, `{id}`, `{change}`,
+  `{archive}`, and `{files}` are replaced by shell-quoted values, and a
+  non-zero exit fails the step. `publish.apply` may change only `published`
+  files; Mate moves or deletes the change folder itself.
+
+The paths must stay inside the companion, outside `.mate/`, and must not
+overlap each other or OpenSpec's folders. With no Mate apply skill on the path,
+`/mate-submit-change` asks once which branch delivers the change.
+
+</Step>
+<Step>
+
 ### Name your branches
 
 Mate names a change's delivery branch `workset/<workset-id>`, or

@@ -24,6 +24,7 @@ import { runUnwrapCommand } from "./commands/unwrap";
 import { runVscodeCommand } from "./commands/vscode/setup";
 import { parseWrapArgs, runWrapCommand } from "./commands/wrap";
 import { runWorkingCommand } from "./commands/working/working";
+import { runWorkflowCommand } from "./commands/workflow/workflow";
 import { runFactoryCommand } from "./commands/factory/factory";
 import { runInstallCommand } from "./commands/install";
 import { parseDirectLaunchArgs } from "./commands/launch/shared";
@@ -208,6 +209,11 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     case "artifact":
       if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;
       await runArtifactCommand(subcommand, rest);
+      return;
+    case "workflow":
+      // The gates of `artifact`: a stage skill resolves and records in its Session Companion.
+      if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;
+      await runWorkflowCommand(subcommand, rest);
       return;
     case "companion":
       switch (subcommand) {

@@ -35,6 +35,7 @@ function Overview() {
               changes: data.changes ?? [],
               submitted: data.submitted,
               warnings: data.warnings,
+              workflow: data.workflow,
             }}
             selected={search.change}
             companion={search.companion}

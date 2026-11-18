@@ -14,6 +14,7 @@ import {
   readDeliveryRecord,
   readDeliveryState,
   readOrUnlinkedRecord,
+  recordStageDone,
   settleDelivery,
   ticketCandidateOf,
   unlinkedRecord,
@@ -466,5 +467,66 @@ describe("tickets", () => {
     expect(ticketCandidateOf("ABC-123/abc-123-retry")).toBe("ABC-123");
     expect(ticketCandidateOf("ABC-1-ABC-2-merge")).toBeNull();
     expect(ticketCandidateOf("workset/ABC-123-acme-fix")).toBe("ABC-123");
+  });
+});
+
+describe("recorded stages", () => {
+  const file = (): string => path.join(companion, DELIVERY_FILE);
+
+  test("a stage is recorded with a write limited to its entry", async () => {
+    const before = `version: 1
+change: acme-fix
+# kept as written
+specBase: ${"a".repeat(40)}
+deliveries:
+  - repository: ${REPO}
+    branch: workset/acme-fix
+`;
+    await fs.writeFile(file(), before);
+
+    await recordStageDone(companion, "acme-fix", "apply");
+
+    expect(await fs.readFile(file(), "utf8")).toBe(`${before}stages:\n  apply: done\n`);
+    expect((await readDeliveryRecord(companion))?.stages).toEqual({ apply: "done" });
+  });
+
+  test("a second stage joins the first and recording one again changes nothing", async () => {
+    await writeDeliveryRecord(companion, unlinkedRecord("acme-fix"));
+    await recordStageDone(companion, "acme-fix", "draft");
+    await recordStageDone(companion, "acme-fix", "build");
+    const written = await fs.readFile(file(), "utf8");
+
+    await recordStageDone(companion, "acme-fix", "draft");
+
+    expect(await fs.readFile(file(), "utf8")).toBe(written);
+    expect((await readDeliveryRecord(companion))?.stages).toEqual({ draft: "done", build: "done" });
+  });
+
+  test("a change without a record gets an unlinked one", async () => {
+    await recordStageDone(companion, "acme-fix", "draft");
+
+    expect(await readDeliveryRecord(companion)).toEqual({
+      ...unlinkedRecord("acme-fix"),
+      stages: { draft: "done" },
+    });
+  });
+
+  test("another write of the record keeps the stages", async () => {
+    await recordStageDone(companion, "acme-fix", "apply");
+    const record = await readOrUnlinkedRecord(companion, "acme-fix");
+
+    await writeDeliveryRecord(
+      companion,
+      upsertDelivery(record, REPO, { branch: "workset/acme-fix" }),
+    );
+
+    expect((await readDeliveryRecord(companion))?.stages).toEqual({ apply: "done" });
+  });
+
+  test("a damaged record is reported, not rewritten", async () => {
+    await fs.writeFile(file(), "deliveries: nope\n");
+
+    await expect(recordStageDone(companion, "acme-fix", "apply")).rejects.toThrow("malformed");
+    expect(await fs.readFile(file(), "utf8")).toBe("deliveries: nope\n");
   });
 });

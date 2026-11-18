@@ -244,7 +244,8 @@ export async function submitChanges(
     ...given,
     repositoryAccess: given.repositoryAccess ?? repositoryAccessFor(environment, given),
   };
-  const type = deps.artifactType ?? openspecArtifactType(deps.runOpenSpec);
+  const type =
+    deps.artifactType ?? environment.artifactType ?? openspecArtifactType(deps.runOpenSpec);
   const cwd = environment.companionPath;
   // Every change is refused or accepted before any record is written, so a refused later one
   // leaves no earlier record changed. The merge check runs here too: a delivery Git would settle

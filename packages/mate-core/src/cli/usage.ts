@@ -52,6 +52,8 @@ export function usage(): string {
     "   [--json]   one triple per stale requirement of the change",
     ` ${n} artifact project <change> [--json]`,
     ` ${n} artifact apply-context <change> --json [--since <digest>]`,
+    ` ${n} workflow steps <stage> [--json]   a Delivery Path stage's steps, entry and next stage`,
+    ` ${n} workflow done <stage> <change> [--json]`,
     ` ${n} doctor`,
     ` ${n} report [--days N] [--input FILE|-] [--json]`,
     ` ${n} studio [--writable] [--terminal] [--detach-timeout <minutes>]`,

@@ -9,7 +9,7 @@ import {
   type CompanionGit,
   type NetworkGitResult,
 } from "../../../runtime/companion-git";
-import { TRANSACTION_TRAILER } from "../../artifact-trailer";
+import { ARTIFACT_TRAILER, TRANSACTION_TRAILER } from "../../artifact-trailer";
 import { INBOX_BRANCH } from "../../../runtime/pending-records";
 import type { ArtifactType } from "./artifact-type";
 import { WITHOUT_HOOKS } from "./worktree";
@@ -164,12 +164,55 @@ export async function mapLimited<T, R>(
   return results;
 }
 
-/** Archive anchors present at `ref`; empty when the ref or the archive directory is missing. */
+/** A record published at `ref`, with its publication commit's time in seconds. */
+export interface TrailerRecord {
+  id: string;
+  at: number;
+}
+
+/** Commits read for the trailers of a type without an archive. */
+const TRAILER_RECORDS_READ = 2000;
+
+/**
+ * The records of `type` published on `ref`, newest first, from the `Mate-Artifact` trailers of
+ * its history: how a type that keeps no archive knows a change is published. One bounded read.
+ */
+export async function trailerRecordsAt(
+  git: CompanionGit,
+  ref: string,
+  type: Pick<ArtifactType, "name" | "isRecordId">,
+): Promise<TrailerRecord[]> {
+  const prefix = `${type.name}/`;
+  const log = await git.run([
+    "log",
+    `-n${TRAILER_RECORDS_READ}`,
+    "--fixed-strings",
+    `--grep=${ARTIFACT_TRAILER}: ${prefix}`,
+    `--format=%ct%x09%(trailers:key=${ARTIFACT_TRAILER},valueonly,separator=%x09)`,
+    "--end-of-options",
+    ref,
+  ]);
+  if (log.status !== 0) return [];
+  return outputLines(log.stdout).flatMap((line) => {
+    const [at, ...values] = line.split("\t");
+    return values
+      .filter((value) => value.startsWith(prefix) && type.isRecordId(value.slice(prefix.length)))
+      .map((value) => ({ id: value.slice(prefix.length), at: Number(at) }));
+  });
+}
+
+/**
+ * Records present at `ref`: its archive anchors, or for a type without an archive the records
+ * its history published. Empty when the ref or the archive directory is missing.
+ */
 export async function anchorsAt(
   git: CompanionGit,
   ref: string,
   type: ArtifactType,
 ): Promise<string[]> {
+  if (type.archiveRoot === undefined) {
+    return (await trailerRecordsAt(git, ref, type)).map((record) => record.id);
+  }
   // A path filter, unlike `<ref>:<path>`, lists a missing directory as empty, not as a failure.
   const listed = await git.run([
     "ls-tree",

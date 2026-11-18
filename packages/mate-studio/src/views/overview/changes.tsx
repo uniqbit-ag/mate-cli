@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import type { StudioChange, StudioSubmittedChange } from "@uniqbit/mate-core/studio";
+import type { StudioChange, StudioSubmittedChange, Workflow } from "@uniqbit/mate-core/studio";
 import { useState } from "react";
 
 import { PathSteps } from "../../components/path-steps";
@@ -24,6 +24,7 @@ import {
   activeChanges,
   CHANGE_GROUPS,
   changeGroup,
+  changePath,
   changeProgress,
   changeStep,
   GROUP_TITLES,
@@ -57,21 +58,23 @@ function status(change: StudioChange): { marker: Marker; word: string } {
   return { marker: "done", word: "Ready" };
 }
 
-const PATH_STAGES = ["Propose change", "Human review", "Apply change", "Submit change"];
-
 function ChangeDetail({
   change,
+  workflow,
   companion,
   reading,
   onRead,
 }: {
   change: StudioChange;
+  /** The companion's Delivery Path; the built-in default when absent. */
+  workflow?: Workflow;
   companion?: string;
   /** The artifact open to read, or `null` for the change's summary. */
   reading: string | null;
   onRead: (path: string | null) => void;
 }) {
-  const step = changeStep(change);
+  const step = changeStep(change, workflow);
+  const path = changePath(workflow);
   const progress = changeProgress(change);
   const { marker, word } = status(change);
   const artifacts = (
@@ -107,9 +110,9 @@ function ChangeDetail({
           {review ? artifacts : null}
           <PanelSection title="Delivery Path" aside={step.stage}>
             <PathSteps
-              steps={PATH_STAGES}
-              current={PATH_STAGES.indexOf(step.stage)}
-              tone={step.stage === "Human review" ? "why" : "accent"}
+              steps={path.map((stage) => stage.label)}
+              current={path.findIndex((stage) => stage.id === step.stageId)}
+              tone={step.review ? "why" : "accent"}
             />
           </PanelSection>
           <PanelSection title="Next step">
@@ -131,15 +134,17 @@ function ChangeDetail({
 
 function ChangeRow({
   change,
+  workflow,
   current,
   onOpen,
 }: {
   change: StudioChange;
+  workflow?: Workflow;
   current: boolean;
   onOpen: () => void;
 }) {
   const { marker, word } = status(change);
-  const step = changeStep(change);
+  const step = changeStep(change, workflow);
   return (
     <li>
       <button
@@ -239,8 +244,11 @@ export function Changes({
   submitted = NONE_SUBMITTED,
   selected,
   companion,
+  workflow,
 }: {
   changes: StudioChange[];
+  /** The companion's Delivery Path, which changes are placed on; the default when absent. */
+  workflow?: Workflow;
   /** Submitted changes on the pending branch; a local copy is not listed as active too. */
   submitted?: StudioSubmittedChange[];
   selected?: string;
@@ -316,6 +324,7 @@ export function Changes({
                 <ChangeRow
                   key={change.name}
                   change={change}
+                  workflow={workflow}
                   current={change.name === selected}
                   onOpen={() => {
                     setPass(false);
@@ -339,6 +348,7 @@ export function Changes({
         {current ? (
           <ChangeDetail
             change={current}
+            workflow={workflow}
             companion={companion}
             reading={readingPath}
             onRead={(path) => setReading(path ? { change: current.name, path } : null)}

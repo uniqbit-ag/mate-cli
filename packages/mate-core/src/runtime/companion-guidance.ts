@@ -2,6 +2,8 @@ import path from "node:path";
 
 import { FRAMEWORK_NAME } from "./framework";
 import { GUIDANCE_FILE_VERSION, type MateGuidanceFile } from "./guidance";
+import { readWorkflow } from "./workflow/declaration";
+import type { DeclaredArtifactType, WorkflowSkillStage } from "./workflow/workflow";
 
 /**
  * The guidance builders, on the session-runtime side of core.
@@ -32,6 +34,60 @@ export interface GuidanceContext {
    * a caller that cannot tell never drops the rule.
    */
   secretGuardrails?: boolean;
+  /** The artifact types the companion's workflow declares; each gets its reading rule. */
+  artifactTypes?: readonly GuidanceArtifactType[];
+  /** The skill stages the companion declares; absent when it declares none. */
+  stages?: readonly GuidanceStage[];
+}
+
+/** The paths of a declared artifact type its reading rule is built from. */
+export type GuidanceArtifactType = Pick<
+  DeclaredArtifactType,
+  "name" | "change" | "published" | "archive"
+>;
+
+/** A declared skill stage with the skill that starts it. */
+export type GuidanceStage = Pick<WorkflowSkillStage, "id" | "entry">;
+
+export interface DeclaredGuidance {
+  artifactTypes: GuidanceArtifactType[];
+  stages?: GuidanceStage[];
+}
+
+/**
+ * What `companionPath`'s workflow adds to the guidance: its artifact types, and its skill stages
+ * when it declares `stages`. An invalid declaration adds nothing, which keeps the built-in rules
+ * alone; the session banner names its problems.
+ */
+export function declaredGuidance(companionPath: string): DeclaredGuidance {
+  const verdict = readWorkflow(companionPath);
+  if (!verdict.ok) return { artifactTypes: [] };
+  const { artifacts, stages } = verdict.workflow;
+  const declared = stages.filter(
+    (stage): stage is WorkflowSkillStage => stage.kind === "skill" && stage.source === "declared",
+  );
+  return {
+    artifactTypes: artifacts,
+    ...(declared.length > 0 ? { stages: declared.map(({ id, entry }) => ({ id, entry })) } : {}),
+  };
+}
+
+/** Tells the session to run a declared stage's whole chain: no skill template knows it. */
+function stagesRule(stages: readonly GuidanceStage[]): string {
+  const entries = stages.map((stage) => `${stage.id} (${stage.entry})`).join(", ");
+  return `    <rule id="workflow-stages" severity="critical">This companion declares its Delivery Path; each stage is started with its entry skill: ${entries}. When you run one of these skills for a change, run ${FRAMEWORK_NAME} workflow steps "<stage>" --json first. After the skill, run the stage's remaining steps in order in this session, each for the same change; when a step cannot be loaded or fails, stop and name it. Then run ${FRAMEWORK_NAME} workflow done "<stage>" "<change>" and hand off to the stage in next, in place of the one the skill names.</rule>`;
+}
+
+/** `notes/{name}/` → `notes/`. */
+const folderOf = (template: string): string => template.replace(/\{[a-z]+\}\/?$/, "");
+
+/**
+ * What agents read as current for a declared type, on the model of the built-in
+ * `openspec-publish` rule. Its submitted folders have no `touches`, so one is read only when named.
+ */
+function artifactTypeRule(type: GuidanceArtifactType): string {
+  const history = type.archive ? ` ${folderOf(type.archive)} is history.` : "";
+  return `    <rule id="artifact-${type.name}" severity="critical">${type.name}: ${type.published.join(", ")} is current. A submitted folder under ${folderOf(type.change)} is not the truth until publication lands it on the companion's default branch and is never current: read one only when the user names it, and revise one only when named (${FRAMEWORK_NAME} artifact take "<name>" when it is missing, then resubmit).${history}</rule>`;
 }
 
 const SECRET_HANDLING_RULE = `    <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>`;
@@ -192,6 +248,10 @@ export function buildCompanionPolicyXml(
     );
   }
 
+  for (const type of context.artifactTypes ?? []) lines.push(artifactTypeRule(type));
+
+  if (context.stages?.length) lines.push(stagesRule(context.stages));
+
   if (options.enteredWorktreeGit && hasRtkCapability(context.capabilities)) {
     lines.push(ENTERED_WORKTREE_GIT_RULE);
   }
@@ -248,7 +308,12 @@ export function buildCompanionGuidance(
  */
 export function buildOpenCodeGuidance(
   capabilities: GuidanceCapability[],
-  options: { companionScoped?: boolean; secretGuardrails?: boolean } = {},
+  options: {
+    companionScoped?: boolean;
+    secretGuardrails?: boolean;
+    artifactTypes?: readonly GuidanceArtifactType[];
+    stages?: readonly GuidanceStage[];
+  } = {},
 ): MateGuidanceFile {
   const repository = options.companionScoped
     ? undefined
@@ -259,6 +324,8 @@ export function buildOpenCodeGuidance(
       repository,
       capabilities,
       secretGuardrails: options.secretGuardrails,
+      ...(options.artifactTypes ? { artifactTypes: options.artifactTypes } : {}),
+      ...(options.stages ? { stages: options.stages } : {}),
     },
     { wrapperBinPath: "$MATE_WRAPPER_BIN_PATH" },
   );
