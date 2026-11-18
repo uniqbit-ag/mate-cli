@@ -222,6 +222,26 @@ describe("command projection", () => {
     expect(commandFingerprint(detail)).toBe("command:studio serve:1");
   });
 
+  test("keeps no flag value that starts with a dash", () => {
+    const detail = commandDetail({
+      args: ["friction", "report", "--evidence", "-acme abc123", "--expected", "-abc123", "-h"],
+      exitCode: 1,
+      errorText: "",
+    });
+
+    expect(detail.flags).toEqual(["--evidence", "--expected", "-h"]);
+  });
+
+  test("keeps no dash-leading value echoed in the error text", () => {
+    const detail = commandDetail({
+      args: ["friction", "report", "--kind", "-abc123"],
+      exitCode: 1,
+      errorText: '--kind must be one of bug; got "-abc123".',
+    });
+
+    expect(detail.errorText).toBe('--kind must be one of bug; got "…".');
+  });
+
   test("keeps no argument value echoed in the error text, and no path as subcommand", () => {
     const failure = {
       args: ["opencode", "acme", "/acme/repo", "--days=abc123"],

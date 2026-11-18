@@ -148,13 +148,16 @@ interface CommandDetail {
   errorText: string;
 }
 
+/** A flag's value may start with a dash too, so only the shape of a flag name is kept. */
+const FLAG_NAME = /^(?:-[A-Za-z]|--[a-z][a-z0-9-]*)$/;
+
 /** Command, subcommand and flag names only: a flag's value or a positional is never kept. */
 export function commandDetail(failure: CommandFailure): CommandDetail {
   const { command, subcommand } = commandWords(failure.args);
   const end = failure.args.indexOf("--");
   const flags = (end === -1 ? failure.args : failure.args.slice(0, end))
-    .filter((arg) => arg.length > 1 && arg.startsWith("-"))
-    .map((arg) => arg.split("=")[0]);
+    .map((arg) => arg.split("=")[0])
+    .filter((arg) => FLAG_NAME.test(arg));
   return {
     command,
     subcommand,
@@ -186,7 +189,10 @@ function withoutArgumentValues(text: string, args: string[]): string {
   const { command, subcommand } = commandWords(args);
   const kept = new Set([command, subcommand]);
   const values = args
-    .map((arg) => (arg.startsWith("-") ? arg.split("=").slice(1).join("=") : arg))
+    .map((arg) => {
+      const [name, ...value] = arg.split("=");
+      return FLAG_NAME.test(name) ? value.join("=") : arg;
+    })
     .filter((value) => value.length >= REDACTED_VALUE_MIN && !kept.has(value))
     .toSorted((a, b) => b.length - a.length);
   return values.reduce((result, value) => result.replaceAll(value, "…"), text);

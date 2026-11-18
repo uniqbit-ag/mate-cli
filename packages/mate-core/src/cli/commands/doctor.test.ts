@@ -1453,4 +1453,26 @@ describe("doctor without writes", () => {
 
     expect(await fs.readFile(registry, "utf8")).toBe(before);
   });
+
+  test("reports a linked companion's missing config without creating it", async () => {
+    const root = await makeTempDir("doctor-read-only-");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(repoPath, { recursive: true });
+    const companionPath = await setupCompanion(root, repoPath);
+    const config = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+    await fs.rm(config);
+
+    const report = await collectDoctorReport({
+      cwd: repoPath,
+      globalConfigStore: new GlobalConfigStore(path.join(root, "config.yaml")),
+      write: false,
+    });
+
+    expect(report.companionPath).toBe(companionPath);
+    expect(report.resolutionFailures).toContainEqual({
+      companionPath,
+      message: `${config} is missing.`,
+    });
+    expect(await Bun.file(config).exists()).toBe(false);
+  });
 });
