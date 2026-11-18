@@ -544,7 +544,8 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
 
   if (root.rootPath && root.config) {
     const inspect =
-      deps.inspectPlugins ?? ((companionPath) => inspectDeclaredPlugins(companionPath, { env }));
+      deps.inspectPlugins ??
+      ((companionPath) => inspectDeclaredPlugins(companionPath, { env, includeLocal: true }));
     const inspection = await inspect(root.rootPath);
     report.pluginFailures = inspection.failures;
     report.pluginCapabilities = inspection.capabilities;

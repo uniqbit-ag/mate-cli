@@ -36,7 +36,7 @@ export function reportPluginInstallResults(results: PluginInstallResult[]): bool
       process.stderr.write(
         `${FRAMEWORK_NAME}: plugin "${result.package}" failed to install: ${result.error ?? "unknown error"}\n`,
       );
-      process.stderr.write(`${registryConfigHint(result.package)}\n`);
+      if (!result.refused) process.stderr.write(`${registryConfigHint(result.package)}\n`);
     } else if (result.status === "installed") {
       console.log(`  installed plugin ${result.package}@${result.resolvedVersion}`);
     }
@@ -64,6 +64,10 @@ export interface InstallCommandDeps {
   /** Plan inspection and non-TTY execution; tests stub them instead of shelling out to installers. */
   inspectPlan?: typeof inspectInstallPlan;
   runPlan?: typeof runInstallPlan;
+}
+
+export function isFrozenPluginInstall(argv: string[]): boolean {
+  return argv.includes("--frozen-plugins");
 }
 
 /** `--with <id>` / `--without <id>`, repeatable, also as `--with=<id>[,<id>]`. */
@@ -156,7 +160,7 @@ function printPlanText(plan: Awaited<ReturnType<typeof inspectInstallPlan>>): vo
  * - `--yes` — skip confirmation; required for non-TTY execution. Tools the companion only recommends are not installed by `--yes` alone.
  * - `--with <capability>` — install a tool the companion recommends (RTK, TokenSave, Graphify, Context Mode) and remember the choice. Repeatable.
  * - `--without <capability>` — decline a recommended tool and remember the choice. Repeatable.
- * - `--frozen-plugins` — deployment restore: install the base plugins and the selected audience's exactly from their committed lockfiles, never rewrite a plugin manifest or lockfile. The checkout's plugin-generated files are written, not committed.
+ * - `--frozen-plugins` — deployment restore: install the base plugins and the selected audience's exactly from their committed lockfiles, never rewrite a plugin manifest or lockfile. Local plugins are ignored. The checkout's plugin-generated files are written, not committed.
  */
 export async function runInstallCommand(
   argv: string[],
@@ -164,7 +168,7 @@ export async function runInstallCommand(
   deps: InstallCommandDeps = {},
 ): Promise<boolean> {
   const skipConfirm = argv.includes("--yes");
-  const frozen = argv.includes("--frozen-plugins");
+  const frozen = isFrozenPluginInstall(argv);
   const flagChoices = parseMemberChoiceFlags(argv);
   if ("error" in flagChoices) {
     process.stderr.write(`${FRAMEWORK_NAME}: ${flagChoices.error}\n`);
@@ -222,7 +226,7 @@ export async function runInstallCommand(
       return false;
     }
     if (outcome.declared) {
-      await hydrateDynamicPlugins({ companionPath: context.companionPath });
+      await hydrateDynamicPlugins({ companionPath: context.companionPath, includeLocal: !frozen });
       if (frozen) {
         const failures = await verifyDeclaredPlugins(context.companionPath);
         if (failures.length > 0) {

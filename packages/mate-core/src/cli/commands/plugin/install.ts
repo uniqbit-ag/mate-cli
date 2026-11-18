@@ -13,6 +13,7 @@ import {
 } from "../../../tools/setup/dynamic-plugins/audiences";
 import { hydrateDynamicPlugins } from "../../../tools/setup/dynamic-plugins/hydrate";
 import type { PluginInstallDeps } from "../../../tools/setup/dynamic-plugins/install";
+import { declareLocalPlugin } from "../../../tools/setup/dynamic-plugins/local";
 import { installPluginWorkspaces } from "../../../tools/setup/dynamic-plugins/workspaces";
 import { reportPluginInstallResults, reportPluginWorkspaces } from "../install";
 
@@ -35,7 +36,7 @@ function withDeclaration(
   );
 }
 
-const INSTALL_USAGE = `usage: ${FRAMEWORK_NAME} plugin install <package>[@version]`;
+const INSTALL_USAGE = `usage: ${FRAMEWORK_NAME} plugin install [--local] <package>[@version]`;
 
 export interface PluginInstallCommandDeps {
   cwd?: string;
@@ -43,28 +44,36 @@ export interface PluginInstallCommandDeps {
   setupHub?: (companionPath: string, config: FrameworkConfig) => Promise<void>;
 }
 
+function refuse(message: string): false {
+  process.stderr.write(`${FRAMEWORK_NAME}: ${message}\n`);
+  process.exitCode = 1;
+  return false;
+}
+
 /**
- * @command mate plugin install <package>[@version]
+ * @command mate plugin install [--local] <package>[@version]
  * @description Declares `<package>` in the companion's (or hub's) `framework.yaml`
  * `plugins:` list (adding it, or updating its version if already declared)
  * and installs it immediately into the shared workspace, the same way
  * `mate install` would on its next run: with the selected audience's
  * plugins, and without any other audience's.
+ * @flags
+ * - `--local` — declare the package in the untracked `.mate/config/framework.local.yaml` and install it into the ignored `.mate/local-plugins/`, for this machine only. No tracked file names it. Refused in a hub and for a package `framework.yaml` declares.
  */
 export async function runPluginInstallCommand(
   argv: string[],
   deps: PluginInstallCommandDeps = {},
 ): Promise<boolean> {
-  const spec = argv[0];
-  if (spec === "-h" || spec === "--help") {
+  if (argv.includes("-h") || argv.includes("--help")) {
     process.stdout.write(`${INSTALL_USAGE}\n`);
     return true;
   }
-  if (!spec || spec.startsWith("-")) {
-    const problem = spec ? `unknown option ${spec}; ` : "";
-    process.stderr.write(`${FRAMEWORK_NAME}: ${problem}${INSTALL_USAGE}\n`);
-    process.exitCode = 1;
-    return false;
+  const local = argv.includes("--local");
+  const unknownOption = argv.find((arg) => arg.startsWith("-") && arg !== "--local");
+  const spec = argv.find((arg) => !arg.startsWith("-"));
+  if (unknownOption || !spec) {
+    const problem = unknownOption ? `unknown option ${unknownOption}; ` : "";
+    return refuse(`${problem}${INSTALL_USAGE}`);
   }
   const { package: packageName, version } = parsePackageSpec(spec);
 
@@ -75,37 +84,44 @@ export async function runPluginInstallCommand(
     return false;
   }
   if ((context.kind !== "companion" && context.kind !== "hub") || !context.companionPath) {
-    process.stderr.write(
-      `${FRAMEWORK_NAME}: \`plugin install\` requires a companion or hub context; run it from inside a linked working repository or a hub root.\n`,
+    return refuse(
+      "`plugin install` requires a companion or hub context; run it from inside a linked working repository or a hub root.",
     );
-    process.exitCode = 1;
-    return false;
   }
 
   // A hub declares no audiences; the selection only applies to a companion.
   let audience: string | null = null;
   if (context.kind === "companion") {
     const resolved = resolveAudience(context.config, readAudienceSelection(process.env));
-    if (!resolved.ok) {
-      process.stderr.write(`${FRAMEWORK_NAME}: ${describeUnknownAudience(resolved)}\n`);
-      process.exitCode = 1;
-      return false;
-    }
+    if (!resolved.ok) return refuse(describeUnknownAudience(resolved));
     audience = resolved.active;
   }
 
-  const configPath = path.join(
-    context.companionPath,
-    `.${FRAMEWORK_NAME}`,
-    "config",
-    "framework.yaml",
-  );
-  const store = new ConfigStore(configPath);
-  const nextPlugins = withDeclaration(context.config.plugins ?? [], packageName, version);
-  const nextConfig = { ...context.config, plugins: nextPlugins };
-  const agentsBackfilled = context.kind === "hub" && backfillHubAllowedAgents(nextConfig);
-  if (nextPlugins !== context.config.plugins || agentsBackfilled) {
-    await store.save(nextConfig);
+  let nextConfig = context.config;
+  if (local) {
+    const problems = await declareLocalPlugin(
+      context.companionPath,
+      context.config,
+      packageName,
+      version,
+    );
+    if (problems.length > 0) {
+      return refuse(problems.map((problem) => problem.message).join("\n"));
+    }
+  } else {
+    const configPath = path.join(
+      context.companionPath,
+      `.${FRAMEWORK_NAME}`,
+      "config",
+      "framework.yaml",
+    );
+    const store = new ConfigStore(configPath);
+    const nextPlugins = withDeclaration(context.config.plugins ?? [], packageName, version);
+    nextConfig = { ...context.config, plugins: nextPlugins };
+    const agentsBackfilled = context.kind === "hub" && backfillHubAllowedAgents(nextConfig);
+    if (nextPlugins !== context.config.plugins || agentsBackfilled) {
+      await store.save(nextConfig);
+    }
   }
 
   const outcome = await installPluginWorkspaces(context.companionPath, nextConfig, audience, {

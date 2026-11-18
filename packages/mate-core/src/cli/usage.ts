@@ -68,7 +68,7 @@ export function usage(): string {
     ` ${n} cap openspec <subcommand> [args...]`,
     ` ${n} cap graphify <subcommand> [args...]`,
     ` ${n} cap index [--graphify] [--tokensave]`,
-    ` ${n} plugin install <package>[@version]`,
+    ` ${n} plugin install [--local] <package>[@version]`,
     ...pluginCliCommandLines(),
     ` ${n} update`,
     ` ${n} update --check`,

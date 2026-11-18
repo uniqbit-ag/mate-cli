@@ -24,6 +24,8 @@ export interface PluginInstallResult {
   status: "installed" | "unchanged" | "failed";
   resolvedVersion?: string;
   error?: string;
+  /** Mate refused before npm ran, so registry advice does not apply. */
+  refused?: boolean;
 }
 
 /**

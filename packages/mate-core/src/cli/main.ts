@@ -24,7 +24,7 @@ import { runUnwrapCommand } from "./commands/unwrap";
 import { runVscodeCommand } from "./commands/vscode/setup";
 import { parseWrapArgs, runWrapCommand } from "./commands/wrap";
 import { runWorkingCommand } from "./commands/working/working";
-import { runInstallCommand } from "./commands/install";
+import { isFrozenPluginInstall, runInstallCommand } from "./commands/install";
 import { parseDirectLaunchArgs } from "./commands/launch/shared";
 import {
   inspectInstallPreflight,
@@ -104,8 +104,9 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
   // text is printed, so their commands route like compiled-in ones
   // (including MCP servers whose command is their own cap subcommand) and
   // show up in `mate help`. Diagnostics stay on stderr; a missing or
-  // ambiguous companion makes this a no-op.
-  await deps.hydrateDynamicPlugins();
+  // ambiguous companion makes this a no-op. A frozen restore ignores local plugins.
+  const isFrozenRestore = command === "install" && isFrozenPluginInstall(argv);
+  await deps.hydrateDynamicPlugins({ includeLocal: !isFrozenRestore });
 
   if (!command || command === "help" || command === "--help" || command === "-h") {
     console.log(usage());
