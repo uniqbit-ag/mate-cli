@@ -118,7 +118,7 @@ export const PROMPTS = {
       REPORT,
     ].join("\n"),
   apply: (change: string) => [`/mate-apply-change ${change}`, REPORT].join("\n"),
-  archive: (change: string) => `/mate-archive-change ${change}`,
+  submit: (change: string) => `/mate-submit-change ${change}`,
 };
 
 async function recordOf(companionPath: string, id: string): Promise<WorksetRecord> {
@@ -400,7 +400,7 @@ async function commitWork(deps: WorkflowDeps, id: string, message: string): Prom
 
 /**
  * Apply linked changes on the actual worktree branch, committing each,
- * push that branch from the appliance, then archive each change. Repeating it after an answer or a
+ * push that branch from the appliance, then submit each change. Repeating it after an answer or a
  * retry skips what is already done.
  */
 export async function applyStage(
@@ -453,6 +453,7 @@ export async function applyStage(
     if (counts.open === 0 && counts.done > 0) continue;
     if (!linked.has(change))
       check(
+        // oxlint-disable-next-line no-await-in-loop -- changes are applied one at a time
         await deps.run(
           "mate",
           ["artifact", "link", change, "--repository", repository, "--branch", branch, "--json"],
@@ -460,6 +461,7 @@ export async function applyStage(
         ),
         `recording ${branch} for ${change}`,
       );
+    // oxlint-disable-next-line no-await-in-loop -- one agent turn at a time
     const outcome = await turn(deps, id, PROMPTS.apply(change));
     if (outcome.kind === "question") return outcome;
     // oxlint-disable-next-line no-await-in-loop -- verify each turn before committing its work
@@ -501,7 +503,7 @@ export async function applyStage(
 
   for (const change of pending) {
     // oxlint-disable-next-line no-await-in-loop -- one conversation: turns run in order
-    const outcome = await turn(deps, id, PROMPTS.archive(change));
+    const outcome = await turn(deps, id, PROMPTS.submit(change));
     if (outcome.kind === "question") return outcome;
   }
   return { kind: "done" };

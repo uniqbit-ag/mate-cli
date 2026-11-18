@@ -21,6 +21,13 @@ class FakeSocket {
   constructor(readonly url: string) {
     FakeSocket.last = this;
   }
+  addEventListener(
+    type: "open" | "message" | "close",
+    listener: (event: { data: unknown }) => void,
+  ) {
+    if (type === "message") this.onmessage = listener;
+    else this[`on${type}`] = () => listener({ data: undefined });
+  }
   send(text: string) {
     this.sent.push(JSON.parse(text) as Record<string, unknown>);
   }

@@ -245,6 +245,9 @@ const ALLOW_SAFE_EXPANSIONS: Readonly<Record<string, readonly string[]>> = {
   ".env.*": [".env.local", ".env.development", ".env.production", ".env.test", ".env.*.local"],
 };
 
+const overlapsAllow = (pattern: string) =>
+  DEFAULT_SECRET_ALLOW_PATTERNS.some((allowed) => matchesSecretPattern(allowed, [pattern]));
+
 /**
  * The default deny patterns a runtime's own deny rules may carry: every
  * default that can't match an allow-listed file, with an overlapping pattern
@@ -252,8 +255,6 @@ const ALLOW_SAFE_EXPANSIONS: Readonly<Record<string, readonly string[]>> = {
  * projected: once removed from config, nothing would mark their rules as Mate's.
  */
 export function projectableSecretDenyPatterns(): string[] {
-  const overlapsAllow = (pattern: string) =>
-    DEFAULT_SECRET_ALLOW_PATTERNS.some((allowed) => matchesSecretPattern(allowed, [pattern]));
   return DEFAULT_SECRET_DENY_PATTERNS.flatMap((pattern) =>
     overlapsAllow(pattern) ? (ALLOW_SAFE_EXPANSIONS[pattern] ?? []) : [pattern],
   ).filter((pattern) => !overlapsAllow(pattern));

@@ -161,8 +161,10 @@ export async function publicationHold(
   );
   const others = (await cache.pending).filter((entry) => entry.anchor !== anchorName);
   for (const other of others) {
+    // oxlint-disable-next-line no-await-in-loop -- cached lookups, in order
     const shared = (await specsOf(other.anchor)).filter((spec) => specs.has(spec));
     if (shared.length === 0) continue;
+    // oxlint-disable-next-line no-await-in-loop -- read only for an archive that shares a spec
     if ((await holdOf(other.anchor)) === null) continue;
     return `mate: ${anchorName} is held back: ${shared.join(", ")} also carries edits from ${other.anchor}, which is not publishable yet. Publish it after ${other.anchor} settles.`;
   }

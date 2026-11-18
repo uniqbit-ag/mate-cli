@@ -349,15 +349,13 @@ describe("apply", () => {
     expect(fake.calls.some((call) => call.includes("push"))).toBe(false);
   });
 
-  test("applies in dependency order on workset/<workset>, pushes from the appliance, then archives", async () => {
+  test("applies in dependency order on workset/<workset>, pushes from the appliance, then submits", async () => {
     change("acme-login-b", { dependsOn: ["acme-login-a"] });
     change("acme-login-a");
     workset(["acme-login-b", "acme-login-a"]);
     const { agent, prompts } = scriptedAgent((prompt) => {
       const applied = /^\/mate-apply-change (.+)$/m.exec(prompt)?.[1];
       if (applied) complete(applied);
-      const archived = /^\/mate-archive-change (.+)$/.exec(prompt)?.[1];
-      if (archived) archive(archived);
     });
     const { run, calls } = commands();
     const r = runner(agent, run);
@@ -366,8 +364,8 @@ describe("apply", () => {
     expect(prompts).toEqual([
       PROMPTS.apply("acme-login-a"),
       PROMPTS.apply("acme-login-b"),
-      "/mate-archive-change acme-login-a",
-      "/mate-archive-change acme-login-b",
+      "/mate-submit-change acme-login-a",
+      "/mate-submit-change acme-login-b",
     ]);
     expect(calls.filter((call) => !call.includes("symbolic-ref"))).toEqual([
       [
@@ -451,7 +449,7 @@ describe("apply", () => {
     );
   });
 
-  test("open tasks stop the run before push and archive, naming the change", async () => {
+  test("open tasks stop the run before push and submit, naming the change", async () => {
     change("acme-login-a");
     workset(["acme-login-a"]);
     const { agent, prompts } = scriptedAgent(() => {});
@@ -466,10 +464,10 @@ describe("apply", () => {
     expect(
       calls.filter((call) => call[0] === "git").every((call) => call.includes("symbolic-ref")),
     ).toBe(true);
-    expect(prompts.some((prompt) => prompt.startsWith("/mate-archive-change"))).toBe(false);
+    expect(prompts.some((prompt) => prompt.startsWith("/mate-submit-change"))).toBe(false);
   });
 
-  test("a rejected push stops the run before archive with the remote's reason", async () => {
+  test("a rejected push stops the run before submit with the remote's reason", async () => {
     change("acme-login-a");
     workset(["acme-login-a"]);
     const { agent, prompts } = scriptedAgent((prompt) => {
@@ -488,7 +486,7 @@ describe("apply", () => {
       reason:
         "pushing workset/acme-login failed: ! [rejected] workset/acme-login (non-fast-forward)",
     });
-    expect(prompts.some((prompt) => prompt.startsWith("/mate-archive-change"))).toBe(false);
+    expect(prompts.some((prompt) => prompt.startsWith("/mate-submit-change"))).toBe(false);
   });
 });
 
@@ -776,8 +774,6 @@ describe("review reports", () => {
     workset(["acme-login-a"]);
     const { agent, prompts } = scriptedAgent((prompt) => {
       if (prompt.startsWith("/mate-apply-change")) complete("acme-login-a");
-      const archived = /^\/mate-archive-change (.+)$/.exec(prompt)?.[1];
-      if (archived) archive(archived);
     });
     const { run, calls } = commands();
     const r = runner(agent, run);

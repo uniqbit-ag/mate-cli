@@ -197,6 +197,7 @@ export async function runArtifactLinkCommand(
   const results: LinkResult[] = [];
   for (const result of "results" in outcome ? outcome.results : []) {
     for (const diagnostic of result.diagnostics) emitErr(`warning: ${diagnostic}`);
+    // oxlint-disable-next-line no-await-in-loop -- warnings are emitted in result order
     const warnings = await applyWarnings(environment.companionPath, result.change);
     for (const warning of warnings) emitErr(`warning: ${warning.message}`);
     for (const entry of result.settlement.unscoped) {
