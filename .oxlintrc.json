@@ -43,6 +43,11 @@
     "import/no-cycle": "error",
     "import/no-duplicates": "error",
     "import/no-self-import": "error",
+    "import/no-unassigned-import": ["warn", { "allow": ["**/*.css", "**/ts-loader.mjs"] }],
+    "no-underscore-dangle": [
+      "warn",
+      { "allow": ["_raw", "__CFBundleIdentifier", "__mateThemeSwap"] }
+    ],
     "react/react-in-jsx-scope": "off",
     "react/self-closing-comp": "warn",
     "react/jsx-no-useless-fragment": "warn",

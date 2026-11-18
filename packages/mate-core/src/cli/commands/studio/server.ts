@@ -317,6 +317,7 @@ async function readCapped(request: Request, limit: number): Promise<string | nul
   let size = 0;
   let over = Number.isFinite(declared) && declared > limit;
   for (;;) {
+    // oxlint-disable-next-line no-await-in-loop -- stream chunks arrive in order
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
@@ -324,6 +325,7 @@ async function readCapped(request: Request, limit: number): Promise<string | nul
     if (over) {
       chunks.length = 0;
       if (size > limit * 4) {
+        // oxlint-disable-next-line no-await-in-loop -- same stream
         await reader.cancel();
         break;
       }
@@ -398,7 +400,8 @@ export function createStudioFetch(
   const policy = modePolicy(options.profile ?? "standard");
   const broker = deps.factoryClient !== undefined ? deps.factoryClient : factoryClient();
   const reports = deps.reports ?? createReportStore();
-  const stagesOf = deps.worksetStages ?? ((path: string) => readCompanionWorksetStages(path));
+  const stagesOf =
+    deps.worksetStages ?? ((companionPath: string) => readCompanionWorksetStages(companionPath));
   // Created before the terminal and the Outcomes, so neither needs the other.
   const sessions = new LiveSessions();
   const launchCompanion = options.launchCompanion ?? null;
@@ -512,11 +515,11 @@ export function createStudioFetch(
     for (const notify of reportListeners.get(digest) ?? []) {
       notify({ id: stored.id, title: stored.title });
     }
-    const path = `${REPORT_VIEW_PREFIX}${stored.id}`;
+    const viewPath = `${REPORT_VIEW_PREFIX}${stored.id}`;
     return json({
       id: stored.id,
-      path,
-      ...(publicOrigin ? { url: `${publicOrigin}${path}` } : {}),
+      path: viewPath,
+      ...(publicOrigin ? { url: `${publicOrigin}${viewPath}` } : {}),
     });
   };
 
@@ -596,14 +599,14 @@ export function createStudioFetch(
       const { vaultMatches } = await import("./views/vault/view");
       return vaultMatches(vault, await companionPathOf(digest), query);
     },
-    vaultPreview: async (digest, path, content) => {
+    vaultPreview: async (digest, filePath, content) => {
       await companionPathOf(digest);
       const { markdownTree } = await import("./views/vault/markdown-tree");
-      return markdownTree(content, path);
+      return markdownTree(content, filePath);
     },
-    vaultSave: async (digest, path, content, token) => {
+    vaultSave: async (digest, filePath, content, token) => {
       if (!writable) throw new VaultPathError("start Studio with --writable to enable saving");
-      return vault.save(await companionPathOf(digest), path, content, token);
+      return vault.save(await companionPathOf(digest), filePath, content, token);
     },
     graph: async (digest) => {
       const companionPath = await companionPathOf(digest);
@@ -648,9 +651,8 @@ export function createStudioFetch(
         (entry): entry is string => typeof entry === "string" && entry !== "",
       );
       // Real paths, so a symlinked start path still protects its folder.
-      const real = (entry: string) => realpath(entry).catch(() => path.resolve(entry));
-      const target = await real(companionPath);
-      const pinnedReal = await Promise.all(pinned.map(real));
+      const target = await realOrResolved(companionPath);
+      const pinnedReal = await Promise.all(pinned.map((entry) => realOrResolved(entry)));
       if (pinnedReal.includes(target)) {
         throw new CompanionRemovalError(
           "Studio was started for this companion; it is not deleted.",
@@ -920,13 +922,17 @@ async function selectedCompanion(
   return resolveCompanion(await collectInventory(), digest);
 }
 
+function realOrResolved(entry: string): Promise<string> {
+  return realpath(entry).catch(() => path.resolve(entry));
+}
+
 /** Server-sent events: `subscribe` gets a send function and returns its unsubscribe. */
 function eventStream(
   greeting: string,
   subscribe: (send: (event: unknown) => void) => () => void,
 ): Response {
   const encoder = new TextEncoder();
-  let unsubscribe = () => {};
+  let unsubscribe: (() => void) | undefined;
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(encoder.encode(`: ${greeting}\n\n`));
@@ -934,12 +940,12 @@ function eventStream(
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
         } catch {
-          unsubscribe();
+          unsubscribe?.();
         }
       });
     },
     cancel() {
-      unsubscribe();
+      unsubscribe?.();
     },
   });
   return new Response(stream, {

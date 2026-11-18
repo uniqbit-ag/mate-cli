@@ -92,7 +92,9 @@ async function withRemoteRetry(
   let result = await attempt();
   for (const delay of REMOTE_RETRY_DELAYS_MS) {
     if (!isTransientRemoteFailure(result)) break;
+    // oxlint-disable-next-line no-await-in-loop -- retry with backoff
     await sleep(delay);
+    // oxlint-disable-next-line no-await-in-loop -- retry with backoff
     result = await attempt();
   }
   return result;
@@ -137,8 +139,7 @@ function parsePorcelainPath(line: string): string {
 }
 
 function parsePorcelainKind(line: string): WorkingTreeChange {
-  const status = line.slice(0, 2);
-  return status.includes("?") || status.includes("A") ? "new" : "modified";
+  return /[?A]/.test(line.slice(0, 2)) ? "new" : "modified";
 }
 
 /** `ls-files --stage -z` output (`<mode> <sha> <stage>\t<path>`) as `update-index` arguments. */

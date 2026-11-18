@@ -1,3 +1,4 @@
+// oxlint-disable no-await-in-loop -- a few small files, read in order
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -168,7 +169,7 @@ export function planningWarning(change: string, statusJson: string): PlanningWar
     .filter((artifact): artifact is { id: string; status?: unknown } => {
       return typeof artifact?.id === "string";
     })
-    .filter(({ status }) => status !== "done" && status !== "skipped")
+    .filter((artifact) => artifact.status !== "done" && artifact.status !== "skipped")
     .map(({ id }) => id);
   if (missing.length === 0) return null;
   return {

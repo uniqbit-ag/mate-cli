@@ -1,3 +1,4 @@
+// oxlint-disable no-await-in-loop -- a tree walk, one package at a time
 import fs from "node:fs/promises";
 import path from "node:path";
 

@@ -1,3 +1,4 @@
+// oxlint-disable no-await-in-loop -- a tree walk, one entry at a time
 import { createHash, randomUUID } from "node:crypto";
 import fs, { type Dirent, type FSWatcher, type Stats } from "node:fs";
 import * as fsp from "node:fs/promises";
@@ -317,7 +318,7 @@ async function listMarkdownFiles(root: string, deps: VaultListingDeps): Promise<
 
 function asTree(paths: string[]): VaultTreeNode[] {
   const roots: VaultTreeNode[] = [];
-  for (const filePath of paths.sort((a, b) => a.localeCompare(b))) {
+  for (const filePath of paths.toSorted((a, b) => a.localeCompare(b))) {
     let level = roots;
     const parts = filePath.split(path.sep);
     for (let index = 0; index < parts.length; index += 1) {
@@ -431,6 +432,45 @@ export interface VaultManager {
   getRecovery(companionRoot: string, requestedPath: string): VaultWatchEvent | null;
 }
 
+const rootKey = async (root: string) => fsp.realpath(root);
+
+const observeNow = (root: string, relative: string): Promise<VaultFile | null> => {
+  try {
+    const candidate = path.resolve(root, relative);
+    const resolved = fs.realpathSync(candidate);
+    if (!inside(root, resolved) || !isMarkdown(relative)) return Promise.resolve(null);
+    const content = fs.readFileSync(resolved, "utf8");
+    return Promise.resolve({
+      path: path.relative(root, resolved),
+      content,
+      token: versionToken(content),
+    });
+  } catch {
+    return Promise.resolve(null);
+  }
+};
+
+const readConflict = async (resolved: VaultPath, reason: string): Promise<VaultConflict> => {
+  try {
+    const content = await fsp.readFile(resolved.absolute, "utf8");
+    return {
+      kind: "conflict",
+      path: resolved.relative,
+      reason,
+      content,
+      token: versionToken(content),
+    };
+  } catch {
+    return {
+      kind: "conflict",
+      path: resolved.relative,
+      reason,
+      content: "",
+      token: versionToken(""),
+    };
+  }
+};
+
 /**
  * Owns the tree cache and the watch of each followed companion: one recursive watch where the
  * platform has a native one, else one per listed directory, added a slice at a time.
@@ -464,8 +504,6 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
   const locks = new Map<string, Promise<unknown>>();
   const recentSaves = new Map<string, SaveRecord>();
   const recoveries = new Map<string, VaultWatchEvent>();
-
-  const rootKey = async (root: string) => fsp.realpath(root);
 
   const invalidate = (root: string) => {
     trees.delete(root);
@@ -523,22 +561,6 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
         })();
       }, 25),
     );
-  };
-
-  const observeNow = (root: string, relative: string): Promise<VaultFile | null> => {
-    try {
-      const candidate = path.resolve(root, relative);
-      const resolved = fs.realpathSync(candidate);
-      if (!inside(root, resolved) || !isMarkdown(relative)) return Promise.resolve(null);
-      const content = fs.readFileSync(resolved, "utf8");
-      return Promise.resolve({
-        path: path.relative(root, resolved),
-        content,
-        token: versionToken(content),
-      });
-    } catch {
-      return Promise.resolve(null);
-    }
   };
 
   const closeWatchers = (root: string) => {
@@ -830,27 +852,6 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
     })();
     listings.set(root, listing);
     return listing;
-  };
-
-  const readConflict = async (resolved: VaultPath, reason: string): Promise<VaultConflict> => {
-    try {
-      const content = await fsp.readFile(resolved.absolute, "utf8");
-      return {
-        kind: "conflict",
-        path: resolved.relative,
-        reason,
-        content,
-        token: versionToken(content),
-      };
-    } catch {
-      return {
-        kind: "conflict",
-        path: resolved.relative,
-        reason,
-        content: "",
-        token: versionToken(""),
-      };
-    }
   };
 
   const runSave = async (

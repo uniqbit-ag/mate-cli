@@ -4,6 +4,7 @@ import path from "node:path";
 import { activeChanges, changesDirOf } from "../../change-layout";
 import { declaredDependencies } from "../../delivery/overlap";
 import { findDelivery, readDeliveryRecord, sameRepository } from "../../delivery/record";
+import { groupOfChange, hasUnsubmittedWork, submissionState } from "../../delivery/staging/submit";
 import { scopedRepositories } from "../../openspec-scopes";
 import {
   advanceWorkset,
@@ -69,6 +70,8 @@ export interface WorkflowDeps {
   onPushed?: (branch: string) => void | Promise<void>;
   /** Takes a review report file a show-me turn produced, and stores it for the change. */
   storeReport?: (change: string, file: string) => Promise<void>;
+  /** Whether a change holds work its submission lacks; a change never submitted does. */
+  hasUnsubmittedWork?: (companionPath: string, change: string) => Promise<boolean>;
 }
 
 /** Starts the first factory turn after a person worked in the conversation directly. */
@@ -110,7 +113,7 @@ export const PROMPTS = {
       comment.trim(),
       REPORT,
     ].join("\n"),
-  // The Outcome's changes are archived, so the feedback becomes a change of its own.
+  // The Outcome's changes are submitted, so the feedback becomes a change of its own.
   followUp: (record: Pick<WorksetRecord, "id" | "title">, feedback: string) =>
     [
       `/mate-propose-change Propose one follow-up change for Workset ${record.id} (${record.title}), delivered with its earlier changes, for this feedback:`,
@@ -118,7 +121,7 @@ export const PROMPTS = {
       REPORT,
     ].join("\n"),
   apply: (change: string) => [`/mate-apply-change ${change}`, REPORT].join("\n"),
-  archive: (change: string) => `/mate-archive-change ${change}`,
+  submit: (change: string) => `/mate-submit-change ${change}`,
 };
 
 async function recordOf(companionPath: string, id: string): Promise<WorksetRecord> {
@@ -400,8 +403,9 @@ async function commitWork(deps: WorkflowDeps, id: string, message: string): Prom
 
 /**
  * Apply linked changes on the actual worktree branch, committing each,
- * push that branch from the appliance, then archive each change. Repeating it after an answer or a
- * retry skips what is already done.
+ * push that branch from the appliance, then submit each change. Repeating it after an answer or a
+ * retry skips what is already done: a change submitted with no work since is neither pushed for
+ * nor submitted again.
  */
 export async function applyStage(
   deps: WorkflowDeps,
@@ -453,6 +457,7 @@ export async function applyStage(
     if (counts.open === 0 && counts.done > 0) continue;
     if (!linked.has(change))
       check(
+        // oxlint-disable-next-line no-await-in-loop -- changes are applied one at a time
         await deps.run(
           "mate",
           ["artifact", "link", change, "--repository", repository, "--branch", branch, "--json"],
@@ -460,6 +465,7 @@ export async function applyStage(
         ),
         `recording ${branch} for ${change}`,
       );
+    // oxlint-disable-next-line no-await-in-loop -- one agent turn at a time
     const outcome = await turn(deps, id, PROMPTS.apply(change));
     if (outcome.kind === "question") return outcome;
     // oxlint-disable-next-line no-await-in-loop -- verify each turn before committing its work
@@ -482,7 +488,10 @@ export async function applyStage(
   ).flatMap(({ change, open }) => (open > 0 ? [`${change} (${open} open)`] : []));
   if (unfinished.length > 0) throw new StageError(`tasks are still open: ${unfinished.join(", ")}`);
 
-  if (pending.length > 0) {
+  const unsubmitted = async (change: string) =>
+    (deps.hasUnsubmittedWork ?? hasUnsubmittedWork)(deps.companionPath, change);
+  const owed = (await Promise.all(pending.map(unsubmitted))).some(Boolean);
+  if (owed) {
     // Work an earlier run left uncommitted, for example before a restart.
     await assertBranch();
     await commitWork(deps, id, applyMessage(pending, id));
@@ -500,27 +509,70 @@ export async function applyStage(
   }
 
   for (const change of pending) {
+    // Checked per turn: submitting one change can carry its Delivery Group's others.
     // oxlint-disable-next-line no-await-in-loop -- one conversation: turns run in order
-    const outcome = await turn(deps, id, PROMPTS.archive(change));
+    if (!(await unsubmitted(change))) continue;
+    // oxlint-disable-next-line no-await-in-loop -- one conversation: turns run in order
+    const outcome = await turn(deps, id, PROMPTS.submit(change));
     if (outcome.kind === "question") return outcome;
   }
   return { kind: "done" };
 }
 
-/** Publication, which a person's Publish request confirms; the publish command still checks the merge. */
+/**
+ * The failure a publish result reports with exit code 0, such as a group held for its merge;
+ * null when every result is `ok` or the output is not the command's JSON.
+ */
+function publishFailure(stdout: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+  for (const entry of Array.isArray(parsed) ? parsed : [parsed]) {
+    const { status, message } = (entry ?? {}) as { status?: unknown; message?: unknown };
+    if (typeof status === "string" && status !== "ok") {
+      return typeof message === "string" && message ? message : status;
+    }
+  }
+  return null;
+}
+
+/**
+ * Publication, which a person's Publish request confirms; the publish command still checks the
+ * merge. Submitted changes publish as their Delivery Group, named by its first change so a group
+ * published elsewhere reads as already published; archives of an earlier Mate publish by name.
+ */
 export async function publishStage(deps: WorkflowDeps, id: string): Promise<StageOutcome> {
   const record = await recordOf(deps.companionPath, id);
   const active = new Set(await activeChanges(deps.companionPath));
-  const archived = record.changes.filter((name) => !active.has(name));
-  for (const change of archived) {
-    // oxlint-disable-next-line no-await-in-loop -- publications commit and tag one at a time, in the Workset's order
-    const published = await deps.run(
-      "mate",
-      ["artifact", "publish", change, "--json"],
-      deps.companionPath,
+  const targets: string[] = [];
+  const groups = new Set<string>();
+  for (const change of record.changes) {
+    if (!active.has(change)) {
+      targets.push(change);
+      continue;
+    }
+    // oxlint-disable-next-line no-await-in-loop -- few changes, read in the Workset's order
+    if ((await submissionState(changeDir(deps.companionPath, change))) !== "submitted") {
+      throw new StageError(`${change} is not submitted; apply submits it before publication`);
+    }
+    // oxlint-disable-next-line no-await-in-loop -- few changes, read in the Workset's order
+    const { group } = await groupOfChange(deps.companionPath, change);
+    if (groups.has(group)) continue;
+    groups.add(group);
+    targets.push(change);
+  }
+  for (const target of targets) {
+    // oxlint-disable-next-line no-await-in-loop -- publications commit one at a time, in the Workset's order
+    const published = check(
+      await deps.run("mate", ["artifact", "publish", target, "--json"], deps.companionPath),
+      `publishing ${target}`,
     );
-    check(published, `publishing ${change}`);
-    deps.log(`\npublished ${change}\n`);
+    const failure = publishFailure(published.stdout);
+    if (failure) throw new StageError(`publishing ${target} failed: ${failure}`);
+    deps.log(`\npublished ${target}\n`);
   }
   return { kind: "done" };
 }

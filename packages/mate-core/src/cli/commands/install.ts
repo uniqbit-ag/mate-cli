@@ -245,6 +245,7 @@ export async function runInstallCommand(
   if (isTTY && !skipConfirm) {
     const answers: MemberChoices = {};
     for (const id of undecidedCapabilities(plan)) {
+      // oxlint-disable-next-line no-await-in-loop -- one prompt at a time
       const accepted = await askConfirm(
         `This companion recommends ${capabilityLabel(id)}. Install it for you? [y/N] `,
       );

@@ -126,14 +126,14 @@ export async function installPluginWorkspaces(
       // oxlint-disable-next-line no-await-in-loop -- workspaces install in order, shared first
       await linkSharedNpmrc(companionPath, target.audience);
     }
-    // oxlint-disable-next-line no-await-in-loop
-    const installed = options.frozen
-      ? await installDeclaredPluginsFrozen(workspaceRoot, target.declarations, {
+    // oxlint-disable-next-line no-await-in-loop -- same order
+    const installed = await (options.frozen
+      ? installDeclaredPluginsFrozen(workspaceRoot, target.declarations, {
           ...options.frozenDeps,
           relockCommand: audienceInstallCommand(target.audience),
           audiencePackages: target.audience === null ? audiencePackages : undefined,
         })
-      : await installDeclaredPlugins(workspaceRoot, target.declarations, options.installDeps);
+      : installDeclaredPlugins(workspaceRoot, target.declarations, options.installDeps));
     if (target.audience === null) {
       sharedFailed = installed.some((result) => result.status === "failed");
     }

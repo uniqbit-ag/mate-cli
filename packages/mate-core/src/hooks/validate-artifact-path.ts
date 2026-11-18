@@ -269,22 +269,23 @@ function replacement(edit: Record<string, unknown>) {
   };
 }
 
+const textOf = (value: unknown) => (typeof value === "string" ? value : "");
+
 /** Claude tool payloads in the shape the shared secret guard reads. */
 function secretToolCall(
   toolName: string,
   toolInput: Record<string, unknown>,
   ctx: GuardContext,
 ): SecretToolCall | null {
-  const text = (value: unknown) => (typeof value === "string" ? value : "");
   const target = (value: unknown) =>
-    text(value) ? resolveArtifactTarget(text(value), ctx.repoRoot) : "";
+    textOf(value) ? resolveArtifactTarget(textOf(value), ctx.repoRoot) : "";
   switch (toolName) {
     case "Read":
       return { kind: "read", paths: [target(toolInput.file_path)] };
     case "Write":
       return {
         kind: "write",
-        writes: [{ path: target(toolInput.file_path), content: text(toolInput.content) }],
+        writes: [{ path: target(toolInput.file_path), content: textOf(toolInput.content) }],
       };
     case "Edit":
       return {
@@ -292,7 +293,7 @@ function secretToolCall(
         writes: [
           {
             path: target(toolInput.file_path),
-            content: text(toolInput.new_string),
+            content: textOf(toolInput.new_string),
             result: { kind: "replace", edits: [replacement(toolInput)] },
           },
         ],
@@ -301,7 +302,7 @@ function secretToolCall(
       const edits = (Array.isArray(toolInput.edits) ? toolInput.edits : []).map((edit) =>
         edit && typeof edit === "object" ? (edit as Record<string, unknown>) : {},
       );
-      const content = edits.map((edit) => text(edit.new_string)).join("\n");
+      const content = edits.map((edit) => textOf(edit.new_string)).join("\n");
       return {
         kind: "write",
         writes: [
@@ -319,18 +320,18 @@ function secretToolCall(
         writes: [
           {
             path: target(toolInput.notebook_path),
-            content: text(toolInput.new_source),
+            content: textOf(toolInput.new_source),
             result: { kind: "unknown" },
           },
         ],
       };
     case "Bash":
-      return { kind: "shell", command: text(toolInput.command) };
+      return { kind: "shell", command: textOf(toolInput.command) };
     case "Grep":
       return {
         kind: "search",
         paths: [target(toolInput.path)],
-        globs: [text(toolInput.glob)],
+        globs: [textOf(toolInput.glob)],
       };
     default:
       return null;

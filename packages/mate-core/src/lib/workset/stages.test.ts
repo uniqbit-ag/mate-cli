@@ -36,6 +36,8 @@ function sources(overrides: Partial<WorksetStageSources> = {}): WorksetStageSour
     publishedAnchors: async () => ["2026-10-01-acme-shipped"],
     archiveAnchors: async () => ["2026-10-01-acme-shipped", "2026-10-02-acme-merged"],
     archiveMergeSettled: async (_companion, anchor) => anchor !== "2026-10-03-acme-unmerged",
+    activeDelivery: async () => ({ submitted: false, status: "waiting" }),
+    submittedChanges: async () => [],
     ...overrides,
   };
 }
@@ -107,6 +109,57 @@ describe("reading Workset stages", () => {
       ["acme-b", "publish", []],
       ["acme-c", "done", []],
     ]);
+  });
+
+  describe("a submitted change, still active", () => {
+    const submitted = (
+      local: "waiting" | "merged",
+      pending: Partial<WorksetStageSources> = {},
+    ): Partial<WorksetStageSources> => ({
+      activeDelivery: async (_companion, change) => ({
+        submitted: change === "acme-applying",
+        status: local,
+      }),
+      ...pending,
+    });
+    const linked = [workset("acme-a", ["acme-applying"])];
+
+    test("waits for merge, then for publication", async () => {
+      expect(await stagesOf(linked, submitted("waiting"))).toEqual([["acme-a", "merge-wait", []]]);
+      expect(await stagesOf(linked, submitted("merged"))).toEqual([["acme-a", "publish", []]]);
+    });
+
+    test("a merge recorded on the pending branch only is publish", async () => {
+      const pending = submitted("waiting", {
+        submittedChanges: async () => [{ name: "acme-applying", delivery: { status: "merged" } }],
+      });
+      expect(await stagesOf(linked, pending)).toEqual([["acme-a", "publish", []]]);
+    });
+
+    test("an unreadable pending branch falls back to the local record", async () => {
+      const unreadable = {
+        submittedChanges: async () => {
+          throw new Error("no pending branch");
+        },
+      };
+      expect(await stagesOf(linked, submitted("merged", unreadable))).toEqual([
+        ["acme-a", "publish", []],
+      ]);
+      expect(await stagesOf(linked, submitted("waiting", unreadable))).toEqual([
+        ["acme-a", "merge-wait", []],
+      ]);
+    });
+
+    test("the pending branch is not read while nothing is submitted", async () => {
+      let reads = 0;
+      await stagesOf(linked, {
+        submittedChanges: async () => {
+          reads++;
+          return [];
+        },
+      });
+      expect(reads).toBe(0);
+    });
   });
 
   test("a Workset sits at its least advanced change", async () => {

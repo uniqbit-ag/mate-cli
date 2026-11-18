@@ -162,6 +162,8 @@ export interface CompanionPayloadDeps {
   archiveAnchors?: typeof archiveAnchors;
   /** Whether an archive's Publication Merge Gate is open: merged, not applicable, or legacy. */
   archiveMergeSettled?: (companionPath: string, anchor: string) => Promise<boolean>;
+  /** How a Workset's submitted changes are read for its stage; lib's local readers by default. */
+  submittedStages?: Pick<WorksetStageSources, "activeDelivery" | "submittedChanges">;
   /** Submitted changes on the last fetched pending branch; local Git only. */
   submittedChanges?: (
     companionPath: string,
@@ -258,11 +260,12 @@ async function collectShipped(
 /** The stage readers a caller overrode; absent ones fall back to lib's defaults. */
 function stageSourceOverrides(
   deps: CompanionPayloadDeps,
-): Pick<WorksetStageSources, "readWorksets" | "archiveAnchors" | "archiveMergeSettled"> {
+): Omit<WorksetStageSources, "activeChanges" | "publishedAnchors"> {
   return {
     readWorksets: deps.readWorksets,
     archiveAnchors: deps.archiveAnchors,
     archiveMergeSettled: deps.archiveMergeSettled,
+    ...deps.submittedStages,
   };
 }
 
