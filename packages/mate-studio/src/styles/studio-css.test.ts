@@ -128,6 +128,19 @@ describe("the views' class names", () => {
       }
     }
   });
+
+  it("never pair outline-none with a focus outline, which then draws no ring", () => {
+    for (const [file, text] of sources) {
+      const ringless = text
+        .split(/["'`]/)
+        .find(
+          (classes) =>
+            /(?:^|\s)outline-none(?:\s|$)/.test(classes) &&
+            /(?:^|\s)focus(?:-visible)?:outline(?:-\d+)?(?:\s|$)/.test(classes),
+        );
+      expect({ file, ringless: ringless ?? null }).toEqual({ file, ringless: null });
+    }
+  });
 });
 
 describe("the terminal frame", () => {
