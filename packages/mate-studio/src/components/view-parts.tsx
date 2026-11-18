@@ -73,6 +73,7 @@ export function Count({
  * tint; the rows sit on the page. Never nested, never around a graph, document or form.
  */
 export function ListCard({
+  id,
   title,
   count,
   hint,
@@ -82,6 +83,7 @@ export function ListCard({
   label,
   level = 2,
 }: {
+  id?: string;
   title: ReactNode;
   count?: number;
   hint?: ReactNode;
@@ -96,6 +98,7 @@ export function ListCard({
   const Heading = level === 3 ? "h3" : "h2";
   return (
     <section
+      id={id}
       className={cn("list-card overflow-hidden rounded-card border border-rule", className)}
       aria-label={label ?? (typeof title === "string" ? title : undefined)}
     >

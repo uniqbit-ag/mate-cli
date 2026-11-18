@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import type { FrictionView } from "@uniqbit/mate-core/studio";
+import type { FrictionReport, FrictionView } from "@uniqbit/mate-core/studio";
 
 await import("../../../test/dom");
 const { act, cleanup, fireEvent, render, within } = await import("@testing-library/react");
@@ -36,17 +36,57 @@ function mount(client = new QueryClient(), companion = "0123456789") {
   );
 }
 
+const empty = { events: 0, sessions: 0, groups: [], freeReports: [] };
+const reportsOnly = (freeReports: FrictionReport[]) =>
+  panel(frictionFixture({ ...empty, freeReports }));
+
+const ARTIFACT_GROUP = "The artifact check refused a file write";
+const groupRow = (page: ReturnType<typeof panel>) =>
+  page.getByRole("heading", { name: ARTIFACT_GROUP }).closest("details")!;
+
+/** Happy DOM does not toggle `details` on a click, so the row is opened directly. */
+function openGroup(page: ReturnType<typeof panel>) {
+  const row = groupRow(page);
+  row.open = true;
+  return row.lastElementChild!;
+}
+
 describe("the friction list", () => {
-  test("a group shows its sentence, fingerprint, counts, versions and paths", () => {
+  test("a collapsed row shows the counts and keeps the evidence behind its summary", () => {
+    const page = panel(
+      frictionFixture({ groups: [frictionGroup({ reports: [frictionReport()] })] }),
+    );
+    const row = groupRow(page);
+    const summary = row.querySelector("summary")!;
+    expect(row.open).toBe(false);
+    for (const count of ["5 events", "2 sessions", "at most 3 in one session", "1 report"]) {
+      expect(within(summary).getByText(count)).toBeDefined();
+    }
+    expect(summary.textContent).toContain("last seen");
+    expect(summary.textContent).not.toContain("refusal:artifact:write");
+  });
+
+  test("an open row shows the fingerprint, times, versions and paths", () => {
     const page = panel(frictionFixture());
-    const group = page.getByRole("heading", { name: "The artifact check refused a file write" })
-      .parentElement!.parentElement!;
-    const text = group.textContent!;
+    const text = openGroup(page).textContent!;
     expect(text).toContain("refusal:artifact:write");
-    expect(text).toContain("5 events in 2 sessions, at most 3 in one session");
+    expect(text).toContain("First seen");
     expect(text).toContain("1.0.0 ×5");
     expect(text).toContain("notes.md ×2");
-    expect(page.getByText("6 events in 3 sessions", { exact: false })).toBeDefined();
+  });
+
+  test("a recurrence across midnight shows both calendar dates in text", () => {
+    const first = new Date(2026, 10, 9, 23, 50);
+    const last = new Date(2026, 10, 10, 0, 10);
+    const page = panel(
+      frictionFixture({
+        groups: [frictionGroup({ firstSeen: first.toISOString(), lastSeen: last.toISOString() })],
+      }),
+    );
+    const date = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
+    const times = openGroup(page).querySelectorAll("time");
+    expect(times[0]!.textContent).toContain(date.format(first));
+    expect(times[1]!.textContent).toContain(date.format(last));
   });
 
   test("groups keep core's ranked order", () => {
@@ -59,36 +99,120 @@ describe("the friction list", () => {
     ]);
   });
 
-  test("a group shows its reports; a free report is shown apart, with its subject", () => {
+  test("an open group shows its reports", () => {
     const page = panel(
-      frictionFixture({
-        groups: [frictionGroup({ reports: [frictionReport()] })],
-        freeReports: [
-          frictionReport({
-            id: "r2",
-            eventId: null,
-            kind: "unclear",
-            subject: "skill:mate-apply-change",
-            evidence: "step 3 names no branch",
-          }),
-        ],
-      }),
+      frictionFixture({ groups: [frictionGroup({ reports: [frictionReport()] })] }),
     );
-    const reports = page.getByRole("region", {
-      name: "Reports on The artifact check refused a file write",
-    });
+    openGroup(page);
+    const reports = page.getByRole("region", { name: `Reports on ${ARTIFACT_GROUP}` });
     expect(reports.textContent).toContain("bug");
     expect(reports.textContent).toContain("Expected: editing a tracked Markdown file is allowed");
-    const free = page.getByRole("region", { name: "Free reports" });
-    expect(free.textContent).toContain("skill:mate-apply-change");
-    expect(free.textContent).toContain("Evidence: step 3 names no branch");
-    expect(page.getAllByRole("heading", { level: 3 })).toHaveLength(1);
+  });
+});
+
+describe("the agent reports", () => {
+  const freeReport = (fields: Partial<FrictionReport> = {}) =>
+    frictionReport({
+      eventId: null,
+      kind: "unclear",
+      subject: "skill:mate-apply-change",
+      evidence: "step 3 names no branch",
+      ...fields,
+    });
+  const agentReports = (fields?: Partial<FrictionReport>) =>
+    reportsOnly([freeReport(fields)]).getByRole("region", { name: "Agent reports" });
+
+  test("stand apart under their subject and say they have no event", () => {
+    const page = reportsOnly([freeReport()]);
+    const section = page.getByRole("region", { name: "Agent reports" });
+    expect(section.textContent).toContain("not attached to a recorded event");
+    expect(
+      within(section).getByRole("heading", { level: 3, name: "skill:mate-apply-change" }),
+    ).toBeDefined();
+    expect(page.queryByRole("region", { name: "Recorded friction" })).toBeNull();
+  });
+
+  test("lead with the expected text, before the evidence", () => {
+    expect(agentReports().textContent).toMatch(/Expected: editing.*Evidence: step 3/);
+  });
+
+  test("without expected text still show kind, cost, evidence and workaround", () => {
+    const text = agentReports({
+      expected: "",
+      workaround: "named the branch by hand",
+    }).textContent!;
+    expect(text).not.toContain("Expected:");
+    for (const part of [
+      "unclear",
+      "detour",
+      "Evidence: step 3 names no branch",
+      "Workaround: named the branch by hand",
+    ]) {
+      expect(text).toContain(part);
+    }
+  });
+
+  test("keep the instant of each report machine-readable", () => {
+    expect(agentReports().querySelector("time")!.getAttribute("dateTime")).toBe(
+      "2026-11-10T09:30:00Z",
+    );
+  });
+});
+
+describe("the overview", () => {
+  const reports = ["r1", "r2", "r3", "r4"].map((id) => frictionReport({ id, eventId: null }));
+  const overviewOf = (page: ReturnType<typeof panel>) =>
+    page.getByRole("region", { name: "Overview" });
+
+  test("counts events and reports apart and comes before the lists", () => {
+    const page = panel(
+      frictionFixture({
+        events: 5,
+        sessions: 2,
+        groups: [
+          frictionGroup(),
+          frictionGroup({ fingerprint: "b", title: "B" }),
+          frictionGroup({ fingerprint: "c", title: "C" }),
+        ],
+        freeReports: reports,
+      }),
+    );
+    const overview = overviewOf(page);
+    expect(overview.textContent).toContain("5 events in 2 sessions in the last 30 days");
+    expect(overview.textContent).toContain("selected companion");
+    expect(within(overview).getByRole("link", { name: "Recorded friction 3" })).toBeDefined();
+    expect(within(overview).getByRole("link", { name: "Agent reports 4" })).toBeDefined();
+    const list = page.getByRole("region", { name: "Recorded friction" });
+    expect(overview.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test("with reports only links to them and to no recorded friction", () => {
+    const overview = overviewOf(reportsOnly(reports));
+    expect(overview.textContent).toContain("0 events in 0 sessions");
+    expect(
+      within(overview)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual(["Agent reports4"]);
+  });
+
+  test("each link is a native anchor on its section, so the keyboard can follow it", () => {
+    const page = panel(frictionFixture({ freeReports: reports }));
+    for (const name of ["Recorded friction", "Agent reports"]) {
+      const link = within(overviewOf(page)).getByRole("link", { name: new RegExp(name) });
+      expect(link.tagName).toBe("A");
+      expect(link.getAttribute("href")).toBe(`#${page.getByRole("region", { name }).id}`);
+    }
+  });
+
+  test("is not shown with no record, and nothing names mate triage", () => {
+    const page = panel(frictionFixture(empty));
+    expect(page.queryByRole("region", { name: "Overview" })).toBeNull();
+    expect(page.container.textContent).not.toContain("triage");
   });
 });
 
 describe("the friction states", () => {
-  const empty = { events: 0, sessions: 0, groups: [], freeReports: [] };
-
   test("recording off and no record explains recording and offers the control", () => {
     const page = panel(frictionFixture({ ...empty, recording: false }));
     expect(page.container.textContent).toContain("Friction recording shows where Mate gets in");
@@ -142,18 +266,19 @@ describe("the friction states", () => {
 });
 
 describe("the next action", () => {
-  test("names mate triage, the person's terminal and the repository, with a copy control", () => {
-    const page = panel(frictionFixture());
-    const next = page.getByRole("region", { name: "Next action" });
-    expect(next.textContent).toContain("mate triage");
-    expect(next.textContent).toContain("own terminal, inside the affected repository");
-    expect(within(next).getByRole("button", { name: "Copy" }).dataset.copy).toBe("mate triage");
+  const expectTriage = (page: ReturnType<typeof panel>) => {
+    const overview = page.getByRole("region", { name: "Overview" });
+    expect(overview.textContent).toContain("mate triage");
+    expect(overview.textContent).toContain("own terminal, inside the affected repository");
+    expect(within(overview).getByRole("button", { name: "Copy" }).dataset.copy).toBe("mate triage");
+  };
+
+  test("the overview names mate triage with a copy control when events exist", () => {
+    expectTriage(panel(frictionFixture()));
   });
 
-  test("is not shown with no record", () => {
-    const page = panel(frictionFixture({ events: 0, sessions: 0, groups: [], freeReports: [] }));
-    expect(page.queryByRole("region", { name: "Next action" })).toBeNull();
-    expect(page.container.textContent).not.toContain("triage");
+  test("the overview names mate triage when only reports exist", () => {
+    expectTriage(reportsOnly([frictionReport({ eventId: null })]));
   });
 });
 
@@ -190,6 +315,16 @@ describe("the period", () => {
 });
 
 describe("the recording control", () => {
+  test("says it reaches all companions on the machine that runs Studio", () => {
+    const page = panel(frictionFixture());
+    expect(
+      page.getByRole("button", {
+        name: "Turn recording off",
+        description: "Applies to all companions on the machine that runs Studio.",
+      }),
+    ).toBeDefined();
+  });
+
   test("is disabled while pending, then shows the new state and refetches every friction query", async () => {
     server.read = async () => frictionFixture({ recording: false });
     const written = Promise.withResolvers<{ recording: boolean }>();

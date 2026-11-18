@@ -8,9 +8,11 @@ import {
   type FrictionViewGroup,
 } from "@uniqbit/mate-core/studio";
 
+import { Icon } from "../../components/icon";
 import { Button } from "../../components/ui/button";
 import {
   CommandLine,
+  Count,
   EmptyNote,
   ListCard,
   PAGE_PAD,
@@ -22,13 +24,22 @@ import { cn } from "../../lib/cn";
 import { frictionQuery, isFrictionQuery } from "../../lib/friction-query";
 import { useBrowser } from "../../lib/use-browser";
 import { setFrictionRecording } from "../../server/friction";
-import { LocalTime } from "../../shell/local-time";
 
 const PERIODS = FRICTION_VIEW_DAYS.map((days) => ({ value: String(days), label: `${days} days` }));
 
+const RECORDED_SECTION = { id: "friction-recorded", title: "Recorded friction" };
+const REPORTS_SECTION = { id: "friction-agent-reports", title: "Agent reports" };
+const RECORDING_REACH = "friction-recording-reach";
+
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
-const at = (iso: string) => <LocalTime at={Date.parse(iso)} />;
+const DATE_TIME = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+
+/** Filled in after hydration: the server's time zone may differ from the viewer's. */
+function FrictionTime({ at }: { at: string }) {
+  const browser = useBrowser();
+  return <time dateTime={at}>{browser ? DATE_TIME.format(Date.parse(at)) : ""}</time>;
+}
 
 function Counted({ label, counts }: { label: string; counts: Record<string, number> }) {
   const entries = Object.entries(counts);
@@ -53,12 +64,14 @@ function ReportItem({ report, subject }: { report: FrictionReport; subject?: boo
   ] as const;
   return (
     <li className="grid gap-1 border-t border-rule-soft py-2 first:border-t-0">
-      <p className="m-0 flex flex-wrap items-baseline gap-x-2 text-xs text-muted">
-        {subject ? <code className="font-mono text-text">{report.subject}</code> : null}
+      <div className="flex flex-wrap items-baseline gap-x-2 text-xs text-muted">
+        {subject ? (
+          <h3 className="m-0 font-mono text-sm font-semibold text-text">{report.subject}</h3>
+        ) : null}
         <span className="font-semibold text-text">{report.kind}</span>
         {report.cost ? <span>{report.cost}</span> : null}
-        {at(report.at)}
-      </p>
+        <FrictionTime at={report.at} />
+      </div>
       {fields.map(([label, text]) =>
         text ? (
           <p key={label} className="m-0 max-w-[70ch] text-sm">
@@ -72,33 +85,96 @@ function ReportItem({ report, subject }: { report: FrictionReport; subject?: boo
 }
 
 function GroupItem({ group }: { group: FrictionViewGroup }) {
+  const counts = [plural(group.events, "event"), plural(group.sessions, "session")];
+  if (group.reports.length > 0) counts.push(plural(group.reports.length, "report"));
   return (
-    <li className="grid gap-1.5 border-t border-rule-soft px-4 py-3 first:border-t-0">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-        <h3 className="m-0 text-base font-semibold">{group.title}</h3>
-        <code className="font-mono text-xs text-muted">{group.fingerprint}</code>
-      </div>
-      <p className="m-0 text-xs text-muted">
-        {plural(group.events, "event")} in {plural(group.sessions, "session")}, at most{" "}
-        {group.maxPerSession} in one session · first seen {at(group.firstSeen)} · last seen{" "}
-        {at(group.lastSeen)}
-      </p>
-      <Counted label="Mate" counts={group.versions} />
-      <Counted label="Paths" counts={group.paths} />
-      <Counted label="Flags" counts={group.flags} />
-      {group.reports.length > 0 ? (
-        <section aria-label={`Reports on ${group.title}`} className="mt-1 pl-3">
-          <h4 className="m-0 text-xs font-semibold text-muted">
-            {plural(group.reports.length, "report")}
-          </h4>
-          <ul className="m-0 list-none p-0">
-            {group.reports.map((report) => (
-              <ReportItem key={report.id} report={report} />
+    <li className="border-t border-rule-soft first:border-t-0">
+      <details className="group/friction">
+        <summary className="grid cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1 px-4 py-3 hover:bg-surface focus-visible:-outline-offset-2 [&::-webkit-details-marker]:hidden">
+          <Icon
+            name="right"
+            className="mt-1 size-3.5 text-muted transition-transform group-open/friction:rotate-90 motion-reduce:transition-none"
+          />
+          <h3 className="m-0 text-base font-semibold">{group.title}</h3>
+          <span className="col-start-2 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted tabular-nums">
+            {counts.map((count) => (
+              <span key={count} className="whitespace-nowrap">
+                {count}
+              </span>
             ))}
-          </ul>
-        </section>
-      ) : null}
+            <span>at most {group.maxPerSession} in one session</span>
+            <span>
+              last seen <FrictionTime at={group.lastSeen} />
+            </span>
+          </span>
+        </summary>
+        <div className="mr-4 mb-3 ml-9.5 grid gap-1.5 border-l border-rule-soft pl-3">
+          <p className="m-0 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
+            <span className="text-muted">Fingerprint</span>
+            <code className="font-mono">{group.fingerprint}</code>
+          </p>
+          <p className="m-0 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
+            <span>
+              First seen <FrictionTime at={group.firstSeen} />
+            </span>
+            <span>
+              Last seen <FrictionTime at={group.lastSeen} />
+            </span>
+          </p>
+          <Counted label="Mate" counts={group.versions} />
+          <Counted label="Paths" counts={group.paths} />
+          <Counted label="Flags" counts={group.flags} />
+          {group.reports.length > 0 ? (
+            <section aria-label={`Reports on ${group.title}`} className="mt-1">
+              <h4 className="m-0 text-xs font-semibold text-muted">
+                {plural(group.reports.length, "report")}
+              </h4>
+              <ul className="m-0 list-none p-0">
+                {group.reports.map((report) => (
+                  <ReportItem key={report.id} report={report} />
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </div>
+      </details>
     </li>
+  );
+}
+
+function Overview({ view, days }: { view: FrictionView; days: FrictionViewDays }) {
+  const sections = [
+    [RECORDED_SECTION, view.groups.length],
+    [REPORTS_SECTION, view.freeReports.length],
+  ] as const;
+  return (
+    <section aria-label="Overview" className="grid gap-3">
+      <p className="m-0 text-sm">
+        {plural(view.events, "event")} in {plural(view.sessions, "session")} in the last {days} days
+        for the selected companion, recorded on the machine that runs Studio.
+      </p>
+      <nav aria-label="Friction sections" className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+        {sections.map(([{ id, title }, count]) =>
+          count > 0 ? (
+            <a
+              key={id}
+              href={`#${id}`}
+              className="inline-flex items-center gap-1.5 rounded-control underline"
+            >
+              {title}
+              <Count value={count} />
+            </a>
+          ) : null,
+        )}
+      </nav>
+      <div className="grid max-w-xl gap-2">
+        <p className="m-0 text-sm">
+          To investigate, run <code className="font-mono">{FRAMEWORK_NAME} triage</code> in your own
+          terminal, inside the affected repository.
+        </p>
+        <CommandLine text={`${FRAMEWORK_NAME} triage`} label="command" />
+      </div>
+    </section>
   );
 }
 
@@ -110,18 +186,24 @@ interface RecordingToggle {
 
 function Recording({ recording, toggle }: { recording: boolean; toggle: RecordingToggle }) {
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <StatusWord marker={recording ? "build" : "idle"}>
-        Recording is {recording ? "on" : "off"}
-      </StatusWord>
-      <Button
-        size="sm"
-        variant={recording ? "default" : "primary"}
-        disabled={toggle.pending}
-        onClick={() => toggle.onChange(!recording)}
-      >
-        Turn recording {recording ? "off" : "on"}
-      </Button>
+    <div className="grid gap-1">
+      <div className="flex flex-wrap items-center gap-3">
+        <StatusWord marker={recording ? "build" : "idle"}>
+          Recording is {recording ? "on" : "off"}
+        </StatusWord>
+        <Button
+          size="sm"
+          variant={recording ? "default" : "primary"}
+          disabled={toggle.pending}
+          aria-describedby={RECORDING_REACH}
+          onClick={() => toggle.onChange(!recording)}
+        >
+          Turn recording {recording ? "off" : "on"}
+        </Button>
+      </div>
+      <p id={RECORDING_REACH} className="m-0 text-xs text-muted">
+        Applies to all companions on the machine that runs Studio.
+      </p>
     </div>
   );
 }
@@ -164,12 +246,9 @@ export function FrictionPanel({
               on.
             </p>
           )}
-          <p className="m-0 text-sm">
-            {plural(view.events, "event")} in {plural(view.sessions, "session")} in the last {days}{" "}
-            days, recorded on the machine that runs Studio.
-          </p>
+          <Overview view={view} days={days} />
           {view.groups.length > 0 ? (
-            <ListCard title="Recorded friction" count={view.groups.length}>
+            <ListCard {...RECORDED_SECTION} count={view.groups.length} className="wrap-anywhere">
               <ul className="m-0 list-none p-0">
                 {view.groups.map((group) => (
                   <GroupItem key={group.fingerprint} group={group} />
@@ -178,7 +257,14 @@ export function FrictionPanel({
             </ListCard>
           ) : null}
           {view.freeReports.length > 0 ? (
-            <ListCard title="Free reports" count={view.freeReports.length}>
+            <ListCard
+              {...REPORTS_SECTION}
+              count={view.freeReports.length}
+              className="wrap-anywhere"
+            >
+              <p className="m-0 border-b border-rule-soft px-4 py-2 text-xs text-muted">
+                These reports are not attached to a recorded event.
+              </p>
               <ul className="m-0 list-none px-4 py-1">
                 {view.freeReports.map((report) => (
                   <ReportItem key={report.id} report={report} subject />
@@ -186,13 +272,6 @@ export function FrictionPanel({
               </ul>
             </ListCard>
           ) : null}
-          <section aria-label="Next action" className="grid max-w-xl gap-2">
-            <p className="m-0 text-sm">
-              To investigate, run <code className="font-mono">{FRAMEWORK_NAME} triage</code> in your
-              own terminal, inside the affected repository.
-            </p>
-            <CommandLine text={`${FRAMEWORK_NAME} triage`} label="command" />
-          </section>
         </>
       ) : (
         <EmptyNote>
