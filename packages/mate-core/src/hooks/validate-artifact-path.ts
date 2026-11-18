@@ -17,12 +17,8 @@ import { checkCommitAttribution } from "../runtime/commit-attribution-guard";
 import { gitEnvironment } from "../runtime/companion-git";
 import { companionForkRefusal } from "../runtime/companion-sync";
 import { readCompanionRuntimeContext } from "../runtime/env";
-import {
-  nudgeLine,
-  recordRefusal,
-  type FrictionCheck,
-  type RecordedFriction,
-} from "../runtime/friction-recorder";
+import { recordRefusal } from "../runtime/friction-recorder";
+import type { FrictionCheck } from "../runtime/friction-fingerprint";
 import { guardLaunchEnvironment } from "../runtime/launch-env-guard";
 import { companionLinkPath } from "../runtime/repo-local";
 import { checkSecretAccess, type SecretToolCall } from "../runtime/secret-guard";
@@ -362,7 +358,7 @@ function recordHookRefusal(
   stderr: string,
   call: ToolCall,
   ctx: GuardContext,
-): RecordedFriction | null {
+): string | null {
   const { toolName, toolInput } = call;
   const command = toolName === "Bash" ? stringOrEmpty(toolInput.command) : "";
   const paths = command
@@ -398,9 +394,9 @@ export async function evaluate(
   const call = toolCall(payload);
   const outcome = await decide(call, ctx);
   if (!outcome.check) return outcome;
-  const recorded = recordHookRefusal(outcome.check, outcome.stderr, call, ctx);
-  return recorded?.firstInSession
-    ? { ...outcome, stderr: `${outcome.stderr.replace(/\n?$/, "\n")}${nudgeLine(recorded.id)}\n` }
+  const nudge = recordHookRefusal(outcome.check, outcome.stderr, call, ctx);
+  return nudge
+    ? { ...outcome, stderr: `${outcome.stderr.replace(/\n?$/, "\n")}${nudge}\n` }
     : outcome;
 }
 

@@ -6,7 +6,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { withEnv } from "../../../test/fixtures";
 import { frictionLogDir, readEvents } from "./runtime/friction-log";
-import { nudgeLine } from "./runtime/friction-recorder";
 import { writeFrictionSwitch } from "./runtime/friction-switch";
 
 let mainImpl: (argv?: string[]) => Promise<void> = async () => {};
@@ -179,7 +178,10 @@ describe("createMate records a failed agent-run command as friction", () => {
     );
 
     const [event] = readEvents({ sinceDays: 1, homeDir: home });
-    expect(printed).toEqual(["Unknown flag: --bogus", `${nudgeLine(event.id)}\n`]);
+    expect(printed).toEqual([
+      "Unknown flag: --bogus",
+      `Wrong or unclear? Run: mate friction report ${event.id} --kind <bug|unclear> --expected "<what you expected>". Then continue with your task.\n`,
+    ]);
     expect(readEvents({ sinceDays: 1, homeDir: home })).toMatchObject([
       {
         kind: "command-failure",

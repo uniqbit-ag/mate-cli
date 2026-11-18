@@ -1,14 +1,19 @@
 import { resolveCompanionRuntime } from "./env";
 import { FRAMEWORK_NAME } from "./framework";
 import {
+  commandFingerprint,
+  refusalFingerprint,
+  type FrictionCheck,
+  type ToolKind,
+} from "./friction-fingerprint";
+import {
   appendEvent,
   firstInSession,
+  type FrictionEvent,
   type FrictionRuntime,
-  type NewFrictionEvent,
 } from "./friction-log";
 import { readFrictionSwitch } from "./friction-switch";
 import { mateVersion } from "./install";
-import type { SecretToolCall } from "./secret-guard";
 import { maskSecretValues } from "./secret-values";
 
 /**
@@ -17,31 +22,19 @@ import { maskSecretValues } from "./secret-values";
  * never reads the Friction Switch or the log. Never throws.
  */
 
-export type FrictionCheck = "secret" | "attribution" | "artifact" | "fork";
-/** The adapters' secret-guard classification; "other" for a tool it does not classify. */
-export type ToolKind = SecretToolCall["kind"] | "other";
-
 const MESSAGE_LIMIT = 1_000;
 const COMMAND_LIMIT = 500;
 const PATH_LIMIT = 5;
 
 type Env = Record<string, string | undefined>;
 
-/** A recorded event; `firstInSession` decides whether the agent is asked about it. */
-export interface RecordedFriction {
-  id: string;
-  firstInSession: boolean;
-}
-
-function record(event: NewFrictionEvent, env: Env): RecordedFriction | null {
-  const recorded = appendEvent(event, { homeDir: env.HOME });
-  if (!recorded) return null;
-  return { id: recorded.id, firstInSession: firstInSession(recorded, { homeDir: env.HOME }) };
-}
-
-/** One line, appended after a refusal or a failed command's own output. */
-export function nudgeLine(id: string): string {
-  return `Wrong or unclear? Run: ${FRAMEWORK_NAME} friction report ${id} --kind <bug|unclear> --expected "<what you expected>". Then continue with your task.`;
+/**
+ * One line to append after a refusal or a failed command's own output: only for a
+ * session's first event of a fingerprint, null otherwise.
+ */
+function nudgeFor(event: FrictionEvent | null, env: Env): string | null {
+  if (!event || !firstInSession(event, { homeDir: env.HOME })) return null;
+  return `Wrong or unclear? Run: ${FRAMEWORK_NAME} friction report ${event.id} --kind <bug|unclear> --expected "<what you expected>". Then continue with your task.`;
 }
 
 /** An event without a companion would be unreachable: the list and triage filter by companion. */
@@ -57,10 +50,6 @@ interface RefusalEvidence {
   command?: string;
   /** The paths the call names; never its content. */
   paths?: string[];
-}
-
-export function refusalFingerprint(check: FrictionCheck, kind: ToolKind): string {
-  return `refusal:${check}:${kind}`;
 }
 
 /** The whole shell word after `NAME=`, concatenated and escaped segments included; an unclosed quote runs to the end. */
@@ -115,10 +104,11 @@ export interface RefusalRecord extends RefusalEvidence {
   env: Env;
 }
 
-export function recordRefusal(refusal: RefusalRecord): RecordedFriction | null {
+/** Records the refusal and returns the nudge to append to it, or null when none is due. */
+export function recordRefusal(refusal: RefusalRecord): string | null {
   try {
     if (!recordingFor(refusal.companionPath, refusal.env)) return null;
-    return record(
+    const recorded = appendEvent(
       {
         kind: "refusal",
         fingerprint: refusalFingerprint(refusal.check, refusal.toolKind),
@@ -133,8 +123,9 @@ export function recordRefusal(refusal: RefusalRecord): RecordedFriction | null {
           command: refusal.command && maskSecretValues(refusal.command, refusal.env),
         }),
       },
-      refusal.env,
+      { homeDir: refusal.env.HOME },
     );
+    return nudgeFor(recorded, refusal.env);
   } catch {
     // recording never changes the refusal
     return null;
@@ -191,7 +182,7 @@ function commandWords(args: string[]): { command: string | null; subcommand: str
 }
 
 /** A command may echo its arguments: every flag value and positional except the command words is replaced. */
-export function withoutArgumentValues(text: string, args: string[]): string {
+function withoutArgumentValues(text: string, args: string[]): string {
   const { command, subcommand } = commandWords(args);
   const kept = new Set([command, subcommand]);
   const values = args
@@ -201,9 +192,9 @@ export function withoutArgumentValues(text: string, args: string[]): string {
   return values.reduce((result, value) => result.replaceAll(value, "…"), text);
 }
 
-export function commandFingerprint({ command, subcommand, exitCode }: CommandDetail): string {
-  const name = [command ?? "", subcommand].filter((part) => part !== null).join(" ");
-  return `command:${name}:${exitCode}`;
+/** What a failed command printed, without its argument values and secret-named variables' values. */
+export function redactCommandOutput(text: string, args: string[], env: Env): string {
+  return maskSecretValues(withoutArgumentValues(text, args), env);
 }
 
 export interface CommandFailureRecord extends CommandFailure {
@@ -213,7 +204,8 @@ export interface CommandFailureRecord extends CommandFailure {
   cwd: string;
 }
 
-export function recordCommandFailure(failure: CommandFailureRecord): RecordedFriction | null {
+/** Records the failure and returns the nudge to print after it, or null when none is due. */
+export function recordCommandFailure(failure: CommandFailureRecord): string | null {
   try {
     const { companionPath, repositoryPath } = resolveCompanionRuntime(
       failure.env,
@@ -221,7 +213,7 @@ export function recordCommandFailure(failure: CommandFailureRecord): RecordedFri
     ).context;
     if (!recordingFor(companionPath, failure.env)) return null;
     const detail = commandDetail(failure);
-    const recorded = record(
+    const recorded = appendEvent(
       {
         kind: "command-failure",
         fingerprint: commandFingerprint(detail),
@@ -232,11 +224,10 @@ export function recordCommandFailure(failure: CommandFailureRecord): RecordedFri
         repositoryPath: repositoryPath || null,
         detail: { ...detail },
       },
-      failure.env,
+      { homeDir: failure.env.HOME },
     );
     // A failed friction command gets no nudge, so reporting cannot loop.
-    const reporting = detail.command === "friction";
-    return recorded && reporting ? { ...recorded, firstInSession: false } : recorded;
+    return detail.command === "friction" ? null : nudgeFor(recorded, failure.env);
   } catch {
     // recording never changes the command's outcome
     return null;

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { commandFingerprint, refusalFingerprint } from "../../runtime/friction-recorder";
+import { commandFingerprint, refusalFingerprint } from "../../runtime/friction-fingerprint";
 import { describeFingerprint } from "./describe";
 
 test("a refusal names its check and the kind of tool call", () => {

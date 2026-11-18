@@ -5,10 +5,9 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { frictionLogDir, readEvents } from "./friction-log";
+import { commandFingerprint } from "./friction-fingerprint";
 import {
   commandDetail,
-  commandFingerprint,
-  nudgeLine,
   recordRefusal,
   refusalDetail,
   type RefusalRecord,
@@ -179,7 +178,7 @@ describe("recordRefusal", () => {
     expect(text).not.toContain("refused");
   });
 
-  test("returns the event's id; only a session's first refusal of a kind is first", () => {
+  test("returns one nudge line naming the event, only for a session's first refusal of a kind", () => {
     const home = recordingHome();
     const selected = companion();
 
@@ -188,9 +187,11 @@ describe("recordRefusal", () => {
     const otherSession = record(selected, home, { sessionId: "s2" });
 
     const [event] = readEvents({ sinceDays: 1, homeDir: home });
-    expect(first).toEqual({ id: event.id, firstInSession: true });
-    expect(second?.firstInSession).toBe(false);
-    expect(otherSession?.firstInSession).toBe(true);
+    expect(first).toBe(
+      `Wrong or unclear? Run: mate friction report ${event.id} --kind <bug|unclear> --expected "<what you expected>". Then continue with your task.`,
+    );
+    expect(second).toBeNull();
+    expect(otherSession).toContain("mate friction report");
   });
 
   test("recording off writes nothing and creates no folder", () => {
@@ -243,17 +244,5 @@ describe("command projection", () => {
     });
     expect(detail.errorText).toBe("e".repeat(1_000));
     expect(commandFingerprint(detail)).toBe("command:doctor:2");
-  });
-});
-
-describe("nudgeLine", () => {
-  test("is one line naming the event, the report command and the way on", () => {
-    const line = nudgeLine("F-12ab");
-
-    expect(line).toContain("F-12ab");
-    expect(line).toContain("mate friction report");
-    expect(line).not.toContain("cap friction");
-    expect(line).toContain("continue with your task");
-    expect(line).not.toContain("\n");
   });
 });

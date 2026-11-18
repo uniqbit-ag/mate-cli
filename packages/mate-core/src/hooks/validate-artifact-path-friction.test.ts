@@ -6,7 +6,6 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { frictionLogDir, readEvents } from "../runtime/friction-log";
-import { nudgeLine } from "../runtime/friction-recorder";
 import { writeFrictionSwitch } from "../runtime/friction-switch";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
@@ -91,7 +90,7 @@ describe("the Claude guard records refusals as friction", () => {
     const [event] = readEvents({ sinceDays: 1, homeDir: selected.home });
     const root = (repo: string) => path.dirname(repo);
     expect(recorded.stderr.replaceAll(root(selected.repo), "")).toBe(
-      `${unrecorded.stderr.replaceAll(root(plain.repo), "")}${nudgeLine(event.id)}\n`,
+      `${unrecorded.stderr.replaceAll(root(plain.repo), "")}Wrong or unclear? Run: mate friction report ${event.id} --kind <bug|unclear> --expected "<what you expected>". Then continue with your task.\n`,
     );
     expect(unrecorded.stderr).not.toContain("friction report");
     expect(fs.existsSync(frictionLogDir(plain.home))).toBe(false);

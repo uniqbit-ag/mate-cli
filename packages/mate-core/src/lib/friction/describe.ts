@@ -1,5 +1,9 @@
 import { FRAMEWORK_NAME } from "../../framework";
-import type { FrictionCheck, ToolKind } from "../../runtime/friction-recorder";
+import {
+  parseFingerprint,
+  type FrictionCheck,
+  type ToolKind,
+} from "../../runtime/friction-fingerprint";
 
 const CHECKS: Record<FrictionCheck, string> = {
   secret: "The secret check",
@@ -18,20 +22,20 @@ const TOOL_KINDS: Record<ToolKind, string> = {
 
 /** One plain sentence for a fingerprint; one it does not know is returned unchanged. */
 export function describeFingerprint(fingerprint: string): string {
-  const parts = fingerprint.split(":");
-  const [form, check, kind] = parts;
+  const { form, name, rest } = parseFingerprint(fingerprint);
   if (
     form === "refusal" &&
-    parts.length === 3 &&
-    Object.hasOwn(CHECKS, check) &&
-    Object.hasOwn(TOOL_KINDS, kind)
+    name !== undefined &&
+    rest.length === 1 &&
+    Object.hasOwn(CHECKS, name) &&
+    Object.hasOwn(TOOL_KINDS, rest[0])
   )
-    return `${CHECKS[check as FrictionCheck]} refused ${TOOL_KINDS[kind as ToolKind]}`;
-  if (form === "command" && parts.length >= 3) {
-    const exitCode = parts.at(-1)!;
+    return `${CHECKS[name as FrictionCheck]} refused ${TOOL_KINDS[rest[0] as ToolKind]}`;
+  if (form === "command" && rest.length > 0) {
+    const exitCode = rest.at(-1)!;
     if (/^\d+$/.test(exitCode)) {
-      const command = [FRAMEWORK_NAME, parts.slice(1, -1).join(":")].join(" ").trim();
-      return `${command} failed with exit code ${exitCode}`;
+      const words = [name, ...rest.slice(0, -1)].join(":");
+      return `${[FRAMEWORK_NAME, words].join(" ").trim()} failed with exit code ${exitCode}`;
     }
   }
   return fingerprint;

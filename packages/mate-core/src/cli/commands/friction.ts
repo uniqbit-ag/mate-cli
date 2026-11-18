@@ -16,6 +16,7 @@ import {
   type ReportCost,
   type ReportKind,
 } from "../../runtime/friction-log";
+import { parseFingerprint } from "../../runtime/friction-fingerprint";
 import { FRICTION_RETENTION_DAYS } from "../../runtime/friction-retention";
 import { readFrictionSwitch, writeFrictionSwitch } from "../../runtime/friction-switch";
 import { scanContent, type SecretFinding } from "../../runtime/secret-scan";
@@ -220,8 +221,8 @@ function present(value: string | undefined): string | undefined {
 
 /** `hook:<check>` for a refusal, `command:<command words>` for a failed command. */
 function eventSubject(event: FrictionEvent): string {
-  const [kind, name] = event.fingerprint.split(":");
-  return kind === "refusal" ? `hook:${name}` : `command:${name}`;
+  const { form, name } = parseFingerprint(event.fingerprint);
+  return form === "refusal" ? `hook:${name}` : `command:${name}`;
 }
 
 const cut = (text: string) => text.slice(0, TEXT_LIMIT);

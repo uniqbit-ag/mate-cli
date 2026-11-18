@@ -11,12 +11,8 @@ import {
 } from "../runtime/companion-sync";
 import { hasLaunchEnvironment } from "../runtime/env";
 import { MATE_ENV } from "../runtime/env-names";
-import {
-  nudgeLine,
-  recordRefusal,
-  type FrictionCheck,
-  type RecordedFriction,
-} from "../runtime/friction-recorder";
+import { recordRefusal } from "../runtime/friction-recorder";
+import type { FrictionCheck } from "../runtime/friction-fingerprint";
 import { resolveProjection } from "../runtime/projection";
 import { checkSecretAccess, type SecretToolCall } from "../runtime/secret-guard";
 import { isSecretPolicyFile } from "../runtime/secret-policy-weakening";
@@ -254,8 +250,8 @@ export async function registerCompanionHooks(
       await guardToolInput(context, event.tool, event.input, env);
     } catch (error) {
       if (error instanceof GuardRefusal) {
-        const recorded = recordToolRefusal(error, event, context, env);
-        if (recorded?.firstInSession) error.message = `${error.message}\n${nudgeLine(recorded.id)}`;
+        const nudge = recordToolRefusal(error, event, context, env);
+        if (nudge) error.message = `${error.message}\n${nudge}`;
       }
       throw error;
     }
@@ -268,7 +264,7 @@ function recordToolRefusal(
   event: { tool: string; sessionID: string; input: unknown },
   context: CompanionContext,
   env: Record<string, string | undefined>,
-): RecordedFriction | null {
+): string | null {
   const tool = V1_TOOL_NAMES[event.tool] ?? event.tool;
   const args = (event.input && typeof event.input === "object" ? event.input : {}) as Record<
     string,

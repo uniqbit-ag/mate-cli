@@ -15,7 +15,6 @@ import { readContext, type CompanionContext } from "./companion-policy";
 import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { MATE_ENV } from "../runtime/env-names";
 import { frictionLogDir, readEvents } from "../runtime/friction-log";
-import { nudgeLine } from "../runtime/friction-recorder";
 import { writeFrictionSwitch } from "../runtime/friction-switch";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
@@ -547,7 +546,7 @@ describe("OpenCode companion hooks record refusals as friction", () => {
     const [event] = readEvents({ sinceDays: 1, homeDir: selected.home });
     const root = (repo: string) => path.dirname(repo);
     expect(recorded?.message.replaceAll(root(selected.repo), "")).toBe(
-      `${unrecorded?.message.replaceAll(root(plain.repo), "")}\n${nudgeLine(event.id)}`,
+      `${unrecorded?.message.replaceAll(root(plain.repo), "")}\nWrong or unclear? Run: mate friction report ${event.id} --kind <bug|unclear> --expected "<what you expected>". Then continue with your task.`,
     );
     expect(unrecorded?.message).toContain(ARTIFACT_REFUSAL_HEADLINE);
     expect(unrecorded?.message).not.toContain("friction report");
