@@ -105,7 +105,7 @@ export function outcomeRefusal(
     case "publish":
       return stage === "publish"
         ? null
-        : `Workset ${id} is not merged and archived; it is at ${stageLabel}`;
+        : `Workset ${id} is not merged and submitted; it is at ${stageLabel}`;
     case "delete":
       if (stage === "done") return `Workset ${id} is done`;
       if (workset.changes.length > 0) {
