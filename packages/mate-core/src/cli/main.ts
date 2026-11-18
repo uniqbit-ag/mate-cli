@@ -104,9 +104,11 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
   // text is printed, so their commands route like compiled-in ones
   // (including MCP servers whose command is their own cap subcommand) and
   // show up in `mate help`. Diagnostics stay on stderr; a missing or
-  // ambiguous companion makes this a no-op. A frozen restore ignores local plugins.
-  const isFrozenRestore = command === "install" && isFrozenPluginInstall(argv);
-  await deps.hydrateDynamicPlugins({ includeLocal: !isFrozenRestore });
+  // ambiguous companion makes this a no-op. A frozen restore and its
+  // verification ignore local plugins.
+  const ignoresLocalPlugins =
+    (command === "install" || command === "doctor") && isFrozenPluginInstall(argv);
+  await deps.hydrateDynamicPlugins({ includeLocal: !ignoresLocalPlugins });
 
   if (!command || command === "help" || command === "--help" || command === "-h") {
     console.log(usage());

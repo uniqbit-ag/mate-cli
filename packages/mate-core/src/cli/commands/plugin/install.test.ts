@@ -301,6 +301,38 @@ describe("runPluginInstallCommand", () => {
       ]);
     });
 
+    test("a package declared locally cannot also enter framework.yaml", async () => {
+      const companionPath = await makeCompanion();
+      process.env.MATE_ARTIFACT_PATH = companionPath;
+      await fs.writeFile(
+        localFile(companionPath),
+        'plugins:\n  - package: "@acme/gated"\n    version: "1.0.0"\n',
+      );
+      const before = await frameworkText(companionPath);
+
+      const ok = await runPluginInstallCommand(["@acme/gated@1.0.0"], {
+        installDeps: fakeInstall(() => "1.0.0"),
+      });
+
+      expect(ok).toBe(false);
+      expect(process.exitCode).toBe(1);
+      expect(stderrWrites.join("")).toContain("framework.local.yaml");
+      expect(await frameworkText(companionPath)).toBe(before);
+    });
+
+    test("an invalid local file fails a shared install", async () => {
+      const companionPath = await makeCompanion();
+      process.env.MATE_ARTIFACT_PATH = companionPath;
+      await fs.writeFile(localFile(companionPath), "capabilities: []\n");
+
+      const ok = await runPluginInstallCommand(["@acme/shared@1.0.0"], {
+        installDeps: fakeInstall(() => "1.0.0"),
+      });
+
+      expect(ok).toBe(false);
+      expect(stderrWrites.join("")).toContain("framework.local.yaml");
+    });
+
     test("updates the version of a local entry", async () => {
       const companionPath = await makeCompanion();
       process.env.MATE_ARTIFACT_PATH = companionPath;

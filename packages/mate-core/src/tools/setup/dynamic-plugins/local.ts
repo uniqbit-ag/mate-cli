@@ -162,6 +162,15 @@ export async function readLocalPlugins(
   };
 }
 
+export async function isDeclaredLocally(
+  companionPath: string,
+  framework: unknown,
+  packageName: string,
+): Promise<boolean> {
+  const { declarations, problems } = await readLocalPlugins(companionPath, framework);
+  return [...declarations, ...problems].some((item) => item.package === packageName);
+}
+
 /** The committed entries of the active audience, then this machine's local ones. */
 export async function readLoadableEntries(
   companionPath: string,
@@ -263,12 +272,12 @@ export async function installLocalPlugins(
   if (!supportsLocalPlugins(framework)) return { results: [], declared: false };
   const workspaceRoot = dynamicPluginsWorkspaceRoot(companionPath, LOCAL_PLUGIN_ORIGIN);
   const read = await readLocalPlugins(companionPath, framework);
+  const problems = await writeProblems(companionPath, read);
+  if (problems.length > 0) return { results: refusals(problems), declared: false };
   if (!read.present) {
     const hasWorkspace = await fs.stat(path.join(workspaceRoot, "package.json")).catch(() => null);
     if (!hasWorkspace) return { results: [], declared: false };
   }
-  const problems = await writeProblems(companionPath, read);
-  if (problems.length > 0) return { results: refusals(problems), declared: false };
 
   if (read.present) await ensureLocalPluginIgnores(companionPath);
   await dropStaleTarballInstall(workspaceRoot, read.declarations);

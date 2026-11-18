@@ -271,6 +271,13 @@ describe("local install step", () => {
     expect(npm.calls).not.toContain(localWorkspace(dir));
   });
 
+  test("a tracked workspace file is refused without a local file or manifest", async () => {
+    const dir = await companion();
+    await forceTrack(dir, ".mate/local-plugins/node_modules/@acme/gated/index.js");
+    const outcome = await install(dir, fakeNpm());
+    expect(failures(outcome)[0]?.error).toContain("git rm --cached");
+  });
+
   test("a rebuilt tarball is reinstalled and an unchanged one is not", async () => {
     const dir = await companion();
     const tarball = path.join(dir, "acme-gated.tgz");

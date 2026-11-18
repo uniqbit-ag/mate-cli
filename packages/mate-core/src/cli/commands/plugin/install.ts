@@ -13,7 +13,8 @@ import {
 } from "../../../tools/setup/dynamic-plugins/audiences";
 import { hydrateDynamicPlugins } from "../../../tools/setup/dynamic-plugins/hydrate";
 import type { PluginInstallDeps } from "../../../tools/setup/dynamic-plugins/install";
-import { declareLocalPlugin } from "../../../tools/setup/dynamic-plugins/local";
+import { declareLocalPlugin, isDeclaredLocally } from "../../../tools/setup/dynamic-plugins/local";
+import { LOCAL_PLUGINS_FILE_GITIGNORE_ENTRY } from "../../../tools/setup/dynamic-plugins/paths";
 import { installPluginWorkspaces } from "../../../tools/setup/dynamic-plugins/workspaces";
 import { reportPluginInstallResults, reportPluginWorkspaces } from "../install";
 
@@ -109,6 +110,11 @@ export async function runPluginInstallCommand(
       return refuse(problems.map((problem) => problem.message).join("\n"));
     }
   } else {
+    if (await isDeclaredLocally(context.companionPath, context.config, packageName)) {
+      return refuse(
+        `plugin "${packageName}" is declared in ${LOCAL_PLUGINS_FILE_GITIGNORE_ENTRY}, so framework.yaml cannot declare it too; remove it there first.`,
+      );
+    }
     const configPath = path.join(
       context.companionPath,
       `.${FRAMEWORK_NAME}`,
@@ -139,5 +145,8 @@ export async function runPluginInstallCommand(
     )(context.companionPath, nextConfig);
   }
 
-  return results.find((result) => result.package === packageName)?.status !== "failed";
+  return (
+    results.find((result) => result.package === packageName)?.status !== "failed" &&
+    !results.some((result) => result.refused)
+  );
 }
