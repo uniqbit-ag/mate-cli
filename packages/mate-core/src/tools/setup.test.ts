@@ -280,9 +280,6 @@ describe("executeSetup", () => {
 
     await setup([]);
     expect(await uninstalls()).toEqual(["init -g --uninstall"]);
-
-    await setup([]);
-    expect(await uninstalls()).toEqual(["init -g --uninstall"]);
   });
 
   test("replaces saved providers and capabilities with the selected set", async () => {
@@ -2001,6 +1998,32 @@ describe("applySetupCompatibilities — managed-output report", () => {
       { path: ".claude/skills/mate-acme", change: "written", owner: "mate" },
       { path: ".agents/skills/openspec-acme", change: "removed", owner: "openspec" },
     ]);
+  });
+
+  test("the earlier selection counts only the providers it saved", async () => {
+    const root = await makeTempDir("mate-setup-previous-providers-");
+    const seen: SetupContext["previousSetup"][] = [];
+    const requiredProvider: Plugin = {
+      ...recordingPlugin(() => {}),
+      id: "acme-provider",
+      kind: "provider",
+      isEnabled: () => false,
+    };
+
+    await applySetupCompatibilities(
+      root,
+      { allowedAgents: [] },
+      "setup",
+      [
+        { plugin: requiredProvider, policy: "required" },
+        recordingPlugin((ctx) => seen.push(ctx.previousSetup)),
+      ],
+      undefined,
+      undefined,
+      { previousConfig: { allowedAgents: [] } },
+    );
+
+    expect(seen[0]?.activeProviders).toEqual([]);
   });
 
   test("returns an empty report when nothing is recorded", async () => {

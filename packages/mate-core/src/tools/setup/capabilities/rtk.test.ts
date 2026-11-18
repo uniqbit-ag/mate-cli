@@ -147,7 +147,7 @@ describe("createRtkPlugin", () => {
       }
 
       test("leaves the integration alone without an earlier selection", async () => {
-        expect(await teardownCommands({ mode: "sync", config: withoutRtk })).toEqual([]);
+        expect(await teardownCommands({})).toEqual([]);
       });
 
       test("leaves the integration alone when the provider did not use RTK before", async () => {

@@ -42,6 +42,7 @@ import { getActiveDistribution } from "../distribution";
 import { createUvPlugin } from "./setup/package-managers/uv";
 import type { PackageManagerSetupDeps } from "./setup/package-managers/uv";
 import { applyRequiredSelectionsToConfig } from "./setup/policy";
+import { normalizeRegistration } from "./setup/registry";
 import { invalidateInstallState } from "../lib/install";
 import type { StartupProgressController } from "../lib/components/startup-progress";
 import { emitWarning } from "../lib/live-progress";
@@ -121,15 +122,14 @@ export async function applySetupCompatibilities(
     repoPath,
     scope,
     ...(options.regenerateOpenSpec ? { regenerateOpenSpec: true } : {}),
-    ...(options.previousConfig
-      ? {
-          previousSetup: {
-            config: options.previousConfig,
-            activeProviders: buildSetupInstallationPlan(options.previousConfig, plugins)
-              .activeProviders,
-          },
-        }
-      : {}),
+    previousSetup: options.previousConfig && {
+      config: options.previousConfig,
+      // Without policies: a required provider the saved config omits was not in use.
+      activeProviders: buildSetupInstallationPlan(
+        options.previousConfig,
+        plugins.map((entry) => normalizeRegistration(entry).plugin),
+      ).activeProviders,
+    },
     managedOutput: managedOutput.recorder,
   };
   const outcome = await executeSetupInstallationPlan(ctx, plugins, plan);
@@ -262,7 +262,7 @@ export async function syncCompanionFiles(
   companionPath: string,
   config: FrameworkConfig,
   repoPath?: string,
-  options: CompanionSyncOptions = {},
+  options: Pick<CompanionSyncOptions, "regenerateOpenSpec"> = {},
 ): Promise<CompanionSyncResult> {
   const outcome = await applySetupCompatibilities(
     companionPath,
