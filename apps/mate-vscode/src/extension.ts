@@ -274,6 +274,13 @@ function reportWorkspaceError(error: unknown) {
   );
 }
 
+/** Gates the change action menus; read with every load that shows them. */
+async function updateActionRuntime(repository: WindowRepository) {
+  const runtime = await readChangeActionRuntime(repository.root);
+  await vscode.commands.executeCommand("setContext", "mate.changeActionRuntime", runtime ?? false);
+  return runtime;
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   void Promise.all(
     ["mate.workspaceReady", "mate.workspaceCanOpen", "mate.workspaceOpening"].map((key) =>
@@ -434,17 +441,6 @@ export function activate(context: vscode.ExtensionContext): void {
       };
     }),
   );
-
-  /** Gates the change action menus; read with every load that shows them. */
-  const updateActionRuntime = async (repository: WindowRepository) => {
-    const runtime = await readChangeActionRuntime(repository.root);
-    await vscode.commands.executeCommand(
-      "setContext",
-      "mate.changeActionRuntime",
-      runtime ?? false,
-    );
-    return runtime;
-  };
 
   const readyToArchiveChanges = new Section(
     "mate.readyToArchive",
