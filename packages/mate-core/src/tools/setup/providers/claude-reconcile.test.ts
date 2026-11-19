@@ -50,7 +50,9 @@ function contribution(
           marker: "acme-hook.sh",
           group: {
             matcher: "Bash",
-            hooks: [{ type: "command", command: `sh "${companionPath}/acme-hook.sh"` }],
+            hooks: [
+              { type: "command", command: `sh "${companionPath}/acme-hook.sh"`, if: "Bash(git *)" },
+            ],
           },
         },
       ],
@@ -91,7 +93,9 @@ describe("reconcileClaudeContributions", () => {
     expect(settings.hooks.PreToolUse).toEqual([
       {
         matcher: "Bash",
-        hooks: [{ type: "command", command: `sh "${companionPath}/acme-hook.sh"` }],
+        hooks: [
+          { type: "command", command: `sh "${companionPath}/acme-hook.sh"`, if: "Bash(git *)" },
+        ],
       },
     ]);
     expect(settings.permissions.allow).toContain("mcp__acme__*");
@@ -178,6 +182,35 @@ describe("reconcileClaudeContributions", () => {
       fs.access(path.join(companionPath, ".claude", "agents", "acme-agent.md")),
     ).rejects.toThrow();
   });
+
+  test.each([true, false])(
+    "hookMarkers strip the owned group and keep user groups (enabled: %p)",
+    async (enabled) => {
+      const companionPath = await makeCompanion();
+      const settingsPath = path.join(companionPath, ".claude", "settings.local.json");
+      const userGroup = { matcher: "Edit", hooks: [{ type: "command", command: "user-hook.sh" }] };
+      await fs.mkdir(path.dirname(settingsPath), { recursive: true });
+      await fs.writeFile(
+        settingsPath,
+        JSON.stringify({
+          hooks: {
+            PreToolUse: [
+              { matcher: "Bash", hooks: [{ type: "command", command: "acme-marker run" }] },
+              userGroup,
+            ],
+          },
+        }),
+        "utf8",
+      );
+
+      await reconcileClaudeContributions(makeCtx(companionPath), [
+        { pluginId: "acme", enabled, contributions: { hookMarkers: ["acme-marker"] } },
+      ]);
+
+      const after = (await readJson(settingsPath)) as { hooks?: Record<string, unknown[]> };
+      expect(after.hooks?.PreToolUse).toEqual([userGroup]);
+    },
+  );
 });
 
 describe("claude escape hatch", () => {

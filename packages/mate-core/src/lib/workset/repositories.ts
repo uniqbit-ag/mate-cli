@@ -1,7 +1,7 @@
 import fs from "node:fs";
 
 import { workingRepoGit } from "../delivery/branches";
-import { repositoryPath } from "../delivery/forge";
+import { repositoryPath } from "../delivery/remote";
 import { readCompanionRegistry } from "../orchestrator/repository-link";
 import { linkedCheckoutsOf } from "../orchestrator/umbrella-checkouts";
 import { gitTokenKeyOf } from "../factory/git-credential-store";

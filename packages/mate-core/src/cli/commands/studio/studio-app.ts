@@ -29,6 +29,7 @@ export async function loadStudioApp(dirs: string[] = STUDIO_APP_DIRS): Promise<S
   for (const dir of dirs) {
     const entry = path.join(dir, "server/server.js");
     if (!existsSync(entry)) continue;
+    // oxlint-disable-next-line no-await-in-loop -- the first loadable directory wins
     const module = (await import(entry)) as { default: Pick<StudioApp, "fetch"> };
     const handler = module.default;
     return {

@@ -7,9 +7,9 @@
 export type DeliveryStageKind = "skill" | "human";
 
 interface StageBase {
-  /** Stable identifier, e.g. `archive` or `review-specs`. */
+  /** Stable identifier, e.g. `submit` or `review-specs`. */
   id: string;
-  /** The action the stage performs, e.g. `Archive change`. */
+  /** The action the stage performs, e.g. `Submit change`. */
   label: string;
   kind: DeliveryStageKind;
   /** Optional stages can be skipped and never block a later stage. */
@@ -23,7 +23,7 @@ export type SkillStageId =
   | "apply"
   | "inspect-outcome"
   | "refine-code"
-  | "archive"
+  | "submit"
   | "publish";
 
 export interface SkillStage extends StageBase {
@@ -78,7 +78,7 @@ const AFTER_REVIEWS: readonly SkillStage[] = [
   skillStage("apply", "Apply change", "mate-apply-change"),
   skillStage("inspect-outcome", "Inspect outcome", "mate-show-me", true),
   skillStage("refine-code", "Refine code", "mate-simplify-code", true),
-  skillStage("archive", "Archive change", "mate-archive-change"),
+  skillStage("submit", "Submit change", "mate-submit-change"),
   skillStage("publish", "Publish companion artifacts", "mate-publish-artifact"),
 ];
 

@@ -307,13 +307,13 @@ function rawValue(
 
 function port(setting: Setting, raw: unknown, fallback: number): number {
   if (raw === null || raw === undefined || raw === "") return fallback;
-  const text = String(raw);
-  if (!/^\d+$/.test(text)) {
-    throw new ConfigError(setting.env, text, "must be a whole number");
+  const input = String(raw);
+  if (!/^\d+$/.test(input)) {
+    throw new ConfigError(setting.env, input, "must be a whole number");
   }
-  const value = Number(text);
+  const value = Number(input);
   if (value < 1 || value > 65535) {
-    throw new ConfigError(setting.env, text, "must be a port between 1 and 65535");
+    throw new ConfigError(setting.env, input, "must be a port between 1 and 65535");
   }
   return value;
 }
@@ -321,9 +321,9 @@ function port(setting: Setting, raw: unknown, fallback: number): number {
 function bool(setting: Setting, raw: unknown, fallback: boolean): boolean {
   if (raw === null || raw === undefined || raw === "") return fallback;
   if (typeof raw === "boolean") return raw;
-  const text = String(raw).trim().toLowerCase();
-  if (["true", "yes", "1", "on"].includes(text)) return true;
-  if (["false", "no", "0", "off"].includes(text)) return false;
+  const input = String(raw).trim().toLowerCase();
+  if (["true", "yes", "1", "on"].includes(input)) return true;
+  if (["false", "no", "0", "off"].includes(input)) return false;
   throw new ConfigError(setting.env, String(raw), "must be true or false");
 }
 
@@ -544,7 +544,7 @@ function pluginRegistry(
   return { scope, url: parsed.href.endsWith("/") ? parsed.href : `${parsed.href}/`, token: secret };
 }
 
-function setting(env: string): Setting {
+function settingFor(env: string): Setting {
   const found = SETTINGS.find((candidate) => candidate.env === env);
   if (!found) throw new Error(`no such setting: ${env}`);
   return found;
@@ -557,41 +557,41 @@ export function resolveConfig(
   const configFile = env[CONFIG_FILE_ENV]?.trim() || DEFAULT_CONFIG_FILE;
   const file = readFile(configFile);
 
-  const read = (name: string): unknown => rawValue(setting(name), env, file)?.value ?? null;
-  const writable = bool(setting("MATE_STUDIO_WRITABLE"), read("MATE_STUDIO_WRITABLE"), true);
+  const read = (name: string): unknown => rawValue(settingFor(name), env, file)?.value ?? null;
+  const writable = bool(settingFor("MATE_STUDIO_WRITABLE"), read("MATE_STUDIO_WRITABLE"), true);
 
   return {
     companionsDir: text(read("MATE_COMPANIONS_DIR"), "/companions"),
-    companionRepos: gitLocations(setting("MATE_COMPANION_REPOS"), read("MATE_COMPANION_REPOS")),
+    companionRepos: gitLocations(settingFor("MATE_COMPANION_REPOS"), read("MATE_COMPANION_REPOS")),
     companion: optionalText(read("MATE_COMPANION")),
-    audience: audienceName(setting("MATE_AUDIENCE"), read("MATE_AUDIENCE")),
-    studioPort: port(setting("MATE_STUDIO_PORT"), read("MATE_STUDIO_PORT"), 4097),
+    audience: audienceName(settingFor("MATE_AUDIENCE"), read("MATE_AUDIENCE")),
+    studioPort: port(settingFor("MATE_STUDIO_PORT"), read("MATE_STUDIO_PORT"), 4097),
     studioHost: text(read("MATE_STUDIO_HOST"), "0.0.0.0"),
     studioWritable: writable,
     studioTerminal:
-      writable && bool(setting("MATE_STUDIO_TERMINAL"), read("MATE_STUDIO_TERMINAL"), true),
+      writable && bool(settingFor("MATE_STUDIO_TERMINAL"), read("MATE_STUDIO_TERMINAL"), true),
     studioDetachMinutes: positiveInteger(
-      setting("MATE_STUDIO_DETACH_MINUTES"),
+      settingFor("MATE_STUDIO_DETACH_MINUTES"),
       read("MATE_STUDIO_DETACH_MINUTES"),
       30,
     ),
-    studioToken: token(setting("MATE_STUDIO_TOKEN"), read("MATE_STUDIO_TOKEN")),
+    studioToken: token(settingFor("MATE_STUDIO_TOKEN"), read("MATE_STUDIO_TOKEN")),
     studioAllowedHosts: hostList(
-      setting("MATE_STUDIO_ALLOWED_HOSTS"),
+      settingFor("MATE_STUDIO_ALLOWED_HOSTS"),
       read("MATE_STUDIO_ALLOWED_HOSTS"),
     ),
     studioPublicOrigin: publicOrigin(
-      setting("MATE_STUDIO_PUBLIC_ORIGIN"),
+      settingFor("MATE_STUDIO_PUBLIC_ORIGIN"),
       read("MATE_STUDIO_PUBLIC_ORIGIN"),
     ),
-    gitSync: bool(setting("MATE_GIT_SYNC"), read("MATE_GIT_SYNC"), false),
+    gitSync: bool(settingFor("MATE_GIT_SYNC"), read("MATE_GIT_SYNC"), false),
     gitUserName: optionalText(read("MATE_GIT_USER_NAME")),
     gitUserEmail: optionalText(read("MATE_GIT_USER_EMAIL")),
-    credentials: credentials(setting("MATE_AGENT_CREDENTIALS"), read("MATE_AGENT_CREDENTIALS")),
+    credentials: credentials(settingFor("MATE_AGENT_CREDENTIALS"), read("MATE_AGENT_CREDENTIALS")),
     pluginRegistry: pluginRegistry(
-      setting("MATE_PLUGIN_REGISTRY"),
+      settingFor("MATE_PLUGIN_REGISTRY"),
       read("MATE_PLUGIN_REGISTRY"),
-      setting("MATE_PLUGIN_REGISTRY_TOKEN"),
+      settingFor("MATE_PLUGIN_REGISTRY_TOKEN"),
       read("MATE_PLUGIN_REGISTRY_TOKEN"),
     ),
     gitCloneToken: optionalText(read("MATE_GIT_CLONE_TOKEN")),

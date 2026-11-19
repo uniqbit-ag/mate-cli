@@ -78,7 +78,9 @@ async function umbrellaChildren(folder: string): Promise<UmbrellaChild[]> {
 /** The nearest linked ancestor-or-self of `folder`, when it is an umbrella; as mate-core. */
 async function umbrellaAt(folder: string): Promise<WindowRepository | null> {
   for (let current = folder; ;) {
+    // oxlint-disable-next-line no-await-in-loop -- walks up one ancestor at a time
     if (await exists(linkRegistryPath(current))) {
+      // oxlint-disable-next-line no-await-in-loop -- returns at the first umbrella
       const children = await umbrellaChildren(current);
       return children.length > 0 ? { kind: "umbrella", root: current, children } : null;
     }

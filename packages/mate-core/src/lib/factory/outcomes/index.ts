@@ -309,7 +309,7 @@ function assemble(parts: OutcomesParts) {
           return runner.retry(id);
         case "cancel":
           return runner.cancel(id);
-        // Before archive the changes are revised; after it, a follow-up change carries the feedback.
+        // Before submit the changes are revised; after it, a follow-up change carries the feedback.
         case "feedback":
           return runner.feedback(id, fields("feedback"), workset?.derived.stage === "merge-wait");
         // A revise without feedback only rebuilds the reports.

@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { PathSteps } from "./path-steps";
 
-const STEPS = ["Propose change", "Human review", "Apply change", "Archive change"];
+const STEPS = ["Propose change", "Human review", "Apply change", "Submit change"];
 const html = (current: number, tone?: "why") =>
   renderToStaticMarkup(<PathSteps steps={STEPS} current={current} tone={tone} />);
 
@@ -14,7 +14,7 @@ describe("PathSteps", () => {
     expect(markup).toContain('aria-label="Delivery Path"');
     expect(markup.match(/aria-current="step"/g)).toHaveLength(1);
     expect(markup).toMatch(/aria-current="step"[^>]*before:bg-why[^>]*>Human review</);
-    expect(markup).toMatch(/Propose change.*Human review.*Apply change.*Archive change/s);
+    expect(markup).toMatch(/Propose change.*Human review.*Apply change.*Submit change/s);
   });
 
   describe("compact", () => {
@@ -25,7 +25,7 @@ describe("PathSteps", () => {
       const markup = compact(1, "why");
       expect(markup).toContain("Step 2 of 4 · Human review");
       expect(markup.match(/<li/g)).toHaveLength(STEPS.length);
-      expect(markup).toMatch(/Propose change.*Human review.*Apply change.*Archive change/s);
+      expect(markup).toMatch(/Propose change.*Human review.*Apply change.*Submit change/s);
       expect(markup).toContain("sr-only");
     });
 

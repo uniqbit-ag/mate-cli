@@ -99,22 +99,23 @@ export async function refuseForkedCompanionWrite(
   if (refusal) throw new Error(refusal);
 }
 
+const textOf = (value: unknown) => (typeof value === "string" ? value : "");
+
 /** OpenCode tool inputs in the shape the shared secret guard reads. */
 function secretToolCall(
   context: CompanionContext,
   tool: string,
   args: Record<string, unknown>,
 ): SecretToolCall | null {
-  const text = (value: unknown) => (typeof value === "string" ? value : "");
   const target = (value: unknown) =>
-    text(value) ? resolveArtifactTarget(text(value), context.repositoryPath) : "";
+    textOf(value) ? resolveArtifactTarget(textOf(value), context.repositoryPath) : "";
   switch (tool) {
     case "read":
       return { kind: "read", paths: [target(args.filePath)] };
     case "write":
       return {
         kind: "write",
-        writes: [{ path: target(args.filePath), content: text(args.content) }],
+        writes: [{ path: target(args.filePath), content: textOf(args.content) }],
       };
     case "edit":
       return {
@@ -122,13 +123,13 @@ function secretToolCall(
         writes: [
           {
             path: target(args.filePath),
-            content: text(args.newString),
+            content: textOf(args.newString),
             result: {
               kind: "replace",
               edits: [
                 {
-                  oldText: text(args.oldString),
-                  newText: text(args.newString),
+                  oldText: textOf(args.oldString),
+                  newText: textOf(args.newString),
                   all: args.replaceAll === true,
                 },
               ],
@@ -137,7 +138,7 @@ function secretToolCall(
         ],
       };
     case "apply_patch": {
-      const patchText = text(args.patchText);
+      const patchText = textOf(args.patchText);
       return {
         kind: "write",
         writes: [
@@ -158,9 +159,9 @@ function secretToolCall(
       };
     }
     case "bash":
-      return { kind: "shell", command: text(args.command) };
+      return { kind: "shell", command: textOf(args.command) };
     case "grep":
-      return { kind: "search", paths: [target(args.path)], globs: [text(args.include)] };
+      return { kind: "search", paths: [target(args.path)], globs: [textOf(args.include)] };
     default:
       return null;
   }

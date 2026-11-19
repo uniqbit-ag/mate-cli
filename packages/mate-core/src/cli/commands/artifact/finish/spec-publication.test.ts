@@ -13,7 +13,7 @@ import type { LaunchContext } from "../../../../lib/orchestrator/framework-conte
 
 /**
  * End-to-end cover for the spec publication unit against real git: the unit tests stub
- * GitOps, so only this file proves the tag namespace, commit subject, and commit scope
+ * GitOps, so only this file proves the anchor, commit subject, trailer, and commit scope
  * that land in an actual repository.
  */
 
@@ -88,7 +88,7 @@ afterEach(async () => {
 });
 
 describe("spec publication against real git", () => {
-  test("commits the drifted specs under a dated spec tag and nothing else", async () => {
+  test("commits the drifted specs with a transaction trailer, no tag, and nothing else", async () => {
     const root = await companion();
     await write(root, "openspec/specs/widget-api/spec.md", "# widget-api\n\nedited\n");
     await write(root, "unrelated.md", "also edited\n");
@@ -96,9 +96,9 @@ describe("spec publication against real git", () => {
 
     await runArtifactPublishCommand(["--specs", "--no-push", "--json"], deps(root, out));
 
-    const result = JSON.parse(out[0]) as { status: string; tag: string; anchorName: string };
+    const result = JSON.parse(out[0]) as { status: string; tag: null; anchorName: string };
     expect(result.status).toBe("skipped");
-    expect(result.tag).toBe("openspec/specs/2026-09-14-widget-api");
+    expect(result.tag).toBeNull();
     expect(result.anchorName).toBe("2026-09-14-widget-api");
 
     /** The commit subject names the specs, never an anchor: it belongs to no change. */
@@ -110,29 +110,30 @@ describe("spec publication against real git", () => {
       "openspec/specs/widget-api/spec.md",
     ]);
     expect(gitOutput(root, ["status", "--porcelain"])).toContain("unrelated.md");
-    /** The tag is annotated and sits in its own namespace. */
-    expect(gitOutput(root, ["tag", "--list", "openspec/specs/*"])).toBe(
+    /** A trailer, not a tag, names the publication. */
+    expect(
+      gitOutput(root, ["log", "-1", "--format=%(trailers:key=Mate-Transaction,valueonly)"]),
+    ).toMatch(/^[0-9a-f-]{36}$/);
+    expect(gitOutput(root, ["log", "-1", "--format=%(trailers:key=Mate-Artifact,valueonly)"])).toBe(
       "openspec/specs/2026-09-14-widget-api",
     );
-    expect(gitOutput(root, ["tag", "--list", "openspec/2*"])).toBe("");
-    expect(gitOutput(root, ["cat-file", "-t", "openspec/specs/2026-09-14-widget-api"])).toBe("tag");
+    expect(gitOutput(root, ["tag", "--list"])).toBe("");
   });
 
-  test("a second publication of the same specs the same day takes the next free suffix", async () => {
+  test("a second publication of the same specs the same day is its own commit", async () => {
     const root = await companion();
     await write(root, "openspec/specs/widget-api/spec.md", "# widget-api\n\nfirst\n");
     await runArtifactPublishCommand(["--specs", "--no-push", "--json"], deps(root, []));
+    const first = gitOutput(root, ["rev-parse", "HEAD"]);
 
     await write(root, "openspec/specs/widget-api/spec.md", "# widget-api\n\nsecond\n");
     const out: string[] = [];
     await runArtifactPublishCommand(["--specs", "--no-push", "--json"], deps(root, out));
 
-    const result = JSON.parse(out[0]) as { tag: string };
-    expect(result.tag).toBe("openspec/specs/2026-09-14-widget-api.2");
-    /** The first tag still points at the first publication, not the second. */
-    expect(
-      gitOutput(root, ["rev-list", "-n", "1", "openspec/specs/2026-09-14-widget-api"]),
-    ).not.toBe(gitOutput(root, ["rev-list", "-n", "1", "openspec/specs/2026-09-14-widget-api.2"]));
+    const result = JSON.parse(out[0]) as { anchorName: string; resumed: boolean };
+    expect(result.anchorName).toBe("2026-09-14-widget-api");
+    expect(result.resumed).toBe(false);
+    expect(gitOutput(root, ["rev-parse", "HEAD~1"])).toBe(first);
     expect(gitOutput(root, ["show", "--name-only", "--pretty=", "HEAD"]).split("\n")).toEqual([
       "openspec/specs/widget-api/spec.md",
     ]);
@@ -146,8 +147,8 @@ describe("spec publication against real git", () => {
 
     await runArtifactPublishCommand(["--specs", "--no-push", "--json"], deps(root, out));
 
-    const result = JSON.parse(out[0]) as { tag: string };
-    expect(result.tag).toBe("openspec/specs/2026-09-14-other-api+widget-api");
+    const result = JSON.parse(out[0]) as { anchorName: string };
+    expect(result.anchorName).toBe("2026-09-14-other-api+widget-api");
     expect(gitOutput(root, ["log", "-1", "--pretty=%s"])).toBe(
       "chore(openspec): sync canonical specs (other-api, widget-api)",
     );
@@ -195,8 +196,8 @@ describe("spec publication against real git", () => {
       deps(root, out),
     );
 
-    const result = JSON.parse(out[0]) as { tag: string };
-    expect(result.tag).toBe("openspec/specs/2026-09-14-backfilled-api");
+    const result = JSON.parse(out[0]) as { anchorName: string };
+    expect(result.anchorName).toBe("2026-09-14-backfilled-api");
     expect(gitOutput(root, ["show", "--name-only", "--pretty=", "HEAD"]).split("\n")).toEqual([
       "openspec/specs/backfilled-api/spec.md",
     ]);

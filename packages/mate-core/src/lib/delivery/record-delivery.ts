@@ -1,15 +1,18 @@
+// oxlint-disable no-await-in-loop -- changes are recorded in order and the first refusal ends the run
 import {
   workingRepoGit,
   type ProtectionReason,
   type TicketFormat,
   type WorkingRepoGit,
 } from "./branches";
+import { companionGit } from "../../runtime/companion-git";
 import { changeNameOf, locateChange, type ChangeLocation } from "../change-layout";
 import { scopedRepositories } from "../openspec-scopes";
 import { companionRelative, type DeliveryEnvironment } from "./environment";
 import {
   canaryTicketOf,
   findDelivery,
+  isCommitId,
   ticketCandidateOf,
   legacyDeliveryBranch,
   readOrUnlinkedRecord,
@@ -29,6 +32,7 @@ import {
 } from "./refresh";
 import { probeMerge, type DeliveryCheckout } from "./checkout";
 import { resolveDeliveryBranch } from "./resolve-branch";
+import { defaultRef, stagingRemote } from "./staging/refs";
 import {
   repositoryAccessFor,
   type RepositoryAccess,
@@ -59,7 +63,7 @@ export interface DeliveryRequest {
   repository?: string;
   edit?: DeliveryEdit;
   /**
-   * Ask the forge, then a local checkout, for each branch's merge state; a direct delivery
+   * Check each branch's merge state in its checkout linked on this machine; a direct delivery
    * needs the user's answer instead.
    */
   refresh?: boolean;
@@ -67,10 +71,24 @@ export interface DeliveryRequest {
   fetch?: boolean;
   /** Refresh every delivery even when `repository` names the one to edit. */
   refreshAll?: boolean;
+  /** Record the companion's `HEAD` as the delta base when none is recorded; needs no repository. */
+  specBase?: boolean;
+  /**
+   * Leave a missing `specBase` unset: the records are not in the user's checkout, such as
+   * publication's settlement in a temporary worktree, whose `HEAD` is no delta base.
+   */
+  leaveSpecBase?: boolean;
   /** Archived changes may be edited; otherwise only active ones are found. */
   includeArchived?: boolean;
   /** A change left without any delivery answers `needsBranch` and nothing is written. */
   requireDelivery?: boolean;
+  /** Resolve and refuse as usual, but write nothing. */
+  dryRun?: boolean;
+  /**
+   * With `refresh`: refuse when Git settles a delivery as merged while a work tree that has its
+   * branch checked out holds modified tracked files, since that work is on no commit.
+   */
+  refuseUncommitted?: boolean;
 }
 
 export type DeliveryRefusal =
@@ -83,6 +101,14 @@ export type DeliveryRefusal =
   /** `--ticket` on a repository whose delivery is direct or not applicable. */
   | { reason: "settled-delivery"; change: string; repository: string; delivery: string }
   | { reason: "protected-branch"; branch: string; protection: ProtectionReason | null }
+  /** `refuseUncommitted`: `worktree` has `branch` checked out with modified tracked files. */
+  | {
+      reason: "uncommitted-work";
+      change: string;
+      repository: string;
+      branch: string;
+      worktree: string;
+    }
   | {
       reason: "no-delivery-branch";
       change: string;
@@ -129,7 +155,26 @@ export type DeliveryOutcome =
 
 export interface RecordDeliveryDeps extends RepositoryAccessDeps {
   now?: () => Date;
+  /** The companion's `HEAD` commit; null when unknown. */
+  companionHead?: (companionPath: string) => Promise<string | null>;
   repositoryAccess?: (repository: string) => RepositoryAccess;
+}
+
+/**
+ * The commit the companion checkout's delta specs are written on: `HEAD`, or, while `HEAD`
+ * holds commits the default branch as last fetched lacks, where it left that branch, since publication only reads a
+ * base the default branch holds. Null when Git cannot tell.
+ */
+async function companionHead(companionPath: string): Promise<string | null> {
+  const git = companionGit(companionPath, { prompt: "never" });
+  const head = await git.run(["rev-parse", "HEAD"]);
+  const commit = head.stdout.trim();
+  if (head.status !== 0 || !isCommitId(commit)) return null;
+  const remote = await stagingRemote(git);
+  if (!remote) return commit;
+  const shared = await git.run(["merge-base", "HEAD", defaultRef(remote)]);
+  const base = shared.stdout.trim();
+  return shared.status === 0 && isCommitId(base) ? base : commit;
 }
 
 /** Local Git of the repository's checkout; null when none is known. */
@@ -150,7 +195,6 @@ async function scopedChildren(
 ): Promise<string[]> {
   const scoped: string[] = [];
   for (const { dir } of located) {
-    // oxlint-disable-next-line no-await-in-loop -- a few small files, in order
     for (const repository of await scopedRepositories(dir)) {
       const child = children.find((entry) => sameRepository(entry, repository));
       if (child && !scoped.includes(child)) scoped.push(child);
@@ -208,9 +252,9 @@ function hasDeliveryBranch(record: DeliveryRecord, repository: string): boolean 
 /**
  * Reads, edits, refreshes, and writes the Delivery Records of `request.changes`. Every
  * change resolves before any record is written, so a refusal leaves no partial update; a
- * request without an edit or refresh only reads. Network requests go only to the forge:
- * for another repository's default branch, and to refresh. `--direct` is
- * accepted on any branch; a protected one requires it.
+ * request without an edit or refresh only reads. Network Git runs only in a linked checkout,
+ * for a refresh whose fetch is allowed. `--direct` is accepted on any branch; a protected one
+ * requires it.
  */
 export async function recordDelivery(
   environment: DeliveryEnvironment,
@@ -270,7 +314,6 @@ export async function recordDelivery(
 
   const refreshAccess: RefreshAccess = {
     now,
-    forgeAccess: (repo) => access(repo).forge(),
     localAccess: async (repo) => (await access(repo).local?.()) ?? null,
     fetch: request.fetch === true || environment.gitAutoMode === true,
   };
@@ -355,6 +398,17 @@ export async function recordDelivery(
       });
       record = refreshed.record;
       outcomes = refreshed.outcomes;
+      for (const outcome of request.refuseUncommitted ? outcomes : []) {
+        if (outcome.result !== "merged") continue;
+        const local = await access(outcome.repository).local?.();
+        const worktree = await local?.git.dirtyWorktree(outcome.branch);
+        if (worktree) {
+          const { repository: repo, branch } = outcome;
+          return {
+            refusal: { reason: "uncommitted-work", change, repository: repo, branch, worktree },
+          };
+        }
+      }
     }
 
     if (repository && edit.confirm !== undefined) {
@@ -384,7 +438,15 @@ export async function recordDelivery(
     });
   }
 
-  if (edits || request.refresh) {
+  if (!request.dryRun && (edits || request.refresh || request.specBase)) {
+    // The first write of an active change's record keeps the base its delta specs were written on.
+    let head: Promise<string | null> | undefined;
+    for (const entry of resolved) {
+      if (request.leaveSpecBase || entry.archived || entry.record.specBase) continue;
+      head ??= (deps.companionHead ?? companionHead)(environment.companionPath);
+      const specBase = await head;
+      if (specBase) entry.record = { ...entry.record, specBase };
+    }
     for (const { dir, record } of resolved) await writeDeliveryRecord(dir, record);
   }
   const results = resolved.map(({ dir: _dir, ...result }) => result);

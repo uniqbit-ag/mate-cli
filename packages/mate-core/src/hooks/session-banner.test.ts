@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { git } from "../../test/git-checkouts";
+import { seedPending, type SeededChange } from "../../test/pending-inbox";
 import { mateVersion } from "../runtime/install";
 import {
   computeProjectionStamp,
@@ -181,6 +183,22 @@ describe("session-banner hook module", () => {
       expect(message).toContain(companion);
     });
 
+    test("prints when only a Capability variable is set", async () => {
+      const repoRoot = makeTempDir("banner-projected-");
+      const companion = path.join(repoRoot, "companion");
+      fs.mkdirSync(companion, { recursive: true });
+      wrapRepo(repoRoot, companion, currentStamp());
+
+      const message = bannerMessage(
+        await buildBanner({ MATE_REACT_DOCTOR_BIN_PATH: "/opt/acme/react-doctor" }, repoRoot, [
+          PROJECTED_FLAG,
+        ]),
+      );
+
+      expect(message).toContain(repoRoot);
+      expect(message).toContain(companion);
+    });
+
     /** The plugin's own copy is unflagged, so a launch never silences it. */
     test("leaves the unflagged copy printing under the same environment", async () => {
       const result = await buildBanner(
@@ -190,5 +208,50 @@ describe("session-banner hook module", () => {
 
       expect(bannerMessage(result)).toContain("/work/acme");
     });
+  });
+});
+
+describe("session-banner submitted changes", () => {
+  /** A companion whose fetched inbox holds `changes`, as a sync leaves it. */
+  function companionWithPending(changes: SeededChange[]): string {
+    return seedPending(path.join(fs.realpathSync(makeTempDir("banner-pending-")), "acme"), changes);
+  }
+
+  test("reports submitted changes awaiting publication in one short line, operator-only", async () => {
+    const companion = companionWithPending([
+      { name: "acme-login", branch: "workset/acme-login", blocked: true },
+      { name: "acme" },
+    ]);
+
+    const result = await buildBanner({
+      MATE_REPO_PATH: "/work/acme",
+      MATE_ARTIFACT_PATH: companion,
+      MATE_VERSION: "1.2.3",
+    });
+
+    const outcome = JSON.parse(result.stdout) as Record<string, unknown>;
+    expect(outcome.systemMessage).toContain("2 submitted awaiting publication · 1 group blocked");
+    expect(JSON.stringify(outcome.hookSpecificOutput ?? {})).not.toContain("awaiting publication");
+  });
+
+  test("adds no line when nothing is submitted", async () => {
+    const companion = companionWithPending([]);
+
+    const message = bannerMessage(
+      await buildBanner({ MATE_REPO_PATH: "/work/acme", MATE_ARTIFACT_PATH: companion }),
+    );
+
+    expect(message).not.toContain("awaiting publication");
+  });
+
+  test("the count reads the last fetched pending branch without contacting the remote", async () => {
+    const companion = companionWithPending([{ name: "acme" }]);
+    git(companion, "remote", "set-url", "origin", path.join(companion, "acme-missing.git"));
+
+    const message = bannerMessage(
+      await buildBanner({ MATE_REPO_PATH: "/work/acme", MATE_ARTIFACT_PATH: companion }),
+    );
+
+    expect(message).toContain("1 submitted awaiting publication");
   });
 });

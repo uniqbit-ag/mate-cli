@@ -59,11 +59,15 @@ working repository needs a tracked change.
 
 ### See what is linked
 
-From any linked repository:
+From the companion root, list every linked working repository:
 
 ```sh
+cd /path/to/companion-repo
 mate companion list
 ```
+
+From a working repository, the same command shows the companion it is
+connected to.
 
 </Step>
 <Step>
@@ -112,3 +116,5 @@ See [Repository Model](/docs/concepts/repositories) for how Mate resolves the
 companion and what happens when a repository links more than one. When the
 repositories sit side by side in one plain folder, you can link that folder
 once instead; see [Umbrella Repository](/docs/concepts/umbrella-repository).
+To plan one change across those repositories, see
+[Work Across Repositories From an Umbrella](/docs/scenarios/cross-repo-umbrella).

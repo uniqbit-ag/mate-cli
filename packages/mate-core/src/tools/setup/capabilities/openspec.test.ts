@@ -268,7 +268,8 @@ describe("createOpenspecPlugin", () => {
         "mate-explore-change": "CONTEXT-MAP.md",
         "mate-propose-change": "mate-minimal",
         "mate-apply-change": "mate artifact link",
-        "mate-archive-change": "mate artifact archive",
+        "mate-submit-change": "mate artifact submit",
+        "mate-archive-change": "mate-submit-change",
         "mate-interview-me": "one-question-at-a-time",
         "mate-grill-me": "mate-grilling",
         "mate-grilling": "design tree",
@@ -311,16 +312,16 @@ describe("createOpenspecPlugin", () => {
       }
     }
 
-    // Every runtime confirms the commit + tag + push before the first finish
+    // Every runtime announces the merge + push before the first publish
     // call and keeps the deterministic CLI as the publication primitive.
     for (const runtimeDir of [".claude", ".agents"]) {
       const publishSkill = await fs.readFile(
         path.join(root, runtimeDir, "skills", "mate-publish-artifact", "SKILL.md"),
         "utf8",
       );
-      expect(publishSkill).toContain("commit, tag, and push");
+      expect(publishSkill).toContain("commits to and pushes");
       expect(publishSkill).toContain("Present both sections as Markdown tables");
-      expect(publishSkill).toContain('artifact publish "<anchor-or-name>" --json');
+      expect(publishSkill).toContain("artifact publish '<group-or-anchor>' --json");
       expect(publishSkill).toContain("artifact publish --specs");
       expect(publishSkill).toContain("artifact publish --all --json");
       await expect(
@@ -491,6 +492,7 @@ describe("createOpenspecPlugin", () => {
       "mate-explore-change",
       "mate-propose-change",
       "mate-apply-change",
+      "mate-submit-change",
       "mate-archive-change",
       "mate-interview-me",
       "mate-grill-me",

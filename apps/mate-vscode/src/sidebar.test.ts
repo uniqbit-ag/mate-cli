@@ -301,7 +301,7 @@ describe("workspace gate wiring", () => {
       "mate.sessions",
       "mate.worktrees",
       "mate.openChanges",
-      "mate.readyToArchive",
+      "mate.readyToSubmit",
       "mate.readyToPublish",
     ]) {
       expect(await providers.get(id)!.getChildren()).toEqual([]);
@@ -348,7 +348,7 @@ describe("workspace gate wiring", () => {
     "mate.sessions",
     "mate.worktrees",
     "mate.openChanges",
-    "mate.readyToArchive",
+    "mate.readyToSubmit",
     "mate.readyToPublish",
   ];
 
@@ -390,7 +390,7 @@ describe("workspace gate wiring", () => {
       "mate.sessions": 0,
       "mate.worktrees": 1,
       "mate.openChanges": 0,
-      "mate.readyToArchive": 0,
+      "mate.readyToSubmit": 0,
       "mate.readyToPublish": 1,
     });
 
@@ -502,7 +502,7 @@ describe("workspace gate wiring", () => {
     }
   });
 
-  test("moves changes with every task checked from Open changes to Ready to archive", async () => {
+  test("moves changes with every task checked from Open changes to Ready to submit", async () => {
     const repo = await openRepository();
     const changes = path.join(repo, ".mate/companion/openspec/changes");
     const write = async (name: string, tasks?: string, branch?: string) => {
@@ -525,7 +525,7 @@ describe("workspace gate wiring", () => {
       ["acme", "1/2 tasks"],
       ["acme-draft", "0/0 tasks"],
     ]);
-    const ready = await providers.get("mate.readyToArchive")!.getChildren();
+    const ready = await providers.get("mate.readyToSubmit")!.getChildren();
     expect(ready.map((item) => [item.label, item.description])).toEqual([
       ["acme-done", "1/1 · acme-done"],
       ["acme-queue", "2/2 · acme"],
@@ -546,7 +546,7 @@ describe("workspace gate wiring", () => {
       await fs.writeFile(path.join(config, "framework.yaml"), `allowedAgents:\n${list}git: auto\n`);
     }
 
-    /** A repository with `acme-queue` ready to archive, `acme-retry` open, and one pending archive. */
+    /** A repository with `acme-queue` ready to submit, `acme-retry` open, and one pending archive. */
     async function withActionItems(agents: string[] | null = null) {
       const repo = await openRepository();
       await allowAgents(repo, agents);
@@ -565,13 +565,13 @@ describe("workspace gate wiring", () => {
           ],
         }),
       );
-      const [ready] = await providers.get("mate.readyToArchive")!.getChildren();
+      const [ready] = await providers.get("mate.readyToSubmit")!.getChildren();
       const [pending] = await providers.get("mate.readyToPublish")!.getChildren();
       const open = await providers.get("mate.openChanges")!.getChildren();
       return { repo, ready: ready!, pending: pending!, open };
     }
 
-    test("Ready to archive and Ready to publish items carry their names; Open changes items no action", async () => {
+    test("Ready to submit and Ready to publish items carry their names; Open changes items no action", async () => {
       const { ready, pending, open } = await withActionItems(["claude"]);
       expect([ready.contextValue, ready.data]).toEqual(["change.ready", { name: "acme-queue" }]);
       expect([pending.description, pending.contextValue, pending.data]).toEqual([
@@ -630,7 +630,7 @@ describe("workspace gate wiring", () => {
       await providers.get("mate.readyToPublish")!.getChildren();
       expect(menuContext()).toEqual([false, false, false]);
       await allowAgents(repo, ["opencode", "claude"]);
-      await providers.get("mate.readyToArchive")!.getChildren();
+      await providers.get("mate.readyToSubmit")!.getChildren();
       expect(menuContext()).toEqual([true, true, true]);
     });
 
@@ -669,7 +669,7 @@ describe("workspace gate wiring", () => {
         menus["view/item/context"].find((entry: { submenu?: string }) => entry.submenu === submenu);
       expect(menu("mate.archiveChange")).toEqual({
         submenu: "mate.archiveChange",
-        when: "view == mate.readyToArchive && viewItem == change.ready && mate.changeActionAgents",
+        when: "view == mate.readyToSubmit && viewItem == change.ready && mate.changeActionAgents",
         group: "mate@1",
       });
       expect(menu("mate.publishArtifact")).toEqual({
@@ -798,7 +798,7 @@ describe("workspace gate wiring", () => {
       "mate.sessions",
       "mate.worktrees",
       "mate.openChanges",
-      "mate.readyToArchive",
+      "mate.readyToSubmit",
       "mate.readyToPublish",
     ]);
     expect(

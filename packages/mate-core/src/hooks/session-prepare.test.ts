@@ -235,6 +235,28 @@ describe("session-start hook", () => {
     expect(payload.hookSpecificOutput.additionalContext).not.toContain("ACME-STALE");
   });
 
+  /** A user may set this in `~/.claude/settings.json` so `mate-react-doctor` works outside a launch. */
+  test("a Capability variable alone runs the prepare and delivers the same block as an empty env", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const run = async (env: Record<string, string>) => {
+      const { deps, order } = fakeDeps();
+      const outcome = await runSessionStartHook(
+        { env, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+        deps,
+      );
+      return { stdout: outcome.stdout, order };
+    };
+
+    const plain = await run({});
+    const capabilityOnly = await run({ MATE_REACT_DOCTOR_BIN_PATH: "/opt/acme/react-doctor" });
+
+    expect(plain.stdout).toContain("<companion-instructions ");
+    expect(capabilityOnly.stdout).toBe(plain.stdout);
+    expect(capabilityOnly.order).toEqual(plain.order);
+    expect(capabilityOnly.order).toContain("local");
+  });
+
   test("prepare notes and the instructions share one output", async () => {
     const repo = projectedRepo("claude");
     companionOf(repo);

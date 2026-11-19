@@ -1,3 +1,4 @@
+// oxlint-disable no-await-in-loop -- the hash depends on entry order
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -28,7 +29,7 @@ export async function fingerprintWorkspace(root: string): Promise<string> {
   const hash = crypto.createHash("sha256");
   const walk = async (dir: string, prefix: string): Promise<void> => {
     const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
-    for (const entry of [...entries].sort((a, b) => (a.name < b.name ? -1 : 1))) {
+    for (const entry of entries.toSorted((a, b) => (a.name < b.name ? -1 : 1))) {
       if (prefix === "" && entry.name === BUNDLE_MARKER) continue;
       const full = path.join(dir, entry.name);
       const relative = prefix === "" ? entry.name : `${prefix}/${entry.name}`;

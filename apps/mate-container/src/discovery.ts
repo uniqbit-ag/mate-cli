@@ -108,17 +108,18 @@ function remoteOf(directory: string, run: Runner = runCommand): string | null {
   return url === "" ? null : url;
 }
 
+const normalizeRemote = (value: string) =>
+  value
+    .trim()
+    .replace(/\.git$/, "")
+    .replace(/\/+$/, "")
+    .replace(/^git@([^:]+):/, "https://$1/")
+    .replace(/^ssh:\/\/git@/, "https://")
+    .toLowerCase();
+
 /** Two spellings of the same remote should not read as a conflict. */
 export function sameRemote(a: string, b: string): boolean {
-  const normalize = (value: string) =>
-    value
-      .trim()
-      .replace(/\.git$/, "")
-      .replace(/\/+$/, "")
-      .replace(/^git@([^:]+):/, "https://$1/")
-      .replace(/^ssh:\/\/git@/, "https://")
-      .toLowerCase();
-  return normalize(a) === normalize(b);
+  return normalizeRemote(a) === normalizeRemote(b);
 }
 
 export const CLONE_TOKEN_ENV = "MATE_GIT_CLONE_TOKEN";
@@ -197,7 +198,7 @@ export function discoverCompanions(companionsDir: string): string[] {
     const candidate = path.join(companionsDir, entry.name);
     if (isCompanion(candidate)) found.push(path.resolve(candidate));
   }
-  return found.sort();
+  return found.toSorted();
 }
 
 /**

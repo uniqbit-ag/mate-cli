@@ -109,8 +109,8 @@ function PathBody({
             </p>
           ) : null}
           <p className="workflow-description m-0">
-            A workset is one or more changes published together: after Archive change, start again
-            at the top for the next change, and publish once they are archived.
+            A workset is one or more changes published together: after Submit change, start again at
+            the top for the next change, and publish once the workset is merged.
           </p>
           <p className="workflow-detail-hint m-0">
             Choose a stage to see what it does and the prompt that runs it.

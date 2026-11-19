@@ -13,6 +13,7 @@ import {
   runtimeMateBin,
   runtimeWrapperBinPath,
 } from "../../src/runtime/runtime-directory";
+import { umbrellaChildrenBlock } from "../../src/runtime/umbrella-children";
 
 function prependPathEntry(pathValue: string | undefined, entry: string): string {
   const entries = (pathValue ?? "").split(path.delimiter).filter(Boolean);
@@ -79,6 +80,8 @@ function buildSystemPrompt(
   wrapperBinPath: string,
 ): string[] {
   const lines = [materializeCompanionGuidance(guidance.companionGuidance, context, wrapperBinPath)];
+  const children = context.repositoryPath ? umbrellaChildrenBlock(context.repositoryPath) : "";
+  if (children) lines.push("", children);
 
   if (guidance.codebaseExplorationGuidance.trim()) {
     lines.push("", guidance.codebaseExplorationGuidance);

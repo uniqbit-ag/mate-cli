@@ -5,8 +5,17 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { getClaudePluginRoot } from "../../lib/package-paths";
-import { buildSetupInstallationPlan, executeSetupInstallationPlan } from "./engine";
-import type { CapabilityPlugin, ProviderPlugin, SetupContext } from "./plugin";
+import {
+  buildSetupInstallationPlan,
+  collectRuntimeContributionInputs,
+  executeSetupInstallationPlan,
+} from "./engine";
+import type {
+  CapabilityPlugin,
+  ProviderPlugin,
+  RuntimeContributions,
+  SetupContext,
+} from "./plugin";
 
 const tempRoots: string[] = [];
 
@@ -274,5 +283,61 @@ describe("engine contribution reconciliation", () => {
     expect(await fs.readFile(foreign, "utf8")).toBe(
       `{"name":"tools","owner":{"name":"Acme"},"plugins":[]}\n`,
     );
+  });
+
+  const invalidMarkers: [string, RuntimeContributions][] = [
+    [
+      "an empty group marker",
+      {
+        hookGroups: [
+          {
+            event: "PreToolUse",
+            marker: "",
+            group: { hooks: [{ type: "command", command: "acme-hook.sh" }] },
+          },
+        ],
+      },
+    ],
+    ["a whitespace-only hookMarkers entry", { hookMarkers: ["  "] }],
+  ];
+
+  describe.each(invalidMarkers)("%s", (_label, claude) => {
+    const invalid = (): CapabilityPlugin => ({
+      ...declaringCapability([], true),
+      getRuntimeContributions: () => ({ claude }),
+    });
+
+    test("fails the pass naming the Capability and leaves a user hook group alone", async () => {
+      const companionPath = await makeCompanion();
+      const settingsPath = path.join(companionPath, ".claude", "settings.local.json");
+      const before = `${JSON.stringify({
+        hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "user-hook.sh" }] }] },
+      })}\n`;
+      await fs.mkdir(path.dirname(settingsPath), { recursive: true });
+      await fs.writeFile(settingsPath, before, "utf8");
+
+      await expect(runPlan(companionPath, [fakeProvider("claude", []), invalid()])).rejects.toThrow(
+        /"acme".*invalid hook marker/,
+      );
+      expect(await fs.readFile(settingsPath, "utf8")).toBe(before);
+    });
+
+    test("hands the error to onContributionError", async () => {
+      const companionPath = await makeCompanion();
+      const plugins = [fakeProvider("claude", []), invalid()];
+      const config = { allowedAgents: ["claude"], capabilities: [] };
+      const plan = buildSetupInstallationPlan(config, plugins);
+      const errors: [string, unknown][] = [];
+
+      const inputs = await collectRuntimeContributionInputs(
+        { companionPath, config, mode: "setup", activeProviders: plan.activeProviders },
+        plugins,
+        plan,
+        (capabilityId, error) => errors.push([capabilityId, error]),
+      );
+
+      expect(inputs.get("claude")).toBeUndefined();
+      expect(errors).toEqual([["acme", expect.any(Error)]]);
+    });
   });
 });

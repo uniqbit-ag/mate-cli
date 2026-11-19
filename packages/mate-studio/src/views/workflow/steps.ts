@@ -90,7 +90,7 @@ const STAGE_TEXT: Record<SkillStageId, { what: string; why: string }> = {
   },
   apply: {
     what: "Records the delivery branch, avoiding protected branches, then implements the reviewed tasks.",
-    why: "The recorded branch is what archive and publication later wait on.",
+    why: "The recorded branch is what submit and publication later wait on.",
   },
   "inspect-outcome": {
     what: "Shows what the applied change did as a rendered diagram and diff in a Mate report.",
@@ -98,15 +98,15 @@ const STAGE_TEXT: Record<SkillStageId, { what: string; why: string }> = {
   },
   "refine-code": {
     what: "Looks for smaller, clearer code once tests pass, preserving behavior.",
-    why: "Cleanup lands before archive, so shipped code and recorded specs agree.",
+    why: "Cleanup lands before submit, so shipped code and recorded specs agree.",
   },
-  archive: {
-    what: "Applies the delta specs to the local canonical specs and records the delivery; allowed before the branch merges.",
-    why: "A feature's later changes build on canonical specs that already include this one.",
+  submit: {
+    what: "Records the delivery, validates the change, and pushes its Delivery Group's change folders for publication; allowed before the branch merges.",
+    why: "The finished change is safe on the remote and publishable from any machine once merged.",
   },
   publish: {
-    what: "Commits, tags, and pushes archived changes whose delivery branches are merged, chosen by the developer.",
-    why: "Published canonical specs then describe the default branch; unmerged archives wait.",
+    what: "Archives submitted Delivery Groups whose delivery branches are merged, from any machine, and commits and pushes them, chosen by the developer.",
+    why: "Published canonical specs then describe the default branch; unmerged changes wait.",
   },
 };
 
@@ -153,7 +153,7 @@ const OPENSPEC_STAGES: ReadonlySet<SkillStageId> = new Set([
   "explore",
   "propose",
   "apply",
-  "archive",
+  "submit",
 ]);
 
 function badgesFor(stage: DeliveryStage): WorkflowStepBadge[] {

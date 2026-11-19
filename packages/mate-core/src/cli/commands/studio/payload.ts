@@ -8,6 +8,7 @@ import {
   SPECS_RELATIVE_DIR,
 } from "../../../lib/change-layout";
 import { companionTicketFormat, type TicketFormat } from "../../../lib/delivery/branches";
+import { hasUnsubmittedWork } from "../../../lib/delivery/staging/submit";
 import {
   type LinkedRepositoryCatalog,
   linkedRepositoryCatalog,
@@ -20,7 +21,12 @@ import {
   type WorksetStageSources,
   type WorksetWithStage,
 } from "../../../lib/workset/stages";
+import { readSubmittedFolders } from "../../../runtime/companion-git-state";
 import { errorMessage } from "../../../runtime/error-message";
+import {
+  pendingSubmittedChanges,
+  type PendingSubmittedChange,
+} from "../../../runtime/pending-records";
 import { canonicalSpecsFor, discoverArchives } from "../artifact/pending/discovery";
 import { defaultGitOps } from "../artifact/finish/git";
 import { readSpecScopes } from "./areas";
@@ -50,6 +56,11 @@ export interface StudioChange {
   artifacts: StudioChangeArtifact[];
   valid?: boolean;
   issueCount?: number;
+  /**
+   * A submitted change of this name awaits publication, and this folder holds work it lacks:
+   * another change of that name, or edits made since it was submitted.
+   */
+  unsubmitted?: true;
 }
 
 /** One repository/Area pair a spec binds; at least one of the two is set. */
@@ -82,6 +93,9 @@ export interface StudioShippedChange {
   hasProposal: boolean;
 }
 
+/** A submitted change awaiting publication on the pending branch, as last fetched. */
+export type StudioSubmittedChange = PendingSubmittedChange;
+
 /** One Workset card: the record plus its derived stage. */
 export interface StudioWorkset {
   id: string;
@@ -103,6 +117,8 @@ export interface StudioCompanionPayload {
   specs: StudioSpec[];
   /** Newest first. */
   shipped: StudioShippedChange[];
+  /** Submitted changes awaiting publication, the user's own first. */
+  submitted?: StudioSubmittedChange[];
   /** Flattened names retained for the workflow's skill-availability check. */
   skills?: string[];
   skillInventory?: StudioSkillInventory;
@@ -146,6 +162,19 @@ export interface CompanionPayloadDeps {
   archiveAnchors?: typeof archiveAnchors;
   /** Whether an archive's Publication Merge Gate is open: merged, not applicable, or legacy. */
   archiveMergeSettled?: (companionPath: string, anchor: string) => Promise<boolean>;
+  /** How a Workset's submitted changes are read for its stage; lib's local readers by default. */
+  submittedStages?: Pick<WorksetStageSources, "activeDelivery" | "submittedChanges">;
+  /** Submitted changes on the last fetched pending branch; local Git only. */
+  submittedChanges?: (
+    companionPath: string,
+  ) => StudioSubmittedChange[] | Promise<StudioSubmittedChange[]>;
+  /** Whether a local change holds work its submitted namesake lacks. */
+  hasUnsubmittedWork?: (companionPath: string, change: string) => Promise<boolean>;
+}
+
+async function submittedChanges(companionPath: string): Promise<StudioSubmittedChange[]> {
+  const changes = await pendingSubmittedChanges(companionPath, readSubmittedFolders(companionPath));
+  return changes.toSorted((a, b) => Number(b.mine) - Number(a.mine));
 }
 
 function describe(failure: OpenSpecFailure): string {
@@ -231,11 +260,12 @@ async function collectShipped(
 /** The stage readers a caller overrode; absent ones fall back to lib's defaults. */
 function stageSourceOverrides(
   deps: CompanionPayloadDeps,
-): Pick<WorksetStageSources, "readWorksets" | "archiveAnchors" | "archiveMergeSettled"> {
+): Omit<WorksetStageSources, "activeChanges" | "publishedAnchors"> {
   return {
     readWorksets: deps.readWorksets,
     archiveAnchors: deps.archiveAnchors,
     archiveMergeSettled: deps.archiveMergeSettled,
+    ...deps.submittedStages,
   };
 }
 
@@ -367,10 +397,25 @@ export async function assembleCompanionPayload(
     warnings.push(`shipped changes: ${errorMessage(shipped.error)}`);
   }
   const validationItems = validation.ok ? validation.value.items : undefined;
+  let submitted: StudioSubmittedChange[] = [];
+  try {
+    submitted = await (deps.submittedChanges ?? submittedChanges)(companionPath);
+  } catch (error) {
+    warnings.push(`submitted changes: ${errorMessage(error)}`);
+  }
 
   const statusByChange = new Map(
     (status.value.changes ?? []).map((entry) => [entry.changeName, entry]),
   );
+
+  const awaiting = new Set(submitted.map((change) => change.name));
+  const unsubmitted = new Set<string>();
+  for (const { name } of changeList.value.changes ?? []) {
+    if (!awaiting.has(name)) continue;
+    const work = deps.hasUnsubmittedWork ?? hasUnsubmittedWork;
+    // oxlint-disable-next-line no-await-in-loop -- only local changes that are also submitted
+    if (await work(companionPath, name).catch(() => false)) unsubmitted.add(name);
+  }
 
   const changes: StudioChange[] = (changeList.value.changes ?? []).map((change) => {
     const changeStatus = statusByChange.get(change.name);
@@ -386,6 +431,7 @@ export async function assembleCompanionPayload(
         ...(artifact.status === undefined ? {} : { status: artifact.status }),
       })),
       ...validationOf(validationItems, change.name, "change"),
+      ...(unsubmitted.has(change.name) ? { unsubmitted: true as const } : {}),
     };
   });
 
@@ -432,6 +478,7 @@ export async function assembleCompanionPayload(
     changes,
     specs,
     shipped: shippedChanges,
+    submitted,
     skills:
       "skills" in skillInventory
         ? [

@@ -22,9 +22,6 @@ interface FakeGitOptions {
   hasStaged?: boolean;
   hasUpstream?: boolean;
   rebase?: RebaseResult;
-  tagExists?: boolean;
-  /** Per-name tag existence; takes precedence over the blanket `tagExists`. */
-  existingTags?: string[];
   pushOk?: boolean;
   pushError?: string;
   pushTransient?: boolean;
@@ -80,15 +77,6 @@ function makeGit(options: FakeGitOptions = {}): { git: GitOps; calls: GitCall[] 
     },
     async rebaseOntoUpstream() {
       return record("rebaseOntoUpstream", [], options.rebase ?? { ok: true, conflictedPaths: [] });
-    },
-    async tagExists(name) {
-      const exists = options.existingTags
-        ? options.existingTags.includes(name)
-        : (options.tagExists ?? false);
-      return record("tagExists", [name], exists);
-    },
-    async tag(name, message) {
-      return record("tag", [name, message], undefined);
     },
     async push() {
       calls.push({ op: "push", args: [] });
@@ -176,7 +164,7 @@ afterEach(() => {
 });
 
 describe("runFinishEngine — publication pipeline", () => {
-  test("happy path: resolve → branch guard → cap sync → commit → sync → tag → push", async () => {
+  test("happy path: resolve → branch guard → cap sync → commit → sync → push", async () => {
     const h = harness();
 
     const result = await runEngine(h);
@@ -191,13 +179,12 @@ describe("runFinishEngine — publication pipeline", () => {
       "hasUpstream",
       "fetch",
       "rebaseOntoUpstream",
-      "tagExists",
-      "tag",
       "push",
     ]);
     expect(result.status).toBe("ok");
     expect(result.resumed).toBe(false);
-    expect(result.local).toEqual({ committed: true, tagged: true, pushed: true });
+    expect(result.tag).toBeNull();
+    expect(result.local).toEqual({ committed: true, tagged: false, pushed: true });
     expect(process.exitCode).toBe(0);
   });
 
@@ -239,7 +226,6 @@ describe("runFinishEngine — publication pipeline", () => {
 
     expectNoUndo(h);
     expect(ops(h)).not.toContain("commit");
-    expect(ops(h)).not.toContain("tag");
     expect(result.step).toBe("cap-sync");
     expect(result.message).toContain("left in place");
     expect(process.exitCode).toBe(1);
@@ -251,7 +237,7 @@ describe("runFinishEngine — publication pipeline", () => {
     const result = await runEngine(h);
 
     expectNoUndo(h);
-    expect(ops(h)).not.toContain("tag");
+    expect(ops(h)).not.toContain("push");
     expect(result.step).toBe("commit");
     expect(result.status).toBe("error");
     expect(result.message).toContain("left in place");
@@ -270,16 +256,26 @@ describe("runFinishEngine — publication pipeline", () => {
     expect(ops(h)).not.toContain("stagedPaths");
   });
 
-  test("tag name derives from the resolved anchor", async () => {
+  test("the commit carries the finisher's trailers and a transaction, never a tag", async () => {
     const h = harness(
       {},
-      { resolved: { anchorName: "2020-01-01-legacy", commitPaths: COMMIT_PATHS } },
+      {
+        resolved: {
+          anchorName: "2020-01-01-legacy",
+          commitPaths: COMMIT_PATHS,
+          trailers: { "Mate-Artifact": "openspec/2020-01-01-legacy" },
+        },
+      },
     );
 
     const result = await runEngine(h);
 
-    expect(h.gitCalls.find((c) => c.op === "tag")?.args[0]).toBe("openspec/2020-01-01-legacy");
-    expect(result.tag).toBe("openspec/2020-01-01-legacy");
+    const message = String(h.gitCalls.find((c) => c.op === "commit")?.args[0]);
+    expect(message).toMatch(
+      /^chore\(openspec\): finish 2020-01-01-legacy\n\nMate-Artifact: openspec\/2020-01-01-legacy\nMate-Transaction: [0-9a-f-]{36}$/,
+    );
+    expect(result.anchorName).toBe("2020-01-01-legacy");
+    expect(result.tag).toBeNull();
   });
 
   test("a finisher warning is reported in the result and publication continues", async () => {
@@ -299,27 +295,19 @@ describe("runFinishEngine — publication pipeline", () => {
 
     const result = await runEngine(h, { noPush: true });
 
-    expect(ops(h)).toEqual([
-      "defaultBranch",
-      "currentBranch",
-      "add",
-      "hasStagedChanges",
-      "commit",
-      "tagExists",
-      "tag",
-    ]);
+    expect(ops(h)).toEqual(["defaultBranch", "currentBranch", "add", "hasStagedChanges", "commit"]);
     expect(result.status).toBe("skipped");
-    expect(result.local).toEqual({ committed: true, tagged: true, pushed: false });
+    expect(result.local).toEqual({ committed: true, tagged: false, pushed: false });
     expect(process.exitCode).toBe(0);
   });
 
-  test("rebase conflict stops before tag with structured handoff", async () => {
+  test("rebase conflict stops before the push with structured handoff", async () => {
     const h = harness({ rebase: { ok: false, conflictedPaths: ["openspec/specs/a/spec.md"] } });
 
     const result = await runEngine(h);
 
     expect(ops(h)).toContain("commit");
-    expect(ops(h)).not.toContain("tag");
+    expect(ops(h)).not.toContain("push");
     expectNoUndo(h);
     expect(result.step).toBe("sync-remote");
     expect(result.status).toBe("conflict");
@@ -328,7 +316,7 @@ describe("runFinishEngine — publication pipeline", () => {
     expect(process.exitCode).toBe(1);
   });
 
-  test("post-tag push failure retains commit + tag for retry", async () => {
+  test("a push failure retains the commit for retry", async () => {
     const h = harness({ pushOk: false, pushError: "rejected" });
 
     const result = await runEngine(h);
@@ -337,11 +325,11 @@ describe("runFinishEngine — publication pipeline", () => {
     expect(result.step).toBe("push");
     expect(result.status).toBe("error");
     expect(result.message).toContain("retained locally");
-    expect(result.local).toEqual({ committed: true, tagged: true, pushed: false });
+    expect(result.local).toEqual({ committed: true, tagged: false, pushed: false });
     expect(process.exitCode).toBe(1);
   });
 
-  test("an unreachable fetch defers: commit kept, no rebase, no tag, exit zero", async () => {
+  test("an unreachable fetch defers: commit kept, no rebase, no push, exit zero", async () => {
     const h = harness({ fetchFails: { transient: true } });
 
     const result = await runEngine(h);
@@ -349,7 +337,6 @@ describe("runFinishEngine — publication pipeline", () => {
     expectNoUndo(h);
     expect(ops(h)).toContain("commit");
     expect(ops(h)).not.toContain("rebaseOntoUpstream");
-    expect(ops(h)).not.toContain("tag");
     expect(ops(h)).not.toContain("push");
     expect(result.step).toBe("sync-remote");
     expect(result.status).toBe("deferred");
@@ -369,7 +356,7 @@ describe("runFinishEngine — publication pipeline", () => {
     expect(process.exitCode).toBe(1);
   });
 
-  test("an unreachable push defers with commit and tag kept, exit zero", async () => {
+  test("an unreachable push defers with the commit kept, exit zero", async () => {
     const h = harness({ pushOk: false, pushError: "Connection timed out", pushTransient: true });
 
     const result = await runEngine(h);
@@ -378,7 +365,7 @@ describe("runFinishEngine — publication pipeline", () => {
     expect(result.step).toBe("push");
     expect(result.status).toBe("deferred");
     expect(result.message).toContain("Connection timed out");
-    expect(result.local).toEqual({ committed: true, tagged: true, pushed: false });
+    expect(result.local).toEqual({ committed: true, tagged: false, pushed: false });
     expect(process.exitCode).toBe(0);
   });
 
@@ -397,7 +384,7 @@ describe("runFinishEngine — publication pipeline", () => {
 });
 
 describe("runFinishEngine — resumed publication", () => {
-  test("a re-run after a deferred fetch tags, pushes, and reports resumed", async () => {
+  test("a re-run after a deferred fetch pushes and reports resumed", async () => {
     const deferred = harness({ fetchFails: { transient: true } });
     expect((await runEngine(deferred)).status).toBe("deferred");
 
@@ -406,23 +393,11 @@ describe("runFinishEngine — resumed publication", () => {
     const result = await runEngine(h);
 
     expect(ops(h)).toContain("fetch");
-    expect(ops(h)).toContain("tag");
     expect(ops(h)).toContain("push");
     expect(result.status).toBe("ok");
     expect(result.resumed).toBe(true);
-    expect(result.local).toEqual({ committed: true, tagged: true, pushed: true });
-  });
-
-  test("an existing tag is not recreated and reports resumed", async () => {
-    const h = harness({ tagExists: true });
-
-    const result = await runEngine(h);
-
-    expect(ops(h)).not.toContain("tag");
-    expect(result.resumed).toBe(true);
-    expect(result.local.tagged).toBe(true);
-    expect(result.status).toBe("ok");
     expect(result.message).toContain("resumed");
+    expect(result.local).toEqual({ committed: true, tagged: false, pushed: true });
   });
 
   test("nothing to commit means a prior publication committed this anchor", async () => {
@@ -483,13 +458,12 @@ describe("runFinishEngine — default-branch guard", () => {
     expect(process.exitCode).toBe(1);
   });
 
-  test("--no-push is guarded too, because the local tag is the same anchor", async () => {
+  test("--no-push is guarded too, because the local commit is what a later push publishes", async () => {
     const h = harness({ currentBranch: "feature/x" });
 
     const result = await runEngine(h, { noPush: true });
 
     expect(ops(h)).not.toContain("commit");
-    expect(ops(h)).not.toContain("tag");
     expect(result.step).toBe("branch-guard");
     expect(result.status).toBe("error");
   });
@@ -504,25 +478,21 @@ describe("runFinishEngine — default-branch guard", () => {
   });
 });
 
-describe("runFinishEngine — tag namespace and commit subject", () => {
-  const tagged = (h: Harness): GitCall | undefined => h.gitCalls.find((c) => c.op === "tag");
+describe("runFinishEngine — commit subject", () => {
   const committed = (h: Harness): GitCall | undefined => h.gitCalls.find((c) => c.op === "commit");
 
-  test("a finisher supplying neither field keeps the pre-change tag and subject", async () => {
+  test("a finisher without a subject commits the default one", async () => {
     const h = harness();
 
-    const result = await runEngine(h);
+    await runEngine(h);
 
-    expect(result.tag).toBe(`openspec/${ANCHOR}`);
-    expect(tagged(h)?.args[0]).toBe(`openspec/${ANCHOR}`);
-    expect(committed(h)?.args[0]).toBe(`chore(openspec): finish ${ANCHOR}`);
+    expect(String(committed(h)?.args[0])).toStartWith(`chore(openspec): finish ${ANCHOR}\n\n`);
   });
 
-  test("a finisher supplying both fields drives the tag and the subject", async () => {
+  test("a finisher's subject drives the commit, scoped to its paths", async () => {
     const resolved: Produced = {
       anchorName: "2026-09-14",
       commitPaths: ["openspec/specs/widget-api/spec.md"],
-      tagNamespace: "openspec/specs",
       commitSubject: "chore(openspec): sync canonical specs",
     };
     const h = harness({}, { resolved });
@@ -530,9 +500,7 @@ describe("runFinishEngine — tag namespace and commit subject", () => {
     const result = await runEngine(h);
 
     expect(result.status).toBe("ok");
-    expect(result.tag).toBe("openspec/specs/2026-09-14");
-    expect(tagged(h)?.args[0]).toBe("openspec/specs/2026-09-14");
-    expect(committed(h)?.args[0]).toBe("chore(openspec): sync canonical specs");
+    expect(String(committed(h)?.args[0])).toStartWith("chore(openspec): sync canonical specs\n\n");
     expect(committed(h)?.args[1]).toEqual(["openspec/specs/widget-api/spec.md"]);
   });
 
@@ -544,7 +512,6 @@ describe("runFinishEngine — tag namespace and commit subject", () => {
         resolved: {
           anchorName: "2026-09-14",
           commitPaths: ["openspec/specs/widget-api/spec.md"],
-          tagNamespace: "openspec/specs",
           commitSubject: "chore(openspec): sync canonical specs",
         },
       },
@@ -554,81 +521,6 @@ describe("runFinishEngine — tag namespace and commit subject", () => {
     await runEngine(custom);
 
     expect(ops(custom)).toEqual(ops(bare));
-  });
-});
-
-describe("runFinishEngine — tag collision policy", () => {
-  const specs = (overrides: Partial<Produced> = {}): Produced => ({
-    anchorName: "2026-09-14",
-    commitPaths: ["openspec/specs/widget-api/spec.md"],
-    tagNamespace: "openspec/specs",
-    commitSubject: "chore(openspec): sync canonical specs",
-    tagCollision: "suffix",
-    ...overrides,
-  });
-  const tagNames = (h: Harness): unknown[] =>
-    h.gitCalls.filter((c) => c.op === "tag").map((c) => c.args[0]);
-
-  test("a free name is taken as-is", async () => {
-    const h = harness({ existingTags: [] }, { resolved: specs() });
-
-    const result = await runEngine(h);
-
-    expect(result.tag).toBe("openspec/specs/2026-09-14");
-    expect(tagNames(h)).toEqual(["openspec/specs/2026-09-14"]);
-  });
-
-  test("a taken name yields the next free suffix and never moves the existing tag", async () => {
-    const h = harness({ existingTags: ["openspec/specs/2026-09-14"] }, { resolved: specs() });
-
-    const result = await runEngine(h);
-
-    expect(result.tag).toBe("openspec/specs/2026-09-14.2");
-    expect(tagNames(h)).toEqual(["openspec/specs/2026-09-14.2"]);
-  });
-
-  test("suffix selection skips every taken name", async () => {
-    const h = harness(
-      { existingTags: ["openspec/specs/2026-09-14", "openspec/specs/2026-09-14.2"] },
-      { resolved: specs() },
-    );
-
-    const result = await runEngine(h);
-
-    expect(result.tag).toBe("openspec/specs/2026-09-14.3");
-  });
-
-  test("a resumed run reuses its existing tag rather than taking a suffix", async () => {
-    const h = harness(
-      { hasStaged: false, existingTags: ["openspec/specs/2026-09-14"] },
-      { resolved: specs() },
-    );
-
-    const result = await runEngine(h);
-
-    expect(result.resumed).toBe(true);
-    expect(result.tag).toBe("openspec/specs/2026-09-14");
-    expect(tagNames(h)).toEqual([]);
-  });
-
-  test("the default policy still reuses a taken tag", async () => {
-    const h = harness({ tagExists: true }, { resolved: specs({ tagCollision: undefined }) });
-
-    const result = await runEngine(h);
-
-    expect(result.resumed).toBe(true);
-    expect(result.tag).toBe("openspec/specs/2026-09-14");
-    expect(tagNames(h)).toEqual([]);
-  });
-
-  test("suffix probing happens after the remote sync so fetched tags are seen", async () => {
-    const h = harness({ existingTags: ["openspec/specs/2026-09-14"] }, { resolved: specs() });
-
-    await runEngine(h);
-
-    const order = ops(h);
-    expect(order.indexOf("fetch")).toBeLessThan(order.indexOf("tag"));
-    expect(order.indexOf("rebaseOntoUpstream")).toBeLessThan(order.indexOf("tag"));
   });
 });
 
@@ -671,7 +563,7 @@ describe("runFinishEngine — secret scan", () => {
     expect(order).toEqual(["capSync", "scan:false"]);
     expect(scanned).toEqual([COMMIT_PATHS]);
     expect(result.status).toBe("ok");
-    expect(result.local).toEqual({ committed: true, tagged: true, pushed: true });
+    expect(result.local).toEqual({ committed: true, tagged: false, pushed: true });
   });
 
   test("a finding stops before the commit, reporting path, line and rule id", async () => {
@@ -684,7 +576,6 @@ describe("runFinishEngine — secret scan", () => {
     expect(result.secretFindings).toEqual([FINDING]);
     expect(result.local).toEqual({ committed: false, tagged: false, pushed: false });
     expect(ops(h)).not.toContain("add");
-    expect(ops(h)).not.toContain("tag");
     expect(ops(h)).not.toContain("push");
     expect(result.message).toContain(`${FINDING.path}:7 (x/aws)`);
     expect(process.exitCode).toBe(1);

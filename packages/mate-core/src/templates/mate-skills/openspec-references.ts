@@ -23,8 +23,8 @@ const COMMAND_REWRITES: Record<string, string> = {
   "/openspec-propose": "/mate-propose-change",
   "/opsx:apply": "/mate-apply-change",
   "/openspec-apply-change": "/mate-apply-change",
-  "/opsx:archive": "/mate-archive-change",
-  "/openspec-archive-change": "/mate-archive-change",
+  "/opsx:archive": "/mate-submit-change",
+  "/openspec-archive-change": "/mate-submit-change",
   "/opsx:update": "/mate-propose-change",
   "/openspec-update-change": "/mate-propose-change",
 };
@@ -96,6 +96,7 @@ export async function renderOpenSpecReferences(cliPath: string): Promise<Map<str
       for (const vendored of VENDORED_WORKFLOWS) {
         const { workflow } = vendored;
         const generated = path.join(workdir, `.${tool}`, "skills", workflow, "SKILL.md");
+        // oxlint-disable-next-line no-await-in-loop -- a few generated files, in order
         const source = await fs.readFile(generated, "utf8");
         if (!FRONTMATTER.test(source)) {
           throw new Error(`OpenSpec ${workflow} (${tool}) has no skill frontmatter to strip.`);

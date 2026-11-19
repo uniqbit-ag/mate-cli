@@ -74,6 +74,14 @@ function makeContext(
   };
 }
 
+/** The context of a companion already resolved, e.g. by a launch, with its Working Repository. */
+export function companionContext(
+  companionPath: string,
+  repository?: LinkedRepository,
+): FrameworkContext {
+  return makeContext(companionPath, "working-repo", repository);
+}
+
 function isStrictChildPath(parentPath: string, candidatePath: string): boolean {
   const relative = path.relative(parentPath, candidatePath);
   return relative !== "" && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative);
@@ -159,9 +167,11 @@ async function withResolvedHub(context: FrameworkContext): Promise<FrameworkCont
 // 1. MATE_ARTIFACT_PATH env var (agent-launched sessions)
 // 2. CompanionResolver — cwd inside a linked working repo
 // 3. Local .mate/config/framework.yaml in cwd (cwd is the companion itself)
+// `write: false` skips the resolver's self-heal and stale-pointer prune, for read-only callers.
 export async function resolveFrameworkContext(
   cwd: string,
   globalConfigStore = new GlobalConfigStore(),
+  options: { write?: boolean } = {},
 ): Promise<FrameworkContext> {
   const envCompanionPath = process.env.MATE_ARTIFACT_PATH;
   if (envCompanionPath) {
@@ -171,7 +181,11 @@ export async function resolveFrameworkContext(
     );
   }
 
-  const match = await new CompanionResolver(globalConfigStore).resolve(cwd);
+  const write = options.write !== false;
+  const { match } = await new CompanionResolver(globalConfigStore).resolveWithDiagnostics(cwd, {
+    logFailures: write,
+    write,
+  });
   if (match) {
     return withResolvedHub(
       makeContext(

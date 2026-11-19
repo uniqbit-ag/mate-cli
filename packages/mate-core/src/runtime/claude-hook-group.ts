@@ -8,6 +8,8 @@ export interface ClaudeHookCommand {
   command?: string;
   args?: string[];
   timeout?: number;
+  /** Claude Code's hook-level permission-rule filter, e.g. `Bash(git *)`. */
+  if?: string;
 }
 
 export interface ClaudeHookGroup {

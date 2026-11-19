@@ -483,6 +483,24 @@ describe("the session-prepare lifecycle", () => {
     },
   );
 
+  test.skipIf(process.platform === "win32")(
+    "a Capability variable alone is not a managed launch and prepares from the projection",
+    async () => {
+      const companion = await makeTempDir("mate-prepare-companion-");
+      const repo = await openCodeWrappedRepo(companion);
+      const { api } = fakeApi(repo);
+      const calls = withMcp(api as unknown as Record<string, unknown>);
+
+      const cleanup = await withEnv(
+        { ...NO_LAUNCH, MATE_REACT_DOCTOR_BIN_PATH: "/opt/acme/react-doctor" },
+        async () => MateOpenCodePlugin.setup(api),
+      );
+      await (cleanup as (() => Promise<void>) | undefined)?.();
+
+      expect(calls).toEqual(["transform", "reload"]);
+    },
+  );
+
   test("a managed launch stays env-first and registers no prepare", async () => {
     const projected = await makeTempDir("mate-prepare-companion-");
     const launched = await makeTempDir("mate-launched-companion-");

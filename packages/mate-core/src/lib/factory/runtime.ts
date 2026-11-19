@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { parseRemote } from "../delivery/forge";
+import { parseRemote } from "../delivery/remote";
 import { deliveryCheckout } from "../delivery/checkout";
 import { newBranchBase, resolveDeliveryBranch, worktreeAddArgs } from "../delivery/resolve-branch";
 import { resolveWorksetBranch } from "../workset/record";

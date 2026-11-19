@@ -65,6 +65,15 @@ function recordingWatch(fail?: (directory: string) => boolean) {
 
 const settle = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Polls instead of sleeping a fixed time, so a loaded machine only makes the test slower. */
+async function until(
+  condition: () => boolean | Promise<boolean>,
+  timeoutMs = 5_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await condition()) && Date.now() < deadline) await settle(10);
+}
+
 async function gitFixture(): Promise<string> {
   const root = await fs.realpath(await fixture());
   await execFile("git", ["-C", root, "init", "--quiet"]);
@@ -283,11 +292,11 @@ describe("vault manager", () => {
     await manager.tree(root);
     await fs.writeFile(path.join(root, "added.md"), "added");
     listener?.("rename", "added.md");
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await until(async () => JSON.stringify((await manager.tree(root)).tree).includes("added.md"));
     expect(JSON.stringify((await manager.tree(root)).tree)).toContain("added.md");
     await fs.unlink(path.join(root, "added.md"));
     listener?.("rename", "added.md");
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await until(async () => !JSON.stringify((await manager.tree(root)).tree).includes("added.md"));
     expect(JSON.stringify((await manager.tree(root)).tree)).not.toContain("added.md");
     manager.stop();
   });
@@ -301,11 +310,11 @@ describe("vault manager", () => {
     expect(first.generation).toBe(0);
     const seen: unknown[] = [];
     const stop = manager.subscribeTree(root, (generation) => seen.push(generation));
-    await settle(20);
+    await until(() => seen.length >= 1);
     expect(seen).toEqual([0]);
     await fs.writeFile(path.join(root, "added.md"), "added");
     recorder.listeners.get(root)?.("rename", "added.md");
-    await settle(200);
+    await until(() => seen.length >= 2);
     expect(seen).toEqual([0, 1]);
     const next = await manager.tree(root);
     expect(next.generation).toBe(1);
@@ -327,7 +336,7 @@ describe("vault manager", () => {
     });
     const seen: number[] = [];
     manager.subscribeTree(root, (generation) => seen.push(generation));
-    await settle(50);
+    await until(() => seen.length >= 1);
     expect(seen).toEqual([0]);
     expect((await manager.refresh(root)).generation).toBe(0);
     manager.stop();
@@ -360,7 +369,7 @@ describe("vault manager", () => {
     const recorder = recordingWatch();
     const manager = createVaultManager({ watch: recorder.watch });
     await manager.tree(root);
-    await settle();
+    await until(() => recorder.open.size >= 4);
     expect([...recorder.open].sort()).toEqual(
       [
         root,
@@ -388,20 +397,20 @@ describe("vault manager", () => {
 
     await fs.writeFile(path.join(root, "docs", "added.md"), "added");
     recorder.listeners.get(path.join(root, "docs"))?.("rename", "added.md");
-    await settle(50);
+    await until(async () => flatten((await manager.tree(root)).tree).includes("docs/added.md"));
     expect(flatten((await manager.tree(root)).tree)).toContain("docs/added.md");
 
     await fs.unlink(path.join(root, "docs", "added.md"));
     recorder.listeners.get(path.join(root, "docs"))?.("rename", "added.md");
-    await settle(50);
+    await until(async () => !flatten((await manager.tree(root)).tree).includes("docs/added.md"));
     expect(flatten((await manager.tree(root)).tree)).not.toContain("docs/added.md");
 
     await fs.mkdir(path.join(root, "docs", "fresh"));
     await fs.writeFile(path.join(root, "docs", "fresh", "new.md"), "new");
     recorder.listeners.get(path.join(root, "docs"))?.("rename", "fresh");
-    await settle(50);
+    await until(async () => flatten((await manager.tree(root)).tree).includes("docs/fresh/new.md"));
     expect(flatten((await manager.tree(root)).tree)).toContain("docs/fresh/new.md");
-    await settle();
+    await until(() => recorder.open.has(path.join(root, "docs", "fresh")));
     expect(recorder.open.has(path.join(root, "docs", "fresh"))).toBe(true);
     manager.stop();
   });
@@ -419,13 +428,15 @@ describe("vault manager", () => {
     await fs.mkdir(path.join(root, "build", "out"), { recursive: true });
     recorder.listeners.get(root)?.("rename", "fresh");
     recorder.listeners.get(root)?.("rename", "build");
-    await settle(100);
+    await until(() => recorder.open.has(path.join(root, "fresh", "deeper")));
     expect(recorder.open.has(path.join(root, "fresh", "deeper"))).toBe(true);
     expect([...recorder.open].filter((directory) => directory.includes("build"))).toEqual([]);
 
     await fs.writeFile(path.join(root, "fresh", "deeper", "note.md"), "note");
     recorder.listeners.get(path.join(root, "fresh", "deeper"))?.("rename", "note.md");
-    await settle(50);
+    await until(async () =>
+      flatten((await manager.tree(root)).tree).includes("fresh/deeper/note.md"),
+    );
     expect(flatten((await manager.tree(root)).tree)).toContain("fresh/deeper/note.md");
     await settle();
     expect(recorder.open.has(path.join(root, "fresh", "deeper"))).toBe(true);
@@ -449,7 +460,7 @@ describe("vault manager", () => {
 
     await fs.writeFile(path.join(root, "docs", "note.md"), "outside");
     recorder.listeners.get(path.join(root, "docs"))?.("change", "note.md");
-    await settle(100);
+    await until(() => events.at(-1)?.kind === "changed");
     expect(events.at(-1)).toMatchObject({
       kind: "changed",
       content: "outside",
@@ -458,7 +469,7 @@ describe("vault manager", () => {
 
     await fs.unlink(path.join(root, "docs", "note.md"));
     recorder.listeners.get(path.join(root, "docs"))?.("rename", "note.md");
-    await settle(100);
+    await until(() => events.at(-1)?.kind === "removed");
     expect(events.at(-1)).toMatchObject({ kind: "removed" });
 
     unsubscribe();
@@ -528,7 +539,7 @@ describe("vault manager", () => {
     expect((await manager.tree(root)).warning).toContain("Live updates are unavailable");
     failing = false;
     await manager.refresh(root);
-    await settle();
+    await until(() => recorder.open.has(path.join(root, "docs")));
     const result = await manager.tree(root);
     expect(result.watching).toBe(true);
     expect(result.warning).toBeNull();
@@ -605,28 +616,35 @@ describe("vault manager", () => {
     await fs.writeFile(path.join(root, "note.md"), "note");
     const recorder = recordingWatch();
     let watches = 0;
+    // A follower registers only once its root resolved; the close delay leaves that room under load.
+    const closeAfterMs = 200;
     const manager = createVaultManager({
       watch: (directory, listener) => {
         watches += 1;
         return recorder.watch(directory, listener);
       },
-      closeAfterMs: 30,
+      closeAfterMs,
     });
-    const leave = manager.subscribeTree(root, () => {});
-    await settle(20);
+    let followed = 0;
+    const leave = manager.subscribeTree(root, () => (followed += 1));
+    await until(() => followed === 1);
     await manager.tree(root);
     expect(recorder.open.has(root)).toBe(true);
     const leaveFile = manager.subscribe(root, "note.md", () => {});
+    // The file's follower resolves its root like this read does.
+    await manager.open(root, "note.md");
     leave();
-    await settle(60);
+    await settle(closeAfterMs + 100);
     expect(recorder.open.has(root)).toBe(true);
+    // Unfollowed for a moment: a follower arriving within the close delay keeps the watch.
     leaveFile();
-    const again = manager.subscribeTree(root, () => {});
-    await settle(60);
+    const again = manager.subscribeTree(root, () => (followed += 1));
+    await until(() => followed === 2);
+    await settle(closeAfterMs + 100);
     expect(recorder.open.has(root)).toBe(true);
     expect(watches).toBe(1);
     again();
-    await settle(60);
+    await until(() => recorder.open.size === 0);
     expect(recorder.open.size).toBe(0);
     manager.stop();
   });
@@ -664,7 +682,7 @@ describe("vault manager", () => {
 
     await fs.writeFile(path.join(root, "docs", "added.md"), "added");
     listener?.("rename", path.join("docs", "added.md"));
-    await settle(100);
+    await until(async () => flatten((await manager.tree(root)).tree).includes("docs/added.md"));
     expect(flatten((await manager.tree(root)).tree)).toContain("docs/added.md");
     manager.stop();
   });
@@ -693,7 +711,7 @@ describe("vault manager", () => {
     const unsubscribe = manager.subscribe(root, "note.md", (event) => events.push(event));
     const saved = await manager.save(root, "note.md", "human", current.token);
     expect(saved.kind).toBe("saved");
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await until(() => events.some((event) => (event as { kind?: string }).kind === "overwritten"));
     expect(events).toEqual(
       expect.arrayContaining([expect.objectContaining({ kind: "overwritten", content: "agent" })]),
     );

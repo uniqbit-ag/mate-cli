@@ -86,8 +86,8 @@
           "when": "mate.workspaceReady"
         },
         {
-          "id": "mate.readyToArchive",
-          "name": "Ready to archive",
+          "id": "mate.readyToSubmit",
+          "name": "Ready to submit",
           "when": "mate.workspaceReady"
         },
         {
@@ -244,7 +244,7 @@
         },
         {
           "submenu": "mate.archiveChange",
-          "when": "view == mate.readyToArchive && viewItem == change.ready && mate.changeActionAgents",
+          "when": "view == mate.readyToSubmit && viewItem == change.ready && mate.changeActionAgents",
           "group": "mate@1"
         },
         {

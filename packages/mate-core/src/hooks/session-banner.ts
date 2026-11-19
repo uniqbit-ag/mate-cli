@@ -14,6 +14,7 @@ import { FRAMEWORK_NAME } from "../runtime/framework";
 import { projectionFreshness, projectionStalenessLines } from "../runtime/freshness";
 import { mateVersion } from "../runtime/install";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
+import { pendingSubmittedLine } from "../runtime/pending-records";
 import { projectionCheckout } from "../runtime/projection";
 import { hookFolder, hookOutcome, runHook, type HookEnv, type HookOutcome } from "./hook-io";
 
@@ -67,6 +68,9 @@ export async function buildBanner(
   }
   /** `systemMessage` only: the model must never be told to run the command. */
   for (const note of gitNotes) lines.push(`  ${note}`);
+  /** Read after the synchronization above, with bounded local Git only. */
+  const pending = await pendingSubmittedLine(context.companionPath, syncOptions.homeDir);
+  if (pending) lines.push(`  ${pending}`);
 
   return hookOutcome({ systemMessage: lines.join("\n") });
 }

@@ -387,6 +387,38 @@ describe("built server", () => {
     expect(main).not.toContain("view-placeholder");
   });
 
+  test("draws submitted changes awaiting publication on the Overview", async () => {
+    const companion = page.inventory.companions[0]!;
+    const withSubmitted = {
+      ...services,
+      page: async (url: URL) => ({
+        ...(await services.page(url)),
+        companion,
+        payload: {
+          companionPath: companion.path,
+          changes: [],
+          submitted: [{ name: "acme-awaiting", group: "", blocked: false, mine: true }],
+          specs: [],
+          skills: [],
+          topology: null,
+          worksets: [],
+          linkedRepositories: [],
+          worksetProblems: [],
+          warnings: [],
+        },
+      }),
+    } as unknown as StudioServices;
+    const digest = companionDigest(companion.path);
+    const { response } = await follow(
+      `/?companion=${digest}&studioMode=engineering`,
+      withSubmitted,
+    );
+    const html = await response.text();
+    const main = html.slice(html.indexOf('id="studio-main"'), html.indexOf("</main>"));
+    expect(main).toContain("Awaiting publication");
+    expect(main).toContain('data-submitted="acme-awaiting"');
+  });
+
   test("sends the Factory view to the Overview without the factory broker", async () => {
     const handler = await built();
     const response = await handler.fetch(

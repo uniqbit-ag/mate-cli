@@ -4,7 +4,13 @@ Revises the planning artifacts a change already has, for example after a person 
 them, and keeps them consistent with each other. Not a Delivery Path stage.
 
 1. **Name the change.** Use the change the user names; otherwise infer it from the
-   conversation, or list the active changes and ask.
+   conversation, or list the active changes and ask. `openspec list` also names changes
+   awaiting publication: leave a change whose
+   `openspec/changes/<name>/delivery.yaml` says `state: submitted` out of the inference
+   and the list, checking only that `state` line, and revise one only when the user names
+   it. A named submitted change that is not in this checkout, a teammate's or the user's
+   own from another machine, is taken into it first with `mate artifact take "<name>"`;
+   after the revision it is submitted again with `mate-submit-change`.
 
 2. **Follow the OpenSpec workflow.** Read
    [openspec-update-change.md](openspec-update-change.md) and follow it. Propose the requested edit together with the matching edits to the other
@@ -36,7 +42,7 @@ them, and keeps them consistent with each other. Not a Delivery Path stage.
    Swap skill prefixes per **Skill invocation** in `SKILL.md`.
    Start with reviewing the revised artifacts. When the change already has checked
    tasks, then list `/mate-apply-change <change-name>` to carry the revision into code;
-   when every task is checked, `/mate-archive-change <change-name>`.
+   when every task is checked, `/mate-submit-change <change-name>`.
 
 Guardrails:
 

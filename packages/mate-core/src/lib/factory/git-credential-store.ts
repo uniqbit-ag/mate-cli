@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { parseRemote } from "../delivery/forge";
+import { parseRemote } from "../delivery/remote";
 import { FactoryError, hasSpaceOrControl } from "./ids";
 
 /**

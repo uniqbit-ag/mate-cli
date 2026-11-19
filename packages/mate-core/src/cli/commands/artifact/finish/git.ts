@@ -67,10 +67,10 @@ export interface GitOps {
   /** Throws `RemoteFetchError` once transient failures have used up their retries. */
   fetch(): Promise<void>;
   rebaseOntoUpstream(): Promise<RebaseResult>;
-  tagExists(name: string): Promise<boolean>;
-  tag(name: string, message: string): Promise<void>;
-  /** Push the branch and any annotated tags (`--follow-tags`). */
+  /** Push the branch, with any annotated tag an older Mate version created (`--follow-tags`). */
   push(): Promise<PushResult>;
+  /** The commit `HEAD` names; null without one. */
+  headCommit?(): Promise<string | null>;
 }
 
 export interface GitOpsOptions {
@@ -92,7 +92,9 @@ async function withRemoteRetry(
   let result = await attempt();
   for (const delay of REMOTE_RETRY_DELAYS_MS) {
     if (!isTransientRemoteFailure(result)) break;
+    // oxlint-disable-next-line no-await-in-loop -- retry with backoff
     await sleep(delay);
+    // oxlint-disable-next-line no-await-in-loop -- retry with backoff
     result = await attempt();
   }
   return result;
@@ -137,8 +139,7 @@ function parsePorcelainPath(line: string): string {
 }
 
 function parsePorcelainKind(line: string): WorkingTreeChange {
-  const status = line.slice(0, 2);
-  return status.includes("?") || status.includes("A") ? "new" : "modified";
+  return /[?A]/.test(line.slice(0, 2)) ? "new" : "modified";
 }
 
 /** `ls-files --stage -z` output (`<mode> <sha> <stage>\t<path>`) as `update-index` arguments. */
@@ -330,11 +331,9 @@ export function defaultGitOps(
         conflictedPaths: conflicts.out.length > 0 ? conflicts.out.split("\n") : [],
       };
     },
-    async tagExists(name) {
-      return (await exec(["tag", "--list", name])).out.length > 0;
-    },
-    async tag(name, message) {
-      await execOrThrow(["tag", "-a", name, "-m", message]);
+    async headCommit() {
+      const res = await exec(["rev-parse", "--verify", "-q", "HEAD"]);
+      return res.out.length > 0 ? res.out : null;
     },
     async push() {
       const res = await withRemoteRetry(() => git.push(["--follow-tags"]), sleep);

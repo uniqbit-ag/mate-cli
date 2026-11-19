@@ -1,4 +1,4 @@
-import { parseRemote } from "../../delivery/forge";
+import { parseRemote } from "../../delivery/remote";
 import { type ControlState, type RunState, type Situation } from "../runner/state";
 import type { Run } from "../runner/run";
 import { readWorksets } from "../../workset/record";
