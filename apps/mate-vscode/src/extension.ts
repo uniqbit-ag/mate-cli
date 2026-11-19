@@ -563,7 +563,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const runtime = await updateActionRuntime(repository);
     if (!runtime) {
       return void vscode.window.showErrorMessage(
-        "Mate: the companion's allowedAgents lists neither claude nor opencode. Allow one with `mate setup`.",
+        "Mate: the companion's allowedAgents lists neither claude nor opencode. Allow one with `mate companion setup --allowed-agent`.",
       );
     }
     const prompt = actionPrompt(action, runtime, name);
