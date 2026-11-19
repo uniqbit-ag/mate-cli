@@ -68,18 +68,17 @@ Once the managed workspace is open, the sidebar offers:
 
 ### Archive or publish from the sidebar
 
-Right-click a **Ready to archive** item and pick **Archive this**, or a
-**Ready to publish** item and pick **Publish this**. Mate starts a new session
-in the repository root and opens its terminal. The session's
+Right-click a **Ready to archive** item and hover **Archive this**, or a
+**Ready to publish** item and hover **Publish this**, then pick an agent. Mate
+starts a new session of that agent in the repository root and opens its
+terminal. The session's
 first turn runs `mate-archive-change` or `mate-publish-artifact` on the item,
 and the session is listed under **Sessions** like any other.
 
-The session uses the first `claude` or `opencode` entry of the Companion
+The agents offered are the `claude` and `opencode` entries of the Companion
 Repository's `allowedAgents`, which `mate companion setup` records; other
 agents in the list are skipped, and without such an entry the actions are
-hidden. To start OpenCode instead, list it first, for example with
-`mate companion setup --allowed-agent opencode --allowed-agent claude`.
-**New session** still asks for a runtime. The sidebar runs no checks of its
+hidden. **New session** still asks for a runtime. The sidebar runs no checks of its
 own: the skill reports an unmerged delivery branch and asks before it
 publishes anything.
 

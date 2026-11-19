@@ -6,9 +6,9 @@ import path from "node:path";
 
 import {
   actionPrompt,
-  changeActionRuntime,
+  changeActionAgents,
   parseAllowedAgents,
-  readChangeActionRuntime,
+  readChangeActionAgents,
 } from "./actions";
 
 describe("actionPrompt", () => {
@@ -62,25 +62,25 @@ describe("parseAllowedAgents", () => {
   });
 });
 
-describe("changeActionRuntime", () => {
-  test("is the first entry the sidebar can start", () => {
-    expect(changeActionRuntime(["codex", "opencode", "claude"])).toBe("opencode");
-    expect(changeActionRuntime(["claude", "opencode"])).toBe("claude");
-    expect(changeActionRuntime(["codex", "pi"])).toBeNull();
-    expect(changeActionRuntime(undefined)).toBeNull();
+describe("changeActionAgents", () => {
+  test("are the entries the sidebar can start, Claude first", () => {
+    expect(changeActionAgents(["codex", "opencode", "claude"])).toEqual(["claude", "opencode"]);
+    expect(changeActionAgents(["pi", "opencode"])).toEqual(["opencode"]);
+    expect(changeActionAgents(["codex", "pi"])).toEqual([]);
+    expect(changeActionAgents(undefined)).toEqual([]);
   });
 
   test("reads the linked companion's framework.yaml", async () => {
     const repo = await fs.mkdtemp(path.join(os.tmpdir(), "acme-agents-"));
     try {
-      expect(await readChangeActionRuntime(repo)).toBeNull();
+      expect(await readChangeActionAgents(repo)).toEqual([]);
       const config = path.join(repo, ".mate/companion/.mate/config");
       await fs.mkdir(config, { recursive: true });
       await fs.writeFile(
         path.join(config, "framework.yaml"),
         "allowedAgents:\n  - pi\n  - claude\n",
       );
-      expect(await readChangeActionRuntime(repo)).toBe("claude");
+      expect(await readChangeActionAgents(repo)).toEqual(["claude"]);
     } finally {
       await fs.rm(repo, { recursive: true, force: true });
     }

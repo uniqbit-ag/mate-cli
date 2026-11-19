@@ -4,7 +4,12 @@ import path from "node:path";
 
 import * as vscode from "vscode";
 
-import { actionPrompt, readChangeActionRuntime, type ChangeAction } from "./actions";
+import {
+  actionPrompt,
+  CHANGE_ACTION_AGENTS,
+  readChangeActionAgents,
+  type ChangeAction,
+} from "./actions";
 import { readOpenChanges, readyToArchive, type OpenChange } from "./changes";
 import {
   groupSessions,
@@ -274,11 +279,20 @@ function reportWorkspaceError(error: unknown) {
   );
 }
 
-/** Gates the change action menus; read with every load that shows them. */
-async function updateActionRuntime(repository: WindowRepository) {
-  const runtime = await readChangeActionRuntime(repository.root);
-  await vscode.commands.executeCommand("setContext", "mate.changeActionRuntime", runtime ?? false);
-  return runtime;
+/** Gates the change action submenus and their entries; read with every load that shows them. */
+async function updateActionAgents(repository: WindowRepository) {
+  const agents = await readChangeActionAgents(repository.root);
+  await Promise.all([
+    vscode.commands.executeCommand("setContext", "mate.changeActionAgents", agents.length > 0),
+    ...CHANGE_ACTION_AGENTS.map((agent) =>
+      vscode.commands.executeCommand(
+        "setContext",
+        `mate.changeAction.${agent}`,
+        agents.includes(agent),
+      ),
+    ),
+  ]);
+  return agents;
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -447,7 +461,7 @@ export function activate(context: vscode.ExtensionContext): void {
     forRepository(async (repository) => {
       const [view] = await Promise.all([
         repositoryView(repository),
-        updateActionRuntime(repository),
+        updateActionAgents(repository),
       ]);
       if (!view.changes.linked) return { message: NOT_LINKED };
       return { items: view.ready.map(readyItem) };
@@ -458,9 +472,7 @@ export function activate(context: vscode.ExtensionContext): void {
     "mate.readyToPublish",
     forRepository(async (repository) => ({
       items: toPendingItems(
-        (
-          await Promise.all([pendingArtifacts(repository.root), updateActionRuntime(repository)])
-        )[0],
+        (await Promise.all([pendingArtifacts(repository.root), updateActionAgents(repository)]))[0],
       ).map((item) => ({
         label: item.name,
         description: item.waitingForMerge ? "waiting for merge" : undefined,
@@ -547,19 +559,15 @@ export function activate(context: vscode.ExtensionContext): void {
     sessions.refresh();
   };
 
-  /**
-   * Starts the companion's first allowed Claude or OpenCode in the repository root
-   * on the item's skill; no precondition checks.
-   */
-  const startChangeAction = async (action: ChangeAction, item?: SectionItem) => {
+  /** Starts the picked agent in the repository root on the item's skill; no precondition checks. */
+  const startChangeAction = async (action: ChangeAction, runtime: Runtime, item?: SectionItem) => {
     const name = (item?.data as ActionTarget | undefined)?.name;
     const repository = gate.state.repository;
     if (!name || !repository) return;
-    // The menu shows the last load's runtime; `allowedAgents` may have changed since.
-    const runtime = await updateActionRuntime(repository);
-    if (!runtime) {
+    // The menu shows the last load's agents; `allowedAgents` may have changed since.
+    if (!(await updateActionAgents(repository)).includes(runtime)) {
       return void vscode.window.showErrorMessage(
-        "Mate: the companion's allowedAgents lists neither claude nor opencode. Allow one with `mate companion setup --allowed-agent`.",
+        `Mate: the companion's allowedAgents no longer lists ${runtime}. Allow it with \`mate companion setup --allowed-agent\`.`,
       );
     }
     const prompt = actionPrompt(action, runtime, name);
@@ -739,12 +747,14 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.executeCommand("mate.resumeSession", item),
     ),
 
-    vscode.commands.registerCommand("mate.archiveChange", (item?: SectionItem) =>
-      startChangeAction("archive", item),
-    ),
-    vscode.commands.registerCommand("mate.publishArtifact", (item?: SectionItem) =>
-      startChangeAction("publish", item),
-    ),
+    ...CHANGE_ACTION_AGENTS.flatMap((runtime) => [
+      vscode.commands.registerCommand(`mate.archiveChange.${runtime}`, (item?: SectionItem) =>
+        startChangeAction("archive", runtime, item),
+      ),
+      vscode.commands.registerCommand(`mate.publishArtifact.${runtime}`, (item?: SectionItem) =>
+        startChangeAction("publish", runtime, item),
+      ),
+    ]),
 
     vscode.commands.registerCommand("mate.removeSession", async (item?: SectionItem) => {
       const session = sessionOf(item);

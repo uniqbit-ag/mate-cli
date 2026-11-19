@@ -393,10 +393,11 @@ Once that workspace is open, the Mate sidebar shows:
   marked when they still wait for their merge.
 
 The context menu of a Ready to archive item offers _Archive this_, and that
-of a Ready to publish item _Publish this_. Each starts a new sidebar session
-of the companion's first `claude` or `opencode` entry in `allowedAgents` in
-the repository root, running `mate-archive-change` or
-`mate-publish-artifact` on the item. Without such an entry, the actions are hidden.
+of a Ready to publish item _Publish this_. Each opens a submenu with the
+companion's `claude` and `opencode` entries in `allowedAgents`; picking one
+starts a new sidebar session of that agent in the repository root, running
+`mate-archive-change` or `mate-publish-artifact` on the item. Without such an
+entry, the actions are hidden.
 
 The sidebar reloads when it becomes visible and on **Refresh**.
 

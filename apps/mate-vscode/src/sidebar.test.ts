@@ -590,7 +590,7 @@ describe("workspace gate wiring", () => {
       const { repo, pending } = await withActionItems(["codex", "opencode", "claude"]);
       const add = (await import("bun:test")).spyOn(mate, "addSession");
       add.mockImplementation(async () => ({}) as never);
-      await handlers.get("mate.publishArtifact")!(pending);
+      await handlers.get("mate.publishArtifact.opencode")!(pending);
       expect(add.mock.calls[0]![0]).toMatchObject({ runtime: "opencode", cwd: repo });
       expect(terminals.at(-1)!.cwd).toBe(repo);
       expect(terminals.at(-1)!.sent[0]).toMatch(
@@ -600,7 +600,7 @@ describe("workspace gate wiring", () => {
 
     test("Claude archives in the background with the slash command as first turn", async () => {
       jest.useFakeTimers();
-      const { repo, ready } = await withActionItems(["claude", "opencode"]);
+      const { repo, ready } = await withActionItems(["opencode", "claude"]);
       const { spyOn } = await import("bun:test");
       spyOn(mate, "claudeSupportsBackground").mockImplementation(async () => true);
       const start = spyOn(mate, "startClaudeBackground").mockImplementation(async () => ({
@@ -608,7 +608,7 @@ describe("workspace gate wiring", () => {
         sessionId: "c25175db-b143",
       }));
       const add = spyOn(mate, "addSession").mockImplementation(async () => ({}) as never);
-      await handlers.get("mate.archiveChange")!(ready);
+      await handlers.get("mate.archiveChange.claude")!(ready);
       expect(start).toHaveBeenCalledWith(
         repo,
         undefined,
@@ -620,59 +620,75 @@ describe("workspace gate wiring", () => {
     });
 
     test("the menu context follows allowedAgents across reloads", async () => {
+      const menuContext = () =>
+        ["mate.changeActionAgents", "mate.changeAction.claude", "mate.changeAction.opencode"].map(
+          (key) => contexts.get(key),
+        );
       const { repo } = await withActionItems(["pi", "opencode"]);
-      expect(contexts.get("mate.changeActionRuntime")).toBe("opencode");
+      expect(menuContext()).toEqual([true, false, true]);
       await allowAgents(repo, ["codex"]);
       await providers.get("mate.readyToPublish")!.getChildren();
-      expect(contexts.get("mate.changeActionRuntime")).toBe(false);
-      await allowAgents(repo, ["claude"]);
+      expect(menuContext()).toEqual([false, false, false]);
+      await allowAgents(repo, ["opencode", "claude"]);
       await providers.get("mate.readyToArchive")!.getChildren();
-      expect(contexts.get("mate.changeActionRuntime")).toBe("claude");
+      expect(menuContext()).toEqual([true, true, true]);
     });
 
-    test("no supported allowed agent or an unsafe name starts nothing and shows an error", async () => {
-      const { repo, ready } = await withActionItems(["codex"]);
-      expect(contexts.get("mate.changeActionRuntime")).toBe(false);
+    test("an agent no longer allowed or an unsafe name starts nothing and shows an error", async () => {
+      const { repo, ready } = await withActionItems(["codex", "opencode"]);
+      expect(contexts.get("mate.changeAction.claude")).toBe(false);
       const { spyOn } = await import("bun:test");
       const add = spyOn(mate, "addSession").mockImplementation(async () => ({}) as never);
       const start = spyOn(mate, "startClaudeBackground");
       const { window } = await import("vscode");
       const shown = window.showErrorMessage as unknown as ReturnType<typeof mock>;
       shown.mockClear();
-      await handlers.get("mate.archiveChange")!(ready);
+      await handlers.get("mate.archiveChange.claude")!(ready);
+      await allowAgents(repo, ["codex"]);
+      await handlers.get("mate.archiveChange.opencode")!(ready);
       await allowAgents(repo, ["opencode"]);
-      await handlers.get("mate.archiveChange")!({ ...ready, data: { name: "acme;rm -rf" } });
+      await handlers.get("mate.archiveChange.opencode")!({
+        ...ready,
+        data: { name: "acme;rm -rf" },
+      });
       expect(add).not.toHaveBeenCalled();
       expect(start).not.toHaveBeenCalled();
       expect(terminals).toHaveLength(0);
       expect(shown.mock.calls.map(([message]) => message)).toEqual([
-        expect.stringContaining("allowedAgents"),
+        expect.stringContaining("no longer lists claude"),
+        expect.stringContaining("no longer lists opencode"),
         expect.stringContaining("acme;rm -rf"),
       ]);
     });
 
-    test("menus show only on their section's items while a runtime resolves", async () => {
+    test("submenus show only on their section's items and list each allowed agent", async () => {
+      await openRepository();
       const manifest = await Bun.file(path.join(import.meta.dir, "../package.json")).json();
-      const menu = (command: string) =>
-        manifest.contributes.menus["view/item/context"].find(
-          (entry: { command: string }) => entry.command === command,
-        );
+      const { menus } = manifest.contributes;
+      const menu = (submenu: string) =>
+        menus["view/item/context"].find((entry: { submenu?: string }) => entry.submenu === submenu);
       expect(menu("mate.archiveChange")).toEqual({
-        command: "mate.archiveChange",
-        when: "view == mate.readyToArchive && viewItem == change.ready && mate.changeActionRuntime",
+        submenu: "mate.archiveChange",
+        when: "view == mate.readyToArchive && viewItem == change.ready && mate.changeActionAgents",
         group: "mate@1",
       });
       expect(menu("mate.publishArtifact")).toEqual({
-        command: "mate.publishArtifact",
-        when: "view == mate.readyToPublish && viewItem == pending && mate.changeActionRuntime",
+        submenu: "mate.publishArtifact",
+        when: "view == mate.readyToPublish && viewItem == pending && mate.changeActionAgents",
         group: "mate@1",
       });
-      const hidden = manifest.contributes.menus.commandPalette.map(
-        (entry: { command: string }) => entry.command,
+      const commands = ["mate.archiveChange", "mate.publishArtifact"].flatMap((submenu) =>
+        ["claude", "opencode"].map((agent) => `${submenu}.${agent}`),
       );
-      expect(hidden).toEqual(
-        expect.arrayContaining(["mate.archiveChange", "mate.publishArtifact"]),
-      );
+      for (const submenu of ["mate.archiveChange", "mate.publishArtifact"]) {
+        expect(menus[submenu]).toEqual([
+          { command: `${submenu}.claude`, when: "mate.changeAction.claude", group: "agents@1" },
+          { command: `${submenu}.opencode`, when: "mate.changeAction.opencode", group: "agents@2" },
+        ]);
+      }
+      for (const command of commands) expect(handlers.has(command)).toBe(true);
+      const hidden = menus.commandPalette.map((entry: { command: string }) => entry.command);
+      expect(hidden).toEqual(expect.arrayContaining(commands));
       expect(Object.keys(manifest.contributes.configuration.properties)).toEqual([
         "mate.autoRefreshInterval",
       ]);
