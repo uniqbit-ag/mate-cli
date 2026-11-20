@@ -2,7 +2,7 @@ import {
   type CredentialKind,
   type CredentialStatus,
   FACTORY_CREDENTIAL_ROUTE,
-} from "@uniqbit/mate-core/studio";
+} from "@uniqbit/mate-core/factory-studio";
 
 /**
  * The Agents panel's calls to the factory credential route. Only the status is cached;

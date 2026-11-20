@@ -5,16 +5,19 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { rankOf } from "../../../lib/factory/runner/rank";
-import { Run } from "../../../lib/factory/runner/run";
-import { FactoryRunner } from "../../../lib/factory/runner/scheduler";
-import { RunStore } from "../../../lib/factory/runner/state";
-import type { StageAgent } from "../../../lib/factory/runner/workflow";
-import { advanceWorkset, readWorksets } from "../../../lib/workset/record";
-import { factoryOutcomes } from "../../../lib/factory/outcomes";
-import type { StudioCompanionPayload, StudioWorkset } from "./payload";
-import { companionDigest } from "./selection";
-import { createStudioFetch } from "./server";
+import { rankOf } from "../runner/rank";
+import { Run } from "../runner/run";
+import { FactoryRunner } from "../runner/scheduler";
+import { RunStore } from "../runner/state";
+import type { StageAgent } from "../runner/workflow";
+import { advanceWorkset, readWorksets } from "../../workset/record";
+import { factoryOutcomes } from "../outcomes";
+import type { StudioCompanionPayload, StudioWorkset } from "../../../cli/commands/studio/payload";
+import { companionDigest } from "../../../cli/commands/studio/selection";
+import { createStudioFetch } from "../../../cli/commands/studio/server";
+import type { FactoryClient } from "../client";
+import { factoryStudio } from "./contribution";
+import { FACTORY_ACTION_ROUTE, factoryLogRoute, factoryLogStreamRoute } from "./routes";
 
 let root: string;
 let companion: string;
@@ -94,33 +97,52 @@ function handlerFor(options: { runner?: boolean; writable?: boolean } = {}) {
         companions: [{ path: home, health: "ready", pairings: [] }],
       }),
       assembleCompanionPayload: async () => payload(),
-      worksetStages: async () => ({
-        worksets: (await readWorksets(home)).worksets.map((record) => ({
-          record,
-          derived: { stage, label: stage, turn: "human" as const, problems: [] },
-        })),
-      }),
-      factoryOutcomes: (portsFor) =>
-        options.runner === false
-          ? null
-          : factoryOutcomes({
-              ...portsFor(home),
-              runner,
-              runs,
-              companionPath: home,
-              client: { list: async () => [], delete: async () => {} },
+      services: [
+        {
+          apiVersion: 1,
+          id: "factory",
+          label: "Factory",
+          studio: (host) =>
+            factoryStudio(host, {
+              client: {} as FactoryClient,
+              worksetStages: async () => ({
+                worksets: (await readWorksets(home)).worksets.map((record) => ({
+                  record,
+                  derived: { stage, label: stage, turn: "human" as const, problems: [] },
+                })),
+              }),
+              outcomes: (portsFor) =>
+                options.runner === false
+                  ? null
+                  : factoryOutcomes({
+                      ...portsFor(home),
+                      runner,
+                      runs,
+                      companionPath: home,
+                      client: { list: async () => [], delete: async () => {} },
+                    }),
             }),
+        },
+      ],
     },
     { writable: options.writable ?? true },
   );
   /** One board action on the Outcome, as Studio's factory server function calls it. */
-  const act = (action: string, fields: Record<string, string> = {}) =>
-    handler.services.worksetAction(
-      companionDigest(home),
-      "acme-login",
-      action,
-      (name) => fields[name] ?? "",
+  const act = async (action: string, fields: Record<string, string> = {}) => {
+    const response = await handler.services.callService(
+      new Request(`http://localhost${FACTORY_ACTION_ROUTE}`, {
+        method: "POST",
+        body: JSON.stringify({
+          companion: companionDigest(home),
+          action,
+          id: "acme-login",
+          fields,
+        }),
+      }),
     );
+    const answer = (await response.json()) as { reason?: string };
+    if (!response.ok) throw new Error(answer.reason ?? String(response.status));
+  };
   return { handler, runner, act };
 }
 
@@ -361,7 +383,7 @@ describe("the board's runner actions", () => {
     const { handler, act } = handlerFor();
     await runs.log("acme-login", "> /mate-propose-change\nthinking");
     const response = (await handler(
-      new Request("http://localhost/api/factory/worksets/acme-login/log"),
+      new Request(`http://localhost${factoryLogRoute("acme-login")}`),
     ))!;
     expect(await response.text()).toContain("thinking");
     handler.close();
@@ -371,7 +393,7 @@ describe("the board's runner actions", () => {
     const { handler, runner, act } = handlerFor();
     await runs.log("acme-login", "Explored.\n");
     const response = (await handler(
-      new Request("http://localhost/api/factory/worksets/acme-login/log/stream"),
+      new Request(`http://localhost${factoryLogStreamRoute("acme-login")}`),
     ))!;
     expect(response.headers.get("content-type")).toStartWith("text/event-stream");
     const reader = response.body!.getReader();

@@ -19,7 +19,8 @@ const SERVER = path.join(import.meta.dir, "../dist/server/server.js");
 const servicesFor = (profile: StudioProfile) =>
   ({
     writable: false,
-    factoryMode: true,
+    services: () => [{ id: "factory", label: "Factory", views: [] }],
+    callService: async () => Response.json({ runs: null, sessions: null }),
     keepsFolder: () => false,
     modePolicy: modePolicy(profile),
     page: async (url: URL) => ({
@@ -96,7 +97,7 @@ describe("built server", () => {
     let asked = 0;
     const studio = {
       ...selecting(services),
-      factoryMode: false,
+      services: () => [],
       usage: async () => {
         asked += 1;
         throw new Error("not during document rendering");
@@ -141,7 +142,7 @@ describe("built server", () => {
     }
   });
   test("renders bundled developer guides with the initial response and native links", async () => {
-    const selected = { ...selecting(services), factoryMode: false };
+    const selected = { ...selecting(services), services: () => [] };
     for (const [topic, expected] of [
       ["", "Your first change"],
       ["/worktrees", "Work in an isolated checkout"],
@@ -170,7 +171,7 @@ describe("built server", () => {
   test("Start here teaches the existing-checkout workflow without optional setup steps", async () => {
     const { response } = await follow(
       `/getting-started?companion=${acmeDigest}&studioMode=engineering`,
-      { ...selecting(services), factoryMode: false },
+      { ...selecting(services), services: () => [] },
     );
     const html = await response.text();
     expect(html).toContain(
@@ -423,7 +424,7 @@ describe("built server", () => {
     const handler = await built();
     const response = await handler.fetch(
       new Request("http://127.0.0.1/factory?studioMode=engineering"),
-      { context: { studio: { ...services, factoryMode: false } } },
+      { context: { studio: { ...services, services: () => [] } } },
     );
     expect(response.status).toBe(307);
     expect(new URL(response.headers.get("location")!, "http://127.0.0.1").pathname).toBe("/");

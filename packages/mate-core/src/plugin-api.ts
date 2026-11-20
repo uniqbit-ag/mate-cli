@@ -16,3 +16,26 @@ export type {
   SetupScope,
 } from "./tools/setup/plugin";
 export type { ClaudeHookCommand, ClaudeHookGroup } from "./runtime/claude-hook-group";
+export type {
+  CompanionSourceResult,
+  PluginService,
+  ServiceApiVersion,
+  ServiceCommand,
+  ServiceConnection,
+  StudioCompanionSource,
+  StudioRoute,
+  StudioRouteAccess,
+  StudioRouteContext,
+  StudioRouteMethod,
+  StudioServiceContribution,
+  StudioServiceHost,
+  StudioSocketHandler,
+  StudioSocketPeer,
+  StudioTerminalHost,
+  StudioView,
+  StudioViewMount,
+  StudioViewMountContext,
+  StudioWorksetSessions,
+  WorksetSessionCloseReason,
+  WorksetSessionResolution,
+} from "./tools/setup/service";

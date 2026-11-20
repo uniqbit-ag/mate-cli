@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { FactoryError } from "../../../lib/factory/ids";
+import type { CompanionSourceResult } from "../../../tools/setup/service";
 import type { CompanionRegistrationResult } from "../../../lib/orchestrator/companion-registration";
 import { addCompanionByPath, addCompanionByUrl } from "./companion-add";
 
@@ -10,7 +10,7 @@ const CLONE = `${DIR}/acme-companion`;
 
 function fakes(
   options: {
-    clone?: { path: string; existing: boolean } | FactoryError;
+    clone?: CompanionSourceResult;
     registered?: Record<string, CompanionRegistrationResult>;
     dirs?: string[];
   } = {},
@@ -23,13 +23,11 @@ function fakes(
     registered,
     cloned,
     deps: {
-      companionsDir: DIR,
-      client: {
-        cloneCompanion: async (url: string) => {
+      source: {
+        folder: DIR,
+        addByUrl: async (url: string): Promise<CompanionSourceResult> => {
           cloned.push(url);
-          const outcome = options.clone ?? { path: CLONE, existing: false };
-          if (outcome instanceof FactoryError) throw outcome;
-          return outcome;
+          return options.clone ?? { ok: true, path: CLONE, existing: false };
         },
       },
       register: async (target: string): Promise<CompanionRegistrationResult> => {
@@ -51,9 +49,9 @@ function fakes(
 }
 
 describe("adding a companion by Git URL", () => {
-  it("clones through the broker, registers the checkout and reports it", async () => {
+  it("fetches through the source, registers the checkout and reports it", async () => {
     const { deps, cloned, registered } = fakes();
-    expect(await addCompanionByUrl(` ${URL} `, deps)).toEqual({
+    expect(await addCompanionByUrl(URL, deps)).toEqual({
       ok: true,
       companionPath: CLONE,
       existing: false,
@@ -62,36 +60,16 @@ describe("adding a companion by Git URL", () => {
     expect(registered).toEqual([CLONE]);
   });
 
-  it("refuses a local path or a file URL before asking the broker", async () => {
-    const { deps, cloned } = fakes();
-    for (const url of ["/srv/companion", "file:///srv/companion", ""]) {
-      const result = await addCompanionByUrl(url, deps);
-      expect(result.ok).toBe(false);
-    }
-    expect(cloned).toEqual([]);
-  });
-
-  it("offers the Git token key when the clone was refused for authentication", async () => {
+  it("passes the source's refusal on and registers nothing", async () => {
     const { deps, registered } = fakes({
-      clone: new FactoryError(
-        "cloning acme/acme-companion failed: authentication to git.acme.test/acme failed",
-        "auth",
-      ),
+      clone: { ok: false, reason: "authentication failed", tokenKey: "git.acme.test/acme" },
     });
     expect(await addCompanionByUrl(URL, deps)).toEqual({
       ok: false,
-      reason: expect.stringContaining("git.acme.test/acme"),
+      reason: "authentication failed",
       tokenKey: "git.acme.test/acme",
     });
     expect(registered).toEqual([]);
-  });
-
-  it("any other refusal is reported without a token key", async () => {
-    const { deps } = fakes({
-      clone: new FactoryError("/companions/acme-companion already holds a different repository"),
-    });
-    const result = await addCompanionByUrl(URL, deps);
-    expect(result).toEqual({ ok: false, reason: expect.stringContaining("different repository") });
   });
 
   it("removes a fresh clone that is not a companion and registers nothing", async () => {
@@ -110,7 +88,7 @@ describe("adding a companion by Git URL", () => {
 
   it("never removes a checkout that was already there", async () => {
     const { deps, removed } = fakes({
-      clone: { path: CLONE, existing: true },
+      clone: { ok: true, path: CLONE, existing: true },
       registered: { [CLONE]: { ok: false, companionPath: CLONE, reason: "nothing to register." } },
     });
     expect((await addCompanionByUrl(URL, deps)).ok).toBe(false);
@@ -118,7 +96,7 @@ describe("adding a companion by Git URL", () => {
   });
 
   it("an existing checkout is registered and reported as already added", async () => {
-    const { deps, cloned } = fakes({ clone: { path: CLONE, existing: true } });
+    const { deps, cloned } = fakes({ clone: { ok: true, path: CLONE, existing: true } });
     expect(await addCompanionByUrl(URL, deps)).toEqual({
       ok: true,
       companionPath: CLONE,

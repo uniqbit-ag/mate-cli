@@ -40,8 +40,8 @@ import {
   type OutcomeAction,
   outcomeActions,
   questionsOf,
-  type StudioWorkset,
-} from "@uniqbit/mate-core/studio";
+} from "@uniqbit/mate-core/factory-studio";
+import { type StudioWorkset } from "@uniqbit/mate-core/studio";
 import {
   type Activity,
   ACTIVITY_LABELS,

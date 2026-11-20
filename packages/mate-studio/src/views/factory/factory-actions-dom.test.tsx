@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
-import type { FactoryRunView, StudioWorkset } from "@uniqbit/mate-core/studio";
+import type { FactoryRunView } from "@uniqbit/mate-core/factory-studio";
+import type { StudioWorkset } from "@uniqbit/mate-core/studio";
 
 import type { FactoryPayload } from "../../server/factory";
 

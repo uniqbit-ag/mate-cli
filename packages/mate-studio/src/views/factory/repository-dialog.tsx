@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { RepositoryAddInput, RepositoryAddResult } from "@uniqbit/mate-core/studio";
+import type { RepositoryAddInput, RepositoryAddResult } from "@uniqbit/mate-core/factory-studio";
 import { useState } from "react";
 
 import { Button } from "../../components/ui/button";
