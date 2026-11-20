@@ -1,13 +1,13 @@
 import path from "node:path";
 
-import { workingRepoGit } from "../../../lib/delivery/branches";
-import { checkedCloneUrl } from "../../../lib/factory/clone-url";
-import type { FactoryClient } from "../../../lib/factory/client";
-import { gitKeyOf } from "../../../lib/factory/git-credential-store";
-import { FactoryError } from "../../../lib/factory/ids";
-import { pathIsDirectory } from "../../../lib/fs-utils";
-import { addLocalRepository, removeLocalRepository } from "../../../lib/workset/factory-local";
-import { linkedRepositoryIdentities } from "../../../lib/workset/repositories";
+import { workingRepoGit } from "../../delivery/branches";
+import { checkedCloneUrl } from "../clone-url";
+import type { FactoryClient } from "../client";
+import { gitKeyOf } from "../git-credential-store";
+import { FactoryError } from "../ids";
+import { pathIsDirectory } from "../../fs-utils";
+import { addLocalRepository, removeLocalRepository } from "../../workset/factory-local";
+import { linkedRepositoryIdentities } from "../../workset/repositories";
 
 export type RepositoryAddInput = { kind: "url"; url: string } | { kind: "path"; path: string };
 

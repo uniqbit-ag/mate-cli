@@ -1,6 +1,7 @@
 import { getActiveDistribution } from "../distribution";
 import { FRAMEWORK_NAME } from "../framework";
 import { pluginCliCommandLines } from "./plugin-commands";
+import { serviceCommandLines } from "../tools/setup/service-registry";
 
 export function usage(): string {
   const n = FRAMEWORK_NAME;
@@ -61,9 +62,7 @@ export function usage(): string {
     "   [--detach-timeout <minutes>] [--token <value>] [--allowed-host <host>]",
     "   [--public-origin <origin>] [--companion <path>] [--no-git]",
     "   [--profile standard|appliance]",
-    ` ${n} factory serve --socket <path> --docker-host <url> --state-dir <dir> --image <image>`,
-    "   --user <name> --companions-dir <dir> (the appliance's factory broker, run as root)",
-    ` ${n} factory attach <workset> --session <id> --companion <path> [--start clarify|explore|continue]`,
+    ...serviceCommandLines(),
     ` ${n} config`,
     ` ${n} vscode setup [--editor code|cursor] [--vsix <path>] [--if-installed]`,
     ` ${n} claude [args...] (after --: --no-git, --companion, --yes no-op)`,

@@ -1,0 +1,58 @@
+#!/bin/sh
+# Guildhall's Evidence check: Guildhall runs it in a clean checkout after each
+# round. It mirrors the CI job ci-ok (.github/workflows/ci.yml): lint, format,
+# typecheck, image locks and the docs check; and adds the suites CI leaves out:
+# mate-core (unit and integration), mate-cli's unit tests and Studio's
+# typecheck and tests.
+#
+# Left out on purpose:
+# - mate-cli's e2e suite drives a TTY through `expect`, which the workshop
+#   lacks.
+# - mate-container and mate-factory tests start Docker images (Sysbox for the
+#   factory), which the workshop cannot run; CI runs them when apps change.
+# - knip: CI does not run it, and main carries findings of its own.
+# - mate-cli's `prepare` installs lefthook, which the workshop lacks; bun install
+#   reports it and goes on.
+set -eu
+
+cd "$(dirname "$0")/.."
+PATH="$HOME/.bun/bin:$PATH"
+
+# The test runner leaves Git's system config out (the workshop's sets
+# core.hooksPath); then the checkout's own lefthook hooks would fire in a test
+# that commits inside it, and lefthook is not installed here.
+export LEFTHOOK=0
+
+echo '== bun install --frozen-lockfile'
+bun install --frozen-lockfile
+
+echo '== lint'
+bun run lint
+
+echo '== format:check'
+bun run format:check
+
+echo '== typecheck'
+bun run typecheck
+
+echo '== image-locks:check'
+bun run image-locks:check
+
+echo '== test:image-locks'
+bun run test:image-locks
+
+echo '== docs:check'
+bun run docs:check
+
+echo '== mate-core tests'
+(cd packages/mate-core && bun run test)
+
+echo '== mate-cli unit tests'
+(cd apps/mate-cli && bun run test:unit)
+
+echo '== mate-studio typecheck and tests'
+(
+	cd packages/mate-studio
+	bun run typecheck
+	bun run test
+)

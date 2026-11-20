@@ -122,6 +122,7 @@ function config(overrides: Partial<ApplianceConfig> = {}): ApplianceConfig {
       agentMemory: "1536m",
       worksetPids: 1024,
       worksetCpus: null,
+      worksetRuntime: "sysbox",
       gitName: "Mate factory",
       gitEmail: "factory@mate.invalid",
     },
@@ -984,6 +985,7 @@ describe("factory mode startup", () => {
         agentMemory: "1536m",
         worksetPids: 1024,
         worksetCpus: null,
+        worksetRuntime: "sysbox",
         gitName: "Mate factory",
         gitEmail: "factory@mate.invalid",
       },
@@ -1041,6 +1043,16 @@ describe("factory mode startup", () => {
     expect(plan).toContain("MATE_PLAN_FACTORY_AGENT_MEMORY='1536m'");
     expect(plan).toContain("MATE_PLAN_FACTORY_WORKSET_PIDS='1024'");
     expect(plan).toContain("MATE_PLAN_FACTORY_WORKSET_CPUS=''");
+    expect(plan).toContain("MATE_PLAN_FACTORY_WORKSET_RUNTIME='sysbox'");
+  });
+
+  test("the supervisor's plan names the dind Workset runtime", () => {
+    const config = factoryOn();
+    const plan = renderFactory({
+      ...config,
+      factory: { ...config.factory, worksetRuntime: "dind" },
+    });
+    expect(plan).toContain("MATE_PLAN_FACTORY_WORKSET_RUNTIME='dind'");
   });
 
   test("a missing credential does not stop startup", () => {

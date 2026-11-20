@@ -1,4 +1,4 @@
-import { FACTORY_GIT_TOKENS_ROUTE, type GitTokenStatus } from "@uniqbit/mate-core/studio";
+import { FACTORY_GIT_TOKENS_ROUTE, type GitTokenStatus } from "@uniqbit/mate-core/factory-studio";
 
 import { call } from "./agent-credential";
 

@@ -1,10 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import type {
-  FactoryRunView,
-  StudioCompanionPayload,
-  StudioWorkset,
-} from "@uniqbit/mate-core/studio";
+import type { FactoryRunView } from "@uniqbit/mate-core/factory-studio";
+import type { StudioCompanionPayload, StudioWorkset } from "@uniqbit/mate-core/studio";
 
 import { renderMarkup } from "../../../test/render";
 import { Factory, OutcomeDetail } from "./factory-view";
@@ -602,7 +599,9 @@ describe("the live log and taking control", () => {
       },
     });
     const dialog = dialogMarkup(markup, "acme-onboarding");
-    expect(dialog).toContain('data-outcome-log="/api/factory/worksets/acme-onboarding/log/stream"');
+    expect(dialog).toContain(
+      'data-outcome-log="/api/plugins/factory/worksets/acme-onboarding/log/stream"',
+    );
     expect(dialog).toContain('name="answer"');
     expect(dialog).not.toContain("data-outcome-terminal");
     expect(

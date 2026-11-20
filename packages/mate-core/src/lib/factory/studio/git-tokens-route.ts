@@ -1,6 +1,6 @@
-import type { FactoryClient } from "../../../lib/factory/client";
-import { FactoryError } from "../../../lib/factory/ids";
-import { answer, body } from "./factory-relay";
+import type { FactoryClient } from "../client";
+import { FactoryError } from "../ids";
+import { answer, body } from "./relay";
 
 /**
  * The Git access panel's route: relays to the factory broker, which holds the Git tokens. A

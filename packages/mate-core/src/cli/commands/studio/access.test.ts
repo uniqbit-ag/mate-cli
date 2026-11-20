@@ -15,6 +15,7 @@ import { companionDigest } from "./selection";
 import { createStudioFetch, type StudioFetchOptions, type StudioServerDeps } from "./server";
 import type { StudioApp } from "./studio-app";
 import { createVaultManager, type VaultManager } from "./vault";
+import type { PluginService } from "../../../tools/setup/service";
 
 const PORT = 4097;
 const TOKEN = "t".repeat(43);
@@ -439,30 +440,42 @@ describe("Studio modes are not access control", () => {
 
 describe("guards by request kind", () => {
   const origin = `http://localhost:${PORT}`;
-  const credentialBroker = () => {
+  /** A plugin service with one write route, recording every write it was let through. */
+  const noteService = () => {
     const sets: string[] = [];
-    const status = { kind: null, source: null } as unknown;
-    return {
-      sets,
-      client: {
-        credential: {
-          status: async () => status,
-          set: async (kind: string) => void sets.push(kind),
-          clear: async () => void sets.push("clear"),
-        },
-      } as unknown as NonNullable<StudioServerDeps["factoryClient"]>,
+    const service: PluginService = {
+      apiVersion: 1,
+      id: "acme",
+      label: "Acme",
+      studio: () => ({
+        routes: [
+          {
+            path: "/note",
+            methods: {
+              GET: { kind: "read" },
+              PUT: { kind: "write", writable: "start Studio with --writable to change notes" },
+              DELETE: { kind: "write", writable: "start Studio with --writable to change notes" },
+            },
+            handle: async (request) => {
+              if (request.method !== "GET") sets.push(request.method);
+              return Response.json({ sets });
+            },
+          },
+        ],
+      }),
     };
+    return { sets, services: [service] };
   };
 
   test("a write from a foreign origin is refused before it acts", async () => {
     await withFixture(async (state) => {
-      const broker = credentialBroker();
+      const broker = noteService();
       const handler = createStudioFetch(
-        { ...state.deps, factoryClient: broker.client },
+        { ...state.deps, services: broker.services },
         { writable: true, access: access(), app: appFor(state) },
       );
       const response = (await handler(
-        new Request(`http://localhost:${PORT}/api/factory/credential`, {
+        new Request(`http://localhost:${PORT}/api/plugins/acme/note`, {
           method: "PUT",
           headers: { host: `localhost:${PORT}`, origin: "https://evil.test" },
           body: JSON.stringify({ kind: "api-key", value: "x" }),
@@ -477,13 +490,13 @@ describe("guards by request kind", () => {
 
   test("a write without the write path is refused, naming it", async () => {
     await withFixture(async (state) => {
-      const broker = credentialBroker();
+      const broker = noteService();
       const handler = createStudioFetch(
-        { ...state.deps, factoryClient: broker.client },
+        { ...state.deps, services: broker.services },
         { access: access({ token: TOKEN }), app: appFor(state) },
       );
       const credential = (await handler(
-        new Request(`http://localhost:${PORT}/api/factory/credential`, {
+        new Request(`http://localhost:${PORT}/api/plugins/acme/note`, {
           method: "DELETE",
           headers: { host: `localhost:${PORT}`, origin, cookie: COOKIE },
         }),
