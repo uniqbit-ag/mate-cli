@@ -25,6 +25,7 @@ import { registeredServices } from "../../../tools/setup/service-registry";
 import { addCompanionByPath, addCompanionByUrl } from "./companion-add";
 import { LiveSessions } from "./live-sessions";
 import {
+  guardedSocket,
   type MatchedServiceRoute,
   mountStudioServices,
   type MountedServices,
@@ -754,7 +755,10 @@ export function createStudioFetch(
         }
         const handler = serviceRoute.route.socket?.(request, context) ?? null;
         if (!handler) return respond(refused("the service refused the connection", 403));
-        if (server.upgrade(request, { data: { service: handler } })) return undefined;
+        const service = guardedSocket(handler, (message) =>
+          process.stderr.write(`mate studio: ${message}\n`),
+        );
+        if (server.upgrade(request, { data: { service } })) return undefined;
         return respond(refused("the connection could not be upgraded", 400));
       }
       if (!serviceRoute.route.handle) return respond(notFound());

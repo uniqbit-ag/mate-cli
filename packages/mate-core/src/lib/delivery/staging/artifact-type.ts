@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import type { CompanionGit } from "../../../runtime/companion-git";
+import type { ChangeLayout } from "../../change-layout";
 import type { DeltaFailure, ReplayOptions, ReplayResult } from "./replay";
 
 /** The `Mate-Artifact` trailer value of record `id`: `<type>/<id>`. */
@@ -35,7 +36,7 @@ export interface ValidationFailure {
  * What submit, publication, pending discovery and synchronization know about one kind of
  * artifact. Only its hooks read or write the type's own files.
  */
-export interface ArtifactType {
+export interface ArtifactType extends ChangeLayout {
   /** Name in the `Mate-Artifact: <type>/<id>` trailer. */
   name: string;
   /** Directory holding one source folder per change, relative to the companion. */
@@ -83,4 +84,18 @@ export interface ArtifactType {
   touches?: (changeDir: string) => Promise<StalePart[]>;
   /** The first of `files` (changed derived files, relative to `dir`) that is invalid. */
   validate?: (dir: string, files: readonly string[]) => Promise<ValidationFailure | null>;
+  /**
+   * The plan of the change at `changeDir`, which the Path Position infers stages from. Absent for
+   * a type without one: its stages are only recorded. Whether it validates is the caller's.
+   */
+  plan?: (changeDir: string) => Promise<{ totalTasks: number; completedTasks: number }>;
+  /** The files of the change at `changeDir` a review can name, in review order, relative to it. */
+  reviews?: (changeDir: string) => Promise<ReviewFile[]>;
+}
+
+/** A file of a change a review names. */
+export interface ReviewFile {
+  id: string;
+  /** Relative to the change folder; a trailing `/` names a folder. */
+  file: string;
 }

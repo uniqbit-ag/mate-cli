@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { StudioChange } from "@uniqbit/mate-core/studio";
+import { defaultWorkflow, pathPosition, type StudioChange } from "@uniqbit/mate-core/studio";
 
 import { positioned } from "../../../test/positioned";
 import {
@@ -48,6 +48,17 @@ describe("changeGroup", () => {
   it("puts a partly done change under Implementation started and a finished one under Ready", () => {
     expect(changeGroup(change({ completedTasks: 12, totalTasks: 20 }))).toBe("building");
     expect(changeGroup(change({ completedTasks: 7, totalTasks: 7 }))).toBe("ready");
+  });
+
+  it("groups a change without a plan by its stage: Ready to submit from submit on", () => {
+    const workflow = defaultWorkflow();
+    const at = (steps: Record<string, string[]>, state?: "submitted"): StudioChange =>
+      change({
+        planned: false,
+        position: pathPosition(workflow, { steps, ...(state ? { state } : {}) }, {}),
+      });
+    expect(changeGroup(at({}))).toBe("needs-you");
+    expect(changeGroup(at({}, "submitted"))).toBe("ready");
   });
 
   it("lists each change once, in its group", () => {

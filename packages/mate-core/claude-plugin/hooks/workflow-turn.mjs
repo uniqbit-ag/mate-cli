@@ -5,7 +5,7 @@
 // Bash call and stop, so an event that cannot concern a step is answered
 // before loading any TypeScript: a Bash command that reports no step, a
 // prompt that starts no skill, and a stop with no turn noted.
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -20,11 +20,21 @@ async function readInput() {
   }
 }
 
-/** The session's state file, as stateFile() in src/hooks/workflow-turn.ts names it. */
+/**
+ * The session's state file, as stateFile() in src/hooks/workflow-turn.ts names it; null unless
+ * its folder is a directory this user owns that no one else can enter, as privateStateDir() checks.
+ */
 function stateFile(session) {
-  const uid = process.getuid?.();
-  const dir = uid === undefined ? "mate-turn-hooks" : `mate-turn-hooks-${uid}`;
-  return path.join(os.tmpdir(), dir, `${session.replace(/[^A-Za-z0-9_-]/g, "_")}.json`);
+  const dir = path.join(process.env.HOME || os.homedir(), ".mate", "turn-hooks");
+  try {
+    const stat = lstatSync(dir);
+    const uid = process.getuid?.();
+    const foreign = uid !== undefined && (stat.uid !== uid || (stat.mode & 0o077) !== 0);
+    if (!stat.isDirectory() || foreign) return null;
+  } catch {
+    return null;
+  }
+  return path.join(dir, `${session.replace(/[^A-Za-z0-9_-]/g, "_")}.json`);
 }
 
 const input = await readInput();
@@ -39,12 +49,14 @@ if (event === "PostToolUse" && input.tool_name === "Bash") {
   // Any runtime's skill prefix; a prompt without one starts no step and clears the last turn.
   load = /^\s*[/@$]/.test(prompt);
   try {
-    if (!load) rmSync(stateFile(session), { force: true });
+    const file = load ? null : stateFile(session);
+    if (file) rmSync(file, { force: true });
   } catch {
     // Best effort: the hook never fails a prompt.
   }
 } else if (session && event === "Stop") {
-  load = existsSync(stateFile(session));
+  const file = stateFile(session);
+  load = file !== null && existsSync(file);
 }
 if (load) {
   await import("./ts-loader.mjs");

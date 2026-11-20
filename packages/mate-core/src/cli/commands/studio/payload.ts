@@ -4,13 +4,12 @@ import path from "node:path";
 import {
   type archiveAnchors,
   archiveDirOf,
-  changesDirOf,
   parseAnchor,
   SPECS_RELATIVE_DIR,
 } from "../../../lib/change-layout";
 import { companionTicketFormat, type TicketFormat } from "../../../lib/delivery/branches";
+import { submitsOpenSpec } from "../../../lib/delivery/staging/registry";
 import { hasUnsubmittedWork } from "../../../lib/delivery/staging/submit";
-import { readChangeInput, type ChangeInput } from "../../../lib/workflow/change-progress";
 import {
   defaultWorkflow,
   loadWorkflow,
@@ -20,6 +19,7 @@ import {
   type WorkflowVerdict,
 } from "../../../lib/workflow/declaration";
 import { pathPosition, type PathPosition } from "../../../lib/workflow/position";
+import { openWork, type WorkInput } from "../../../lib/workflow/work";
 import {
   type LinkedRepositoryCatalog,
   linkedRepositoryCatalog,
@@ -55,6 +55,11 @@ import { readWorkflowTopology, type WorkflowTopology } from "./topology";
 export interface StudioChangeArtifact {
   id: string;
   status?: string;
+  /**
+   * Its companion-relative file, for a change OpenSpec does not describe: a review its type
+   * declares, listed whether written yet or not.
+   */
+  path?: string;
 }
 
 export interface StudioChange {
@@ -76,6 +81,12 @@ export interface StudioChange {
   steps?: Record<string, string[]>;
   /** Its Delivery Record says it was withdrawn: it is at no stage. */
   dropped?: true;
+  /**
+   * Its artifact type has no plan: it has no tasks, and only its recorded steps place it. Such a
+   * change is not described by OpenSpec, so it has no task counts, artifact status, validation
+   * or schema.
+   */
+  planned?: false;
   /**
    * Where it stands on the Delivery Path and what follows, as `mate workflow next` computes it,
    * with its validation deciding whether its plan is valid.
@@ -433,19 +444,6 @@ export async function assembleCompanionPayload(
     warnings.push(`submitted changes: ${errorMessage(error)}`);
   }
 
-  const statusByChange = new Map(
-    (status.value.changes ?? []).map((entry) => [entry.changeName, entry]),
-  );
-
-  const awaiting = new Set(submitted.map((change) => change.name));
-  const unsubmitted = new Set<string>();
-  for (const { name } of changeList.value.changes ?? []) {
-    if (!awaiting.has(name)) continue;
-    const work = deps.hasUnsubmittedWork ?? hasUnsubmittedWork;
-    // oxlint-disable-next-line no-await-in-loop -- only local changes that are also submitted
-    if (await work(companionPath, name).catch(() => false)) unsubmitted.add(name);
-  }
-
   const verdict = await (deps.loadWorkflow ?? loadWorkflow)(companionPath).catch(
     (error: unknown): WorkflowVerdict => ({
       ok: false,
@@ -468,52 +466,80 @@ export async function assembleCompanionPayload(
     companionPath;
   // An invalid declaration shows the built-in path, so changes are placed on it.
   const workflow = verdict.ok ? verdict.workflow : defaultWorkflow();
+  const work = openWork(companionPath, workflow, { root: planningRoot });
+  // OpenSpec describes only changes of the built-in type; another type's changes are its folders.
+  const described = submitsOpenSpec(workflow);
+  const listed = new Map(
+    described ? (changeList.value.changes ?? []).map((change) => [change.name, change]) : [],
+  );
+  const statusByChange = new Map(
+    described ? (status.value.changes ?? []).map((entry) => [entry.changeName, entry]) : [],
+  );
+  const names = described ? [...listed.keys()] : await work.names();
+
+  const awaiting = new Set(submitted.map((change) => change.name));
+  const unsubmitted = new Set<string>();
+  for (const name of names) {
+    if (!awaiting.has(name)) continue;
+    const check = deps.hasUnsubmittedWork ?? hasUnsubmittedWork;
+    // oxlint-disable-next-line no-await-in-loop -- only local changes that are also submitted
+    if (await check(companionPath, name).catch(() => false)) unsubmitted.add(name);
+  }
+
   // Recorded progress; a record that cannot be read leaves the change to inference.
   const inputs = new Map(
     await Promise.all(
-      (changeList.value.changes ?? []).map(async (change): Promise<[string, ChangeInput]> => {
-        const { valid } = validationOf(validationItems, change.name, "change");
-        const input = await readChangeInput(
-          companionPath,
-          workflow,
-          path.join(changesDirOf(planningRoot), change.name),
-          change.name,
-          { valid: valid !== false },
-        ).catch((): ChangeInput => ({
+      names.map(async (name): Promise<[string, WorkInput]> => {
+        const { valid } = described ? validationOf(validationItems, name, "change") : {};
+        const change = listed.get(name);
+        const inferred = (): WorkInput => ({
           progress: {
             steps: {},
-            plan: {
-              valid: valid !== false,
-              totalTasks: change.totalTasks ?? 0,
-              completedTasks: change.completedTasks ?? 0,
-            },
+            ...(change
+              ? {
+                  plan: {
+                    valid: valid !== false,
+                    totalTasks: change.totalTasks ?? 0,
+                    completedTasks: change.completedTasks ?? 0,
+                  },
+                }
+              : {}),
           },
-          subject: { name: change.name },
-        }));
-        return [change.name, input];
+          subject: { name },
+        });
+        const found = await work.find(name);
+        const input =
+          "problem" in found
+            ? inferred()
+            : await found.input({ valid: valid !== false }).catch(inferred);
+        return [name, input];
       }),
     ),
   );
 
-  const changes: StudioChange[] = (changeList.value.changes ?? []).map((change) => {
-    const changeStatus = statusByChange.get(change.name);
-    const { progress, subject } = inputs.get(change.name)!;
+  const changes: StudioChange[] = names.map((name) => {
+    const change = listed.get(name);
+    const changeStatus = statusByChange.get(name);
+    const { progress, subject } = inputs.get(name)!;
     const { steps } = progress;
     return {
-      name: change.name,
-      ...(change.completedTasks === undefined ? {} : { completedTasks: change.completedTasks }),
-      ...(change.totalTasks === undefined ? {} : { totalTasks: change.totalTasks }),
-      ...(change.status === undefined ? {} : { status: change.status }),
-      ...(change.lastModified === undefined ? {} : { lastModified: change.lastModified }),
+      name,
+      ...(change?.completedTasks === undefined ? {} : { completedTasks: change.completedTasks }),
+      ...(change?.totalTasks === undefined ? {} : { totalTasks: change.totalTasks }),
+      ...(change?.status === undefined ? {} : { status: change.status }),
+      ...(change?.lastModified === undefined ? {} : { lastModified: change.lastModified }),
       ...(changeStatus?.schemaName ? { schemaName: changeStatus.schemaName } : {}),
-      artifacts: (changeStatus?.artifacts ?? []).map((artifact) => ({
-        id: artifact.id,
-        ...(artifact.status === undefined ? {} : { status: artifact.status }),
-      })),
-      ...validationOf(validationItems, change.name, "change"),
-      ...(unsubmitted.has(change.name) ? { unsubmitted: true as const } : {}),
+      artifacts: described
+        ? (changeStatus?.artifacts ?? []).map((artifact) => ({
+            id: artifact.id,
+            ...(artifact.status === undefined ? {} : { status: artifact.status }),
+          }))
+        : (subject.artifacts ?? []).map((artifact) => ({ id: artifact.id, path: artifact.path })),
+      ...(described ? validationOf(validationItems, name, "change") : {}),
+      ...(unsubmitted.has(name) ? { unsubmitted: true as const } : {}),
       ...(Object.keys(steps).length > 0 ? { steps: steps as Record<string, string[]> } : {}),
       ...(progress.state === "dropped" ? { dropped: true as const } : {}),
+      ...(progress.plan ? {} : { planned: false as const }),
       position: pathPosition(workflow, progress, subject),
     };
   });

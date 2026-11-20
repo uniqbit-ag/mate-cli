@@ -4,9 +4,11 @@ import os from "node:os";
 import path from "node:path";
 
 import { WORKFLOW_FILE } from "../../../lib/workflow/declaration";
+import { isCommandTrusted } from "../../../lib/workflow/hook-trust";
 import {
   runWorkflowCommand,
   type ChangeNext,
+  type CommandsTrust,
   type StageSteps,
   type StepDone,
   type WorkflowFailure,
@@ -208,14 +210,14 @@ describe("mate workflow done", () => {
   };
 
   test("records the step in the built-in type's change, changing nothing else", async () => {
-    const before =
-      "version: 1\nchange: acme-fix\ndeliveries:\n  - repository: acme/app\n    branch: workset/acme-fix\n";
-    await change("acme-fix", "xx", before);
+    const head = "version: 1\nchange: acme-fix\n";
+    const deliveries = "deliveries:\n  - repository: acme/app\n    branch: workset/acme-fix\n";
+    await change("acme-fix", "xx", `${head}${deliveries}`);
 
     await runWorkflowCommand("done", ["mate-apply-change", "acme-fix"], deps());
 
     expect(await record("openspec/changes/acme-fix")).toBe(
-      `${before}stages:\n  apply:\n    - mate-apply-change\n`,
+      `${head}stages:\n  apply:\n    - mate-apply-change\n${deliveries}`,
     );
     // Without --json: the actions as plain data, which the skill writes into its section.
     expect(out).toEqual([
@@ -421,6 +423,16 @@ ${TAIL}`);
       handoff: "## Next steps\n1. Merge workset/acme-fix\n2. /mate-publish-artifact",
     });
     expect(await record("openspec/changes/acme-fix")).toBe(submitted);
+  });
+
+  test("submit records its steps before its Mate skill only", async () => {
+    await declare(CHAINED);
+    const dir = await change("acme-fix", "xx");
+
+    expect(await done("acme-announce", "acme-fix")).toMatchObject({ recorded: false });
+    expect(await fs.readdir(dir)).not.toContain("delivery.yaml");
+    expect(await done("acme-pr-check", "acme-fix")).toMatchObject({ recorded: true });
+    expect(await record("openspec/changes/acme-fix")).toContain("- acme-pr-check");
   });
 
   test("an optional stage records nothing and still hands off", async () => {
@@ -696,6 +708,50 @@ test("--help prints the workflow usage, also after a subcommand", async () => {
   }
   expect(err).toEqual([]);
   expect(process.exitCode).toBeFalsy();
+});
+
+describe("mate workflow trust", () => {
+  const run = `acme-notes merge {change} # ${process.pid}-${Date.now()}`;
+  const declared = () => declare(NOTES.replace("acme-notes merge {change}", run));
+
+  test("--json lists each command and approves nothing", async () => {
+    await declared();
+
+    await runWorkflowCommand("trust", ["--json"], deps());
+
+    expect(JSON.parse(out[0]!) as CommandsTrust).toEqual({
+      ok: true,
+      commands: [{ type: "acme-notes", hook: "apply", run, trusted: false }],
+    });
+    expect(await isCommandTrusted(run)).toBe(false);
+  });
+
+  test("outside a terminal it approves nothing and exits 1", async () => {
+    await declared();
+
+    await runWorkflowCommand("trust", [], { ...deps(), confirm: async () => null });
+
+    expect(out).toContain(`  acme-notes apply: ${run}`);
+    expect(err.join("\n")).toContain("needs a terminal");
+    expect(process.exitCode).toBe(1);
+    expect(await isCommandTrusted(run)).toBe(false);
+  });
+
+  test("a no keeps the command untrusted; a yes approves it", async () => {
+    await declared();
+
+    await runWorkflowCommand("trust", [], { ...deps(), confirm: async () => false });
+    expect(await isCommandTrusted(run)).toBe(false);
+
+    await runWorkflowCommand("trust", [], { ...deps(), confirm: async () => true });
+    expect(await isCommandTrusted(run)).toBe(true);
+    expect(out.at(-1)).toBe("Approved 1 command.");
+
+    out = [];
+    await runWorkflowCommand("trust", [], { ...deps(), confirm: async () => null });
+    expect(out).toEqual([`Every run: command in ${WORKFLOW_FILE} is trusted on this machine.`]);
+    expect(process.exitCode).toBe(0);
+  });
 });
 
 describe("in a Launch Session", () => {

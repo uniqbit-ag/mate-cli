@@ -288,6 +288,10 @@ stages:
   `{archive}`, and `{files}` are replaced by shell-quoted values, and a
   non-zero exit fails the step. `publish.apply` may change only `published`
   files; Mate moves or deletes the change folder itself.
+- Each developer approves these commands once on their machine with
+  `mate workflow trust`, in a terminal. Until then submit and publication
+  refuse to run them, since anyone who can push to the companion can change
+  them. An edited command needs approving again.
 
 The paths must stay inside the companion, outside `.mate/`, and must not
 overlap each other or OpenSpec's folders. With no Mate apply skill on the path,

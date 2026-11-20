@@ -4,6 +4,7 @@ import {
   SCHEMA_ARTIFACTS,
   type StudioChange,
   type StudioCompanionPayload,
+  type Milestone,
   type Workflow as DeliveryWorkflow,
   type WorkflowStage,
 } from "@uniqbit/mate-core/studio";
@@ -26,9 +27,18 @@ const MATE_SKILLS: Record<string, string> = {
   publish: "mate-publish-artifact",
 };
 
+const MILESTONES: Record<string, Milestone> = {
+  explore: "exists",
+  propose: "planned",
+  apply: "implemented",
+  submit: "submitted",
+  publish: "published",
+};
+
 /** A declared skill stage, started with its first step's skill. */
 function skill(id: string, label: string, skills: string[], optional = false): WorkflowStage {
   const own = MATE_SKILLS[id];
+  const milestone = MILESTONES[id];
   return {
     id,
     label,
@@ -37,6 +47,7 @@ function skill(id: string, label: string, skills: string[], optional = false): W
     source: "declared",
     steps: skills.map((name) => (name === own ? { skill: name, own: true } : { skill: name })),
     entry: skills[0]!,
+    ...(milestone ? { milestone } : {}),
   };
 }
 

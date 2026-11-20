@@ -151,6 +151,7 @@ export {
   defaultWorkflow,
   nextStage,
   WORKFLOW_FILE,
+  type Milestone,
   type NextStage,
   type Workflow,
   type WorkflowProblem,

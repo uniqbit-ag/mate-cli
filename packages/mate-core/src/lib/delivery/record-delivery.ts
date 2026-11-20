@@ -6,8 +6,12 @@ import {
   type WorkingRepoGit,
 } from "./branches";
 import { companionGit } from "../../runtime/companion-git";
-import { changeNameOf, isChangeName, locateChange, type ChangeLocation } from "../change-layout";
-import { pathIsDirectory } from "../fs-utils";
+import {
+  changeNameOf,
+  locate,
+  OPENSPEC_CHANGE_LAYOUT,
+  type ChangeLocation,
+} from "../change-layout";
 import { scopedRepositories } from "../openspec-scopes";
 import { companionRelative, type DeliveryEnvironment } from "./environment";
 import {
@@ -33,7 +37,6 @@ import {
 } from "./refresh";
 import { probeMerge, type DeliveryCheckout } from "./checkout";
 import { resolveDeliveryBranch } from "./resolve-branch";
-import { sourceDir } from "./staging/artifact-type";
 import { defaultRef, stagingRemote } from "./staging/refs";
 import {
   repositoryAccessFor,
@@ -254,19 +257,18 @@ function hasDeliveryBranch(record: DeliveryRecord, repository: string): boolean 
 }
 
 /**
- * Where change `name` lives: for the built-in type as {@link locateChange} finds it; for a
- * declared type its folder below the type's source, or the path that folder is expected at.
+ * Where change or record id `name` of the environment's type lives, as {@link locate} finds it.
+ * A declared type's missing change answers the path its folder is expected at; the built-in
+ * type's, nothing, as an unknown change.
  */
 export async function locateTypedChange(
   environment: Pick<DeliveryEnvironment, "companionPath" | "artifactType">,
   name: string,
 ): Promise<ChangeLocation | { path: string } | null> {
   const type = environment.artifactType;
-  if (!type) return locateChange(environment.companionPath, name);
-  if (!isChangeName(name)) return null;
-  const dir = sourceDir(environment.companionPath, type, name);
-  if (await pathIsDirectory(dir)) return { dir, archived: false };
-  return { path: `${type.source}/${name}/` };
+  const found = await locate(environment.companionPath, type ?? OPENSPEC_CHANGE_LAYOUT, name);
+  if (!found || !("missing" in found)) return found;
+  return type ? { path: found.missing } : null;
 }
 
 /**

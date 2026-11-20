@@ -37,6 +37,11 @@ export function submitArtifactType(workflow: Workflow, runner?: RunOpenSpec): Ar
   return declared ? declaredArtifactType(declared) : defaultArtifactType(runner);
 }
 
+/** Whether `workflow`'s submit handles the built-in OpenSpec type, whose CLI can describe changes. */
+export function submitsOpenSpec(workflow: Workflow): boolean {
+  return submitType(workflow) === undefined;
+}
+
 /** An invalid declaration as one message naming the file and each problem's key path. */
 export function describeWorkflowProblems(problems: readonly WorkflowProblem[]): string {
   const lines = problems.map(

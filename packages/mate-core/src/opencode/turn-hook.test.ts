@@ -78,7 +78,7 @@ function fakeApi(directory: string) {
       prompt: { text: `"${text}"`, files: [] },
     });
   const tool = (sessionID: string, name: string, input: unknown, status = "completed") =>
-    (hooks.get("execute.after") as (event: unknown) => void)({
+    (hooks.get("execute.after") as (event: unknown) => Promise<void> | void)({
       sessionID,
       tool: name,
       input,
@@ -175,7 +175,7 @@ describe("OpenCode turn hook", () => {
   test("an unreported companion step from the skill tool is sent back with its report", async () => {
     const { prompt, tool, finish, sent, cleanup } = await setup();
     prompt("ses_1", "run the security review for acme-login please");
-    tool("ses_1", "skill", { id: "acme-security-review" });
+    await tool("ses_1", "skill", { id: "acme-security-review" });
     await finish("ses_1", "Review done.");
     expect(sent).toHaveLength(1);
     expect(sent[0]!.text).toContain("@acme-security-review is a step");
@@ -264,7 +264,7 @@ stages:
     });
     const { prompt, tool, finish, sent, cleanup } = await setup();
     prompt("ses_1", "review archive acme-fix acme-glossary");
-    tool("ses_1", "skill", { id: "acme-security-review" });
+    await tool("ses_1", "skill", { id: "acme-security-review" });
     await finish("ses_1", "Reviewed.");
     expect(sent).toHaveLength(1);
     expect(sent[0]!.text).toContain('mate workflow done acme-security-review "acme-glossary"');

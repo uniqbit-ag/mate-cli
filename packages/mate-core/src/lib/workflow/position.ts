@@ -1,6 +1,5 @@
 import {
   BUILTIN_ARTIFACT_TYPE,
-  BUILTIN_BY_ID,
   nextStage,
   type Workflow,
   type WorkflowSkillStage,
@@ -14,7 +13,7 @@ import type { Handoff, HandoffAction, SkillAction, TextAction } from "./handoff"
  * its input. Imports nothing beyond the workflow model, so Studio's bundle can use it too.
  */
 
-/** What the plan of a built-in-type change says, which its built-in stages are inferred from. */
+/** What the work's plan says, which the Milestones `planned` and `implemented` are read from. */
 export interface PathPlan {
   /** The plan validates. */
   valid: boolean;
@@ -27,7 +26,7 @@ export interface PathProgress {
   /** The steps recorded for it, by stage id. */
   steps: Readonly<Record<string, readonly string[]>>;
   state?: "active" | "submitted" | "dropped";
-  /** Absent for work of a declared type, for which nothing is inferred. */
+  /** Absent for work whose type has no plan, which says nothing of its plan's Milestones. */
   plan?: PathPlan;
 }
 
@@ -54,18 +53,45 @@ export interface PathPosition {
   unfinished: Array<{ stage: WorkflowSkillStage; open: string }>;
   /** What the developer starts next. */
   handoff: Handoff;
+  /**
+   * After step `after`: its stage's steps not done when the report records it, else the chain's
+   * steps after it, in chain order. Absent without `after`.
+   */
+  remaining?: string[];
+}
+
+/** What reporting a step does. */
+export interface StepReport {
+  stage: WorkflowSkillStage;
+  /**
+   * A report records the step when the work exists. An optional stage and publication record
+   * none, `submit` none from its Mate stage skill on: the work's state says where it is.
+   */
+  records: boolean;
+  /**
+   * The work must exist: false for a step that runs before it can, and after publication, when
+   * it is archived.
+   */
+  needsWork: boolean;
 }
 
 const NO_PROGRESS: PathProgress = { steps: {} };
 
-/** Built-in stages work of the built-in type has always passed once it exists. */
-const BUILTIN_BEFORE_WORK: ReadonlySet<string> = new Set(["clarify-intent", "explore"]);
-
-/** The stages work has always passed once it exists: for the built-in type, those before propose. */
+/**
+ * The stages work has always passed once it exists: for the built-in type, those up to the one
+ * reaching `exists`. A declared type's work is placed by its steps alone.
+ */
 export function stagesBeforeWork(workflow: Workflow): WorkflowStage[] {
   if (workflow.submitArtifact !== BUILTIN_ARTIFACT_TYPE) return [];
-  return workflow.stages.filter((stage) => BUILTIN_BEFORE_WORK.has(stage.id));
+  const exists = workflow.stages.findIndex(
+    (stage) => stage.kind === "skill" && stage.milestone === "exists",
+  );
+  return workflow.stages.slice(0, exists + 1);
 }
+
+/** Whether the work's state, not a report, says `stage` is reached: submit and publish. */
+const heldByState = (stage: WorkflowSkillStage): boolean =>
+  stage.milestone === "submitted" || stage.milestone === "published";
 
 /** The skill stage whose steps name `skill`; a skill is one step of the Delivery Path. */
 export function stepStage(workflow: Workflow, skill: string): WorkflowSkillStage | undefined {
@@ -76,66 +102,91 @@ export function stepStage(workflow: Workflow, skill: string): WorkflowSkillStage
 }
 
 /**
- * The steps of `stage` a report records, a prefix of its chain. An optional stage and `publish`
- * record none, and `submit` only those before `mate-submit-change`: the work's state and its
- * publication say where it is.
+ * The steps of `stage` a report records, a prefix of its chain. An optional stage and the one
+ * reaching `published` record none, and the one reaching `submitted` only those before its Mate
+ * stage skill: the work's state and its publication say where it is.
  */
-export function recordedSteps(stage: WorkflowSkillStage): WorkflowSkillStage["steps"] {
-  if (stage.optional || stage.id === "publish") return [];
-  const end = stage.id === "submit" ? stage.steps.findIndex((step) => step.own) : -1;
+function recordedSteps(stage: WorkflowSkillStage): WorkflowSkillStage["steps"] {
+  if (stage.optional || stage.milestone === "published") return [];
+  const end = heldByState(stage) ? stage.steps.findIndex((step) => step.own) : -1;
   return end >= 0 ? stage.steps.slice(0, end) : stage.steps;
 }
+
+/** Whether a report records step `skill` of `stage`. */
+const records = (stage: WorkflowSkillStage, skill: string): boolean =>
+  stage.steps.findIndex((step) => step.skill === skill) < recordedSteps(stage).length;
 
 /**
  * Whether `stage` runs before the work can exist: the path's first required stage, an optional
  * one ahead of it, or one the work has always passed. Its step has nothing to record yet.
  */
-export function opensPath(workflow: Workflow, stage: WorkflowSkillStage): boolean {
+function opensPath(workflow: Workflow, stage: WorkflowSkillStage): boolean {
   if (stagesBeforeWork(workflow).includes(stage)) return true;
   const first = workflow.stages.findIndex((each) => !each.optional);
   return workflow.stages.indexOf(stage) <= first;
 }
 
+/** What reporting step `skill` does; undefined for a skill that is no step. */
+export function stepReport(workflow: Workflow, skill: string): StepReport | undefined {
+  const stage = stepStage(workflow, skill);
+  if (!stage) return undefined;
+  return {
+    stage,
+    records: records(stage, skill),
+    needsWork: stage.milestone !== "published" && !opensPath(workflow, stage),
+  };
+}
+
 // --- Stage and step rules ---
 
-/** What the plan says about a built-in stage; undefined for a stage it says nothing about. */
-function inferred(id: string, plan: PathPlan): boolean | undefined {
-  switch (id) {
-    case "clarify-intent":
-    case "explore":
-      // The work exists, so it was explored.
-      return true;
-    case "propose":
-      return plan.valid && plan.totalTasks > 0;
-    case "apply":
-      return plan.totalTasks > 0 && plan.completedTasks === plan.totalTasks;
+/**
+ * Whether the work holds the Milestone `stage` reaches; undefined when the stage reaches none or
+ * the work cannot say. `exists` is read from the plan until work that is not a change reports it.
+ */
+function milestone(stage: WorkflowSkillStage, progress: PathProgress): boolean | undefined {
+  const { plan, state } = progress;
+  switch (stage.milestone) {
+    case "exists":
+      return plan ? true : undefined;
+    case "planned":
+      return plan ? plan.valid && plan.totalTasks > 0 : undefined;
+    case "implemented":
+      return plan ? plan.totalTasks > 0 && plan.completedTasks === plan.totalTasks : undefined;
+    case "submitted":
+      return state === "submitted";
+    case "published":
+      // Published work is archived: no work is left to place.
+      return false;
     default:
       return undefined;
   }
 }
 
-/** The plan, for work of the built-in type only. */
-const builtinPlan = (workflow: Workflow, progress: PathProgress): PathPlan | undefined =>
-  workflow.submitArtifact === BUILTIN_ARTIFACT_TYPE ? progress.plan : undefined;
-
-/** The plan of built-in-type work for a stage it can speak for, else undefined. */
-function planFor(
-  workflow: Workflow,
-  stage: WorkflowStage,
-  progress: PathProgress,
-): boolean | undefined {
-  const plan = builtinPlan(workflow, progress);
-  return plan && BUILTIN_BY_ID.has(stage.id) ? inferred(stage.id, plan) : undefined;
+/** Why the work does not hold `stage`'s Milestone, in a few words; null when nothing says. */
+function missing(stage: WorkflowSkillStage, progress: PathProgress): string | null {
+  const { plan } = progress;
+  switch (stage.milestone) {
+    case "planned":
+      if (!plan) return null;
+      if (!plan.valid) return "the change does not validate";
+      return plan.totalTasks === 0 ? "no tasks" : null;
+    case "implemented": {
+      if (!plan) return null;
+      if (plan.totalTasks === 0) return "no tasks";
+      const open = plan.totalTasks - plan.completedTasks;
+      return open > 0 ? `${open} ${open === 1 ? "task" : "tasks"} open` : null;
+    }
+    case "submitted":
+      return progress.state === "submitted" ? null : "not submitted";
+    default:
+      return null;
+  }
 }
 
-/** The steps of `stage` neither recorded nor covered by the plan, in chain order. */
-function unreported(
-  workflow: Workflow,
-  stage: WorkflowSkillStage,
-  progress: PathProgress,
-): string[] {
+/** The steps of `stage` neither recorded nor covered by its Milestone, in chain order. */
+function unreported(stage: WorkflowSkillStage, progress: PathProgress): string[] {
   const recorded = progress.steps[stage.id] ?? [];
-  const covered = planFor(workflow, stage, progress) === true;
+  const covered = milestone(stage, progress) === true;
   return stage.steps
     .filter((step) => !recorded.includes(step.skill) && !(step.own && covered))
     .map((step) => step.skill);
@@ -151,8 +202,8 @@ function waitableSteps(workflow: Workflow): Array<{ stage: WorkflowSkillStage; s
 }
 
 /**
- * The steps that count as done without a report, by stage id: neither recorded nor covered by the
- * plan, while a later step of the Delivery Path is recorded or the work is submitted. Starting a
+ * The steps that count as done without a report, by stage id: neither recorded nor covered by a
+ * Milestone, while a later step of the Delivery Path is recorded or the work is submitted. Starting a
  * later step is the developer saying the earlier one is finished. Computed, never stored.
  */
 function countedSteps(workflow: Workflow, progress: PathProgress): Record<string, string[]> {
@@ -163,7 +214,7 @@ function countedSteps(workflow: Workflow, progress: PathProgress): Record<string
       : steps.findLastIndex(({ stage, skill }) => progress.steps[stage.id]?.includes(skill));
   const counted: Record<string, string[]> = {};
   for (const { stage, skill } of steps.slice(0, Math.max(last, 0))) {
-    if (!unreported(workflow, stage, progress).includes(skill)) continue;
+    if (!unreported(stage, progress).includes(skill)) continue;
     (counted[stage.id] ??= []).push(skill);
   }
   return counted;
@@ -171,17 +222,16 @@ function countedSteps(workflow: Workflow, progress: PathProgress): Record<string
 
 /**
  * The steps of `stage` not done, in chain order. A step is done when it is recorded, when it is
- * the stage's Mate stage skill and the plan says the stage's work is done, or when it counts
+ * the stage's Mate stage skill and the work holds the stage's Milestone, or when it counts
  * because a later step is recorded: a missed report blocks nothing.
  */
 function openSteps(
-  workflow: Workflow,
   stage: WorkflowSkillStage,
   progress: PathProgress,
   counted: Record<string, string[]>,
 ): string[] {
   const skipped = counted[stage.id] ?? [];
-  return unreported(workflow, stage, progress).filter((skill) => !skipped.includes(skill));
+  return unreported(stage, progress).filter((skill) => !skipped.includes(skill));
 }
 
 /** Whether stage `index` is done; a later check joins its list. */
@@ -193,24 +243,22 @@ function isDone(
 ): boolean {
   const stage = workflow.stages[index]!;
   if (stage.kind === "skill") {
-    // Submit records nothing: the work's state says it.
-    if (stage.id === "submit") return progress.state === "submitted";
-    return (
-      openSteps(workflow, stage, progress, counted).length === 0 &&
-      planFor(workflow, stage, progress) !== false
-    );
+    const held = milestone(stage, progress);
+    // From its Mate stage skill on, the work's state says it: nothing is recorded.
+    if (heldByState(stage)) return held === true;
+    return openSteps(stage, progress, counted).length === 0 && held !== false;
   }
   // A review has no signal of its own: started work, or a step recorded later, passes it.
   const later = workflow.stages
     .slice(index + 1)
     .some((next) => (progress.steps[next.id]?.length ?? 0) > 0);
-  const plan = builtinPlan(workflow, progress);
+  const { plan } = progress;
   return later || progress.state === "submitted" || (plan !== undefined && plan.completedTasks > 0);
 }
 
 /**
  * The stage the work is at; null for dropped work, which is at none. Submitted work is at the
- * path's last stage, `publish`.
+ * path's last stage, the one reaching `published`.
  */
 function stageAt(
   workflow: Workflow,
@@ -227,33 +275,17 @@ function stageAt(
   );
 }
 
-/** What the plan of built-in-type work leaves open in `stage`, in a few words; else null. */
-function planOpen(
-  workflow: Workflow,
-  stage: WorkflowSkillStage,
-  progress: PathProgress,
-): string | null {
-  const plan = builtinPlan(workflow, progress);
-  if (!plan || (stage.id !== "propose" && stage.id !== "apply")) return null;
-  if (stage.id === "propose" && !plan.valid) return "the change does not validate";
-  if (plan.totalTasks === 0) return "no tasks";
-  const open = stage.id === "apply" ? plan.totalTasks - plan.completedTasks : 0;
-  return open > 0 ? `${open} ${open === 1 ? "task" : "tasks"} open` : null;
-}
-
 /** What keeps `stage` from being done, in a few words; null when nothing does. */
 function openWork(
-  workflow: Workflow,
   stage: WorkflowSkillStage,
   progress: PathProgress,
   counted: Record<string, string[]>,
 ): string | null {
-  if (stage.id === "submit") return progress.state === "submitted" ? null : "not submitted";
-  // The plan first: it is why the stage's Mate stage skill is not done.
-  const plan = planOpen(workflow, stage, progress);
-  if (plan) return plan;
-  const missing = openSteps(workflow, stage, progress, counted);
-  return missing.length > 0 ? `${missing.join(", ")} not recorded` : null;
+  // The Milestone first: it is why the stage's Mate stage skill is not done.
+  const reason = missing(stage, progress);
+  if (reason || heldByState(stage)) return reason;
+  const steps = openSteps(stage, progress, counted);
+  return steps.length > 0 ? `${steps.join(", ")} not recorded` : null;
 }
 
 // --- Hand-off ---
@@ -312,17 +344,17 @@ function orderHandoff(
 
 /**
  * The step of `stage` the developer starts next: the stage's Mate stage skill while the plan
- * leaves work open, which `open` then names, else its first step that is not done.
+ * leaves its Milestone open, which `open` then names, else its first step that is not done.
  */
 function stepToRun(
-  workflow: Workflow,
   stage: WorkflowSkillStage,
   progress: PathProgress,
   open: readonly string[],
 ): { skill: string; open: string | null } {
-  const plan = planOpen(workflow, stage, progress);
-  if (!plan) return { skill: open[0] ?? stage.entry, open: null };
-  return { skill: stage.steps.find((step) => step.own)?.skill ?? stage.entry, open: plan };
+  // A Milestone held by state opens no work of its own: its steps run in order.
+  const reason = heldByState(stage) ? null : missing(stage, progress);
+  if (!reason) return { skill: open[0] ?? stage.entry, open: null };
+  return { skill: stage.steps.find((step) => step.own)?.skill ?? stage.entry, open: reason };
 }
 
 interface Placed {
@@ -334,7 +366,7 @@ interface Placed {
 
 /**
  * The hand-off after a step of `finished` was reported, or with `finished` null where the work
- * stands; empty when nothing follows: after `publish`, or for dropped work. Steps counted without
+ * stands; empty when nothing follows: after publication, or for dropped work. Steps counted without
  * a report are named above the section until the work is submitted; the submit warning names
  * them then.
  */
@@ -357,7 +389,7 @@ function progressHandoff(
     optionalStages(workflow.stages.slice(from + 1, Math.max(to, from + 1)), name);
 
   if (progress.state === "submitted") {
-    if (finished?.id === "publish" || position.kind !== "skill") return NOTHING;
+    if (finished?.milestone === "published" || position.kind !== "skill") return NOTHING;
     return buildHandoff(passed(at), [
       ...(subject.unmerged ?? []).map((branch) => text(`Merge ${branch}`)),
       skill(position.entry),
@@ -368,9 +400,10 @@ function progressHandoff(
   );
   if (position.kind === "skill") {
     const here = !finished || position.id === finished.id;
-    const next = stepToRun(workflow, position, progress, placed.openSteps[position.id] ?? []);
-    // Waiting at submit is news only right after submitting.
-    const open = position.id === "submit" ? (finished ? "not submitted" : null) : next.open;
+    const next = stepToRun(position, progress, placed.openSteps[position.id] ?? []);
+    // Waiting for a state is news only right after the step that should set it; `next.open` is
+    // null for a stage held by state.
+    const open = heldByState(position) && finished ? missing(position, progress) : next.open;
     const action = skill(next.skill, name);
     return buildHandoff(passed(at), [here && open ? { ...action, note: open } : action], counted);
   }
@@ -404,6 +437,12 @@ function progressHandoff(
   );
 }
 
+/** The steps of `stage`'s chain after step `after`. */
+const chainAfter = (stage: WorkflowSkillStage, after: string): string[] =>
+  stage.steps
+    .slice(stage.steps.findIndex((step) => step.skill === after) + 1)
+    .map((step) => step.skill);
+
 /**
  * The hand-off after step `after` was reported: the next step of its chain where steps are not
  * recorded, else the stage after it without progress, else from where the work then stands.
@@ -412,12 +451,11 @@ function handoffAfter(
   workflow: Workflow,
   stage: WorkflowSkillStage,
   after: string,
+  recorded: boolean,
   placed: Placed | null,
   subject: PathSubject,
 ): Handoff {
-  const index = stage.steps.findIndex((step) => step.skill === after);
-  const next = stage.steps[index + 1]?.skill;
-  const recorded = placed !== null && index < recordedSteps(stage).length;
+  const next = chainAfter(stage, after)[0];
   // Where steps are not recorded, the chain's order is all there is to go by.
   if (next !== undefined && !recorded) return buildHandoff([], [skill(next, subject.name)]);
   if (!placed) return orderHandoff(workflow, stage, subject.name);
@@ -440,7 +478,7 @@ export function pathPosition(
   const counted = progress ? countedSteps(workflow, progress) : {};
   const open: Record<string, string[]> = {};
   for (const stage of workflow.stages) {
-    if (stage.kind === "skill") open[stage.id] = openSteps(workflow, stage, known, counted);
+    if (stage.kind === "skill") open[stage.id] = openSteps(stage, known, counted);
   }
   const stage = progress
     ? stageAt(workflow, progress, counted)
@@ -449,20 +487,23 @@ export function pathPosition(
   const unfinished = workflow.stages.flatMap((each, index) =>
     each.kind === "skill" &&
     !each.optional &&
-    each.id !== "submit" &&
-    each.id !== "publish" &&
+    !heldByState(each) &&
     !isDone(workflow, index, known, counted)
       ? [
           {
             stage: each,
-            open: openWork(workflow, each, known, counted) ?? "its steps are not recorded",
+            open: openWork(each, known, counted) ?? "its steps are not recorded",
           },
         ]
       : [],
   );
   let handoff: Handoff;
+  let remaining: string[] | undefined;
   if (finished && after !== undefined) {
-    handoff = handoffAfter(workflow, finished, after, placed, subject);
+    const recorded = placed !== null && records(finished, after);
+    handoff = handoffAfter(workflow, finished, after, recorded, placed, subject);
+    // A step not recorded has only the chain's order to go by.
+    remaining = recorded ? (open[finished.id] ?? []) : chainAfter(finished, after);
   } else if (placed) {
     handoff = progressHandoff(workflow, null, placed, subject);
   } else {
@@ -472,11 +513,12 @@ export function pathPosition(
     stage,
     open:
       stage?.kind === "skill" && known.state !== "submitted"
-        ? openWork(workflow, stage, known, counted)
+        ? openWork(stage, known, counted)
         : null,
     openSteps: open,
     counted,
     unfinished,
     handoff,
+    ...(remaining ? { remaining } : {}),
   };
 }

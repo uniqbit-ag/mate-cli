@@ -10,7 +10,7 @@ import {
   type WorkflowStage,
 } from "@uniqbit/mate-core/studio";
 
-/** What a change needs next, read from its validation and task counts (design D5). */
+/** What a change needs next, read from its validation and task counts, else its stage. */
 export type ChangeGroup = "needs-you" | "building" | "ready";
 
 export const CHANGE_GROUPS: readonly ChangeGroup[] = ["needs-you", "building", "ready"];
@@ -21,7 +21,14 @@ export const GROUP_TITLES: Record<ChangeGroup, string> = {
   ready: "Ready to submit",
 };
 
+/** The stages a change is ready at: `submit`, and `publish` after it. */
+const READY_STAGES: ReadonlySet<string> = new Set(["submit", "publish"]);
+
 export function changeGroup(change: StudioChange): ChangeGroup {
+  // Without a plan there are no tasks: its stage alone says what it needs.
+  if (change.planned === false) {
+    return READY_STAGES.has(change.position?.stage?.id ?? "") ? "ready" : "needs-you";
+  }
   const total = change.totalTasks ?? 0;
   const done = change.completedTasks ?? 0;
   if (change.valid === false || total === 0 || done === 0) return "needs-you";
@@ -66,7 +73,10 @@ const DEFAULT_WORKFLOW = defaultWorkflow();
 export function changePath(workflow: Workflow = DEFAULT_WORKFLOW): WorkflowStage[] {
   const passed = stagesBeforeWork(workflow);
   return workflow.stages.filter(
-    (stage) => !stage.optional && stage.id !== "publish" && !passed.includes(stage),
+    (stage) =>
+      !stage.optional &&
+      !(stage.kind === "skill" && stage.milestone === "published") &&
+      !passed.includes(stage),
   );
 }
 

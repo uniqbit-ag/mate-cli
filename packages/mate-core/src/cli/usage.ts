@@ -56,6 +56,7 @@ export function usage(): string {
     ` ${n} workflow steps <stage> [--json]   a Delivery Path stage's steps, entry and next stage`,
     ` ${n} workflow done <skill> [<change>] [--json]   record a finished step; prints the next`,
     ` ${n} workflow next <change> [--after <skill>] [--json]   the stage a change is at and its next actions`,
+    ` ${n} workflow trust [--json]   approve the run: commands the companion's workflow declares`,
     ` ${n} doctor`,
     ` ${n} report [--days N] [--input FILE|-] [--json]`,
     ` ${n} studio [--writable] [--terminal] [--detach-timeout <minutes>]`,

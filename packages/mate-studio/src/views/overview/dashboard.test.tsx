@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import type { StudioChange, StudioCompanionPayload } from "@uniqbit/mate-core/studio";
+import {
+  defaultWorkflow,
+  pathPosition,
+  type StudioChange,
+  type StudioCompanionPayload,
+} from "@uniqbit/mate-core/studio";
 
 import { positioned } from "../../../test/positioned";
 
@@ -24,6 +29,33 @@ const change = (
     artifacts: [],
     ...extra,
   });
+
+const DEFAULT = defaultWorkflow();
+
+/** Every step before `submit`, recorded: a change without a plan is then at `submit`. */
+const RECORDED_TO_SUBMIT = Object.fromEntries(
+  DEFAULT.stages
+    .slice(
+      0,
+      DEFAULT.stages.findIndex((stage) => stage.id === "submit"),
+    )
+    .flatMap((stage) =>
+      stage.kind === "skill" ? [[stage.id, stage.steps.map((step) => step.skill)]] : [],
+    ),
+);
+
+/** A change of a type without a plan, as the payload places it from its recorded steps. */
+const unplanned = (
+  name: string,
+  steps: Record<string, string[]>,
+  artifacts: StudioChange["artifacts"] = [],
+): StudioChange => ({
+  name,
+  artifacts,
+  planned: false,
+  steps,
+  position: pathPosition(DEFAULT, { steps }, { name }),
+});
 
 const changes = [
   change("acme-review", 0, 16),
@@ -181,6 +213,29 @@ describe("Dashboard", () => {
     expect(markup).toContain("No tasks");
     expect(markup).not.toContain('role="progressbar"');
     expect(markup).toContain(">Needs you</h2>");
+  });
+
+  it("labels and groups a change without a plan by its stage, never by tasks", () => {
+    const markup = staticMarkup(
+      <Dashboard
+        payload={payload([
+          unplanned("acme-glossary", {}),
+          unplanned("acme-notes", RECORDED_TO_SUBMIT, [
+            { id: "brief", path: "notes/acme-notes/brief.md" },
+          ]),
+        ])}
+      />,
+    );
+    expect(markup).not.toContain("No tasks");
+    expect(markup).not.toContain('role="progressbar"');
+    expect(markup.indexOf('data-change="acme-glossary"')).toBeLessThan(
+      markup.indexOf(">Ready to submit</h2>"),
+    );
+    expect(markup.indexOf('data-change="acme-notes"')).toBeGreaterThan(
+      markup.indexOf(">Ready to submit</h2>"),
+    );
+    const submit = DEFAULT.stages.find((stage) => stage.id === "submit")!;
+    expect(markup).toContain(`>${submit.label}<`);
   });
 
   it("puts a change with a validation issue under Needs you, saying it does not validate", () => {

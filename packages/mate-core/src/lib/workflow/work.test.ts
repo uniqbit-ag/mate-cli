@@ -3,13 +3,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { readChangeInput } from "./change-progress";
 import { defaultWorkflow, parseWorkflow, type Workflow } from "./declaration";
+import { openWork, type WorkItem } from "./work";
 
 let companion: string;
 
 beforeEach(async () => {
-  companion = await fs.mkdtemp(path.join(os.tmpdir(), "acme-change-input-"));
+  companion = await fs.mkdtemp(path.join(os.tmpdir(), "acme-work-"));
 });
 
 afterEach(async () => {
@@ -47,7 +47,13 @@ stages:
   return verdict.workflow;
 })();
 
-describe("readChangeInput", () => {
+async function found(workflow: Workflow, name: string): Promise<WorkItem> {
+  const item = await openWork(companion, workflow).find(name);
+  if ("problem" in item) throw new Error(item.problem);
+  return item;
+}
+
+describe("work input", () => {
   test("reads a built-in-type change's record, tasks, present artifacts and unmerged branches", async () => {
     const dir = "openspec/changes/acme-queue";
     await write(`${dir}/tasks.md`, "- [x] 1.1 Acme\n- [ ] 1.2 Acme\n- [ ] 1.3 Acme\n");
@@ -66,12 +72,7 @@ describe("readChangeInput", () => {
       ].join("\n"),
     );
 
-    const input = await readChangeInput(
-      companion,
-      defaultWorkflow(),
-      path.join(companion, dir),
-      "acme-queue",
-    );
+    const input = await (await found(defaultWorkflow(), "acme-queue")).input();
 
     expect(input).toEqual({
       progress: {
@@ -90,16 +91,9 @@ describe("readChangeInput", () => {
   });
 
   test("takes the plan's validity from the caller", async () => {
-    const dir = "openspec/changes/acme-queue";
-    await write(`${dir}/tasks.md`, "- [x] 1.1 Acme\n");
+    await write("openspec/changes/acme-queue/tasks.md", "- [x] 1.1 Acme\n");
 
-    const input = await readChangeInput(
-      companion,
-      defaultWorkflow(),
-      path.join(companion, dir),
-      "acme-queue",
-      { valid: false },
-    );
+    const input = await (await found(defaultWorkflow(), "acme-queue")).input({ valid: false });
 
     expect(input.progress.plan?.valid).toBe(false);
   });
@@ -107,12 +101,7 @@ describe("readChangeInput", () => {
   test("a declared type's change has no plan and lists every declared review", async () => {
     await write("notes/acme-glossary/brief.md", "# Acme\n");
 
-    const input = await readChangeInput(
-      companion,
-      NOTES,
-      path.join(companion, "notes/acme-glossary"),
-      "acme-glossary",
-    );
+    const input = await (await found(NOTES, "acme-glossary")).input();
 
     expect(input).toEqual({
       progress: { steps: {} },
@@ -125,5 +114,41 @@ describe("readChangeInput", () => {
         unmerged: [],
       },
     });
+  });
+});
+
+describe("finding work", () => {
+  test("a declared type's work is its change folders, recorded in place", async () => {
+    await write("notes/acme-glossary/brief.md", "# Acme\n");
+    await write("openspec/changes/acme-fix/tasks.md", "- [ ] 1.1 Acme\n");
+    const work = openWork(companion, NOTES);
+
+    expect(await work.names()).toEqual(["acme-glossary"]);
+    await (await found(NOTES, "acme-glossary")).recordStep("draft", "acme-draft");
+
+    const record = await fs.readFile(
+      path.join(companion, "notes/acme-glossary/delivery.yaml"),
+      "utf8",
+    );
+    expect(record).toContain("draft:");
+    expect(record).toContain("acme-draft");
+  });
+
+  test("missing work names the expected path and the work that exists", async () => {
+    await write("notes/acme-glossary/brief.md", "# Acme\n");
+
+    expect(await openWork(companion, NOTES).find("acme-glosary")).toEqual({
+      problem:
+        "acme-glosary has no change folder at notes/acme-glosary/; the changes are acme-glossary.",
+    });
+    expect(await openWork(companion, defaultWorkflow()).find("acme-fix")).toEqual({
+      problem: "acme-fix has no change folder at openspec/changes/acme-fix/; there are no changes.",
+    });
+  });
+
+  test("an archived change is no work", async () => {
+    await write("openspec/changes/archive/2026-01-02-acme-fix/tasks.md", "- [x] 1.1 Acme\n");
+
+    expect(await openWork(companion, defaultWorkflow()).find("acme-fix")).toHaveProperty("problem");
   });
 });

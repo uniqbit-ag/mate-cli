@@ -966,6 +966,7 @@ falls back locally. Final delivery failure returns
 | `mate workflow steps <stage> [--json]`                             | Resolve a Delivery Path stage: its steps, entry skill, and next stage.         |
 | `mate workflow done <skill> [<change>] [--json]`                   | Record a finished step and print what comes next.                              |
 | `mate workflow next <change> [--after <skill>] [--json]`           | Show the stage a change is at and its next actions.                            |
+| `mate workflow trust [--json]`                                     | Approve the `run:` commands the companion's workflow declares.                 |
 | `mate update`                                                      | Upgrade an npm-managed Mate installation and reinstall requirements.           |
 | `mate update --check`                                              | Check for an update without installing it.                                     |
 
@@ -1028,6 +1029,16 @@ folder does not exist, naming the expected path and the changes that exist.
 `done` hands off without a folder only up to the path's first required stage,
 before the change exists. An invalid declaration never falls back to the
 default steps.
+
+`mate workflow trust` lists the `run:` commands the companion's workflow
+declares for its artifact types and asks you to approve the ones this machine
+has not. Submit and publication run no such command until you approve it,
+since anyone who can push to the companion can change it; they fail naming
+the command instead. Approvals are kept per user in `~/.mate/trusted-hooks.json`,
+per command text, so an edited command needs approving again; a script the
+command calls is trusted with it. The command asks only in a terminal, so a
+session cannot approve a command for you. With `--json` it prints `ok` and
+`commands` (each `type`, `hook`, `run` and `trusted`) and approves nothing.
 
 **Submit.** A finished change is submitted before its delivery branch merges.
 `mate artifact submit <change>...` records and refreshes the delivery as

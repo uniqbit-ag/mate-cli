@@ -735,3 +735,60 @@ describe("stagesBeforeWork and stepStage", () => {
     expect(stepStage(DECLARED, "acme-missing")).toBeUndefined();
   });
 });
+
+describe("Milestones", () => {
+  const BUILD = declared(`version: 1
+stages:
+  - id: explore
+    steps: [{ skill: mate-explore-change }]
+  - id: propose
+    steps: [{ skill: mate-propose-change }]
+  - id: apply
+    label: Build
+    steps: [{ skill: mate-apply-change }, { skill: acme-verify }]
+  - id: security-review
+    steps: [{ skill: acme-scan }]
+${TAIL}`);
+
+  test("a custom stage is tracked by its steps alone, whatever the plan says", () => {
+    const steps = { apply: ["mate-apply-change", "acme-verify"] };
+    expect(at(BUILD, { plan: plan(4, 4), steps })).toBe("security-review");
+    expect(
+      at(BUILD, { plan: plan(4, 4), steps: { ...steps, "security-review": ["acme-scan"] } }),
+    ).toBe("submit");
+  });
+
+  test("a declared built-in id keeps its Milestone", () => {
+    const position = pathPosition(BUILD, { plan: plan(3, 4), steps: { apply: ["acme-verify"] } });
+    expect([position.stage?.id, position.open]).toEqual(["apply", "1 task open"]);
+  });
+
+  test("a declared type does not pass explore by existing", () => {
+    const notes = declared(`version: 1
+artifacts:
+  acme-notes:
+    change: notes/{name}/
+    published: [notes/index.md]
+    reviews: { brief: brief.md }
+    publish:
+      apply: { run: "acme-notes merge {change}" }
+stages:
+  - id: explore
+    steps: [{ skill: mate-explore-change }]
+  - id: build
+    steps: [{ skill: acme-build }]
+  - id: submit
+    artifact: acme-notes
+    steps: [{ skill: mate-submit-change }]
+  - id: publish
+    steps: [{ skill: mate-publish-artifact }]
+`);
+    const { progress } = change(notes, "acme-glossary");
+    expect(pathPosition(notes, progress).stage?.id).toBe("explore");
+    expect(stagesBeforeWork(notes)).toEqual([]);
+  });
+
+  test("submitted work passes submit with no step of it recorded", () => {
+    expect(at(defaultWorkflow(), { plan: plan(4, 4), state: "submitted" })).toBe("publish");
+  });
+});

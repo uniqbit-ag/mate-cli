@@ -40,7 +40,7 @@ import {
   type PendingFailure,
   type SubmitDeps,
 } from "./staging/submit";
-import { readChangeInput } from "../workflow/change-progress";
+import { openWork } from "../workflow/work";
 import type { Workflow } from "../workflow/declaration";
 import { pathPosition } from "../workflow/position";
 
@@ -121,7 +121,7 @@ type Prepared = Omit<
 > & { group: string; failure?: string };
 
 /**
- * What submitting leaves unfinished for the change in `changeDir`, as warnings: `stage-open` for
+ * What submitting leaves unfinished for `change`, as warnings: `stage-open` for
  * the first required skill stage before `submit` whose plan is open, and `step-counted` naming
  * every other step before `mate-submit-change` that is neither recorded nor covered, which
  * submitting counts. Optional and review stages are passed over. Never blocks: a recorded step
@@ -130,10 +130,12 @@ type Prepared = Omit<
 async function stageWarnings(
   companionPath: string,
   workflow: Workflow,
-  changeDir: string,
   change: string,
 ): Promise<Array<StageWarning | CountedWarning>> {
-  const { progress } = await readChangeInput(companionPath, workflow, changeDir, change);
+  const work = await openWork(companionPath, workflow).find(change);
+  // Recording the delivery found the change, so it exists.
+  if ("problem" in work) return [];
+  const { progress } = await work.input();
   // As the change will be once submitted: what is still open then, the plan holds open.
   const { unfinished, counted } = pathPosition(workflow, { ...progress, state: "submitted" });
   const warnings: Array<StageWarning | CountedWarning> = [];
@@ -232,7 +234,7 @@ async function prepare(
   const [{ record, settlement, outcomes, defaultBranch, diagnostics }] = outcome.results;
   const named = await groupOfChange(cwd, change, type);
   if (named.warning) warnings.push({ kind: "group", change, message: named.warning });
-  warnings.push(...(await stageWarnings(cwd, workflow, sourceDir(cwd, type, change), change)));
+  warnings.push(...(await stageWarnings(cwd, workflow, change)));
   deps.onWarnings?.(change, warnings, settlement.unscoped);
 
   const fields = { defaultBranch, diagnostics, record, settlement, outcomes, warnings };

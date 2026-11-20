@@ -1,15 +1,9 @@
-import fs from "node:fs/promises";
-import path from "node:path";
+import readline from "node:readline/promises";
 
-import { activeChanges, isChangeName, locateChange } from "../../../lib/change-layout";
-import { recordStep } from "../../../lib/delivery/record";
-import { sourceDir } from "../../../lib/delivery/staging/artifact-type";
-import { submitArtifactType } from "../../../lib/delivery/staging/registry";
-import { pathIsDirectory } from "../../../lib/fs-utils";
+import { isChangeName } from "../../../lib/change-layout";
 import { resolveFrameworkContext } from "../../../lib/orchestrator/framework-context";
 import { RepositoryNotFoundError } from "../../../lib/orchestrator/types";
 import {
-  BUILTIN_ARTIFACT_TYPE,
   loadWorkflow,
   nextStage,
   WORKFLOW_FILE,
@@ -20,14 +14,21 @@ import {
   type WorkflowSource,
   type WorkflowStep,
 } from "../../../lib/workflow/declaration";
-import { readChangeInput } from "../../../lib/workflow/change-progress";
 import {
   handoffLines,
   renderHandoff,
   type HandoffAction,
   type SkillAction,
 } from "../../../lib/workflow/handoff";
-import { opensPath, pathPosition, recordedSteps, stepStage } from "../../../lib/workflow/position";
+import {
+  declaredCommands,
+  isCommandTrusted,
+  trustCommands,
+  type DeclaredCommand,
+} from "../../../lib/workflow/hook-trust";
+import { pathPosition, stepStage } from "../../../lib/workflow/position";
+import { noStep, reportStep } from "../../../lib/workflow/report";
+import { openWork } from "../../../lib/workflow/work";
 import { errorMessage } from "../../../runtime/error-message";
 import { FRAMEWORK_NAME } from "../../../runtime/framework";
 import { agentRuntime } from "../../../runtime/skill-prefix";
@@ -42,6 +43,8 @@ export interface WorkflowCommandDeps {
   stderr?: (line: string) => void;
   /** Names the Agent Runtime whose skill syntax a hand-off uses; `process.env` by default. */
   env?: Record<string, string | undefined>;
+  /** Asks the developer `question`; null outside a terminal. A terminal prompt by default. */
+  confirm?: (question: string) => Promise<boolean | null>;
 }
 
 const BOOLEAN_FLAGS: BooleanFlagSet = new Set(["json"]);
@@ -180,49 +183,13 @@ async function runSteps(argv: string[], run: Run, deps: WorkflowCommandDeps): Pr
     file: workflow.file,
     steps: stage.steps,
     entry: stage.entry,
-    ...(stage.id === "submit" ? { artifact: workflow.submitArtifact } : {}),
+    ...(stage.milestone === "submitted" ? { artifact: workflow.submitArtifact } : {}),
     next: nextStage(workflow, stage.id),
     warnings: workflow.warnings,
   };
   for (const warning of workflow.warnings) run.emitErr(`warning: ${warning}`);
   if (run.json) run.emitOut(JSON.stringify(result));
   else for (const line of renderSteps(result)) run.emitOut(line);
-}
-
-/** The names of the changes of the type submit handles that have a folder. */
-async function existingChanges(companionPath: string, workflow: Workflow): Promise<string[]> {
-  if (workflow.submitArtifact === BUILTIN_ARTIFACT_TYPE) return activeChanges(companionPath);
-  const root = path.dirname(sourceDir(companionPath, submitArtifactType(workflow), "_"));
-  const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
-  return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
-}
-
-/**
- * The change's folder; else the problem naming the path it is expected at and the changes that
- * do exist, so the next call can correct the name.
- */
-async function changeFolder(
-  companionPath: string,
-  workflow: Workflow,
-  change: string,
-): Promise<{ dir: string } | { problem: WorkflowProblem }> {
-  let missing: string;
-  if (workflow.submitArtifact === BUILTIN_ARTIFACT_TYPE) {
-    const location = await locateChange(companionPath, change);
-    if (location && !location.archived) return { dir: location.dir };
-    missing = `openspec/changes/${change}/`;
-  } else {
-    const type = submitArtifactType(workflow);
-    const dir = sourceDir(companionPath, type, change);
-    if (await pathIsDirectory(dir)) return { dir };
-    missing = `${type.source}/${change}/`;
-  }
-  const existing = (await existingChanges(companionPath, workflow)).toSorted();
-  const known =
-    existing.length > 0 ? `; the changes are ${existing.join(", ")}` : "; there are no changes";
-  return {
-    problem: { path: "", message: `${change} has no change folder at ${missing}${known}.` },
-  };
 }
 
 /** What `mate workflow done --json` prints for a reported step. */
@@ -251,17 +218,6 @@ export interface StepDone {
   actions: HandoffAction[];
   /** The optional skill stages offered beside them. */
   optional: SkillAction[];
-}
-
-/** Each skill stage with its steps, for a refusal that names what to run instead. */
-function stepsOf(workflow: Workflow): string {
-  return workflow.stages
-    .flatMap((stage) =>
-      stage.kind === "skill"
-        ? [`${stage.id} (${stage.steps.map((step) => step.skill).join(", ")})`]
-        : [],
-    )
-    .join("; ");
 }
 
 /**
@@ -298,46 +254,13 @@ async function runDone(argv: string[], run: Run, deps: WorkflowCommandDeps): Pro
   const resolved = await resolveWorkflow(run, deps);
   if (!resolved) return;
   const { companionPath, workflow } = resolved;
-  const stage = stepStage(workflow, skill);
-  if (!stage) {
-    const message = `${skill} is no step of the Delivery Path; the steps are ${stepsOf(workflow)}.`;
-    return fail(run, [{ path: "", message }]);
-  }
-  const steps = stage.steps.map((step) => step.skill);
-  const index = steps.indexOf(skill);
-
-  let dir: string | null = null;
-  // After publication the change is archived, so `publish` needs no folder.
-  if (name && stage.id !== "publish") {
-    const folder = await changeFolder(companionPath, workflow, name);
-    // Before the change exists only its stage's hand-off holds; after, a missing one is a typo.
-    if (!("problem" in folder)) dir = folder.dir;
-    else if (!opensPath(workflow, stage)) return fail(run, [folder.problem]);
-  }
-  // An optional stage records nothing: no change waits for it, and the record stays about the
-  // stages that count.
-  const recorded = Boolean(name && dir !== null && index < recordedSteps(stage).length);
   try {
-    if (recorded) await recordStep(dir!, name!, stage.id, skill);
-    const input =
-      name && dir !== null ? await readChangeInput(companionPath, workflow, dir, name) : null;
-    const { handoff, openSteps, counted } = pathPosition(
-      workflow,
-      input?.progress ?? null,
-      input?.subject ?? (name ? { name } : {}),
-      skill,
-    );
-    // A stage that records nothing has only the chain's order to go by.
-    const open = recorded && input ? (openSteps[stage.id] ?? []) : steps.slice(index + 1);
+    const reported = await reportStep(openWork(companionPath, workflow), workflow, skill, name);
+    if ("problem" in reported) return fail(run, [{ path: "", message: reported.problem }]);
+    const { handoff, ...done } = reported;
     const result: StepDone = {
       ok: true,
-      stage: stage.id,
-      change: name ?? null,
-      step: skill,
-      recorded,
-      remaining: open,
-      counted,
-      complete: open.length === 0,
+      ...done,
       actions: handoff.actions,
       optional: handoff.optional,
     };
@@ -391,13 +314,12 @@ async function runNext(argv: string[], run: Run, deps: WorkflowCommandDeps): Pro
   if (!resolved) return;
   const { companionPath, workflow } = resolved;
   if (after !== undefined && !stepStage(workflow, after)) {
-    const message = `${after} is no step of the Delivery Path; the steps are ${stepsOf(workflow)}.`;
-    return fail(run, [{ path: "", message }]);
+    return fail(run, [{ path: "", message: noStep(workflow, after) }]);
   }
-  const folder = await changeFolder(companionPath, workflow, name);
-  if ("problem" in folder) return fail(run, [folder.problem]);
+  const found = await openWork(companionPath, workflow).find(name);
+  if ("problem" in found) return fail(run, [{ path: "", message: found.problem }]);
   try {
-    const { progress, subject } = await readChangeInput(companionPath, workflow, folder.dir, name);
+    const { progress, subject } = await found.input();
     const { stage: position, open, handoff } = pathPosition(workflow, progress, subject, after);
     const result: ChangeNext = {
       ok: true,
@@ -424,6 +346,75 @@ async function runNext(argv: string[], run: Run, deps: WorkflowCommandDeps): Pro
   }
 }
 
+/** What `mate workflow trust --json` prints: each declared `run:` command and its approval. */
+export interface CommandsTrust {
+  ok: true;
+  commands: Array<DeclaredCommand & { trusted: boolean }>;
+}
+
+/**
+ * @command mate workflow trust
+ * @description Lists the `run:` commands the Session Companion's workflow declares for its
+ * artifact types and, in a terminal, asks the developer to approve the ones this machine has
+ * not: submit and publication run no command until it is approved, since anyone who can push to
+ * the companion can change it. Approvals are kept per user in `~/.mate/trusted-hooks.json`, per
+ * command text, so an edited command needs approving again.
+ * @flags
+ * - `--json` — emit a {@link CommandsTrust} and approve nothing.
+ * @remarks Exits 1 on an invalid declaration, or outside a terminal while a command is not
+ * approved: an agent cannot approve one.
+ */
+async function runTrust(run: Run, deps: WorkflowCommandDeps): Promise<void> {
+  const resolved = await resolveWorkflow(run, deps);
+  if (!resolved) return;
+  const declared = declaredCommands(resolved.workflow);
+  const commands = await Promise.all(
+    declared.map(async (command) => ({ ...command, trusted: await isCommandTrusted(command.run) })),
+  );
+  if (run.json) {
+    return run.emitOut(JSON.stringify({ ok: true, commands } satisfies CommandsTrust));
+  }
+  const untrusted = commands.filter((command) => !command.trusted);
+  if (untrusted.length === 0) {
+    run.emitOut(
+      commands.length === 0
+        ? `${WORKFLOW_FILE} declares no run: commands.`
+        : `Every run: command in ${WORKFLOW_FILE} is trusted on this machine.`,
+    );
+    return;
+  }
+  run.emitOut(`${WORKFLOW_FILE} declares commands submit and publication run:`);
+  for (const command of untrusted) {
+    run.emitOut(`  ${command.type} ${command.hook}: ${command.run}`);
+  }
+  const approve = deps.confirm ?? confirmInTerminal;
+  const answer = await approve("Run these commands on this machine? [y/N] ");
+  if (answer === null) {
+    run.emitErr(
+      `mate: approving commands needs a terminal; run \`${FRAMEWORK_NAME} workflow trust\` yourself.`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (!answer) {
+    run.emitOut("Nothing approved.");
+    return;
+  }
+  await trustCommands(untrusted.map((command) => command.run));
+  run.emitOut(`Approved ${untrusted.length} command${untrusted.length === 1 ? "" : "s"}.`);
+}
+
+/** The developer's yes or no; null outside a terminal. */
+async function confirmInTerminal(question: string): Promise<boolean | null> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return null;
+  const prompt = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return /^y(es)?$/i.test((await prompt.question(question)).trim());
+  } finally {
+    prompt.close();
+  }
+}
+
 const HELP = new Set(["help", "--help", "-h"]);
 
 /** The usage lines of `mate workflow`'s subcommands. */
@@ -439,7 +430,7 @@ function workflowUsage(): string {
 
 /**
  * @command mate workflow <subcommand>
- * @description Dispatches to `steps`, `done` and `next`. `--help` (also after a subcommand) prints
+ * @description Dispatches to `steps`, `done`, `next` and `trust`. `--help` (also after a subcommand) prints
  * the workflow usage. Prints it and sets a non-zero exit code for an unrecognized subcommand.
  */
 export async function runWorkflowCommand(
@@ -464,6 +455,9 @@ export async function runWorkflowCommand(
       return;
     case "next":
       await runNext(argv, run, deps);
+      return;
+    case "trust":
+      await runTrust(run, deps);
       return;
     default:
       run.emitErr(`Unknown workflow command: ${subcommand ?? ""}`);

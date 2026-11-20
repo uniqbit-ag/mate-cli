@@ -23,36 +23,45 @@ export type BuiltinStageId =
   | "submit"
   | "publish";
 
+/**
+ * A point in a piece of work's life a stage reaches. Read from the work's plan and state, never
+ * recorded; a stage's tracking on the Path Position follows from it.
+ */
+export type Milestone = "exists" | "planned" | "implemented" | "submitted" | "published";
+
 interface BuiltinStage {
   id: BuiltinStageId;
   label: string;
   /** The Mate stage skill, allowed in this stage only. */
   skill: string;
   optional: boolean;
+  milestone?: Milestone;
 }
 
 const builtin = (
   id: BuiltinStageId,
   label: string,
   skill: string,
-  optional = false,
+  optional: boolean,
+  milestone?: Milestone,
 ): BuiltinStage => ({
   id,
   label,
   skill,
   optional,
+  ...(milestone ? { milestone } : {}),
 });
 
-/** The built-in skill stages in default order, each with its Mate stage skill. */
+/** The built-in skill stages in default order, each with its Mate stage skill and Milestone. */
 export const BUILTIN_STAGES: readonly BuiltinStage[] = [
   builtin("clarify-intent", "Clarify intent", "mate-clarify-intent", true),
-  builtin("explore", "Explore change", "mate-explore-change"),
-  builtin("propose", "Propose change", "mate-propose-change"),
-  builtin("apply", "Apply change", "mate-apply-change"),
+  builtin("explore", "Explore change", "mate-explore-change", false, "exists"),
+  builtin("propose", "Propose change", "mate-propose-change", false, "planned"),
+  builtin("apply", "Apply change", "mate-apply-change", false, "implemented"),
   builtin("inspect-outcome", "Inspect outcome", "mate-show-me", true),
   builtin("refine-code", "Refine code", "mate-simplify-code", true),
-  builtin("submit", "Submit change", "mate-submit-change"),
-  builtin("publish", "Publish companion artifacts", "mate-publish-artifact"),
+  builtin("submit", "Submit change", "mate-submit-change", false, "submitted"),
+  builtin("publish", "Publish companion artifacts", "mate-publish-artifact", false, "published"),
 ];
 
 /** Id of the default review stage, which the default path places after `propose`. */
@@ -90,6 +99,8 @@ export interface WorkflowSkillStage extends StageBase {
   steps: WorkflowStep[];
   /** The skill the stage is started with: its first step's. */
   entry: string;
+  /** The Milestone of a stage with a built-in id; absent for a custom stage. */
+  milestone?: Milestone;
 }
 
 export interface WorkflowReviewStage extends StageBase {
@@ -150,11 +161,21 @@ export function skillStageOf(
   skills: readonly string[],
   source: WorkflowSource,
 ): WorkflowSkillStage {
-  const own = mateStageSkill(id);
+  const known = BUILTIN_BY_ID.get(id);
   const steps = skills.map((skill): WorkflowStep =>
-    skill === own ? { skill, own: true } : { skill },
+    skill === known?.skill ? { skill, own: true } : { skill },
   );
-  return { id, label, kind: "skill", optional, source, steps, entry: skills[0] ?? "" };
+  const milestone = known?.milestone;
+  return {
+    id,
+    label,
+    kind: "skill",
+    optional,
+    source,
+    steps,
+    entry: skills[0] ?? "",
+    ...(milestone ? { milestone } : {}),
+  };
 }
 
 export function defaultStages(): WorkflowStage[] {

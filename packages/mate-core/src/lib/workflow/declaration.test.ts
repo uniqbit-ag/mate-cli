@@ -83,6 +83,25 @@ describe("the default workflow", () => {
     });
   });
 
+  test("a skill stage carries its Milestone; the others and reviews carry none", () => {
+    expect(
+      defaultWorkflow().stages.map((stage) => [
+        stage.id,
+        stage.kind === "skill" ? stage.milestone : undefined,
+      ]),
+    ).toEqual([
+      ["clarify-intent", undefined],
+      ["explore", "exists"],
+      ["propose", "planned"],
+      ["review", undefined],
+      ["apply", "implemented"],
+      ["inspect-outcome", undefined],
+      ["refine-code", undefined],
+      ["submit", "submitted"],
+      ["publish", "published"],
+    ]);
+  });
+
   test("a file with only artifact types is refused: a custom workflow declares its stages", () => {
     expect(problemsOf(`version: 1\n${NOTES}`)).toEqual([
       { path: "stages", message: "a custom workflow declares its `stages`" },
@@ -132,6 +151,20 @@ ${TAIL}`),
         { skill: "acme-verify" },
       ],
     });
+  });
+
+  test("a declared stage keeps its built-in id's Milestone; a custom stage has none", () => {
+    const workflow = workflowOf(
+      stagesOf(`  - id: apply
+    label: Build
+    steps: [{ skill: acme-build }]
+  - id: security-review
+    steps: [{ skill: acme-scan }]
+${TAIL}`),
+    );
+    expect(workflow.stages[0]).toMatchObject({ label: "Build", milestone: "implemented" });
+    expect(workflow.stages[1]).not.toHaveProperty("milestone");
+    expect(workflow.stages[2]).toMatchObject({ milestone: "submitted" });
   });
 
   test("a replaced Mate stage skill starts its stage", () => {

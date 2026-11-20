@@ -1,8 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { isMap, parse, parseDocument, stringify } from "yaml";
+import { type Document, isMap, isScalar, type Pair, parse, parseDocument, stringify } from "yaml";
+import { withPathLock } from "../../runtime/companion-lock";
 import { errorMessage } from "../../runtime/error-message";
+import { FRAMEWORK_NAME } from "../../runtime/framework";
 import { changeNameOf } from "../change-layout";
 import { scopedRepositories } from "../openspec-scopes";
 import {
@@ -15,6 +17,9 @@ import {
 import { DELIVERY_FILE } from "../../runtime/pending-records";
 
 export { DELIVERY_FILE };
+
+/** Lock namespace for a Delivery Record's read-modify-write. */
+const RECORD_LOCK_NAMESPACE = "delivery-record";
 
 /** A merge result: `open` is "not yet merged", `closed-unmerged` is "dropped". */
 export type MergeState = "merged" | "open" | "closed-unmerged";
@@ -520,21 +525,42 @@ export async function recordStep(
   skill: string,
 ): Promise<void> {
   const file = path.join(changeDir, DELIVERY_FILE);
-  // Read first: a damaged record is reported, never rewritten.
-  const record = await readDeliveryRecord(changeDir);
-  if (record === null) {
-    await writeDeliveryRecord(changeDir, {
-      ...unlinkedRecord(changeNameOf(change)),
-      stages: { [stage]: [skill] },
-    });
-    return;
+  // Concurrent `mate workflow done` runs would each rewrite the list they read.
+  const locked = await withPathLock(RECORD_LOCK_NAMESPACE, file, {}, async () => {
+    // Read first: a damaged record is reported, never rewritten.
+    const record = await readDeliveryRecord(changeDir);
+    if (record === null) {
+      await writeDeliveryRecord(changeDir, {
+        ...unlinkedRecord(changeNameOf(change)),
+        stages: { [stage]: [skill] },
+      });
+      return;
+    }
+    const steps = record.stages?.[stage] ?? [];
+    if (steps.includes(skill)) return;
+    const document = parseDocument(await fs.readFile(file, "utf8"));
+    if (isMap(document.get("stages", true))) {
+      document.setIn(["stages", stage], document.createNode([...steps, skill]));
+    } else {
+      document.delete("stages");
+      insertBeforeDeliveries(document, document.createPair("stages", { [stage]: [skill] }));
+    }
+    await fs.writeFile(file, document.toString(), "utf8");
+  });
+  if (!locked.acquired) {
+    throw new Error(`another ${FRAMEWORK_NAME} process is still writing ${file}; try again.`);
   }
-  const steps = record.stages?.[stage] ?? [];
-  if (steps.includes(skill)) return;
-  const document = parseDocument(await fs.readFile(file, "utf8"));
-  if (!isMap(document.get("stages", true))) document.delete("stages");
-  document.setIn(["stages", stage], document.createNode([...steps, skill]));
-  await fs.writeFile(file, document.toString(), "utf8");
+}
+
+/** Adds `pair` where {@link orderedRecord} puts `stages`: before `deliveries`, else last. */
+function insertBeforeDeliveries(document: Document, pair: Pair): void {
+  const root = document.contents;
+  if (!isMap(root)) return void document.add(pair);
+  const index = root.items.findIndex(
+    (item) => isScalar(item.key) && item.key.value === "deliveries",
+  );
+  if (index < 0) root.items.push(pair);
+  else root.items.splice(index, 0, pair);
 }
 
 /** The record without the recorded steps of `stage`. */

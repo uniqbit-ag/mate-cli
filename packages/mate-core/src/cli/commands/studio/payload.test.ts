@@ -644,6 +644,57 @@ stages:
       });
       expect(changes[1]).toMatchObject({ name: "add-docs", dropped: true });
       expect(changes[1]).not.toHaveProperty("steps");
+      // Built-in changes have a plan.
+      expect(changes.some((change) => "planned" in change)).toBe(false);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a declared submit type lists its own changes, without OpenSpec's details", async () => {
+    const root = await companion(`version: 1
+artifacts:
+  acme-notes:
+    change: notes/{name}/
+    published: [notes/index.md]
+    reviews: { brief: brief.md }
+    publish:
+      apply: { run: "true" }
+stages:
+  - id: draft
+    steps: [{ skill: acme-draft }]
+  - id: build
+    steps: [{ skill: acme-build }]
+  - id: submit
+    artifact: acme-notes
+    steps: [{ skill: mate-submit-change }]
+  - id: publish
+    steps: [{ skill: mate-publish-artifact }]
+`);
+    try {
+      const dir = path.join(root, "notes", "acme-glossary");
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(
+        path.join(dir, "delivery.yaml"),
+        "version: 1\nchange: acme-glossary\nstages:\n  draft: [acme-draft]\ndeliveries: []\n",
+      );
+      // `add-checkout` and `add-docs` are what `openspec list` names: not submit's type.
+      await fs.mkdir(path.join(root, "openspec", "changes", "add-checkout"), { recursive: true });
+
+      const { changes } = await payloadOf(root);
+
+      expect(changes.map(({ position: _position, ...change }) => change)).toEqual([
+        {
+          name: "acme-glossary",
+          artifacts: [{ id: "brief", path: "notes/acme-glossary/brief.md" }],
+          steps: { draft: ["acme-draft"] },
+          planned: false,
+        },
+      ]);
+      expect(changes[0]!.position?.stage?.id).toBe("build");
+      expect(changes[0]!.position?.handoff.actions).toEqual([
+        { kind: "skill", skill: "acme-build", change: "acme-glossary" },
+      ]);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

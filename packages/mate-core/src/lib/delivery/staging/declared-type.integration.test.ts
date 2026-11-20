@@ -53,7 +53,10 @@ stages:
     steps: [{ skill: mate-publish-artifact }]
 `);
   if (!verdict.ok) throw new Error(JSON.stringify(verdict.problems));
-  return declaredArtifactType(verdict.workflow.artifacts[0]!, { date: () => "2026-11-15" });
+  return declaredArtifactType(verdict.workflow.artifacts[0]!, {
+    date: () => "2026-11-15",
+    trusted: async () => true,
+  });
 }
 
 /** A companion clone holding `notes/index.md` and the change `acme-release`, merged. */
@@ -211,6 +214,13 @@ describe("a declared artifact type", () => {
       });
       expect(await locateTypedChange(environment, "acme-glossary")).toEqual({
         path: "notes/acme-glossary/",
+      });
+      // An archive id resolves to its record, as for the built-in type.
+      const record = path.join(dir, "notes-history", "2026-01-02-acme-glossary");
+      fs.mkdirSync(record, { recursive: true });
+      expect(await locateTypedChange(environment, "2026-01-02-acme-glossary")).toEqual({
+        dir: record,
+        archived: true,
       });
     },
     TIMEOUT,

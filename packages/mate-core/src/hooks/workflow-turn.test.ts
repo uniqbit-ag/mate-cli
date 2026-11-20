@@ -7,6 +7,7 @@ import path from "node:path";
 import hooksJson from "../../claude-plugin/hooks/hooks.json";
 import { defaultMateBin, parseNextHandoff } from "../runtime/workflow/next-handoff-process";
 import { reportedSteps, type PrintedHandoff } from "../runtime/workflow/turn";
+import { mateHome } from "../runtime/runtime-directory";
 import { invokedSkill } from "../runtime/skill-prefix";
 import { handleTurnEvent, type TurnDeps } from "./workflow-turn";
 
@@ -423,8 +424,7 @@ describe("the switch and the plugin", () => {
     expect(result.stderr).toBe("");
     expect(result.status).toBe(0);
     expect(JSON.parse(result.stdout).decision).toBe("block");
-    const stateDir = `mate-turn-hooks-${process.getuid?.() ?? ""}`.replace(/-$/, "");
-    const state = path.join(os.tmpdir(), stateDir, `${session}.json`);
+    const state = path.join(mateHome(), "turn-hooks", `${session}.json`);
     expect(await fs.stat(state).then(() => true)).toBe(true);
 
     // A prompt that starts no skill clears the turn before the module loads; the stop then has
@@ -437,6 +437,27 @@ describe("the switch and the plugin", () => {
     expect(await fs.stat(state).catch(() => null)).toBeNull();
     expect(send(stopPayload)).toMatchObject({ status: 0, stdout: "", stderr: "" });
     await fs.rm(state, { force: true });
+  });
+
+  test("the shim never works through a state folder that is a link", async () => {
+    const shim = path.join(import.meta.dirname, "../../claude-plugin/hooks/workflow-turn.mjs");
+    const home = path.join(root, "home");
+    const elsewhere = path.join(root, "elsewhere");
+    await fs.mkdir(path.join(home, ".mate"), { recursive: true });
+    await fs.mkdir(elsewhere, { mode: 0o700 });
+    await fs.symlink(elsewhere, path.join(home, ".mate", "turn-hooks"));
+    const planted = path.join(elsewhere, "acme-session.json");
+    await fs.writeFile(planted, "{}\n");
+    const send = (payload: Record<string, unknown>) =>
+      spawnSync("node", [shim], {
+        input: JSON.stringify({ session_id: "acme-session", ...payload }),
+        encoding: "utf8",
+        env: { ...process.env, HOME: home, MATE_TURN_HOOKS: "" },
+      });
+
+    expect(send({ hook_event_name: "UserPromptSubmit", prompt: "What next?" }).status).toBe(0);
+    expect(await fs.stat(planted).then(() => true)).toBe(true);
+    expect(send({ hook_event_name: "Stop" })).toMatchObject({ status: 0, stdout: "" });
   });
 
   test("a relative PATH entry is never the mate the hook runs", async () => {

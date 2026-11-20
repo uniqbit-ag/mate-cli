@@ -5,8 +5,14 @@ import path from "node:path";
 import { companionGit, nulPaths } from "../../../runtime/companion-git";
 import { changeNameOf, parseAnchor } from "../../change-layout";
 import { pathIsDirectory } from "../../fs-utils";
-import type { DeclaredArtifactType, WorkflowHook } from "../../workflow/declaration";
+import {
+  type DeclaredArtifactType,
+  WORKFLOW_FILE,
+  type WorkflowHook,
+} from "../../workflow/declaration";
+import { isCommandTrusted } from "../../workflow/hook-trust";
 import { folderPattern, matchesPattern, templateRoot } from "../../../runtime/workflow/globs";
+import { FRAMEWORK_NAME } from "../../../runtime/framework";
 import { DELIVERY_FILE } from "../record";
 import type { ArtifactType } from "./artifact-type";
 
@@ -38,14 +44,24 @@ function command(run: string, values: Placeholders): string {
   return run.replace(/\{(name|id|change|archive|files)\}/g, (_, key: string) => words[key]!);
 }
 
-/** Runs a hook in `dir`; null when it succeeds, else why it failed. */
+/** Whether this machine approved a `run:` command. */
+export type CommandTrust = (run: string) => Promise<boolean>;
+
+/**
+ * Runs a hook in `dir`; null when it succeeds, else why it failed. A command this machine has
+ * not approved never runs: anyone who can push to the companion can change it.
+ */
 async function runHook(
   hook: WorkflowHook,
   dir: string,
   values: Placeholders,
+  trusted: CommandTrust,
 ): Promise<string | null> {
   // Validation accepts no `builtin` name yet, so only `run` reaches here.
   if (!("run" in hook)) return `Mate ships no built-in hook named ${hook.builtin}`;
+  if (!(await trusted(hook.run))) {
+    return `\`${hook.run}\` is not trusted on this machine; review it in ${WORKFLOW_FILE}, then run \`${FRAMEWORK_NAME} workflow trust\` in a terminal`;
+  }
   const line = command(hook.run, values);
   return new Promise((resolve) => {
     execFile(
@@ -89,6 +105,8 @@ async function changedPaths(dir: string): Promise<string[]> {
 export interface DeclaredTypeOptions {
   /** The date a published record is named after, `YYYY-MM-DD`; today by default. */
   date?: () => string;
+  /** Whether a `run:` command was approved; the approvals of `mate workflow trust` by default. */
+  trusted?: CommandTrust;
 }
 
 /**
@@ -108,6 +126,7 @@ export function declaredArtifactType(
     ...declared.published,
   ];
   const changePath = (name: string): string => `${source}/${name}`;
+  const trusted = options.trusted ?? isCommandTrusted;
   return {
     name: declared.name,
     source,
@@ -117,13 +136,18 @@ export function declaredArtifactType(
     recordName: changeNameOf,
     async check(dir, name) {
       const { check } = declared.hooks;
-      return check ? runHook(check, dir, { name, change: changePath(name) }) : null;
+      return check ? runHook(check, dir, { name, change: changePath(name) }, trusted) : null;
     },
     async apply(dir, name) {
       const id = `${(options.date ?? today)()}-${name}`;
       const change = changePath(name);
       const archive = archiveRoot === undefined ? undefined : `${archiveRoot}/${id}`;
-      const failure = await runHook(declared.hooks.apply, dir, { name, id, change, archive });
+      const failure = await runHook(
+        declared.hooks.apply,
+        dir,
+        { name, id, change, archive },
+        trusted,
+      );
       if (failure) return { ok: false, detail: failure };
       const outside = (await changedPaths(dir)).filter(
         (file) => !owned.some((pattern) => matchesPattern(pattern, file)),
@@ -151,8 +175,15 @@ export function declaredArtifactType(
         declared.published.some((pattern) => matchesPattern(pattern, file)),
       );
       if (!validate || published.length === 0) return null;
-      const failure = await runHook(validate, dir, { name: "", change: "", files: published });
+      const failure = await runHook(
+        validate,
+        dir,
+        { name: "", change: "", files: published },
+        trusted,
+      );
       return failure ? { path: published[0]!, detail: failure } : null;
     },
+    // Listed whether written yet or not: the reviewer is told what to expect.
+    reviews: async () => [...declared.reviews],
   };
 }

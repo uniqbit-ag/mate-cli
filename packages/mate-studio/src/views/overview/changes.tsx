@@ -48,6 +48,13 @@ const GROUP_HINTS: Record<ChangeGroup, string> = {
 function status(change: StudioChange): { marker: Marker; word: string } {
   if (change.valid === false) return { marker: "issue", word: "Invalid" };
   const group = changeGroup(change);
+  // Without a plan there are no tasks to count: its stage is its status.
+  if (change.planned === false) {
+    const stage = change.position?.stage;
+    if (!stage) return { marker: "idle", word: change.dropped ? "Dropped" : "Not placed" };
+    if (group === "ready") return { marker: "done", word: stage.label };
+    return { marker: stage.kind === "review" ? "review" : "build", word: stage.label };
+  }
   // Lilac is the Human review stage, as on the Workflow map; a plan without tasks is unfinished.
   if (group === "needs-you") {
     return (change.totalTasks ?? 0) === 0
@@ -119,12 +126,14 @@ function ChangeDetail({
             <p className="m-0 text-sm">{step.next}.</p>
             <CommandLine text={step.prompt} />
           </PanelSection>
-          <PanelSection
-            title={progress.unit === "tasks" ? "Tasks" : "Plan"}
-            aside={`${progress.done}/${progress.total}`}
-          >
-            <Progress {...progress} />
-          </PanelSection>
+          {change.planned === false ? null : (
+            <PanelSection
+              title={progress.unit === "tasks" ? "Tasks" : "Plan"}
+              aside={`${progress.done}/${progress.total}`}
+            >
+              <Progress {...progress} />
+            </PanelSection>
+          )}
           {review ? null : artifacts}
         </>
       )}
@@ -167,7 +176,7 @@ function ChangeRow({
         </span>
         <StatusWord marker={marker}>{word}</StatusWord>
         <span className="@max-[640px]:hidden">
-          <Progress {...changeProgress(change)} />
+          {change.planned === false ? null : <Progress {...changeProgress(change)} />}
         </span>
         <Age at={change.lastModified} className="text-right @max-[640px]:hidden" />
       </button>

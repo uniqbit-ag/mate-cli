@@ -7,7 +7,6 @@
 import { randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 
 import {
@@ -29,11 +28,12 @@ import { hasLaunchEnvironment } from "../runtime/env";
 import { record, text } from "../runtime/json-fields";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
 import { resolveProjection } from "../runtime/projection";
+import { mateHome } from "../runtime/runtime-directory";
 import { readWorkflow } from "../runtime/workflow/declaration";
 import { hookFolder, hookOutcome, runHook, type HookEnv, type HookOutcome } from "./hook-io";
 
 export interface TurnDeps {
-  /** Where turn state is kept; a private `<tmpdir>/mate-turn-hooks-<uid>` by default. */
+  /** Where turn state is kept; a private `<mate home>/turn-hooks` by default. */
   stateDir?: string;
   /** The Session Companion for the hook's folder; from the launch environment by default. */
   resolveCompanion?: (folder: string) => Promise<string>;
@@ -42,13 +42,13 @@ export interface TurnDeps {
 }
 
 /**
- * The default state folder: per user, created private, and refused unless it is a directory
- * this user owns that no one else can enter, so no other user can plant or redirect state.
+ * The default state folder: under Mate's home, not a shared tmpdir another user could create
+ * first; created private, and refused unless it is a directory this user owns that no one else
+ * can enter. The Claude plugin's shim names the same folder.
  */
 async function privateStateDir(): Promise<string> {
   const uid = process.getuid?.();
-  const name = uid === undefined ? "mate-turn-hooks" : `mate-turn-hooks-${uid}`;
-  const dir = path.join(os.tmpdir(), name);
+  const dir = path.join(mateHome(), "turn-hooks");
   await fs.mkdir(dir, { recursive: true, mode: 0o700 });
   const stat = await fs.lstat(dir);
   const foreign = uid !== undefined && (stat.uid !== uid || (stat.mode & 0o077) !== 0);

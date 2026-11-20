@@ -474,21 +474,22 @@ describe("tickets", () => {
 describe("recorded steps", () => {
   const file = (): string => path.join(companion, DELIVERY_FILE);
 
-  test("a step is recorded with a write limited to its stage's entry", async () => {
-    const before = `version: 1
+  test("a step is recorded with a write limited to its stage's entry, before deliveries", async () => {
+    const head = `version: 1
 change: acme-fix
 # kept as written
 specBase: ${"a".repeat(40)}
-deliveries:
+`;
+    const deliveries = `deliveries:
   - repository: ${REPO}
     branch: workset/acme-fix
 `;
-    await fs.writeFile(file(), before);
+    await fs.writeFile(file(), `${head}${deliveries}`);
 
     await recordStep(companion, "acme-fix", "apply", "mate-apply-change");
 
     expect(await fs.readFile(file(), "utf8")).toBe(
-      `${before}stages:\n  apply:\n    - mate-apply-change\n`,
+      `${head}stages:\n  apply:\n    - mate-apply-change\n${deliveries}`,
     );
     expect((await readDeliveryRecord(companion))?.stages).toEqual({
       apply: ["mate-apply-change"],
@@ -509,6 +510,17 @@ deliveries:
       apply: ["mate-apply-change", "acme-verify"],
       build: ["acme-build"],
     });
+  });
+
+  test("concurrent steps of one stage are all recorded", async () => {
+    await writeDeliveryRecord(companion, unlinkedRecord("acme-fix"));
+    const skills = ["acme-verify", "acme-lint", "acme-test", "acme-docs"];
+
+    await Promise.all(skills.map((skill) => recordStep(companion, "acme-fix", "apply", skill)));
+
+    expect((await readDeliveryRecord(companion))?.stages?.apply?.toSorted()).toEqual(
+      skills.toSorted(),
+    );
   });
 
   test("a change without a record gets an unlinked one", async () => {
