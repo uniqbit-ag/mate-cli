@@ -68,7 +68,7 @@ function writeExecutable(name: string, body: string): void {
 
 /** Runs until TERM, noting start and stop; `ready` names a file to create once started. */
 const longRunning = (name: string, ready = "") => `
-note "${name} started uid=$(id -u) home=$HOME token=\${CLAUDE_CODE_OAUTH_TOKEN:-none} git=\${MATE_GIT_CLONE_TOKEN:-none} hosts=\${MATE_FACTORY_GIT_TOKEN_HOSTS:-none} leak=\${MATE_FACTORY_GIT_TOKEN_VALUE:-none}"
+note "${name} started uid=$(id -u) home=$HOME token=\${CLAUDE_CODE_OAUTH_TOKEN:-none} git=\${MATE_GIT_CLONE_TOKEN:-none} hosts=\${MATE_FACTORY_GIT_TOKEN_HOSTS:-none} leak=\${MATE_FACTORY_GIT_TOKEN_VALUE:-none} args=$*"
 ${ready ? `touch "${ready}"` : ""}
 trap 'note "${name} stopped"; exit 0' TERM
 while :; do sleep 0.05 & wait $!; done
@@ -78,6 +78,10 @@ interface Options {
   factory?: boolean;
   preflightFails?: boolean;
   dockerdFails?: boolean;
+  /** Names the Workset runtime in the plan; left out, as before the setting existed. */
+  worksetRuntime?: string;
+  /** The inner daemon's runtimes, as `docker info` reports them. */
+  runtimes?: string;
 }
 
 function stubs(options: Options = {}): void {
@@ -90,7 +94,8 @@ function stubs(options: Options = {}): void {
     printf '%s\\n' MATE_FACTORY_ENABLED=1 "MATE_FACTORY_CREDENTIAL_NAME='CLAUDE_CODE_OAUTH_TOKEN'" "MATE_FACTORY_CREDENTIAL_VALUE='acme-token'" "MATE_FACTORY_GIT_TOKEN_VALUE='acme-git'" "MATE_FACTORY_GIT_TOKEN_HOSTS='git.acme.test,git.example.test'" \
       "MATE_PLAN_FACTORY_MAX_WORKSETS='3'" "MATE_PLAN_FACTORY_IDLE_MINUTES='0'" \
       "MATE_PLAN_FACTORY_WORKSET_MEMORY='2g'" "MATE_PLAN_FACTORY_WORKSET_PIDS='512'" \
-      "MATE_PLAN_FACTORY_WORKSET_CPUS=''" "MATE_PLAN_FACTORY_AGENT_MEMORY='1g'" ;;
+      "MATE_PLAN_FACTORY_WORKSET_CPUS=''" "MATE_PLAN_FACTORY_AGENT_MEMORY='1g'" \
+      ${options.worksetRuntime ? `"MATE_PLAN_FACTORY_WORKSET_RUNTIME='${options.worksetRuntime}'"` : ""} ;;
   --factory-preflight)
     ${options.preflightFails ? 'echo "mate-appliance: factory mode needs the container is privileged" >&2; exit 1' : "exit 0"} ;;
   --factory-config)
@@ -110,7 +115,7 @@ esac`,
     `case "$1" in
   info)
     test -e "${CASE}/run/mate-factory/docker.sock" || exit 1
-    if [[ "$*" == *Runtimes* ]]; then echo '{"runc":{},"sysbox-runc":{}}'; fi ;;
+    if [[ "$*" == *Runtimes* ]]; then echo '${options.runtimes ?? '{"runc":{},"sysbox-runc":{}}'}'; fi ;;
   image)
     case "$2" in
       ls) printf '%s\n' mate-workset:0.9.0-acme mate-workset:1.0.0-acme mate-workset:0.8.0-acme \
@@ -352,6 +357,65 @@ withContainer("the factory supervisor", () => {
 
     expect(outcome.status).toBe(1);
     expect(outcome.stderr).toContain("privileged");
+    expect(outcome.log).toBe("");
+  }, 180_000);
+
+  test("the default backend needs the sysbox-runc runtime", async () => {
+    stubs({ runtimes: '{"runc":{}}' });
+    const outcome = await runSupervisor(false);
+
+    expect(outcome.status).toBe(1);
+    expect(outcome.stderr).toContain("does not offer the sysbox-runc runtime");
+    expect(outcome.log).not.toContain("studio started");
+  }, 180_000);
+
+  test("naming sysbox changes nothing: Sysbox starts and the broker gets no runtime option", async () => {
+    stubs({ worksetRuntime: "sysbox" });
+    const outcome = await runSupervisor(true);
+    expect(outcome.status).toBe(0);
+    expect(order(outcome.log).slice(0, 3)).toEqual([
+      "sysbox-mgr started",
+      "sysbox-fs started",
+      "dockerd started",
+    ]);
+    expect(outcome.log).toContain(`args=--config-file ${CASE}/daemon.json`);
+    expect(outcome.log).not.toContain("--workset-runtime");
+  }, 180_000);
+
+  test("dind starts no Sysbox, runs the runc daemon config without sysbox-runc, and tells the broker", async () => {
+    stubs({ worksetRuntime: "dind", runtimes: '{"runc":{}}' });
+    const outcome = await runSupervisor(true, {
+      MATE_FACTORY_RUNC_DAEMON_CONFIG: `${CASE}/daemon-runc.json`,
+    });
+    expect(outcome.status).toBe(0);
+    expect(order(outcome.log)).toEqual([
+      "dockerd started",
+      "docker import",
+      "docker image",
+      "docker image",
+      "docker image",
+      "docker image",
+      "docker image",
+      "docker builder",
+      "broker factory",
+      "studio started",
+      "studio stopped",
+      "docker stop",
+      "broker stopped",
+      "dockerd stopped",
+    ]);
+    expect(outcome.log).toContain(`args=--config-file ${CASE}/daemon-runc.json`);
+    const broker = outcome.log.split("\n").find((entry) => entry.startsWith("broker")) ?? "";
+    expect(broker).toContain("--agent-memory 1g --workset-runtime dind started");
+    expect(outcome.stderr).toContain("isolated by runc alone; not for production");
+  }, 180_000);
+
+  test("an unknown Workset runtime starts nothing", async () => {
+    stubs({ worksetRuntime: "kata" });
+    const outcome = await runSupervisor(false);
+
+    expect(outcome.status).toBe(1);
+    expect(outcome.stderr).toContain("unknown Workset runtime kata");
     expect(outcome.log).toBe("");
   }, 180_000);
 

@@ -66,6 +66,7 @@ describe("every setting is readable from both sources", () => {
       MATE_FACTORY_AGENT_MEMORY: "2G",
       MATE_FACTORY_WORKSET_PIDS: "2048",
       MATE_FACTORY_WORKSET_CPUS: "1.5",
+      MATE_FACTORY_WORKSET_RUNTIME: "dind",
       MATE_FACTORY_GIT_NAME: "acme-mate-bot",
       MATE_FACTORY_GIT_EMAIL: "mate-bot@acme.test",
     };
@@ -108,6 +109,7 @@ describe("every setting is readable from both sources", () => {
         agentMemory: "2g",
         worksetPids: 2048,
         worksetCpus: "1.5",
+        worksetRuntime: "dind",
         gitName: "acme-mate-bot",
         gitEmail: "mate-bot@acme.test",
       },
@@ -444,6 +446,7 @@ describe("factory mode", () => {
       agentMemory: "1536m",
       worksetPids: 1024,
       worksetCpus: null,
+      worksetRuntime: "sysbox",
       gitName: "Mate factory",
       gitEmail: "factory@mate.invalid",
     });
@@ -465,6 +468,7 @@ describe("factory mode", () => {
       agentMemory: "1536m",
       worksetPids: 1024,
       worksetCpus: null,
+      worksetRuntime: "sysbox",
       gitName: "Mate factory",
       gitEmail: "factory@mate.invalid",
     });
@@ -497,6 +501,7 @@ describe("factory mode", () => {
       agentMemory: "1536m",
       worksetPids: 1024,
       worksetCpus: null,
+      worksetRuntime: "sysbox",
       gitName: "Mate factory",
       gitEmail: "factory@mate.invalid",
     });
@@ -584,6 +589,7 @@ describe("runner limits", () => {
       agentMemory: "1536m",
       worksetPids: 1024,
       worksetCpus: null,
+      worksetRuntime: "sysbox",
       gitName: "Mate factory",
       gitEmail: "factory@mate.invalid",
     });
@@ -724,6 +730,7 @@ describe("Workset resources", () => {
       worksetMemory: "4g",
       worksetPids: 1024,
       worksetCpus: null,
+      worksetRuntime: "sysbox",
     });
   });
 
@@ -746,7 +753,16 @@ describe("Workset resources", () => {
       worksetMemory: "512m",
       worksetPids: 512,
       worksetCpus: "2",
+      worksetRuntime: "sysbox",
     });
+  });
+
+  test("the Workset runtime defaults to sysbox and reads dind from the file", () => {
+    expect(resolveConfig({ MATE_FACTORY: "1" }, noFile).factory.worksetRuntime).toBe("sysbox");
+    expect(
+      resolveConfig({}, file({ factory: true, factoryWorksetRuntime: "dind" })).factory
+        .worksetRuntime,
+    ).toBe("dind");
   });
 
   test("an idle time of 0 disables idle stops", () => {
@@ -764,6 +780,7 @@ describe("Workset resources", () => {
     ["MATE_FACTORY_WORKSET_PIDS", "many"],
     ["MATE_FACTORY_WORKSET_CPUS", "0"],
     ["MATE_FACTORY_WORKSET_CPUS", "two"],
+    ["MATE_FACTORY_WORKSET_RUNTIME", "kata"],
   ])("%s=%s stops startup naming the setting and value", (name, value) => {
     expect(() => resolveConfig({ MATE_FACTORY: "1", [name]: value }, noFile)).toThrow(
       new RegExp(`${name}.*${value}`),

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Factory mode's root supervisor: Sysbox, the inner Docker daemon and the
 # factory broker as root, then the ordinary appliance startup as `mate`.
+# The dind Workset runtime (MATE_FACTORY_WORKSET_RUNTIME=dind) starts no Sysbox:
+# its inner daemon runs Worksets privileged under runc.
 #
 # It stays PID 1 so it can stop things in order: Studio and its sessions
 # first, then Workset containers (stopped, not deleted), the broker, the
@@ -23,6 +25,7 @@ SYSBOX_MGR="${MATE_SYSBOX_MGR_COMMAND:-sysbox-mgr}"
 SYSBOX_FS="${MATE_SYSBOX_FS_COMMAND:-sysbox-fs}"
 APPLIANCE="${MATE_APPLIANCE_ENTRYPOINT:-/usr/local/bin/mate-appliance}"
 DAEMON_CONFIG="${MATE_FACTORY_DAEMON_CONFIG:-/etc/mate-factory/daemon.json}"
+RUNC_DAEMON_CONFIG="${MATE_FACTORY_RUNC_DAEMON_CONFIG:-/etc/mate-factory/daemon-runc.json}"
 RUN_DIR="${MATE_FACTORY_RUN_DIR:-/run/mate-factory}"
 STATE_DIR="${MATE_FACTORY_STATE_DIR:-/var/lib/mate-factory}"
 SYSBOX_RUN_DIR="${MATE_SYSBOX_RUN_DIR:-/run/sysbox}"
@@ -114,7 +117,15 @@ unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY
 
 "$BUN" "$STARTUP_SCRIPT" --factory-preflight || exit 1
 
-mkdir -p "$RUN_DIR" "$SYSBOX_RUN_DIR" /var/lib/sysbox || fail "the factory run directories could not be created"
+WORKSET_RUNTIME="${MATE_PLAN_FACTORY_WORKSET_RUNTIME:-sysbox}"
+case "$WORKSET_RUNTIME" in
+  sysbox) mkdir -p "$RUN_DIR" "$SYSBOX_RUN_DIR" /var/lib/sysbox ;;
+  dind)
+    log "Workset runtime dind: Worksets run privileged under runc, isolated by runc alone; not for production"
+    DAEMON_CONFIG="$RUNC_DAEMON_CONFIG"
+    mkdir -p "$RUN_DIR" ;;
+  *) log "unknown Workset runtime $WORKSET_RUNTIME; use sysbox or dind"; exit 1 ;;
+esac || fail "the factory run directories could not be created"
 chown "root:$USER_NAME" "$RUN_DIR" && chmod 0750 "$RUN_DIR" \
   || fail "$RUN_DIR could not be restricted to root and $USER_NAME"
 
@@ -137,21 +148,25 @@ if [[ -f "$CGROUP_ROOT/cgroup.controllers" ]]; then
     || fail "cgroup controllers could not be delegated under $CGROUP_ROOT"
 fi
 
-"$SYSBOX_MGR" &
-SYSBOX_MGR_PID=$!
-wait_for sysbox-mgr "$SYSBOX_MGR_PID" test -e "$SYSBOX_RUN_DIR/sysmgr.sock"
+if [[ "$WORKSET_RUNTIME" == sysbox ]]; then
+  "$SYSBOX_MGR" &
+  SYSBOX_MGR_PID=$!
+  wait_for sysbox-mgr "$SYSBOX_MGR_PID" test -e "$SYSBOX_RUN_DIR/sysmgr.sock"
 
-"$SYSBOX_FS" &
-SYSBOX_FS_PID=$!
-wait_for sysbox-fs "$SYSBOX_FS_PID" test -e "$SYSBOX_RUN_DIR/sysfs.sock"
+  "$SYSBOX_FS" &
+  SYSBOX_FS_PID=$!
+  wait_for sysbox-fs "$SYSBOX_FS_PID" test -e "$SYSBOX_RUN_DIR/sysfs.sock"
+fi
 
 "$DOCKERD" --config-file "$DAEMON_CONFIG" &
 DOCKERD_PID=$!
 export DOCKER_HOST="unix://$RUN_DIR/docker.sock"
 wait_for "the inner Docker daemon" "$DOCKERD_PID" "$DOCKER" info
 chmod 0600 "$RUN_DIR/docker.sock" || fail "the inner daemon's socket could not be restricted to root"
-"$DOCKER" info --format '{{json .Runtimes}}' | grep -q '"sysbox-runc"' \
-  || fail "the inner Docker daemon does not offer the sysbox-runc runtime"
+if [[ "$WORKSET_RUNTIME" == sysbox ]]; then
+  "$DOCKER" info --format '{{json .Runtimes}}' | grep -q '"sysbox-runc"' \
+    || fail "the inner Docker daemon does not offer the sysbox-runc runtime"
+fi
 
 CHANGES=()
 while IFS= read -r line; do
@@ -212,6 +227,8 @@ LIMITS=()
 [[ -n "${MATE_PLAN_FACTORY_WORKSET_PIDS:-}" ]] && LIMITS+=(--pids "$MATE_PLAN_FACTORY_WORKSET_PIDS")
 [[ -n "${MATE_PLAN_FACTORY_WORKSET_CPUS:-}" ]] && LIMITS+=(--cpus "$MATE_PLAN_FACTORY_WORKSET_CPUS")
 [[ -n "${MATE_PLAN_FACTORY_AGENT_MEMORY:-}" ]] && LIMITS+=(--agent-memory "$MATE_PLAN_FACTORY_AGENT_MEMORY")
+# Only dind is named: the default broker command line stays as it was.
+[[ "$WORKSET_RUNTIME" == dind ]] && LIMITS+=(--workset-runtime dind)
 (
   if [[ -n "$MATE_FACTORY_CREDENTIAL_NAME" ]]; then
     export "$MATE_FACTORY_CREDENTIAL_NAME=$MATE_FACTORY_CREDENTIAL_VALUE"
