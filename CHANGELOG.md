@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### The Mate factory moved to its own repository (breaking)
+
+- The factory (broker, runner, Workset runtime, `mate factory`, its Studio view and the factory image) now lives in the private repository [uniqbit-ag/mate-factory](https://github.com/uniqbit-ag/mate-factory), as the service plugin `@uniqbit/mate-plugin-factory` with its own Mate distribution for the image. `@uniqbit/mate` no longer has `mate factory`, and Studio no longer has a built-in Factory view; the factory image brings both.
+- `@uniqbit/mate-core/factory` and `@uniqbit/mate-core/factory-studio` are gone. `@uniqbit/mate-core/factory-host` exports the core runtime the factory uses; it is no stable API, and the factory pins mate-core exactly.
+- New factory images are published as `ghcr.io/uniqbit-ag/mate-factory`. Images already published as `ghcr.io/uniqbit-ag/mate-cli/mate-factory` stay where they are; no new versions appear there.
+- `bun run factory:local` and the `factory:dogfood` scripts moved with the factory; run them from a mate-factory checkout, which builds against a local mate-cli checkout.
+
 ### A stop signal right after an agent starts no longer leaves it running
 
 - A launch now forwards `SIGTERM` and `SIGINT` from before it starts the agent. Before, a signal that reached the launch while the agent was starting ended the launch and left the agent running.

@@ -51,6 +51,7 @@ import {
   modePolicy,
   parse,
   parseVaultSelection,
+  REFRESH_PARAM,
   resolveCompanion,
   type StudioModePolicy,
   type StudioProfile,
@@ -500,6 +501,18 @@ export function createStudioFetch(
       mateCommand: process.argv.slice(0, 2),
       env,
       companionPath: companionPathOf,
+      companionSnapshot: async (digest, { refresh = false } = {}) => {
+        await companionPathOf(digest);
+        const url = new URL("http://studio.local/");
+        url.searchParams.set(COMPANION_PARAM, digest);
+        if (refresh) url.searchParams.set(REFRESH_PARAM, "1");
+        const page = await collectPage(url);
+        return {
+          payload: page.payload,
+          error: page.error?.reason ?? null,
+          collectedAt: page.collectedAt,
+        };
+      },
       companionDigest,
       launchTarget: async (digest) =>
         (await effectiveLaunchCompanion(await inventory(), launchCompanion, digest))?.path ?? null,
@@ -552,6 +565,7 @@ export function createStudioFetch(
       const folder = services.companions?.folder;
       return folder !== undefined && !deletableWithin(companionPath, folder);
     },
+    addsCompanions: () => services.companions !== null,
     modePolicy: policy,
     page: collectPage,
     callService,

@@ -42,7 +42,7 @@ interface CommandGroup {
   items: Command[];
 }
 
-/** Cmd/Ctrl+K anywhere, Slash outside a text field unless the page took it (Factory filter). */
+/** Cmd/Ctrl+K anywhere, Slash outside a text field unless the page took it (a view's own filter). */
 function usePaletteKeys(enabled: boolean): void {
   const setOpen = usePalette((state) => state.setOpen);
   useEffect(() => {
@@ -84,7 +84,7 @@ function useCommands(shell: ShellData, search: StudioSearch, open: boolean): Com
     });
 
   const views: Command[] = [
-    ...modeViews(shell.studioMode, shell.factoryMode),
+    ...modeViews(shell.studioMode),
     ...libraryViews(),
     ...insightViews(),
   ].map((view) => ({
@@ -93,6 +93,18 @@ function useCommands(shell: ShellData, search: StudioSearch, open: boolean): Com
     hint: "View",
     icon: VIEW_ICONS[view],
     run: () => go(view),
+  }));
+  const pluginViews: Command[] = shell.pluginViews.map((entry) => ({
+    id: `plugin-${entry.service}-${entry.view}`,
+    label: entry.label,
+    hint: "View",
+    icon: "spark",
+    run: () =>
+      void navigate({
+        to: "/plugins/$service/$view",
+        params: { service: entry.service, view: entry.view },
+        search: { companion: search.companion, studioMode: search.studioMode },
+      }),
   }));
   const changes = engineering ? (data?.changes ?? []) : [];
   const changeCommands: Command[] = changes.map((change) => ({
@@ -155,7 +167,7 @@ function useCommands(shell: ShellData, search: StudioSearch, open: boolean): Com
     },
   ];
   return [
-    { value: "Views", items: views },
+    { value: "Views", items: [...views, ...pluginViews] },
     { value: "Changes", items: changeCommands },
     { value: "Next steps", items: nextSteps },
     { value: "Actions", items: actions },

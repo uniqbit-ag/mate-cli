@@ -13,7 +13,7 @@ import { VIEW_PATHS } from "../shell/views";
 import type { StudioSearch } from "./search";
 import { companionViewQuery, reportsQuery, vaultQuery } from "./studio-queries";
 
-/** Views read from the held snapshot; Factory, Vault and Reports load their own way. */
+/** Views read from the held snapshot; Vault and Reports load their own way. */
 const AHEAD: readonly CompanionView[] = ["dashboard", "workflow", "skills", "specs"];
 
 interface PrefetchDeps {
@@ -76,8 +76,7 @@ const whenIdle = (run: () => void): (() => void) => {
 /**
  * While the page is idle, one item at a time: the code of every view the mode offers, the
  * mode's companion views, the Vault's root listing and the Reports list, then each other
- * enabled mode's Overview, so no first visit waits. Factory data is never loaded ahead: it
- * refreshes on its own events.
+ * enabled mode's Overview, so no first visit waits.
  */
 export function usePrefetchViews(
   search: StudioSearch,

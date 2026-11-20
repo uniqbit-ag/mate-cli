@@ -19,9 +19,10 @@ const SERVER = path.join(import.meta.dir, "../dist/server/server.js");
 const servicesFor = (profile: StudioProfile) =>
   ({
     writable: false,
-    services: () => [{ id: "factory", label: "Factory", views: [] }],
-    callService: async () => Response.json({ runs: null, sessions: null }),
+    services: () => [{ id: "acme", label: "Acme", views: [] }],
+    callService: async () => Response.json({}),
     keepsFolder: () => false,
+    addsCompanions: () => false,
     modePolicy: modePolicy(profile),
     page: async (url: URL) => ({
       ...page,
@@ -323,7 +324,7 @@ describe("built server", () => {
   test("sends the route's data with the first response", async () => {
     const handler = await built();
     const response = await handler.fetch(
-      new Request("http://127.0.0.1/factory?studioMode=engineering"),
+      new Request("http://127.0.0.1/workflow?studioMode=engineering"),
       { context: { studio: services } },
     );
     expect(await response.text()).toContain("/acme-b");
@@ -350,7 +351,7 @@ describe("built server", () => {
       }),
     } as unknown as StudioServices;
     const digest = companionDigest(companion.path);
-    for (const view of ["workflow", "factory"]) {
+    for (const view of ["workflow", "skills"]) {
       const { response } = await follow(
         `/${view}?companion=${digest}&studioMode=engineering`,
         withCompanion,
@@ -420,16 +421,6 @@ describe("built server", () => {
     expect(main).toContain('data-submitted="acme-awaiting"');
   });
 
-  test("sends the Factory view to the Overview without the factory broker", async () => {
-    const handler = await built();
-    const response = await handler.fetch(
-      new Request("http://127.0.0.1/factory?studioMode=engineering"),
-      { context: { studio: { ...services, services: () => [] } } },
-    );
-    expect(response.status).toBe(307);
-    expect(new URL(response.headers.get("location")!, "http://127.0.0.1").pathname).toBe("/");
-  });
-
   test("names the effective mode in an address that names none or a legacy role", async () => {
     for (const [address, expected] of [
       ["/specs", "engineering"],
@@ -450,7 +441,7 @@ describe("built server", () => {
     for (const address of [
       "/?studioMode=engineering",
       "/workflow?studioMode=engineering",
-      "/factory?role=product-engineer",
+      "/getting-started?role=product-engineer",
       "/skills",
     ]) {
       const { response, location } = await follow(address, appliance);

@@ -22,6 +22,7 @@ export type {
   ServiceApiVersion,
   ServiceCommand,
   ServiceConnection,
+  StudioCompanionSnapshot,
   StudioCompanionSource,
   StudioRoute,
   StudioRouteAccess,
