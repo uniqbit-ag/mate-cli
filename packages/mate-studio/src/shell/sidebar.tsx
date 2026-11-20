@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
   STUDIO_MODES,
   viewsFor,
@@ -89,6 +89,7 @@ export function Sidebar({ shell, search, view }: SidebarProps) {
             counts={counts}
             collapsed={collapsed}
           />
+          <PluginNavGroup shell={shell} search={search} collapsed={collapsed} />
         </>
       ) : null}
       <div className="sidebar-footer mt-auto grid gap-1 border-t border-rule-soft pt-2 max-[900px]:mt-0 max-[900px]:ml-auto max-[900px]:flex max-[900px]:border-0 max-[900px]:pt-0">
@@ -144,6 +145,69 @@ function NavGroup(props: {
           collapsed={props.collapsed}
         />
       ))}
+    </div>
+  );
+}
+
+/** Views plugin services ship as their own modules. */
+function PluginNavGroup({
+  shell,
+  search,
+  collapsed,
+}: {
+  shell: ShellData;
+  search: StudioSearch;
+  collapsed: boolean;
+}) {
+  // Hooks below need the router, so a Studio without plugin views renders nothing first.
+  if (shell.pluginViews.length === 0) return null;
+  return <PluginNavLinks shell={shell} search={search} collapsed={collapsed} />;
+}
+
+function PluginNavLinks({
+  shell,
+  search,
+  collapsed,
+}: {
+  shell: ShellData;
+  search: StudioSearch;
+  collapsed: boolean;
+}) {
+  const params = useParams({ strict: false }) as { service?: string; view?: string };
+  return (
+    <div
+      className="grid gap-px max-[900px]:flex max-[900px]:min-w-0 max-[900px]:max-w-full max-[900px]:flex-wrap max-[900px]:items-center"
+      role="group"
+      aria-label="Services"
+      data-studio-nav-section="Services"
+    >
+      <h2
+        className="m-0 px-2.5 pt-3.5 pb-1.5 text-[0.68rem] leading-none font-semibold text-muted first:pt-1.5 rail-min:mx-2 rail-min:my-2.5 rail-min:h-px rail-min:overflow-hidden rail-min:bg-rule-soft rail-min:p-0 rail-min:text-[0px] max-[900px]:sr-only"
+        aria-hidden="true"
+      >
+        Services
+      </h2>
+      {shell.pluginViews.map((entry) => {
+        const current = params.service === entry.service && params.view === entry.view;
+        return (
+          <Tooltip key={`${entry.service}/${entry.view}`} label={entry.label} disabled={!collapsed}>
+            <Link
+              to="/plugins/$service/$view"
+              params={{ service: entry.service, view: entry.view }}
+              search={search}
+              className={cn(
+                "sidebar-nav-link relative flex h-8 items-center gap-2.5 rounded-[6px] px-2.5 text-sm whitespace-nowrap text-[color-mix(in_srgb,var(--text)_82%,var(--muted))] no-underline hover:bg-surface hover:text-text rail-min:justify-center rail-min:px-0",
+                current && "bg-surface font-semibold text-text ring-1 ring-rule ring-inset",
+              )}
+              aria-current={current ? "page" : undefined}
+              aria-label={collapsed ? entry.label : undefined}
+            >
+              <Icon name="spark" className={current ? "text-accent" : "text-muted"} />
+              <span className="truncate rail-min:hidden">{entry.label}</span>
+            </Link>
+          </Tooltip>
+        );
+      })}
     </div>
   );
 }

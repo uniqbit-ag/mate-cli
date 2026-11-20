@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CredentialKind, CredentialStatus } from "@uniqbit/mate-core/studio";
+import type { CredentialKind, CredentialStatus } from "@uniqbit/mate-core/factory-studio";
 import { type FormEvent, type ReactNode, useState } from "react";
 
 import {

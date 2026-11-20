@@ -44,9 +44,9 @@ import {
   WORKSET_HOME,
 } from "./lifecycle";
 import { type FactoryRunView, runViews } from "./runs";
-import type { LiveSessions } from "./sessions";
+import type { StudioTerminalHost } from "../../../tools/setup/service";
 
-export { type FactoryRunView, compareUrlFor } from "./runs";
+export type { FactoryRunView } from "./runs";
 export type { ReviewReportStore } from "./lifecycle";
 
 /** The fields of a submitted board form; an absent field reads as an empty string. */
@@ -97,7 +97,7 @@ export interface FactoryOutcomes extends Outcomes {
 export interface OutcomesPorts {
   stages: WorksetStagesReader;
   reports: ReviewReportStore;
-  sessions: LiveSessions;
+  sessions: Pick<StudioTerminalHost, "busy" | "onEnded" | "close">;
 }
 
 /** A built runner with the ports: the seam tests assemble the module from. */

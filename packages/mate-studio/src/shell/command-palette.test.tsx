@@ -30,6 +30,7 @@ const shell = (studioMode: StudioMode): ShellData => ({
   metrics: null,
   writable: false,
   factoryMode: true,
+  pluginViews: [],
   terminal: null,
 });
 
