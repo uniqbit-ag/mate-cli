@@ -19,7 +19,21 @@ mock.module("../server/companions", () => ({
     return answers.shift() ?? { ok: true, digest: "abcdef0123", existing: false };
   },
 }));
-const { act, render } = await import("@testing-library/react");
+/** What the fake server answers about the Friction Switch; tests replace them per case. */
+const switchAnswers = () => ({
+  read: async () => ({ recording: false }),
+  write: async ({ recording }: { recording: boolean }) => ({ recording }),
+});
+const frictionServer = switchAnswers();
+const getFriction = mock(async () => {});
+const realFriction = await import("../server/friction");
+mock.module("../server/friction", () => ({
+  ...realFriction,
+  getFriction,
+  getFrictionRecording: () => frictionServer.read(),
+  setFrictionRecording: ({ data }: { data: { recording: boolean } }) => frictionServer.write(data),
+}));
+const { act, fireEvent, render, within } = await import("@testing-library/react");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
 const router = await import("@tanstack/react-router");
 const { staticMarkup } = await import("../../test/render");
@@ -104,6 +118,8 @@ const settle = () => act(async () => new Promise((done) => setTimeout(done, 20))
 afterEach(() => {
   document.documentElement.removeAttribute("data-rail");
   useAppearance.setState({ rail: "full" });
+  Object.assign(frictionServer, switchAnswers());
+  getFriction.mockClear();
 });
 
 describe("the companion list page", () => {
@@ -123,6 +139,100 @@ describe("the companion list page", () => {
     const markup = staticMarkup(<CompanionPicker companions={[]} />);
     expect(markup).toContain("No Companion Repository is registered on this machine.");
     expect(markup).toContain("mate companion setup");
+  });
+});
+
+describe("the global features", () => {
+  async function startPage(companions = [acme]) {
+    const { page, instance } = await mount(() => <CompanionPicker companions={companions} />);
+    await settle();
+    const region = within(page.container).getByRole("region", { name: "Global features" });
+    const section = within(region);
+    const control = (name: string) => section.getByRole<HTMLButtonElement>("button", { name });
+    return { page, instance, region, section, control };
+  }
+
+  it("comes before the list, with the state, its reach and the control that changes it", async () => {
+    frictionServer.read = async () => ({ recording: true });
+    const { page, region, section } = await startPage();
+    const list = page.container.querySelector(".picker-card")!;
+    expect(region.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(section.getByText("Recording is on")).toBeDefined();
+    expect(
+      section.getByRole("button", {
+        name: "Turn recording off",
+        description: "Applies to all companions on the machine that runs Studio.",
+      }),
+    ).toBeDefined();
+  });
+
+  it("is shown with no registered companion", async () => {
+    const { section, control } = await startPage([]);
+    expect(section.getByText("Recording is off")).toBeDefined();
+    expect(control("Turn recording on").disabled).toBe(false);
+  });
+
+  it("reads the switch and no Friction Log", async () => {
+    await startPage();
+    expect(getFriction).not.toHaveBeenCalled();
+  });
+
+  it("claims no state until the switch is known, and a companion can still be chosen", async () => {
+    frictionServer.read = () => new Promise(() => {});
+    const { page, instance, region, control } = await startPage();
+    expect(region.textContent).toContain("Checking…");
+    expect(region.textContent).not.toContain("Recording is");
+    expect(control("Turn recording on or off").disabled).toBe(true);
+    await act(async () => page.container.querySelector<HTMLButtonElement>(".picker-card")!.click());
+    await settle();
+    expect(instance.state.location.search).toMatchObject({ companion: acme.digest });
+  });
+
+  it("sets the switch, with the control disabled until the change is done", async () => {
+    const written = Promise.withResolvers<{ recording: boolean }>();
+    const asked: boolean[] = [];
+    frictionServer.write = ({ recording }) => {
+      asked.push(recording);
+      return written.promise;
+    };
+    const { section, control } = await startPage();
+    fireEvent.click(control("Turn recording on"));
+    await settle();
+    expect(asked).toEqual([true]);
+    expect(control("Turn recording on").disabled).toBe(true);
+    frictionServer.read = async () => ({ recording: true });
+    written.resolve({ recording: true });
+    await settle();
+    expect(section.getByText("Recording is on")).toBeDefined();
+    expect(control("Turn recording off").disabled).toBe(false);
+  });
+
+  it("keeps the shown state and names a failed change", async () => {
+    frictionServer.write = async () => {
+      throw new Error("settings file is read-only");
+    };
+    const { section, control } = await startPage();
+    fireEvent.click(control("Turn recording on"));
+    await settle();
+    expect(section.getByText("Recording is off")).toBeDefined();
+    expect(section.getByRole("alert").textContent).toBe(
+      "Recording could not be turned on: settings file is read-only",
+    );
+  });
+
+  it("offers Retry and no control that sets the switch when the read fails", async () => {
+    frictionServer.read = async () => {
+      throw new Error("unreadable");
+    };
+    const { page, section, control } = await startPage();
+    expect(section.getByRole("alert").textContent).toContain("could not be read");
+    expect(section.getAllByRole("button").map((button) => button.textContent)).toEqual(["Retry"]);
+    expect(page.container.querySelector<HTMLButtonElement>(".picker-card")!.disabled).toBe(false);
+    frictionServer.read = async () => ({ recording: true });
+    fireEvent.click(control("Retry"));
+    await settle();
+    expect(section.queryByRole("alert")).toBeNull();
+    expect(section.getByText("Recording is on")).toBeDefined();
   });
 });
 
@@ -266,13 +376,14 @@ describe("the sidebar", () => {
       "/vault",
       "/graph",
       "/usage",
+      "/friction",
       "/reports",
     ]);
     expect(markup).toContain('data-studio-nav-section="Engineering"');
     expect(markup).toContain('data-studio-nav-section="Library"');
   });
 
-  it("groups Usage and Reports under Insights in both modes and rail sizes", () => {
+  it("groups Usage, Friction and Reports under Insights in both modes and rail sizes", () => {
     for (const studioMode of ["engineering", "analysis"] as const) {
       for (const rail of ["full", "min"] as const) {
         useAppearance.setState({ rail });
@@ -282,7 +393,7 @@ describe("the sidebar", () => {
         expect(insights.getAttribute("aria-label")).toBe("Insights");
         expect(
           [...insights.querySelectorAll("a")].map((link) => new URL(link.href).pathname),
-        ).toEqual(["/usage", "/reports"]);
+        ).toEqual(["/usage", "/friction", "/reports"]);
         expect(insights.querySelector('[aria-current="page"]')?.textContent).toContain("Usage");
         const library = root.querySelector(
           `[data-studio-nav-section="${studioMode === "analysis" ? "Published" : "Library"}"]`,
@@ -306,13 +417,22 @@ describe("the sidebar", () => {
       "/vault",
       "/graph",
       "/usage",
+      "/friction",
       "/reports",
     ]);
   });
 
   it("gives Analysis its Overview and the published views, and no Workflow, Skills or Factory", () => {
     const markup = sidebar(shell({ studioMode: "analysis", factoryMode: true }));
-    expect(viewLinks(markup)).toEqual(["/", "/specs", "/vault", "/graph", "/usage", "/reports"]);
+    expect(viewLinks(markup)).toEqual([
+      "/",
+      "/specs",
+      "/vault",
+      "/graph",
+      "/usage",
+      "/friction",
+      "/reports",
+    ]);
     expect(markup).toContain('data-studio-nav-section="Analysis"');
     expect(markup).toContain('data-studio-nav-section="Published"');
   });

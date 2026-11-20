@@ -1,5 +1,6 @@
 import { buildCompanionGuidance } from "./companion-guidance";
 import { hasLaunchEnvironment } from "./env";
+import { readFrictionSwitch } from "./friction-switch";
 import { readCompanionPolicy } from "./policy";
 import { resolveProjection } from "./projection";
 import { umbrellaChildrenBlock } from "./umbrella-children";
@@ -42,7 +43,7 @@ export function buildProjectedGuidance(
       secretGuardrails: policy.secrets.guardrails,
     },
     /** The projected path, not the running install's: a wrap may be another mate's. */
-    { wrapperBinPath: projection.wrapperBinPath },
+    { wrapperBinPath: projection.wrapperBinPath, friction: readFrictionSwitch(env.HOME) },
   );
   const children = umbrellaChildrenBlock(projection.repositoryPath);
   return children ? `${guidance}\n\n${children}` : guidance;

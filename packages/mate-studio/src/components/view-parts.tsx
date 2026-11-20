@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useSyncExternalStore } from "react";
 
 import { cn } from "../lib/cn";
+import { Spinner } from "./ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 
 /** A view's title and one plain line on what it shows; no eyebrow. */
@@ -72,6 +73,7 @@ export function Count({
  * tint; the rows sit on the page. Never nested, never around a graph, document or form.
  */
 export function ListCard({
+  id,
   title,
   count,
   hint,
@@ -81,6 +83,7 @@ export function ListCard({
   label,
   level = 2,
 }: {
+  id?: string;
   title: ReactNode;
   count?: number;
   hint?: ReactNode;
@@ -95,6 +98,7 @@ export function ListCard({
   const Heading = level === 3 ? "h3" : "h2";
   return (
     <section
+      id={id}
       className={cn("list-card overflow-hidden rounded-card border border-rule", className)}
       aria-label={label ?? (typeof title === "string" ? title : undefined)}
     >
@@ -300,6 +304,19 @@ export function CommandLine({
       >
         Copy
       </button>
+    </div>
+  );
+}
+
+/** A view's first load: a centred spinner with what it reads. */
+export function ViewLoading({ title, detail }: { title: string; detail?: string }) {
+  return (
+    <div className="grid min-h-64 flex-1 place-items-center px-6 py-12" role="status">
+      <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+        <Spinner aria-hidden="true" className="size-7 text-accent" />
+        <p className="text-sm font-medium">{title}</p>
+        {detail ? <p className="text-xs leading-relaxed text-muted">{detail}</p> : null}
+      </div>
     </div>
   );
 }

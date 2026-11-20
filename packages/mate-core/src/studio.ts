@@ -5,6 +5,7 @@
 export type {
   CompanionAddInput,
   CompanionAddResult,
+  FrictionMarkResult,
   StudioRequestContext,
   StudioServices,
 } from "./cli/commands/studio/services";
@@ -109,6 +110,38 @@ export type { StudioInventory, StudioInventoryCompanion } from "./cli/commands/s
 export type { StudioSkillInventory } from "./cli/commands/studio/mate-inventory";
 export type { SkillAgent, SkillFileEntry, SkillPreview } from "./cli/commands/studio/skill-files";
 export type { StoredReport } from "./cli/commands/studio/reports";
+export {
+  FRICTION_VIEW_DAYS,
+  frictionViewDays,
+  type FrictionFreeReport,
+  type FrictionGroup,
+  type FrictionGroupState,
+  type FrictionItemState,
+  type FrictionView,
+  type FrictionViewDays,
+} from "./lib/friction/view/model";
+export type { FrictionReport } from "./runtime/friction-log";
+export {
+  selectFriction,
+  type FrictionFilters,
+  type FrictionShown,
+} from "./lib/friction/view/select";
+export {
+  FRICTION_STATES,
+  MARK_STATES,
+  REPORT_KINDS,
+  STATE_FILTERS,
+  SUBJECT_TYPES,
+  subjectTypeOf,
+  type FrictionState,
+  type FrictionStateName,
+  type FrictionStateOrigin,
+  type MarkState,
+  type ReportKind,
+  type StateFilter,
+  type SubjectType,
+} from "./runtime/friction-vocabulary";
+export { FRAMEWORK_NAME } from "./runtime/framework";
 export type { UsageRequest } from "./lib/usage/cache";
 export type {
   CompanionUsageSnapshot,

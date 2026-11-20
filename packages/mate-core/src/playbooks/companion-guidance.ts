@@ -25,9 +25,10 @@ export { GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT } from "../runtime/companion-gu
  */
 export function buildCompanionGuidance(
   context: GuidanceContext,
-  options: { wrapperBinPath?: string } = {},
+  options: { wrapperBinPath?: string; friction?: boolean } = {},
 ): string {
   return buildCompanionGuidanceWith(context, {
     wrapperBinPath: options.wrapperBinPath ?? getWrapperBinPath(),
+    friction: options.friction,
   });
 }

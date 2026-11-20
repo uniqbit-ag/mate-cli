@@ -18,7 +18,7 @@ function pluginForNamespace(namespace: string): Plugin | undefined {
  * Dispatch `<distribution> cap <namespace> <name>` to a plugin-declared CLI
  * command. Returns true when the namespace belongs to a plugin that declares
  * CLI commands (the invocation is then fully handled here, including
- * unknown-subcommand errors); false when no plugin claims the namespace so
+ * `--help`/`-h` and unknown-subcommand errors); false when no plugin claims the namespace so
  * the caller can report an unknown command. Framework `cap` subcommands are
  * dispatched before this is consulted, so they can never be shadowed.
  *
@@ -34,6 +34,11 @@ export async function runPluginCliCommand(
   const plugin = pluginForNamespace(namespace);
   const commands = plugin?.cliCommands;
   if (!plugin || !commands || commands.length === 0) return false;
+
+  if (commandName === "--help" || commandName === "-h") {
+    console.log(usageFor(plugin));
+    return true;
+  }
 
   const command = findPluginCliCommand(namespace, commandName);
   if (!command) {

@@ -12,6 +12,7 @@ import { runCompanionCommand } from "./commands/companion/companion";
 import { runHubCommand } from "./commands/companion/hub";
 import { runConfigCommand } from "./commands/config";
 import { runDoctorCommand } from "./commands/doctor";
+import { runFrictionCommand } from "./commands/friction";
 import { runLaunchClaudeCommand } from "./commands/launch/claude";
 import { runLaunchOpenCodeCommand } from "./commands/launch/opencode";
 import { runPluginCommand } from "./commands/plugin/plugin";
@@ -19,6 +20,7 @@ import { runReportCommand } from "./commands/report";
 import { runSessionContextCommand } from "./commands/session/context";
 import { runSessionCommand } from "./commands/session/prepare";
 import { runStudioCommand } from "./commands/studio";
+import { runTriageCommand } from "./commands/triage";
 import { runUpdateCommand } from "./commands/update";
 import { runUnwrapCommand } from "./commands/unwrap";
 import { runVscodeCommand } from "./commands/vscode/setup";
@@ -90,6 +92,12 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     return;
   }
 
+  // Triage diagnoses a broken install, update, companion or runtime directory, so no gate may stop it.
+  if (command === "triage") {
+    await runTriageCommand(argv.slice(3));
+    return;
+  }
+
   if (!(await ensureRuntimeDirectory(command, deps.refreshRuntimeDirectory))) {
     process.exitCode = 1;
     return;
@@ -122,9 +130,9 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
   // scheduleBackgroundCheck() has been observed to race a large final stdout
   // write against process exit, truncating it.
   const ownsStdout = isPluginCommand;
-  // `report` prints one large JSON contract, so it skips the background check
-  // too but keeps update enforcement and its stderr banner.
-  const skipsBackgroundCheck = ownsStdout || command === "report";
+  // `report` and `friction list` print one large JSON contract, so they skip the
+  // background check too but keep update enforcement and the stderr banner.
+  const skipsBackgroundCheck = ownsStdout || command === "report" || command === "friction";
 
   // Every dispatch case opens with a gate() call declaring what the command
   // needs before it may run. Declared gates run in fixed order — update
@@ -306,6 +314,14 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       if (!(await gate({}))) return;
       await runDoctorCommand(argv.slice(3));
       return;
+    case "friction": {
+      // The switch and Friction States are machine-wide: only reading or writing the log needs a companion.
+      const readsLog = subcommand === "list" || subcommand === "report";
+      if (!(await gate(readsLog ? { updateGuard: true, companion: true, install: true } : {})))
+        return;
+      await runFrictionCommand(subcommand, rest);
+      return;
+    }
     case "cap":
       if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;
       await runCapCommand(subcommand, rest);

@@ -1,0 +1,218 @@
+---
+title: Friction
+description: Record on your own machine where Mate gets in an agent's way, and read it back to fix or report it.
+---
+
+Friction recording shows you where Mate gets in an agent's way. While it is on,
+Mate records its refusals and the `mate` commands that fail in agent sessions.
+You read the records with `mate friction list` and investigate them with
+[`mate triage`](/docs/scenarios/triage-a-mate-problem).
+
+## Turn Recording On and Off
+
+Recording is a setting of your machine, not of a companion. It is off by
+default. One switch covers every companion on the machine, and changing it
+changes no file in a companion or a working repository.
+
+```bash
+mate friction on       # start recording
+mate friction off      # stop recording; the records stay
+mate friction status   # say whether recording is on, and where the log is
+```
+
+Only you change the switch. `mate friction on` and `mate friction off` refuse
+inside an agent session, so an agent cannot turn recording on or off for you.
+Run them in your own terminal, or use the control in [Studio](#in-studio).
+`mate friction status` also runs inside an agent session.
+
+The switch takes effect in the next agent session, with no sync and no new
+wrap. Mate keeps it in `~/.mate/friction/settings.json`.
+
+`mate friction off` keeps the records. `mate friction list` still shows them
+and says that recording is off. To remove the records, delete
+`~/.mate/friction/`. That also turns recording off.
+
+## What Mate Records
+
+While recording is on, Mate records one Friction Event:
+
+- for each tool call Mate's guard refuses, in Claude Code and in OpenCode, with
+  the check that refused: `secret`, `attribution`, `artifact` or `fork`. This
+  includes plain `claude` and `opencode` sessions in a wrapped repository.
+- for each `mate` command an agent session runs that exits with a non-zero
+  code. Mate knows an agent ran it from the session id Claude Code or OpenCode
+  sets. A command you run in your own terminal is not recorded.
+
+Mate records an event only in a session it can link to a companion. Refusals
+from hooks Mate does not own, such as TokenSave's or RTK's, are not recorded.
+Neither is a `mate session prepare` that Mate's own session hook starts: the
+agent did not run it.
+
+The log lives on your machine only, in `~/.mate/friction/`, one
+`events-<YYYY-MM>.jsonl` file per month. Mate keeps every record for at least
+90 days: when it starts a new month's file, it deletes the files of months that
+ended more than 90 days ago. It never writes the log into a companion or a
+working repository and never sends it anywhere.
+
+An event holds the check or the command, the tool kind, the refusal message or
+the last error text (up to 1,000 characters) and up to five paths the call
+names. A refused commit also keeps its shell command (up to 500 characters); a
+refused write keeps only its paths. It never holds:
+
+- the content a tool call would write,
+- the value of a flag (`--token abc123` is recorded as `--token`),
+- the value of an environment variable whose name marks a secret (`TOKEN`,
+  `SECRET`, `PASSW`, `KEY`, `CREDENTIAL`, `AUTH`) and that is at least 8
+  characters long; Mate replaces it with `***`,
+- anything beyond the check and the tool kind for a refusal by the secret
+  check: no message, no command and no path.
+
+Recording never changes a refusal, a message or an exit code; when the log
+cannot be written, the event is dropped.
+
+## Reports
+
+Mate cannot tell whether a refusal was wrong; only the agent knows what it
+expected. So after the first event of a kind in a session, Mate adds one line
+after the refusal message, or after a failed command's output on stderr:
+
+```text
+Wrong or unclear? Run: mate friction report <event-id> --kind <bug|unclear> --expected "<what you expected>". Then continue with your task.
+```
+
+The line appears once per kind of event and session. It never appears for a
+failed `mate friction` command. The refusal message, the exit code and stdout
+stay unchanged.
+
+The agent answers with
+[`mate friction report`](/docs/reference/commands#friction), which writes a
+Friction Report to `reports-<YYYY-MM>.jsonl` beside the events, with the same
+retention. A report on an event takes its evidence from the event. For friction
+without an event, such as a skill step that does not fit, the session guidance
+asks the agent for a free report with a subject and evidence. A free report
+belongs to the companion the command resolves, so outside a companion it is
+refused. Mate adds that
+short Friction section to the guidance of each Claude Code and OpenCode session
+while recording is on. A report is cut to 1,000 characters per field and refused
+when it holds a secret. While recording is off, the command records nothing.
+
+## Read the Log
+
+[`mate friction list`](/docs/reference/commands#friction) shows the current
+companion's open friction, or every companion's with `--all`. Outside a companion it
+lists nothing without `--all`. The period is at most 90 days. To investigate what it
+lists, run [`mate triage`](/docs/scenarios/triage-a-mate-problem) in the
+affected repository. While recording is on, `mate doctor` shows the current
+companion's count of open friction in the last seven days.
+
+## Friction States
+
+A Friction State records what you decided about one fingerprint or one Free
+Report, so handled friction leaves the default list:
+
+| State       | Meaning                                             |
+| ----------- | --------------------------------------------------- |
+| `fixed`     | The problem is fixed, for example in a newer Mate.  |
+| `reported`  | An issue or a comment tracks it; it keeps the link. |
+| `dismissed` | It is no Mate problem.                              |
+
+An item without a Friction State is open. Set one with
+[`mate friction mark`](/docs/reference/commands#friction):
+
+```bash
+mate friction mark "command:artifact submit:1" --state reported --link https://github.com/acme/mate/issues/7
+mate friction mark "refusal:artifact:shell" --state dismissed --note "the agent wrote outside the repository on purpose"
+mate friction mark "refusal:artifact:shell" --state open   # clear it
+```
+
+`mate friction list` then shows only open items and says how many it hides;
+`--state handled` or `--state all` shows the others. `mate doctor` counts only
+open fingerprints.
+
+Mate works out two facts each time it reads, and never stores them:
+
+- A `fixed` fingerprint that is recorded again after the mark is **reopened**
+  and counts as open again.
+- A `reported` fingerprint shows how many events arrived since it was reported.
+  It stays reported.
+
+A `dismissed` fingerprint stays dismissed whatever is recorded later.
+
+Friction States apply to every companion on the machine and live in
+`~/.mate/friction/states.json`, beside the log. Marking never changes the log.
+A fingerprint's state stays when its events reach the end of the 90 days, so a
+fix that comes back is still recognized; a Free Report's state goes with the
+report. Only you mark in your own terminal; an agent may mark only from a
+[`mate triage`](/docs/scenarios/triage-a-mate-problem) session, after you said
+yes to recording the outcome.
+
+## In Studio
+
+Open **Friction** under Insights in Studio's sidebar, or from the command
+palette. It is offered in Engineering and in Analysis. It shows the selected
+companion's friction as `mate friction list` does, with each fingerprint as a
+plain sentence, such as "The artifact check refused a file write":
+
+- an overview, when anything is listed: the selected companion's event and
+  session counts for the period, a link with its count to each section, and
+  `mate triage` with a Copy button. The period is 7, 30 or 90 days (default 30)
+  and kept in the address. Reports without an event never count as events,
+- **Recorded friction**, one collapsed row per group with its event and session
+  counts, the most events in one session, when it was last seen and any report
+  count. Open a row for the fingerprint, the first and last time seen, Mate
+  versions, the paths and flags the calls named, and the reports on its events,
+  newest first,
+- **Agent reports**, the reports that are not attached to a recorded event,
+  newest first. Each is headed by its subject and leads with what the agent
+  expected, when it said so.
+
+All times show the date and time in your local time zone.
+
+### Filter, Sort and Mark
+
+Beside the period, four controls narrow the list. The address keeps them, so a
+reload or a shared link shows the same list:
+
+| Control      | Options                                                           | Default       |
+| ------------ | ----------------------------------------------------------------- | ------------- |
+| State        | Open, Handled, All                                                | Open          |
+| Subject type | All types, and each type in the period: `command`, `hook`, ...    | All           |
+| Kind         | All kinds, `bug`, `unclear`, `missing`; applies to Agent reports  | All           |
+| Order        | Most repeated in one session, Most recent; applies to groups only | Most repeated |
+
+Open includes reopened items. A recorded group has the subject type that a
+report on its events would have: `hook` for a refusal and `command` for a
+failed command. A `hook` filter therefore shows refusal groups and hook reports
+together. Agent reports stay newest first. When the filters hide items, the
+overview says how many and offers **Show all**.
+
+Each group and each Agent report offers **Fixed**, **Reported** and
+**Dismissed**. A handled item also offers **Reopen**. Reported takes an
+optional issue link, and Fixed and Dismissed take an optional note. A handled
+item shows its state, its note or link, who set it (a person, triage or Studio)
+and when. A reopened group says that it was fixed and then recorded again. A
+reported group shows how many events arrived since it was reported.
+
+A mark from Studio does what `mate friction mark` does: the same checks, the
+same `~/.mate/friction/states.json`, recorded as set by Studio. Like the
+recording switch, it works without `--writable` and needs Studio's own page and
+its access token. A refused mark, for example a note that holds a secret, shows
+its reason beside the item and changes nothing.
+
+The view shows whether recording is on and offers **Turn recording on** or
+**Turn recording off**. The control applies to all companions on the machine
+that runs Studio, while the overview counts only the selected companion. It sets
+the same Friction Switch as `mate friction on` and `off`. It works in every
+Studio start, also without `--writable`, and needs Studio's own page and its
+access token like every other change. It writes only
+`~/.mate/friction/settings.json`.
+
+You do not need a companion to change the switch. Studio's start page, shown
+before you choose a companion, has the same control under **Global features**,
+also when no companion is registered. The start page shows no friction records.
+
+The view reads the Friction Log of the machine that runs Studio. Under
+`mate studio serve`, that is the server, not the machine of the person who
+opens the page. It never shows an event's refusal message, command or error
+text, and reading it creates no file. It does not update by itself: reopen the
+view to read new records.
