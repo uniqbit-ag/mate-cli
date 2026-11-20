@@ -108,7 +108,10 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
   // verification ignore local plugins.
   const ignoresLocalPlugins =
     (command === "install" || command === "doctor") && isFrozenPluginInstall(argv);
-  await deps.hydrateDynamicPlugins({ includeLocal: !ignoresLocalPlugins });
+  // A package registers once per process, so a load here would pin the pre-install version for `plugin install`'s sync.
+  if (!(command === "plugin" && subcommand === "install")) {
+    await deps.hydrateDynamicPlugins({ includeLocal: !ignoresLocalPlugins });
+  }
 
   if (!command || command === "help" || command === "--help" || command === "-h") {
     console.log(usage());

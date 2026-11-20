@@ -5,7 +5,7 @@ import { resolveInstallContext } from "../../../lib/install";
 import { backfillHubAllowedAgents } from "../../../lib/orchestrator/companion-hub";
 import { ConfigStore } from "../../../lib/orchestrator/config-store";
 import type { FrameworkConfig, PluginDeclaration } from "../../../lib/orchestrator/types";
-import { applySetupCompatibilities } from "../../../tools/setup";
+import { applySetupCompatibilities, syncCompanionFiles } from "../../../tools/setup";
 import {
   describeUnknownAudience,
   readAudienceSelection,
@@ -43,6 +43,7 @@ export interface PluginInstallCommandDeps {
   cwd?: string;
   installDeps?: PluginInstallDeps;
   setupHub?: (companionPath: string, config: FrameworkConfig) => Promise<void>;
+  syncCompanion?: (companionPath: string, config: FrameworkConfig) => Promise<unknown>;
 }
 
 function refuse(message: string): false {
@@ -57,7 +58,9 @@ function refuse(message: string): false {
  * `plugins:` list (adding it, or updating its version if already declared)
  * and installs it immediately into the shared workspace, the same way
  * `mate install` would on its next run: with the selected audience's
- * plugins, and without any other audience's.
+ * plugins, and without any other audience's. A successful install in a
+ * companion then syncs the companion's agent runtime settings, as
+ * `mate install` does.
  * @flags
  * - `--local` — declare the package in the untracked `.mate/config/framework.local.yaml` and install it into the ignored `.mate/local-plugins/`, for this machine only. No tracked file names it. Refused in a hub and for a package `framework.yaml` declares.
  */
@@ -136,6 +139,9 @@ export async function runPluginInstallCommand(
   const { results } = outcome;
   reportPluginWorkspaces(outcome);
   reportPluginInstallResults(results);
+  const succeeded =
+    results.find((result) => result.package === packageName)?.status !== "failed" &&
+    !results.some((result) => result.refused);
   await hydrateDynamicPlugins({ companionPath: context.companionPath });
   if (context.kind === "hub") {
     await (
@@ -144,9 +150,9 @@ export async function runPluginInstallCommand(
         applySetupCompatibilities(companionPath, config, "sync", undefined, undefined, "hub"))
     )(context.companionPath, nextConfig);
   }
+  if (context.kind === "companion" && succeeded) {
+    await (deps.syncCompanion ?? syncCompanionFiles)(context.companionPath, nextConfig);
+  }
 
-  return (
-    results.find((result) => result.package === packageName)?.status !== "failed" &&
-    !results.some((result) => result.refused)
-  );
+  return succeeded;
 }

@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { parse } from "yaml";
 
 import { parsePackageSpec, runPluginInstallCommand } from "./install";
@@ -66,6 +66,12 @@ const fakeInstall = (resolveTo: (pkg: string) => string) =>
       return { ok: true };
     },
   });
+
+/** A successful install with the companion sync stubbed out. */
+const installs = (version: string) => ({
+  installDeps: fakeInstall(() => version),
+  syncCompanion: async () => {},
+});
 
 beforeEach(() => {
   originalArtifactPath = process.env.MATE_ARTIFACT_PATH;
@@ -206,14 +212,29 @@ describe("runPluginInstallCommand", () => {
     const companionPath = await makeCompanion();
     process.env.MATE_ARTIFACT_PATH = companionPath;
 
-    const ok = await runPluginInstallCommand(["@acme/custom-plugin@1.2.0"], {
-      installDeps: fakeInstall(() => "1.2.0"),
-    });
+    const ok = await runPluginInstallCommand(["@acme/custom-plugin@1.2.0"], installs("1.2.0"));
 
     expect(ok).toBe(true);
     const config = await readFrameworkYaml(companionPath);
     expect(config.plugins).toEqual([{ package: "@acme/custom-plugin", version: "1.2.0" }]);
     expect(logs.join(" ")).toContain("installed plugin @acme/custom-plugin@1.2.0");
+  });
+
+  test("a successful install syncs the companion with the new declaration", async () => {
+    const companionPath = await makeCompanion();
+    process.env.MATE_ARTIFACT_PATH = companionPath;
+    const syncCompanion = mock(async () => {});
+
+    await runPluginInstallCommand(["@acme/hooks@1.0.0"], {
+      installDeps: fakeInstall(() => "1.0.0"),
+      syncCompanion,
+    });
+
+    expect(syncCompanion).toHaveBeenCalledTimes(1);
+    expect(syncCompanion).toHaveBeenCalledWith(
+      companionPath,
+      expect.objectContaining({ plugins: [{ package: "@acme/hooks", version: "1.0.0" }] }),
+    );
   });
 
   test("updates the declared version when the package is already declared", async () => {
@@ -224,9 +245,7 @@ describe("runPluginInstallCommand", () => {
     ]);
     process.env.MATE_ARTIFACT_PATH = companionPath;
 
-    await runPluginInstallCommand(["@acme/custom-plugin@2.0.0"], {
-      installDeps: fakeInstall(() => "2.0.0"),
-    });
+    await runPluginInstallCommand(["@acme/custom-plugin@2.0.0"], installs("2.0.0"));
 
     const config = await readFrameworkYaml(companionPath);
     expect(config.plugins).toEqual([{ package: "@acme/custom-plugin", version: "2.0.0" }]);
@@ -235,15 +254,11 @@ describe("runPluginInstallCommand", () => {
   test("re-running with the same declared version does not rewrite framework.yaml", async () => {
     const companionPath = await makeCompanion();
     process.env.MATE_ARTIFACT_PATH = companionPath;
-    await runPluginInstallCommand(["@acme/custom-plugin@1.0.0"], {
-      installDeps: fakeInstall(() => "1.0.0"),
-    });
+    await runPluginInstallCommand(["@acme/custom-plugin@1.0.0"], installs("1.0.0"));
     const before = await fs.stat(path.join(companionPath, ".mate", "config", "framework.yaml"));
 
     await new Promise((resolve) => setTimeout(resolve, 5));
-    await runPluginInstallCommand(["@acme/custom-plugin@1.0.0"], {
-      installDeps: fakeInstall(() => "1.0.0"),
-    });
+    await runPluginInstallCommand(["@acme/custom-plugin@1.0.0"], installs("1.0.0"));
     const after = await fs.stat(path.join(companionPath, ".mate", "config", "framework.yaml"));
 
     expect(after.mtimeMs).toBe(before.mtimeMs);
@@ -270,7 +285,7 @@ describe("runPluginInstallCommand", () => {
         process.env.MATE_ARTIFACT_PATH = companionPath;
         const before = await frameworkText(companionPath);
 
-        const ok = await runPluginInstallCommand(argv, { installDeps: fakeInstall(() => "1.0.0") });
+        const ok = await runPluginInstallCommand(argv, installs("1.0.0"));
 
         expect(ok).toBe(true);
         expect((await readLocal(companionPath)).plugins).toEqual([
@@ -292,9 +307,10 @@ describe("runPluginInstallCommand", () => {
       const companionPath = await makeCompanion();
       process.env.MATE_ARTIFACT_PATH = companionPath;
 
-      await runPluginInstallCommand(["--local", "@acme/gated@file:~/dist/gated.tgz"], {
-        installDeps: fakeInstall(() => "1.0.0"),
-      });
+      await runPluginInstallCommand(
+        ["--local", "@acme/gated@file:~/dist/gated.tgz"],
+        installs("1.0.0"),
+      );
 
       expect((await readLocal(companionPath)).plugins).toEqual([
         { package: "@acme/gated", version: "file:~/dist/gated.tgz" },
@@ -336,10 +352,9 @@ describe("runPluginInstallCommand", () => {
     test("updates the version of a local entry", async () => {
       const companionPath = await makeCompanion();
       process.env.MATE_ARTIFACT_PATH = companionPath;
-      const installDeps = fakeInstall(() => "2.0.0");
-      await runPluginInstallCommand(["--local", "@acme/gated@1.0.0"], { installDeps });
+      await runPluginInstallCommand(["--local", "@acme/gated@1.0.0"], installs("2.0.0"));
 
-      await runPluginInstallCommand(["--local", "@acme/gated@2.0.0"], { installDeps });
+      await runPluginInstallCommand(["--local", "@acme/gated@2.0.0"], installs("2.0.0"));
 
       expect((await readLocal(companionPath)).plugins).toEqual([
         { package: "@acme/gated", version: "2.0.0" },
@@ -414,13 +429,17 @@ describe("runPluginInstallCommand", () => {
     const companionPath = await makeCompanion();
     process.env.MATE_ARTIFACT_PATH = companionPath;
 
+    const syncCompanion = mock(async () => {});
+
     const ok = await runPluginInstallCommand(["@acme/broken@1.0.0"], {
       installDeps: fakePluginInstallDeps({
         runNpmInstall: async () => ({ ok: false, detail: "registry unreachable" }),
       }),
+      syncCompanion,
     });
 
     expect(ok).toBe(false);
+    expect(syncCompanion).not.toHaveBeenCalled();
     expect(stderrWrites.join(" ")).toContain("registry unreachable");
     expect(stderrWrites.join(" ")).toContain("npm config set");
   });

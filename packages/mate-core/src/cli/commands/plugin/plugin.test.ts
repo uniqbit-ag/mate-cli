@@ -77,6 +77,7 @@ describe("runPluginCommand install", () => {
           return { ok: true };
         },
       }),
+      syncCompanion: async () => {},
     });
 
     expect(process.exitCode).toBe(0);
