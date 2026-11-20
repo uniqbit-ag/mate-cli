@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "./framework";
-import { REPORT_KINDS } from "./friction-log";
+import { REPORT_KINDS } from "./friction-vocabulary";
 import { GUIDANCE_FILE_VERSION, type MateGuidanceFile } from "./guidance";
 
 /**

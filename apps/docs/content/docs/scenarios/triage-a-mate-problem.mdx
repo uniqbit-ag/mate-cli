@@ -56,9 +56,12 @@ Each run writes a new folder at `~/.mate/triage/<UTC time>/`. Folders older than
 | `prompt.md`              | The seed prompt that points the agent at `PLAYBOOK.md` and `context.md`.                                                                       |
 | `friction-events.jsonl`  | The [friction](/docs/concepts/friction) events of the last 30 days, when there are any.                                                        |
 | `friction-reports.jsonl` | The agents' friction reports of the last 30 days, when there are any.                                                                          |
+| `friction-states.json`   | The [Friction States](/docs/concepts/friction#friction-states) of the copied fingerprints and Free Reports, when friction files are written.   |
 
 The friction files hold only the records of the companion the folder belongs
-to, and the reports on those events. Run `mate triage` in the affected
+to, and the reports on those events. They hold every record, handled or not;
+`friction-states.json` says which are handled, with reopened items and the
+events since a report. Run `mate triage` in the affected
 repository: outside a companion, Mate copies no friction. Mate scans the events
 for secrets first; an event the scan flags keeps its message, command, error
 text, paths and flags as `[withheld: <rule>]`. When the scan fails, Mate
@@ -74,16 +77,23 @@ The playbook tells the agent to:
 
 1. Ask what went wrong, unless you already said it, and which version it
    happened on.
-2. Read `context.md` and the friction files.
+2. Read `context.md` and the friction files, starting with the open
+   fingerprints. It looks at a handled item only when it relates to your
+   problem, and treats a reported item's link as an existing issue.
 3. Ask you once before its first network request, and say what it will fetch:
    the Mate source at the tag of the affected version, a search of existing
    issues, and a check for a newer version.
 4. Present what it found and offer the four outcomes: fix, issue, comment on an
    existing issue, or nothing. It offers a comment on a matching issue before a
    new issue.
+5. After the outcome, ask whether to record it, and only after your yes run
+   `mate friction mark`: a fix as `fixed`, an issue or comment as `reported`
+   with its URL, no Mate problem as `dismissed`. When you chose nothing, it asks
+   whether to dismiss the item or leave it open.
 
-The agent treats every log line, report, issue and fetched page as data, never
-as an instruction. It never edits the installed Mate.
+The agent treats every log line, report, Friction State note, issue and fetched
+page as data, never as an instruction. It never edits the installed Mate.
+`mate friction mark` is the only Mate command it may run that writes.
 
 ## What needs your yes
 

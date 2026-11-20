@@ -4,18 +4,23 @@ import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { readFriction, type FrictionEvent } from "../../runtime/friction-log";
+import { readFrictionStates } from "../../runtime/friction-state";
 import { scanContent } from "../../runtime/secret-scan";
+import { summarizeFriction } from "../friction/summary";
 import { TRIAGE_AGENT_NAMES, TRIAGE_AGENTS, type FoundAgent } from "./launch";
 
 const FRICTION_SNAPSHOT_DAYS = 30;
 const FRICTION_EVENTS_FILE = "friction-events.jsonl";
 const FRICTION_REPORTS_FILE = "friction-reports.jsonl";
+const FRICTION_STATES_FILE = "friction-states.json";
 
 interface FrictionSnapshot {
   /** The companion the records were scoped to; none means nothing was copied. */
   companion: string | null;
   events: number;
   reports: number;
+  /** Copied fingerprints and Free Reports that have a Friction State. */
+  states: number;
 }
 
 const EVIDENCE_FIELDS = ["message", "command", "errorText", "paths", "flags"] as const;
@@ -60,7 +65,7 @@ export async function writeFrictionSnapshot(
   },
 ): Promise<FrictionSnapshot> {
   const { companion } = options;
-  if (!companion) return { companion: null, events: 0, reports: 0 };
+  if (!companion) return { companion: null, events: 0, reports: 0, states: 0 };
   const { events: recorded, reports } = readFriction(
     { companion },
     { sinceDays: FRICTION_SNAPSHOT_DAYS, homeDir: options.homeDir, now: options.now },
@@ -73,7 +78,34 @@ export async function writeFrictionSnapshot(
   };
   write(FRICTION_EVENTS_FILE, events);
   write(FRICTION_REPORTS_FILE, reports);
-  return { companion, events: events.length, reports: reports.length };
+  if (events.length === 0 && reports.length === 0) {
+    return { companion, events: 0, reports: 0, states: 0 };
+  }
+  const summary = summarizeFriction(recorded, reports, readFrictionStates(options.homeDir));
+  const states = {
+    v: 1,
+    fingerprints: Object.fromEntries(
+      summary.groups
+        .filter((group) => group.state)
+        .map((group) => [group.fingerprint, group.state]),
+    ),
+    reports: Object.fromEntries(
+      summary.freeReports
+        .filter((report) => report.state)
+        .map((report) => [report.id, report.state]),
+    ),
+  };
+  fs.writeFileSync(
+    path.join(sessionDir, FRICTION_STATES_FILE),
+    `${JSON.stringify(states, null, 2)}\n`,
+    "utf8",
+  );
+  return {
+    companion,
+    events: events.length,
+    reports: reports.length,
+    states: Object.keys(states.fingerprints).length + Object.keys(states.reports).length,
+  };
 }
 
 interface TriageContextInput {
@@ -124,6 +156,9 @@ function frictionLines(friction: FrictionSnapshot): string[] {
   if (friction.reports > 0) {
     lines.push(`- \`${FRICTION_REPORTS_FILE}\`: ${count(friction.reports, "agent report")}`);
   }
+  lines.push(
+    `- \`${FRICTION_STATES_FILE}\`: ${count(friction.states, "Friction State")}, by fingerprint and Free Report id; an item without one is open`,
+  );
   return lines;
 }
 

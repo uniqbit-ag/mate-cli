@@ -315,7 +315,7 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       await runDoctorCommand(argv.slice(3));
       return;
     case "friction": {
-      // The switch is a machine setting: no companion or installation is needed to set or read it.
+      // The switch and Friction States are machine-wide: only reading or writing the log needs a companion.
       const readsLog = subcommand === "list" || subcommand === "report";
       if (!(await gate(readsLog ? { updateGuard: true, companion: true, install: true } : {})))
         return;

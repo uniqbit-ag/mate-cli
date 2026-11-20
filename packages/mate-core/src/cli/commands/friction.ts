@@ -2,32 +2,59 @@ import { getActiveDistribution } from "../../distribution";
 import { FRAMEWORK_NAME } from "../../framework";
 import { resolveInstallContext } from "../../lib/install";
 import { currentSession } from "../../lib/session-attribution";
+import { triageSessionDir } from "../../lib/triage/session";
 import { usageDays } from "../../lib/usage/window";
-import { readFrictionSummary, type FrictionGroup } from "../../lib/friction/summary";
+import {
+  cut,
+  eventSubject,
+  FrictionRefusal,
+  refuseSecrets,
+  type SecretScan,
+} from "../../lib/friction/fields";
+import { markFriction } from "../../lib/friction/mark";
+import { selectByState } from "../../lib/friction/select";
+import {
+  readFrictionSummary,
+  type FrictionFreeReport,
+  type FrictionGroup,
+} from "../../lib/friction/summary";
 import {
   appendReport,
   findEvent,
   frictionLogDir,
-  type FrictionScope,
-  REPORT_COSTS,
-  REPORT_KINDS,
-  type FrictionEvent,
   type FrictionReport,
-  type ReportCost,
-  type ReportKind,
+  type FrictionScope,
 } from "../../runtime/friction-log";
-import { parseFingerprint } from "../../runtime/friction-fingerprint";
 import { FRICTION_RETENTION_DAYS } from "../../runtime/friction-retention";
 import { readFrictionSwitch, writeFrictionSwitch } from "../../runtime/friction-switch";
-import { scanContent, type SecretFinding } from "../../runtime/secret-scan";
+import {
+  MARK_STATES,
+  REPORT_COSTS,
+  REPORT_KINDS,
+  STATE_FILTERS,
+  SUBJECT_TYPES,
+  type FrictionState,
+  type MarkState,
+  type ReportCost,
+  type ReportKind,
+  type StateFilter,
+} from "../../runtime/friction-vocabulary";
 import { writeJsonStdout } from "../write-json-stdout";
 
 const DEFAULT_DAYS = 30;
 
-function parseArgs(argv: string[]): { days: number; json: boolean; all: boolean } | string {
+interface ListArgs {
+  days: number;
+  json: boolean;
+  all: boolean;
+  state: StateFilter;
+}
+
+function parseArgs(argv: string[]): ListArgs | string {
   let days = DEFAULT_DAYS;
   let json = false;
   let all = false;
+  let state: StateFilter = "open";
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === "--json") json = true;
@@ -41,9 +68,15 @@ function parseArgs(argv: string[]): { days: number; json: boolean; all: boolean 
       if (days > FRICTION_RETENTION_DAYS) {
         return `--days is at most ${FRICTION_RETENTION_DAYS}: the Friction Log keeps ${FRICTION_RETENTION_DAYS} days.`;
       }
+    } else if (arg === "--state" || arg.startsWith("--state=")) {
+      const value = arg === "--state" ? argv[++index] : arg.slice("--state=".length);
+      if (!(STATE_FILTERS as readonly unknown[]).includes(value)) {
+        return `--state must be one of ${STATE_FILTERS.join(", ")}; got "${value ?? ""}".`;
+      }
+      state = value as StateFilter;
     } else return `Unknown argument: ${arg}`;
   }
-  return { days, json, all };
+  return { days, json, all, state };
 }
 
 const counted = (counts: Record<string, number>) =>
@@ -54,12 +87,31 @@ const counted = (counts: Record<string, number>) =>
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 const minute = (at: string) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`;
 
+/** The Friction State as one line, or nothing for an unmarked item. */
+function stateLines(
+  state: (FrictionState & { reopened?: boolean; eventsSince?: number }) | null,
+): string[] {
+  if (!state) return [];
+  const words = [
+    `${state.reopened ? "reopened: was " : ""}${state.state} by ${state.by} ${minute(state.at)}`,
+  ];
+  if (state.link) words.push(state.link);
+  if (state.note) words.push(state.note);
+  if (state.state === "reported" && state.eventsSince !== undefined) {
+    words.push(`${plural(state.eventsSince, "event")} since reported`);
+  } else if (state.reopened && state.eventsSince !== undefined) {
+    words.push(`${plural(state.eventsSince, "event")} since fixed`);
+  }
+  return [`    ${words.join("; ")}`];
+}
+
 function renderGroup(group: FrictionGroup, all: boolean): string {
   const [latest] = group.reports;
   const named = (label: string, counts: Record<string, number>) =>
     Object.keys(counts).length > 0 ? [`    ${label}: ${counted(counts)}`] : [];
   return [
     `  ${group.fingerprint}`,
+    ...stateLines(group.state),
     `    ${plural(group.events, "event")} in ${plural(group.sessions, "session")}, at most ${group.maxPerSession} in one session`,
     `    first ${minute(group.firstSeen)}, last ${minute(group.lastSeen)}; mate ${counted(group.versions)}`,
     ...(all ? [`    companions: ${counted(group.companions)}`] : []),
@@ -71,9 +123,10 @@ function renderGroup(group: FrictionGroup, all: boolean): string {
   ].join("\n");
 }
 
-function renderFreeReport(report: FrictionReport, all: boolean): string {
+function renderFreeReport(report: FrictionFreeReport, all: boolean): string {
   return [
-    `  ${report.subject} (${report.kind}${report.cost ? `, ${report.cost}` : ""}) ${minute(report.at)}`,
+    `  ${report.subject} (${report.kind}${report.cost ? `, ${report.cost}` : ""}) ${minute(report.at)} ${report.id}`,
+    ...stateLines(report.state),
     ...(all ? [`    companion: ${report.companion}`] : []),
     `    expected: ${report.expected}`,
     `    evidence: ${report.evidence ?? ""}`,
@@ -118,16 +171,20 @@ export async function runFrictionListCommand(
     now: deps.now,
   });
 
+  const shown = selectByState(summary, args.state);
+
   if (args.json) {
     await writeJsonStdout({
       kind: "friction-list",
       version: 1,
       days: args.days,
       companion,
+      state: args.state,
       events: summary.events,
       sessions: summary.sessions,
-      groups: summary.groups,
-      freeReports: summary.freeReports,
+      hidden: shown.hidden,
+      groups: shown.groups,
+      freeReports: shown.freeReports,
     });
     return;
   }
@@ -136,13 +193,25 @@ export async function runFrictionListCommand(
     console.log(`No friction recorded in the last ${args.days} days.`);
     return;
   }
+  const showAll = `${FRAMEWORK_NAME} friction list --state all${args.all ? " --all" : ""}`;
   console.log(
     `Friction in the last ${args.days} days${args.all ? " in all companions" : ""}: ${plural(summary.events, "event")} in ${plural(summary.sessions, "session")}`,
   );
-  for (const group of summary.groups) console.log(renderGroup(group, args.all));
-  if (summary.freeReports.length > 0) {
-    console.log(`Free reports: ${summary.freeReports.length}`);
-    for (const report of summary.freeReports) console.log(renderFreeReport(report, args.all));
+  if (shown.groups.length === 0 && shown.freeReports.length === 0) {
+    console.log(
+      `No ${args.state} item: ${plural(shown.hidden, "item")} hidden; ${showAll} shows them.`,
+    );
+    return;
+  }
+  if (shown.hidden > 0) {
+    console.log(
+      `${plural(shown.hidden, args.state === "open" ? "handled item" : "open item")} hidden; ${showAll} shows them.`,
+    );
+  }
+  for (const group of shown.groups) console.log(renderGroup(group, args.all));
+  if (shown.freeReports.length > 0) {
+    console.log(`Free reports: ${shown.freeReports.length}`);
+    for (const report of shown.freeReports) console.log(renderFreeReport(report, args.all));
   }
   // Triage copies only the current companion's friction and starts no agent inside an agent session.
   console.log(
@@ -150,13 +219,9 @@ export async function runFrictionListCommand(
   );
 }
 
-const SUBJECT_TYPES = ["command", "hook", "skill", "guidance", "capability", "docs"] as const;
 const SUBJECT = new RegExp(`^(${SUBJECT_TYPES.join("|")})(:.+)?$`);
-const TEXT_LIMIT = 1_000;
-/** The scanner needs a file name; the report is scanned as a companion write would be. */
-const SCAN_NAME = "friction-report.md";
 
-const VALUE_FLAGS = {
+const REPORT_FLAGS = {
   "--kind": "kind",
   "--expected": "expected",
   "--cost": "cost",
@@ -164,43 +229,32 @@ const VALUE_FLAGS = {
   "--evidence": "evidence",
   "--workaround": "workaround",
 } as const;
-type ValueField = (typeof VALUE_FLAGS)[keyof typeof VALUE_FLAGS];
+const MARK_FLAGS = { "--state": "state", "--note": "note", "--link": "link" } as const;
 
-interface ReportArgs extends Partial<Record<ValueField, string>> {
-  eventId?: string;
-}
+type ValueArgs<F extends Record<string, string>> = Partial<Record<F[keyof F], string>> & {
+  /** The one argument that is no flag. */
+  positional?: string;
+};
 
-class ReportRefusal extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
-function isValueFlag(flag: string): flag is keyof typeof VALUE_FLAGS {
-  return Object.hasOwn(VALUE_FLAGS, flag);
-}
-
-function parseReportArgs(argv: string[]): ReportArgs {
-  const args: ReportArgs = {};
+/** `--flag value` or `--flag=value` for each of `flags`, one positional argument, and `--json`. */
+function parseValueArgs<F extends Record<string, string>>(argv: string[], flags: F): ValueArgs<F> {
+  const args: Record<string, string> = {};
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === "--json") continue;
     const equals = arg.indexOf("=");
     const flag = arg.startsWith("--") && equals > 0 ? arg.slice(0, equals) : arg;
-    if (isValueFlag(flag)) {
+    if (Object.hasOwn(flags, flag)) {
       const value = flag === arg ? argv[++index] : arg.slice(equals + 1);
-      if (value === undefined) throw new ReportRefusal("usage", `${flag} needs a value.`);
-      args[VALUE_FLAGS[flag]] = value;
-    } else if (!arg.startsWith("-") && args.eventId === undefined) {
-      args.eventId = arg;
+      if (value === undefined) throw new FrictionRefusal("usage", `${flag} needs a value.`);
+      args[flags[flag]] = value;
+    } else if (!arg.startsWith("-") && args.positional === undefined) {
+      args.positional = arg;
     } else {
-      throw new ReportRefusal("usage", `Unknown argument: ${arg}`);
+      throw new FrictionRefusal("usage", `Unknown argument: ${arg}`);
     }
   }
-  return args;
+  return args as ValueArgs<F>;
 }
 
 function oneOf<T extends string>(
@@ -210,7 +264,7 @@ function oneOf<T extends string>(
 ): T | undefined {
   if (value === undefined) return undefined;
   if ((values as readonly string[]).includes(value)) return value as T;
-  throw new ReportRefusal(
+  throw new FrictionRefusal(
     `invalid-${flag.slice(2)}`,
     `${flag} must be one of ${values.join(", ")}; got "${value}".`,
   );
@@ -220,13 +274,6 @@ function present(value: string | undefined): string | undefined {
   return value?.trim() ? value : undefined;
 }
 
-/** `hook:<check>` for a refusal, `command:<command words>` for a failed command. */
-function eventSubject(event: FrictionEvent): string {
-  const { form, name } = parseFingerprint(event.fingerprint);
-  return form === "refusal" ? `hook:${name}` : `command:${name}`;
-}
-
-const cut = (text: string) => text.slice(0, TEXT_LIMIT);
 const cutOrNull = (text: string | undefined) => (text === undefined ? null : cut(text));
 
 export interface FrictionReportDeps {
@@ -234,30 +281,30 @@ export interface FrictionReportDeps {
   homeDir?: string;
   now?: Date;
   env?: Record<string, string | undefined>;
-  scan?: (filePath: string, content: string) => Promise<SecretFinding[]>;
+  scan?: SecretScan;
 }
 
 const REPORT_USAGE = `${FRAMEWORK_NAME} friction report [<event-id>] --kind <${REPORT_KINDS.join("|")}> --expected <text>`;
 
 async function buildReport(
-  args: ReportArgs,
+  args: ValueArgs<typeof REPORT_FLAGS>,
   deps: FrictionReportDeps,
 ): Promise<Omit<FrictionReport, "v" | "id" | "at">> {
   const kind = oneOf<ReportKind>(REPORT_KINDS, args.kind, "--kind");
   if (!kind) {
-    throw new ReportRefusal(
+    throw new FrictionRefusal(
       "missing-kind",
       `--kind is required: one of ${REPORT_KINDS.join(", ")}. Usage: ${REPORT_USAGE}`,
     );
   }
   const expected = present(args.expected);
   if (!expected) {
-    throw new ReportRefusal("missing-expected", `--expected is required. Usage: ${REPORT_USAGE}`);
+    throw new FrictionRefusal("missing-expected", `--expected is required. Usage: ${REPORT_USAGE}`);
   }
   const cost = oneOf<ReportCost>(REPORT_COSTS, args.cost, "--cost") ?? null;
 
   if (!readFrictionSwitch(deps.homeDir)) {
-    throw new ReportRefusal(
+    throw new FrictionRefusal(
       "recording-off",
       `Friction recording is off on this machine; nothing was recorded. A person turns it on with ${FRAMEWORK_NAME} friction on.`,
     );
@@ -267,12 +314,12 @@ async function buildReport(
   let subject: string;
   const evidence = present(args.evidence);
   let companion = context.companionPath;
-  if (args.eventId !== undefined) {
-    const event = findEvent(args.eventId, { homeDir: deps.homeDir });
+  if (args.positional !== undefined) {
+    const event = findEvent(args.positional, { homeDir: deps.homeDir });
     if (!event) {
-      throw new ReportRefusal(
+      throw new FrictionRefusal(
         "event-not-found",
-        `No Friction Event ${args.eventId} was found in the log; nothing was recorded.`,
+        `No Friction Event ${args.positional} was found in the log; nothing was recorded.`,
       );
     }
     subject = eventSubject(event);
@@ -280,25 +327,25 @@ async function buildReport(
   } else {
     const named = present(args.subject);
     if (!named) {
-      throw new ReportRefusal(
+      throw new FrictionRefusal(
         "missing-subject",
         `A free report needs --subject: one of ${SUBJECT_TYPES.join(", ")}, optionally followed by :<name>.`,
       );
     }
     if (!SUBJECT.test(named)) {
-      throw new ReportRefusal(
+      throw new FrictionRefusal(
         "invalid-subject",
         `--subject must start with one of ${SUBJECT_TYPES.join(", ")}, optionally followed by :<name>.`,
       );
     }
     if (!evidence) {
-      throw new ReportRefusal(
+      throw new FrictionRefusal(
         "missing-evidence",
         "A free report needs --evidence: quote what you saw, such as the message or instruction.",
       );
     }
     if (companion === undefined) {
-      throw new ReportRefusal(
+      throw new FrictionRefusal(
         NO_COMPANION,
         `A free report needs a companion and none resolves from this folder; nothing was recorded. Run ${FRAMEWORK_NAME} friction report inside the affected repository.`,
       );
@@ -307,7 +354,7 @@ async function buildReport(
   }
 
   const report = {
-    eventId: args.eventId ?? null,
+    eventId: args.positional ?? null,
     kind,
     cost,
     subject: cut(subject),
@@ -316,8 +363,9 @@ async function buildReport(
     workaround: cutOrNull(present(args.workaround)),
   };
   await refuseSecrets(
+    "The report",
     [report.subject, report.expected, report.evidence, report.workaround],
-    deps.scan ?? scanContent,
+    deps.scan,
   );
 
   const session = currentSession(deps.env ?? process.env);
@@ -330,29 +378,6 @@ async function buildReport(
   };
 }
 
-/** The refusal names the scanner's rules, never the text. */
-async function refuseSecrets(
-  fields: (string | null)[],
-  scan: NonNullable<FrictionReportDeps["scan"]>,
-): Promise<void> {
-  let findings: SecretFinding[];
-  try {
-    findings = await scan(SCAN_NAME, fields.filter((field) => field !== null).join("\n"));
-  } catch {
-    throw new ReportRefusal(
-      "scan-failed",
-      "The report could not be scanned for secrets; nothing was recorded.",
-    );
-  }
-  if (findings.length > 0) {
-    const rules = [...new Set(findings.map((finding) => finding.ruleId))];
-    throw new ReportRefusal(
-      "secret",
-      `The report holds a secret (${rules.join(", ")}); nothing was recorded. Replace the value with a placeholder or the variable name.`,
-    );
-  }
-}
-
 /** Records one Friction Report; refusals print to stderr, and with `--json` one document to stdout. */
 export async function runFrictionReportCommand(
   argv: string[],
@@ -360,12 +385,12 @@ export async function runFrictionReportCommand(
 ): Promise<void> {
   const json = argv.includes("--json");
   try {
-    const report = await buildReport(parseReportArgs(argv), deps);
+    const report = await buildReport(parseValueArgs(argv, REPORT_FLAGS), deps);
     let recorded: FrictionReport;
     try {
       recorded = appendReport(report, { homeDir: deps.homeDir, now: deps.now });
     } catch (error) {
-      throw new ReportRefusal(
+      throw new FrictionRefusal(
         "write-failed",
         `The report could not be written: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -381,15 +406,77 @@ export async function runFrictionReportCommand(
       console.log(`Recorded friction report ${recorded.id}.`);
     }
   } catch (error) {
-    if (!(error instanceof ReportRefusal)) throw error;
-    console.error(error.message);
-    process.exitCode = 1;
-    if (json) await writeError(error.code, error.message);
+    await printRefusal(error, json);
   }
+}
+
+/** Prints a refusal to stderr, and with `--json` one error document to stdout; rethrows anything else. */
+async function printRefusal(error: unknown, json: boolean): Promise<void> {
+  if (!(error instanceof FrictionRefusal)) throw error;
+  console.error(error.message);
+  process.exitCode = 1;
+  if (json) await writeError(error.code, error.message);
 }
 
 async function writeError(code: string, message: string): Promise<void> {
   await writeJsonStdout({ kind: "error", version: 1, error: { code, message } });
+}
+
+export interface FrictionMarkDeps {
+  homeDir?: string;
+  now?: Date;
+  env?: Record<string, string | undefined>;
+  cwd?: string;
+  scan?: SecretScan;
+}
+
+const MARK_USAGE = `${FRAMEWORK_NAME} friction mark <fingerprint|report-id> --state <${MARK_STATES.join("|")}> [--note <text>] [--link <url>] [--json]`;
+
+/**
+ * Sets a Friction State. An agent may mark only from a triage session folder, so it cannot hide
+ * the friction it causes; Mate's base permission lets an agent run any mate command unprompted.
+ */
+export async function runFrictionMarkCommand(
+  argv: string[],
+  deps: FrictionMarkDeps = {},
+): Promise<void> {
+  const json = argv.includes("--json");
+  try {
+    const args = parseValueArgs(argv, MARK_FLAGS);
+    const target = present(args.positional);
+    const state = oneOf<MarkState>(MARK_STATES, args.state, "--state");
+    if (!target || !state) {
+      throw new FrictionRefusal("usage", `A target and --state are required. Usage: ${MARK_USAGE}`);
+    }
+    let by: "person" | "triage" = "person";
+    if (currentSession(deps.env ?? process.env)) {
+      if (!triageSessionDir(deps.cwd ?? process.cwd(), deps.homeDir)) {
+        throw new FrictionRefusal(
+          "agent-session",
+          `${FRAMEWORK_NAME} friction mark records a person's decision: run it in your own terminal, or let ${FRAMEWORK_NAME} triage record it from its session folder. Nothing was changed.`,
+        );
+      }
+      by = "triage";
+    }
+    const result = await markFriction(
+      target,
+      state,
+      { note: args.note, link: args.link, by },
+      deps,
+    );
+    if (!result.ok) throw new FrictionRefusal(result.code, result.reason);
+    if (json) {
+      await writeJsonStdout({ kind: "friction-state", version: 1, target, state: result.state });
+    } else {
+      console.log(
+        result.state
+          ? `Marked ${target} as ${result.state.state}.`
+          : `Cleared the Friction State of ${target}: it is open.`,
+      );
+    }
+  } catch (error) {
+    await printRefusal(error, json);
+  }
 }
 
 export interface FrictionSwitchDeps {
@@ -443,7 +530,7 @@ export async function runFrictionStatusCommand(
   console.log(`Friction recording is ${recording ? "on" : "off"}. Friction Log: ${logDir}`);
 }
 
-export const FRICTION_SUBCOMMANDS = ["on", "off", "status", "list", "report"] as const;
+export const FRICTION_SUBCOMMANDS = ["on", "off", "status", "list", "report", "mark"] as const;
 
 export async function runFrictionCommand(
   subcommand: string | undefined,
@@ -462,6 +549,9 @@ export async function runFrictionCommand(
       return;
     case "report":
       await runFrictionReportCommand(argv);
+      return;
+    case "mark":
+      await runFrictionMarkCommand(argv);
       return;
     default:
       console.error(

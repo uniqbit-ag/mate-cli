@@ -23,6 +23,7 @@ import { createClaudePlugin } from "../../tools/setup/providers/claude";
 import * as frictionLog from "../../runtime/friction-log";
 import { appendEvent, frictionLogFile } from "../../runtime/friction-log";
 import { writeFrictionSwitch } from "../../runtime/friction-switch";
+import { markFriction } from "../../lib/friction/mark";
 import { createStartupProgress } from "../../lib/components/startup-progress";
 import { collectDoctorReport, runDoctorCommand, type DoctorReport } from "./doctor";
 
@@ -1401,6 +1402,53 @@ describe("doctor friction", () => {
     expect(text).toContain("Friction");
     expect(text).toContain("refusal:artifact:write (2)");
     expect(text).toContain(`${FRAMEWORK_NAME} triage`);
+  });
+
+  test("counts only open fingerprints: a fix is left out until it is recorded again", async () => {
+    const fixture = await companion();
+    const fixedAt = new Date(now.getTime() - 60 * 60_000);
+    record(fixture.root, fixture.home, "refusal:secret:read");
+    record(fixture.root, fixture.home, "refusal:artifact:write", new Date(fixedAt.getTime() - 1));
+    record(fixture.root, fixture.home, "refusal:artifact:write", new Date(fixedAt.getTime() - 1));
+    for (const fingerprint of ["refusal:artifact:write", "refusal:secret:read"]) {
+      await markFriction(
+        fingerprint,
+        "fixed",
+        { by: "person" },
+        { homeDir: fixture.home, now: fixedAt },
+      );
+    }
+
+    expect(JSON.parse(await doctor(fixture, ["--json"])).friction).toEqual({
+      days: 7,
+      events: 1,
+      top: { fingerprint: "refusal:secret:read", events: 1 },
+    });
+
+    record(fixture.root, fixture.home, "refusal:artifact:write");
+    expect(JSON.parse(await doctor(fixture, ["--json"])).friction).toEqual({
+      days: 7,
+      events: 4,
+      top: { fingerprint: "refusal:artifact:write", events: 3 },
+    });
+  });
+
+  test("everything handled reports zero events and names no next action", async () => {
+    const fixture = await companion();
+    record(fixture.root, fixture.home, "refusal:secret:read", new Date(now.getTime() - 60_000));
+    await markFriction(
+      "refusal:secret:read",
+      "dismissed",
+      { by: "person" },
+      { homeDir: fixture.home, now },
+    );
+
+    expect(JSON.parse(await doctor(fixture, ["--json"])).friction).toEqual({
+      days: 7,
+      events: 0,
+      top: null,
+    });
+    expect(await doctor(fixture, [])).not.toContain("Next action");
   });
 
   test("reports zero events and a null top fingerprint without events", async () => {

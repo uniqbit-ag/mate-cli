@@ -9,6 +9,7 @@ import { resetActiveDistribution, setActiveDistribution } from "../../distributi
 import { appendEvent, appendReport } from "../../runtime/friction-log";
 import { PluginRegistry } from "../../tools/setup/registry";
 import { getTriagePlaybookPath } from "../package-paths";
+import { markFriction } from "../friction/mark";
 import { writeFrictionSnapshot } from "./context";
 import { prepareTriageSession } from "./prepare";
 
@@ -257,6 +258,69 @@ describe("prepareTriageSession", () => {
     expect(fs.readFileSync(path.join(dir, "friction-events.jsonl"), "utf8")).toContain(
       '"errorText":"[withheld: scan-failed]"',
     );
+  });
+
+  test("copies every event and the Friction States of the copied fingerprints", async () => {
+    const f = await fixture();
+    const at = new Date("2027-03-10T00:00:00Z");
+    event(f.home, at);
+    appendEvent(
+      {
+        kind: "refusal",
+        fingerprint: "refusal:secret:read",
+        mateVersion: "1.2.3",
+        runtime: "claude",
+        sessionId: "s1",
+        companion: f.home,
+        repositoryPath: null,
+        detail: {},
+      },
+      { homeDir: f.home, now: at },
+    );
+    const link = "https://github.com/acme/mate/issues/7";
+    await markFriction(
+      "refusal:artifact:write",
+      "reported",
+      { by: "person", link },
+      {
+        homeDir: f.home,
+        now: new Date(at.getTime() - 1),
+      },
+    );
+
+    const { files } = await prepare(f, inCompanion(f.home));
+
+    const events = fs.readFileSync(path.join(files.dir, "friction-events.jsonl"), "utf8");
+    expect(events.trim().split("\n")).toHaveLength(2);
+    const states = JSON.parse(
+      fs.readFileSync(path.join(files.dir, "friction-states.json"), "utf8"),
+    );
+    expect(Object.keys(states.fingerprints)).toEqual(["refusal:artifact:write"]);
+    expect(states.fingerprints["refusal:artifact:write"]).toMatchObject({
+      state: "reported",
+      link,
+      eventsSince: 1,
+      reopened: false,
+    });
+    expect(states.reports).toEqual({});
+    expect(fs.readFileSync(files.context, "utf8")).toContain(
+      "`friction-states.json`: 1 Friction State",
+    );
+  });
+
+  test("writes an empty friction-states.json when nothing is marked", async () => {
+    const f = await fixture();
+    event(f.home, new Date("2027-03-10T00:00:00Z"));
+
+    const { files } = await prepare(f, inCompanion(f.home));
+
+    expect(
+      JSON.parse(fs.readFileSync(path.join(files.dir, "friction-states.json"), "utf8")),
+    ).toEqual({
+      v: 1,
+      fingerprints: {},
+      reports: {},
+    });
   });
 
   test("writes no friction file without recorded friction", async () => {

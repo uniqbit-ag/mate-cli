@@ -12,11 +12,15 @@ import {
   readReports,
   type NewFrictionEvent,
 } from "../../runtime/friction-log";
+import { readFrictionStates } from "../../runtime/friction-state";
 import { readFrictionSwitch, writeFrictionSwitch } from "../../runtime/friction-switch";
+import { markFriction } from "../../lib/friction/mark";
+import { createTriageSession } from "../../lib/triage/session";
 import { PluginRegistry } from "../../tools/setup/registry";
 import {
   runFrictionCommand,
   runFrictionListCommand,
+  runFrictionMarkCommand,
   runFrictionReportCommand,
   runFrictionStatusCommand,
   runFrictionSwitchCommand,
@@ -554,7 +558,177 @@ describe("mate friction on, off and status", () => {
     await runFrictionCommand("frobnicate", []);
 
     expect(stderr.join("\n")).toContain("Unknown friction subcommand: frobnicate");
-    expect(stderr.join("\n")).toContain("on|off|status|list|report");
+    expect(stderr.join("\n")).toContain("on|off|status|list|report|mark");
+    expect(process.exitCode).toBe(1);
+  });
+});
+
+/** Marks as a person would, `minutes` before the list's now. */
+async function setState(
+  target: string,
+  state: "fixed" | "reported" | "dismissed",
+  minutes: number,
+  link?: string,
+) {
+  const result = await markFriction(
+    target,
+    state,
+    { by: "person", link },
+    { homeDir: home, now: new Date(now.getTime() - minutes * 60_000) },
+  );
+  expect(result.ok).toBe(true);
+}
+
+describe("mate friction list --state", () => {
+  test("hides handled items by default and says how to show them", async () => {
+    record("refusal:artifact:write", "a");
+    record("refusal:secret:read", "b");
+    await setState("refusal:secret:read", "fixed", 0);
+
+    await list([]);
+
+    const text = stdout.join("\n");
+    expect(text).toContain("refusal:artifact:write");
+    expect(text).not.toContain("refusal:secret:read");
+    expect(text).toContain("1 handled item hidden; mate friction list --state all shows them.");
+    expect(text).toContain("2 events in 2 sessions");
+  });
+
+  test("a reopened fix is open, not handled", async () => {
+    record("refusal:artifact:write", "a");
+    await setState("refusal:artifact:write", "fixed", 5);
+
+    await list(["--json"]);
+    await list(["--state", "handled", "--json"]);
+
+    const [open, handled] = stdout.map((chunk) => JSON.parse(chunk));
+    expect(open.groups).toMatchObject([
+      { fingerprint: "refusal:artifact:write", state: { state: "fixed", reopened: true } },
+    ]);
+    expect(handled).toMatchObject({ state: "handled", hidden: 1, groups: [] });
+  });
+
+  test("everything handled says no open item is in the window and exits zero", async () => {
+    record("refusal:artifact:write", "a");
+    await setState("refusal:artifact:write", "dismissed", 0);
+
+    await list([]);
+
+    expect(stdout).toEqual([
+      "Friction in the last 30 days: 1 event in 1 session",
+      "No open item: 1 item hidden; mate friction list --state all shows them.",
+    ]);
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("shows a reported group's link and the events since, in text and JSON", async () => {
+    record("refusal:artifact:write", "a");
+    record("refusal:artifact:write", "b");
+    await setState("refusal:artifact:write", "reported", 5, "https://acme.test/issues/7");
+    const report = appendReport(
+      {
+        eventId: null,
+        kind: "missing",
+        subject: "docs:acme",
+        expected: EXPECTED,
+        evidence: "x",
+        cost: null,
+        workaround: null,
+        mateVersion: "1.0.0",
+        companion: COMPANION,
+        sessionId: null,
+        runtime: null,
+      },
+      { homeDir: home, now: new Date(now.getTime() - 30_000) },
+    );
+
+    await list(["--state", "all"]);
+    const text = stdout.join("\n");
+    expect(text).toContain("reported by person");
+    expect(text).toContain("https://acme.test/issues/7; 2 events since reported");
+
+    stdout = [];
+    await list(["--state", "all", "--json"]);
+    const document = JSON.parse(stdout[0]);
+    expect(document).toMatchObject({ kind: "friction-list", version: 1, state: "all", hidden: 0 });
+    expect(document.groups[0].state).toMatchObject({
+      state: "reported",
+      by: "person",
+      link: "https://acme.test/issues/7",
+      note: null,
+      eventsSince: 2,
+      reopened: false,
+    });
+    expect(document.freeReports).toMatchObject([{ id: report.id, state: null }]);
+  });
+
+  test("a bad --state is a usage error", async () => {
+    await list(["--state", "closed", "--json"]);
+
+    expect(JSON.parse(stdout[0])).toMatchObject({ kind: "error", error: { code: "usage" } });
+    expect(process.exitCode).toBe(1);
+  });
+});
+
+describe("mate friction mark", () => {
+  const agent = { CLAUDE_CODE_SESSION_ID: "s1" };
+  const mark = (argv: string[], env: Record<string, string> = {}, cwd = home) =>
+    runFrictionMarkCommand(argv, { homeDir: home, now, env, cwd });
+
+  test("a person marks in their own terminal, in text and JSON", async () => {
+    record("refusal:artifact:write", "a");
+
+    await mark(["refusal:artifact:write", "--state", "fixed"]);
+    await mark(["refusal:artifact:write", "--state=dismissed", "--note", "not Mate's", "--json"]);
+
+    expect(stdout[0]).toBe("Marked refusal:artifact:write as fixed.");
+    expect(JSON.parse(stdout[1])).toEqual({
+      kind: "friction-state",
+      version: 1,
+      target: "refusal:artifact:write",
+      state: {
+        state: "dismissed",
+        at: now.toISOString(),
+        by: "person",
+        note: "not Mate's",
+        link: null,
+      },
+    });
+  });
+
+  test("an agent outside a triage session cannot mark", async () => {
+    record("refusal:artifact:write", "a");
+
+    await mark(["refusal:artifact:write", "--state", "dismissed", "--json"], agent);
+
+    expect(JSON.parse(stdout[0])).toMatchObject({
+      kind: "error",
+      error: { code: "agent-session" },
+    });
+    expect(stderr.join("\n")).toContain("your own terminal");
+    expect(process.exitCode).toBe(1);
+    expect(readFrictionStates(home).fingerprints).toEqual({});
+  });
+
+  test("the triage agent marks from its session folder", async () => {
+    record("refusal:artifact:write", "a");
+    const session = createTriageSession({ homeDir: home });
+
+    await mark(["refusal:artifact:write", "--state", "fixed"], agent, session);
+
+    expect(readFrictionStates(home).fingerprints["refusal:artifact:write"]?.by).toBe("triage");
+  });
+
+  test.each([
+    [["--state", "fixed"], "usage"],
+    [["refusal:artifact:write", "--state", "closed"], "invalid-state"],
+    [["command:acme:1", "--state", "fixed"], "unknown-target"],
+  ])("refuses %j with code %s and exit code 1", async (argv, code) => {
+    record("refusal:artifact:write", "a");
+
+    await mark([...argv, "--json"]);
+
+    expect(JSON.parse(stdout[0])).toMatchObject({ kind: "error", error: { code } });
     expect(process.exitCode).toBe(1);
   });
 });

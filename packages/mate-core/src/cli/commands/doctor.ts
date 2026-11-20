@@ -6,7 +6,8 @@ import { parse as parseYaml } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { gitEnvironment } from "../../runtime/companion-git";
-import { readFriction } from "../../runtime/friction-log";
+import { selectByState } from "../../lib/friction/select";
+import { readFrictionSummary } from "../../lib/friction/summary";
 import { readFrictionSwitch } from "../../runtime/friction-switch";
 import { checkoutCommonDir, checkoutAt, sameClone } from "../../runtime/git-layout";
 import { physicalPath } from "../../runtime/physical-path";
@@ -148,25 +149,28 @@ export interface DoctorFriction {
 
 const DOCTOR_FRICTION_DAYS = 7;
 
-/** `readFriction` skips what it cannot read, so an unreadable log counts as no events. */
+/**
+ * Counts open fingerprints only, as `friction list` shows them. The readers skip what they
+ * cannot read, so an unreadable log or state file counts as no events or no state.
+ */
 function collectFriction(
   companionPath: string,
   env: Record<string, string | undefined>,
   now?: Date,
 ): DoctorFriction {
-  const { events } = readFriction(
+  const summary = readFrictionSummary(
     { companion: companionPath },
-    { sinceDays: DOCTOR_FRICTION_DAYS, homeDir: env.HOME, now },
+    { days: DOCTOR_FRICTION_DAYS, homeDir: env.HOME, now },
   );
-  const counts = new Map<string, number>();
-  for (const event of events) {
-    counts.set(event.fingerprint, (counts.get(event.fingerprint) ?? 0) + 1);
-  }
+  const { groups } = selectByState(summary, "open");
   let top: DoctorFriction["top"] = null;
-  for (const [fingerprint, count] of counts) {
-    if (!top || count > top.events) top = { fingerprint, events: count };
+  for (const group of groups) {
+    if (!top || group.events > top.events) {
+      top = { fingerprint: group.fingerprint, events: group.events };
+    }
   }
-  return { days: DOCTOR_FRICTION_DAYS, events: events.length, top };
+  const events = groups.reduce((sum, group) => sum + group.events, 0);
+  return { days: DOCTOR_FRICTION_DAYS, events, top };
 }
 
 export interface DoctorCheckout {

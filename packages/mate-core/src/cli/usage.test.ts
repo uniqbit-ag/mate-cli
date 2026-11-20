@@ -42,7 +42,7 @@ test("lists companion update", () => {
 });
 
 test("lists the friction commands", () => {
-  for (const subcommand of ["on", "off", "status", "list", "report"]) {
+  for (const subcommand of ["on", "off", "status", "list", "report", "mark"]) {
     expect(usage()).toContain(`mate friction ${subcommand}`);
   }
 });

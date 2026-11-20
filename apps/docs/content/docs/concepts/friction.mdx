@@ -99,11 +99,52 @@ when it holds a secret. While recording is off, the command records nothing.
 ## Read the Log
 
 [`mate friction list`](/docs/reference/commands#friction) shows the current
-companion's friction, or every companion's with `--all`. Outside a companion it
+companion's open friction, or every companion's with `--all`. Outside a companion it
 lists nothing without `--all`. The period is at most 90 days. To investigate what it
 lists, run [`mate triage`](/docs/scenarios/triage-a-mate-problem) in the
 affected repository. While recording is on, `mate doctor` shows the current
-companion's count of the last seven days.
+companion's count of open friction in the last seven days.
+
+## Friction States
+
+A Friction State records what you decided about one fingerprint or one Free
+Report, so handled friction leaves the default list:
+
+| State       | Meaning                                             |
+| ----------- | --------------------------------------------------- |
+| `fixed`     | The problem is fixed, for example in a newer Mate.  |
+| `reported`  | An issue or a comment tracks it; it keeps the link. |
+| `dismissed` | It is no Mate problem.                              |
+
+An item without a Friction State is open. Set one with
+[`mate friction mark`](/docs/reference/commands#friction):
+
+```bash
+mate friction mark "command:artifact submit:1" --state reported --link https://github.com/acme/mate/issues/7
+mate friction mark "refusal:artifact:shell" --state dismissed --note "the agent wrote outside the repository on purpose"
+mate friction mark "refusal:artifact:shell" --state open   # clear it
+```
+
+`mate friction list` then shows only open items and says how many it hides;
+`--state handled` or `--state all` shows the others. `mate doctor` counts only
+open fingerprints.
+
+Mate works out two facts each time it reads, and never stores them:
+
+- A `fixed` fingerprint that is recorded again after the mark is **reopened**
+  and counts as open again.
+- A `reported` fingerprint shows how many events arrived since it was reported.
+  It stays reported.
+
+A `dismissed` fingerprint stays dismissed whatever is recorded later.
+
+Friction States apply to every companion on the machine and live in
+`~/.mate/friction/states.json`, beside the log. Marking never changes the log.
+A fingerprint's state stays when its events reach the end of the 90 days, so a
+fix that comes back is still recognized; a Free Report's state goes with the
+report. Only you mark in your own terminal; an agent may mark only from a
+[`mate triage`](/docs/scenarios/triage-a-mate-problem) session, after you said
+yes to recording the outcome.
 
 ## In Studio
 

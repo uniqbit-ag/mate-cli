@@ -4,6 +4,16 @@ import {
   type FrictionReport,
   type FrictionScope,
 } from "../../runtime/friction-log";
+import { readFrictionStates, type FrictionStatesFile } from "../../runtime/friction-state";
+import type { FrictionState } from "../../runtime/friction-vocabulary";
+
+/** A group's Friction State with what later events tell about it, derived on read. */
+export interface FrictionGroupState extends FrictionState {
+  /** Events of the window later than the mark. */
+  eventsSince: number;
+  /** `fixed`, yet recorded again after the mark. */
+  reopened: boolean;
+}
 
 export interface FrictionGroup {
   fingerprint: string;
@@ -23,6 +33,14 @@ export interface FrictionGroup {
   flags: Record<string, number>;
   /** Reports on the group's events, newest first. */
   reports: FrictionReport[];
+  state: FrictionGroupState | null;
+  /** Unmarked or reopened. */
+  open: boolean;
+}
+
+export interface FrictionFreeReport extends FrictionReport {
+  state: FrictionState | null;
+  open: boolean;
 }
 
 export interface FrictionSummary {
@@ -30,7 +48,7 @@ export interface FrictionSummary {
   sessions: number;
   groups: FrictionGroup[];
   /** Reports on no event, newest first. */
-  freeReports: FrictionReport[];
+  freeReports: FrictionFreeReport[];
 }
 
 const newestFirst = (reports: FrictionReport[]) =>
@@ -45,10 +63,18 @@ function tally(counts: Record<string, number>, names: string[]): void {
   for (const name of new Set(names)) counts[name] = (counts[name] ?? 0) + 1;
 }
 
+function groupState(state: FrictionState | undefined, times: string[]): FrictionGroupState | null {
+  if (!state) return null;
+  const markedAt = Date.parse(state.at);
+  const eventsSince = times.filter((at) => Date.parse(at) > markedAt).length;
+  return { ...state, eventsSince, reopened: state.state === "fixed" && eventsSince > 0 };
+}
+
 /** Grouped by fingerprint; repeats within one session rank first, then the event count. */
 export function summarizeFriction(
   events: FrictionEvent[],
   reports: FrictionReport[],
+  states: Pick<FrictionStatesFile, "fingerprints" | "reports"> = { fingerprints: {}, reports: {} },
 ): FrictionSummary {
   const reportsByEvent = Map.groupBy(
     reports.filter((report) => report.eventId),
@@ -69,6 +95,7 @@ export function summarizeFriction(
       tally(flags, strings(event.detail.flags));
     }
     const times = grouped.map((event) => event.at).toSorted();
+    const state = groupState(states.fingerprints[fingerprint], times);
     return {
       fingerprint,
       events: grouped.length,
@@ -81,6 +108,8 @@ export function summarizeFriction(
       paths,
       flags,
       reports: newestFirst(grouped.flatMap((event) => reportsByEvent.get(event.id) ?? [])),
+      state,
+      open: state === null || state.reopened,
     };
   });
   groups.sort((a, b) => b.maxPerSession - a.maxPerSession || b.events - a.events);
@@ -88,7 +117,10 @@ export function summarizeFriction(
     events: events.length,
     sessions: new Set(events.map((event) => event.sessionId)).size,
     groups,
-    freeReports: newestFirst(reports.filter((report) => !report.eventId)),
+    freeReports: newestFirst(reports.filter((report) => !report.eventId)).map((report) => {
+      const state = states.reports[report.id] ?? null;
+      return { ...report, state, open: state === null };
+    }),
   };
 }
 
@@ -104,5 +136,5 @@ export function readFrictionSummary(scope: FrictionScope, window: FrictionWindow
     homeDir: window.homeDir,
     now: window.now,
   });
-  return summarizeFriction(events, reports);
+  return summarizeFriction(events, reports, readFrictionStates(window.homeDir));
 }

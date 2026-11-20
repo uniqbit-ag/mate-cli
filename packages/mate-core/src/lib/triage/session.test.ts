@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { createTempDir } from "../../../../../test/fixtures";
 import { mateHome } from "../../runtime/runtime-directory";
-import { createTriageSession, triageRoot } from "./session";
+import { createTriageSession, triageRoot, triageSessionDir } from "./session";
 
 const homes: string[] = [];
 
@@ -49,5 +49,23 @@ describe("createTriageSession", () => {
     expect(fs.existsSync(recent)).toBe(true);
     expect(fs.existsSync(stray)).toBe(true);
     expect(fs.existsSync(friction)).toBe(true);
+  });
+});
+
+describe("triageSessionDir", () => {
+  test("names the session folder from the folder itself or a subfolder only", async () => {
+    const homeDir = await home();
+    const session = createTriageSession({ homeDir });
+    const sub = path.join(session, "source");
+    const stray = path.join(triageRoot(homeDir), "notes");
+    const repository = path.join(homeDir, "acme");
+    for (const dir of [sub, stray, repository]) fs.mkdirSync(dir, { recursive: true });
+    const real = fs.realpathSync(session);
+
+    expect(triageSessionDir(session, homeDir)).toBe(real);
+    expect(triageSessionDir(sub, homeDir)).toBe(real);
+    expect(triageSessionDir(stray, homeDir)).toBeNull();
+    expect(triageSessionDir(triageRoot(homeDir), homeDir)).toBeNull();
+    expect(triageSessionDir(repository, homeDir)).toBeNull();
   });
 });

@@ -318,13 +318,13 @@ describe("command gating", () => {
     expect(dispatched).toEqual(["working"]);
   });
 
-  test("friction on, off and status run without companion selection or install preflight", async () => {
-    for (const subcommand of ["on", "off", "status"]) {
+  test("friction on, off, status and mark run without companion selection or install preflight", async () => {
+    for (const subcommand of ["on", "off", "status", "mark"]) {
       const { gateCalls, deps } = recordingDeps({ companion: false, installOk: false });
       await main(["node", "mate", "friction", subcommand], deps);
       expect(gateCalls).toEqual([]);
     }
-    expect(dispatched).toEqual(["friction", "friction", "friction"]);
+    expect(dispatched).toEqual(["friction", "friction", "friction", "friction"]);
   });
 
   test("friction list and report keep companion selection and install preflight", async () => {

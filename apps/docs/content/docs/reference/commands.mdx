@@ -286,10 +286,13 @@ For OpenSpec, `mate doctor` reports the CLI bundled with Mate, with its path
 and version, instead of looking for `openspec` on `PATH`.
 
 While [friction recording](/docs/concepts/friction) is on, `mate doctor` shows
-a Friction section: the events recorded for the
-companion in the last seven days and the most frequent fingerprint with its
-count. `--json` carries it as `friction`, with `days`, `events` and `top`
-(`null` without events). An unreadable log counts as no events. While
+a Friction section: the events of open fingerprints recorded for the
+companion in the last seven days and the most frequent open fingerprint with its
+count. A fingerprint marked `fixed`, `reported` or `dismissed` is left out until
+it is reopened; see [Friction States](/docs/concepts/friction#friction-states).
+`--json` carries it as `friction`, with `days`, `events` and `top`
+(`null` without events). An unreadable log or state file counts as no events or
+no states. While
 recording is off, doctor shows no Friction section, the JSON has no `friction`
 field, and doctor reads no log.
 With one or more events, the human-readable section names `mate triage` as the
@@ -862,13 +865,14 @@ keeps the rest of the graph. A secret never stops the run. See
 
 ## Friction
 
-| Command                                          | Purpose                                            |
-| ------------------------------------------------ | -------------------------------------------------- |
-| `mate friction on`                               | Turn friction recording on for this machine.       |
-| `mate friction off`                              | Turn friction recording off; the records stay.     |
-| `mate friction status [--json]`                  | Say whether recording is on, and where the log is. |
-| `mate friction list [--days N] [--all] [--json]` | List recorded friction, grouped by fingerprint.    |
-| `mate friction report [<event-id>] ...`          | Record what an agent expected.                     |
+| Command                                                        | Purpose                                              |
+| -------------------------------------------------------------- | ---------------------------------------------------- |
+| `mate friction on`                                             | Turn friction recording on for this machine.         |
+| `mate friction off`                                            | Turn friction recording off; the records stay.       |
+| `mate friction status [--json]`                                | Say whether recording is on, and where the log is.   |
+| `mate friction list [--days N] [--all] [--state <s>] [--json]` | List recorded friction, grouped by fingerprint.      |
+| `mate friction report [<event-id>] ...`                        | Record what an agent expected.                       |
+| `mate friction mark <fingerprint\|report-id> --state <s> ...`  | Record that a fingerprint or Free Report is handled. |
 
 See [Friction](/docs/concepts/friction) for what Mate records and where. For
 people, Studio's **Friction** view lists the same records and turns recording on
@@ -877,8 +881,8 @@ or off; see [Friction in Studio](/docs/concepts/friction#in-studio).
 `mate friction on` and `mate friction off` set the machine's Friction Switch,
 print the new state in one line and exit 0, also when the state does not
 change. `mate friction off` names the folder that keeps the records. Both
-refuse inside an agent session, exit 1 and change nothing. They and
-`mate friction status` run in any folder, without a linked companion or a
+refuse inside an agent session, exit 1 and change nothing. They,
+`mate friction status` and `mate friction mark` run in any folder, without a linked companion or a
 complete installation.
 
 `mate friction status` prints whether recording is on and the log folder. With
@@ -895,12 +899,24 @@ count in one session, the first and last time seen, the Mate versions, the paths
 its refusals named and the flags its failed commands carried, and the number of
 reports on its events with the latest `expected` text. Groups with the most repeats in one
 session come first, then those with the most events. Free reports of the
-companion follow in their own section, newest first. When it lists anything,
+companion follow in their own section, newest first, each with its id.
+`--state <open|handled|all>`, default `open`, chooses what is listed by
+[Friction State](/docs/concepts/friction#friction-states): `open` lists unmarked
+and reopened items, `handled` lists `fixed`, `reported` and `dismissed` items
+that are not reopened, and `all` lists both. The event and session totals count
+the whole period whatever the filter. When the filter hides items, the output
+says how many and names `--state all`; when records exist but none passes, it
+says so and exits 0. Each listed item with a Friction State shows its state, who
+set it and when, its note or link, and for a group whether it is reopened or how
+many events arrived since it was reported. When it lists anything,
 the output ends with a line that names
 [`mate triage`](/docs/scenarios/triage-a-mate-problem), to run in your own
 terminal inside the affected repository. With `--json` it prints
-one document with `kind` `friction-list` and `version` 1; each group carries its
-`reports`, and the document carries `freeReports`. It writes nothing to the
+one document with `kind` `friction-list` and `version` 1, the applied `state`
+and the number of `hidden` items; each group carries its `reports`, and the
+document carries `freeReports`. Each group and Free Report carries `state`:
+`null` when unmarked, otherwise `state`, `at`, `by`, `note` and `link`, and for a
+group also `reopened` and `eventsSince`. Each also carries `open`. It writes nothing to the
 log. With `--all` it lists the friction of every companion on this machine,
 including companions no repository resolves to any more: each group names its
 companions with their event counts, and the JSON `companion` is `null`. Without
@@ -943,6 +959,37 @@ null outside a session. With `--json` it prints `kind` `friction-report`,
 | `no-companion`                                           | A free report was made in a folder that resolves no companion.                 |
 | `recording-off`                                          | Friction recording is off on this machine.                                     |
 | `usage`, `write-failed`                                  | An argument is unknown, or the log cannot be written.                          |
+
+`mate friction mark` sets the [Friction State](/docs/concepts/friction#friction-states)
+of one fingerprint or one Free Report, replacing an earlier one, and prints the
+target and its new state. It changes no record in the Friction Log.
+
+| Flag                                         | Meaning                                                                          |
+| -------------------------------------------- | -------------------------------------------------------------------------------- |
+| `<fingerprint\|report-id>`                   | Required. A fingerprint as `mate friction list` shows it, or a Free Report's id. |
+| `--state <open\|fixed\|reported\|dismissed>` | Required. `open` removes the Friction State.                                     |
+| `--note <text>`                              | Optional. Why, such as what was fixed or why it is no Mate problem.              |
+| `--link <url>`                               | Optional, only with `--state reported`. The `http` or `https` issue URL.         |
+| `--json`                                     | Print one JSON document.                                                         |
+
+Note and link are cut to 1,000 characters and refused when they hold a secret.
+You run `mark` in your own terminal and it records `by` `person`. An agent may
+run it only inside a [`mate triage`](/docs/scenarios/triage-a-mate-problem)
+session folder, where it records `by` `triage`; anywhere else it refuses, so an
+agent cannot hide the friction it causes. With `--json` it prints `kind`
+`friction-state`, `version` 1, the `target`, and the new `state` with its fields,
+or `null` after `--state open`. A refusal exits 1 and changes nothing; with
+`--json` it prints `kind` `error` with one of these codes:
+
+| Code                                  | Cause                                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `usage`, `invalid-state`              | The target or `--state` is missing, an argument is unknown, or the state is not one of the four. |
+| `unknown-target`                      | No event has that fingerprint and no Friction State names it, and no Free Report has that id.    |
+| `report-on-event`                     | The id is a report on an event; it follows its fingerprint, which the message names.             |
+| `link-needs-reported`, `invalid-link` | `--link` was given without `--state reported`, or is no `http` or `https` URL.                   |
+| `secret`, `scan-failed`               | The note or link holds a secret, or could not be scanned. The text is not printed.               |
+| `agent-session`                       | An agent ran it outside a triage session folder.                                                 |
+| `state-file-damaged`, `write-failed`  | The state file is malformed and was kept unchanged, or it could not be written.                  |
 
 ## Usage And Reports
 

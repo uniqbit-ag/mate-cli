@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { FRICTION_RETENTION_DAYS } from "./friction-retention";
+import type { ReportCost, ReportKind } from "./friction-vocabulary";
 import { realPath } from "./git-layout";
 import { mateHome } from "./runtime-directory";
 import type { SessionRuntime } from "./session-registry";
@@ -33,11 +34,6 @@ export interface FrictionEvent {
 }
 
 export type NewFrictionEvent = Omit<FrictionEvent, "v" | "id" | "at">;
-
-export const REPORT_KINDS = ["bug", "unclear", "missing"] as const;
-export const REPORT_COSTS = ["blocker", "detour", "papercut"] as const;
-export type ReportKind = (typeof REPORT_KINDS)[number];
-export type ReportCost = (typeof REPORT_COSTS)[number];
 
 /** An agent's judgement on a Friction Event, or a free report on friction that has none. */
 export interface FrictionReport {
@@ -288,21 +284,62 @@ export function readFriction(
   return { events, reports };
 }
 
-/** The event with this id in any retained month, or null. */
-export function findEvent(id: string, options: { homeDir?: string } = {}): FrictionEvent | null {
+/** The first record, newest month first, that `match` accepts; null when none or no log. */
+function findRecord<T>(
+  family: Family,
+  accept: (value: unknown) => value is T,
+  match: (record: T) => boolean,
+  homeDir?: string,
+): T | null {
   let months: string[];
   try {
-    months = logMonths(frictionLogDir(options.homeDir), "events");
+    months = logMonths(frictionLogDir(homeDir), family);
   } catch {
     return null;
   }
   for (const month of months.toSorted().toReversed()) {
-    const found = readMonth("events", month, isFrictionEvent, options.homeDir).find(
-      (event) => event.id === id,
-    );
+    const found = readMonth(family, month, accept, homeDir).find(match);
     if (found) return found;
   }
   return null;
+}
+
+/** The event with this id in any retained month, or null. */
+export function findEvent(id: string, options: { homeDir?: string } = {}): FrictionEvent | null {
+  return findRecord("events", isFrictionEvent, (event) => event.id === id, options.homeDir);
+}
+
+/** The newest event with this fingerprint in any retained month, or null. */
+export function findFingerprint(
+  fingerprint: string,
+  options: { homeDir?: string } = {},
+): FrictionEvent | null {
+  return findRecord(
+    "events",
+    isFrictionEvent,
+    (event) => event.fingerprint === fingerprint,
+    options.homeDir,
+  );
+}
+
+/** The report with this id in any retained month, or null. */
+export function findReport(id: string, options: { homeDir?: string } = {}): FrictionReport | null {
+  return findRecord("reports", isFrictionReport, (report) => report.id === id, options.homeDir);
+}
+
+/** The ids of every report in the retained months. */
+export function readReportIds(options: { homeDir?: string } = {}): Set<string> {
+  let months: string[];
+  try {
+    months = logMonths(frictionLogDir(options.homeDir), "reports");
+  } catch {
+    return new Set();
+  }
+  return new Set(
+    months.flatMap((month) =>
+      readMonth("reports", month, isFrictionReport, options.homeDir).map((report) => report.id),
+    ),
+  );
 }
 
 /** Whether no earlier line of the event's month holds the same session and fingerprint. */
