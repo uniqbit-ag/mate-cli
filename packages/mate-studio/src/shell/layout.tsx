@@ -96,7 +96,7 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
             <CompanionPicker
               companions={shell.companions}
               writable={shell.writable}
-              factoryMode={shell.factoryMode}
+              addsCompanions={shell.addsCompanions}
             />
           )}
         </main>

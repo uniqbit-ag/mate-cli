@@ -25,6 +25,8 @@ export interface StudioServices {
    * Studio deletes only folders inside that source's folder.
    */
   keepsFolder(companionPath: string): boolean;
+  /** Whether a mounted service adds companions by Git URL (its `companions` source). */
+  addsCompanions(): boolean;
   /** The startup profile's Studio modes; every page selection is resolved through it. */
   readonly modePolicy: StudioModePolicy;
   /** Everything one view is derived from, for the address that asked for it. */

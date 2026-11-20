@@ -33,8 +33,7 @@
     "./tui": "./src/tui.ts",
     "./brand": "./src/brand/index.ts",
     "./studio": "./src/studio.ts",
-    "./factory": "./src/lib/factory/plugin.ts",
-    "./factory-studio": "./src/lib/factory/studio/api.ts"
+    "./factory-host": "./src/factory-host.ts"
   },
   "publishConfig": {
     "access": "public",

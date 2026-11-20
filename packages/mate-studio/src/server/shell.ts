@@ -10,7 +10,6 @@ import {
 } from "@uniqbit/mate-core/studio";
 
 import { validateStudioSearch, type StudioSearch } from "../lib/search";
-import { factoryModeOf } from "./factory";
 
 export interface ShellCompanion {
   digest: string;
@@ -37,8 +36,8 @@ export interface ShellData {
   collectedAt: number | null;
   metrics: { changes: number; done: number; specs: number } | null;
   writable: boolean;
-  /** The factory service runs: only then is the Factory view offered. */
-  factoryMode: boolean;
+  /** A plugin service adds companions by Git URL: only then can the picker add one. */
+  addsCompanions: boolean;
   /** Views plugin services ship as their own modules, in navigation order. */
   pluginViews: ShellPluginView[];
   /** The agent terminal; `null` when Studio runs without it. */
@@ -52,6 +51,8 @@ export interface ShellPluginView {
   description?: string;
   /** Where Studio serves the view's module. */
   moduleUrl: string;
+  /** The service route answering how many things in the view wait on the person. */
+  attentionUrl?: string;
 }
 
 export interface ShellTerminal {
@@ -102,7 +103,7 @@ export const getShell = createServerFn({ method: "GET" })
           }
         : null,
       writable: page.writable,
-      factoryMode: factoryModeOf(context.studio),
+      addsCompanions: context.studio.addsCompanions(),
       pluginViews: context.studio.services().flatMap((service) =>
         service.views.flatMap((view) =>
           view.moduleUrl
@@ -113,6 +114,7 @@ export const getShell = createServerFn({ method: "GET" })
                   label: view.label,
                   ...(view.description ? { description: view.description } : {}),
                   moduleUrl: view.moduleUrl,
+                  ...(view.attentionUrl ? { attentionUrl: view.attentionUrl } : {}),
                 },
               ]
             : [],

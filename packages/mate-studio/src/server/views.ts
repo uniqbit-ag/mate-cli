@@ -13,7 +13,7 @@ import {
 
 import { validateStudioSearch, type StudioSearch } from "../lib/search";
 
-/** The companion views this function answers; Factory and Vault have their own. */
+/** The companion views this function answers; Vault has its own. */
 export type CompanionView = "dashboard" | "workflow" | "skills" | "specs";
 
 /** What each view reads from the payload; nothing else crosses to the browser. */

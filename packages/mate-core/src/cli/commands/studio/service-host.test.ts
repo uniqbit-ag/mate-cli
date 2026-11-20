@@ -74,7 +74,12 @@ function acmeService(recorded: Recorded, overrides: Partial<PluginService> = {})
           },
         ],
         views: [
-          { id: "board", label: "Acme board", module: { dir: viewDir, entry: "view.js" } },
+          {
+            id: "board",
+            label: "Acme board",
+            module: { dir: viewDir, entry: "view.js" },
+            attention: "/status",
+          },
           { id: "plain", label: "Plain" },
         ],
         pinnedCompanions: [companion],
@@ -132,12 +137,23 @@ describe("mounting services in Studio", () => {
     );
     expect(await recorded.host!.launchTarget(companionDigest(companion))).toBe(companion);
     expect(recorded.host!.terminal.enabled).toBe(false);
+    const snapshot = await recorded.host!.companionSnapshot(companionDigest(companion));
+    expect(Object.keys(snapshot).toSorted()).toEqual(["collectedAt", "error", "payload"]);
+    expect(snapshot.payload !== null || snapshot.error !== null).toBe(true);
+    await expect(recorded.host!.companionSnapshot("0".repeat(16))).rejects.toThrow(
+      "no registered companion",
+    );
     expect(handler.services.services()).toEqual([
       {
         id: "acme",
         label: "Acme",
         views: [
-          { id: "board", label: "Acme board", moduleUrl: "/studio/plugins/acme/board/view.js" },
+          {
+            id: "board",
+            label: "Acme board",
+            moduleUrl: "/studio/plugins/acme/board/view.js",
+            attentionUrl: "/api/plugins/acme/status",
+          },
           { id: "plain", label: "Plain" },
         ],
       },
@@ -290,6 +306,8 @@ describe("companions a service pins or provides", () => {
 
   test("adding a companion needs a service that provides them", async () => {
     const handler = handlerFor([]);
+    await handler.ready;
+    expect(handler.services.addsCompanions()).toBe(false);
     expect(
       await handler.services.addCompanion({ kind: "url", url: "https://acme.test/c.git" }),
     ).toMatchObject({ ok: false, reason: expect.stringContaining("service") });
@@ -309,6 +327,7 @@ describe("companions a service pins or provides", () => {
     });
     const handler = handlerFor([service]);
     await handler.ready;
+    expect(handler.services.addsCompanions()).toBe(true);
     expect(handler.services.keepsFolder(companion)).toBe(true);
     expect(handler.services.keepsFolder(path.join(root, "fetched", "acme"))).toBe(false);
     expect(

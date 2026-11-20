@@ -357,13 +357,13 @@ export function CompanionSwitcher({
   companions,
   selected,
   writable = false,
-  factoryMode = false,
+  addsCompanions = false,
 }: {
   companions: ShellCompanion[];
   selected: ShellCompanion | null;
   writable?: boolean;
-  /** The factory broker runs: only then can a companion be added from here. */
-  factoryMode?: boolean;
+  /** A service adds companions by Git URL: only then can one be added from here. */
+  addsCompanions?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const select = useSelectCompanion();
@@ -426,7 +426,7 @@ export function CompanionSwitcher({
             </p>
           ) : null}
           <Separator className="my-1" />
-          {factoryMode && writable ? (
+          {addsCompanions && writable ? (
             <button
               type="button"
               className="flex items-center gap-2.5 rounded-control border-0 bg-transparent px-2.5 py-2 text-left text-sm text-text hover:bg-surface-soft"
@@ -454,7 +454,7 @@ export function CompanionSwitcher({
         </PopoverContent>
       </Popover>
       {deletion.dialog}
-      {factoryMode && writable ? adding.dialog : null}
+      {addsCompanions && writable ? adding.dialog : null}
     </>
   );
 }
@@ -463,11 +463,12 @@ export function CompanionSwitcher({
 export function CompanionPicker({
   companions,
   writable = false,
-  factoryMode = false,
+  addsCompanions = false,
 }: {
   companions: ShellCompanion[];
   writable?: boolean;
-  factoryMode?: boolean;
+  /** A service adds companions by Git URL: only then can one be added from here. */
+  addsCompanions?: boolean;
 }) {
   const select = useSelectCompanion();
   const prefetch = usePrefetchCompanion();
@@ -504,7 +505,7 @@ export function CompanionPicker({
           ))}
         </div>
       ) : null}
-      {factoryMode && writable ? (
+      {addsCompanions && writable ? (
         <div>
           <Button type="button" data-add-companion="" onClick={adding.ask}>
             <Icon name="plus" />
@@ -520,7 +521,7 @@ export function CompanionPicker({
         in a Working Repository.
       </p>
       {deletion.dialog}
-      {factoryMode && writable ? adding.dialog : null}
+      {addsCompanions && writable ? adding.dialog : null}
     </section>
   );
 }

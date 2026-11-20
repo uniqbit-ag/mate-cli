@@ -54,6 +54,14 @@ export interface StudioServiceHost {
   env: NodeJS.ProcessEnv;
   /** Path of the registered companion with this digest; throws when none is registered. */
   companionPath(digest: string): Promise<string>;
+  /**
+   * The registered companion with this digest as Studio's own views read it; `refresh`
+   * collects it again first. Throws when none is registered.
+   */
+  companionSnapshot(
+    digest: string,
+    options?: { refresh?: boolean },
+  ): Promise<StudioCompanionSnapshot>;
   /** The digest Studio addresses a companion path by. */
   companionDigest(companionPath: string): string;
   /** The companion a terminal launch for `digest` targets (the pinned one first); `null` when none. */
@@ -70,6 +78,19 @@ export interface StudioServiceHost {
   };
   /** Studio's terminal sessions; without `--terminal` there are none and `close` ends nothing. */
   terminal: StudioTerminalHost;
+}
+
+/** A companion as Studio collected it for its views. */
+export interface StudioCompanionSnapshot {
+  /**
+   * The collected payload, `StudioCompanionPayload` of `@uniqbit/mate-core/studio` (typed
+   * loosely so this module stays a leaf); `null` when collecting failed.
+   */
+  payload: object | null;
+  /** Why collecting failed; `null` when it did not. */
+  error: string | null;
+  /** When it was collected, in ms since the epoch; `null` when it never was. */
+  collectedAt: number | null;
 }
 
 /** Why a service ends a person's Workset session; the terminal tells the person. */
@@ -158,6 +179,12 @@ export interface StudioView {
   label: string;
   description?: string;
   module?: { dir: string; entry: string };
+  /**
+   * Path of a `read` GET route of the service (below its prefix) that answers
+   * `{ count: number }` for `?companion=<digest>`: how many things in the view wait on the
+   * person. Studio shows a count above zero on the view's navigation entry.
+   */
+  attention?: string;
 }
 
 /** What a view module's `mount` export receives in the browser. */
