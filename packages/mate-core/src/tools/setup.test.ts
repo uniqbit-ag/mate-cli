@@ -951,8 +951,8 @@ describe("executeSetup", () => {
     expect(config.packageManagers).toEqual(["bun"]);
   });
 
-  test("setup with the openspec capability activates mate-v1 in companion-local openspec config", async () => {
-    const root = await makeTempDir("mate-setup-openspec-mate-v1-");
+  test("setup with the openspec capability activates mate-full in companion-local openspec config", async () => {
+    const root = await makeTempDir("mate-setup-openspec-mate-full-");
     const globalConfigStore = new GlobalConfigStore(
       path.join(root, "home", ".mate", "config.yaml"),
     );
@@ -969,10 +969,12 @@ describe("executeSetup", () => {
     expect(config.capabilities).toContainEqual({ name: "openspec" });
     expect(
       parseYaml(await fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")),
-    ).toEqual({ schema: "mate-v1", rules: { specs: [MATE_SPECS_RULE] } });
-    await expect(
-      fs.access(path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml")),
-    ).resolves.toBeNull();
+    ).toEqual({ schema: "mate-full", rules: { specs: [MATE_SPECS_RULE] } });
+    for (const name of ["mate-full", "mate-v1"]) {
+      await expect(
+        fs.access(path.join(root, "openspec", "schemas", name, "schema.yaml")),
+      ).resolves.toBeNull();
+    }
 
     await executeSetup(
       {
@@ -984,9 +986,9 @@ describe("executeSetup", () => {
 
     expect(
       parseYaml(await fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")),
-    ).toEqual({ schema: "mate-v1", rules: { specs: [MATE_SPECS_RULE] } });
+    ).toEqual({ schema: "mate-full", rules: { specs: [MATE_SPECS_RULE] } });
     await expect(
-      fs.access(path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml")),
+      fs.access(path.join(root, "openspec", "schemas", "mate-full", "schema.yaml")),
     ).resolves.toBeNull();
     await expect(
       fs.access(path.join(root, "openspec", "schemas", "mate-minimal", "schema.yaml")),

@@ -17,7 +17,7 @@ type MateSchema = {
   artifacts: Artifact[];
 };
 
-const profilePath = path.join(import.meta.dir, "mate-v1");
+const profilePath = path.join(import.meta.dir, "mate-full");
 const schemaPath = path.join(profilePath, "schema.yaml");
 const templatesPath = path.join(profilePath, "templates");
 async function readSchema(): Promise<{ raw: string; parsed: MateSchema }> {
@@ -35,15 +35,15 @@ function isValidSchemaVersion(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
-describe("mate-v1 schema", () => {
-  test("uses profile mate-v1 with an integer version and rejects dotted versions", async () => {
+describe("mate-full schema", () => {
+  test("uses profile mate-full with an integer version and rejects dotted versions", async () => {
     const { raw, parsed } = await readSchema();
 
-    expect(parsed.name).toBe("mate-v1");
+    expect(parsed.name).toBe("mate-full");
     expect(isValidSchemaVersion(parsed.version)).toBe(true);
-    expect(parsed.version).toBe(11);
+    expect(parsed.version).toBe(12);
 
-    const dottedVersion = parse(raw.replace("version: 11", "version: 11.1")) as {
+    const dottedVersion = parse(raw.replace("version: 12", "version: 12.1")) as {
       version?: unknown;
     };
     expect(isValidSchemaVersion(dottedVersion.version)).toBe(false);
@@ -125,9 +125,9 @@ describe("mate-v1 schema", () => {
     expect(design).toContain("scopes:");
     expect(tasks).toContain("scopes:");
     expect(design).toContain("type: change-design");
-    expect(design).toContain("schema: mate-v1");
+    expect(design).toContain("schema: mate-full");
     expect(tasks).toContain("type: change-tasks");
-    expect(tasks).toContain("schema: mate-v1");
+    expect(tasks).toContain("schema: mate-full");
   });
 
   test("guides delta Purpose for new capabilities in template and specs instruction", async () => {

@@ -1,7 +1,7 @@
 ---
 type: change-proposal
 change: <change-name>
-schema: mate-v1
+schema: mate-full
 status: active
 tags: [openspec/change, openspec/proposal]
 scopes:

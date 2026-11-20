@@ -1,7 +1,7 @@
 ---
 type: change-design
 change: <change-name>
-schema: mate-v1
+schema: mate-full
 tags: [openspec/change, openspec/design]
 scopes:
   - repository: org/repository
