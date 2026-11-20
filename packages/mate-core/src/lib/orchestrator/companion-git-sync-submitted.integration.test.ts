@@ -12,6 +12,8 @@ import {
 import { readSubmittedFolders, updateSubmittedFolders } from "../../runtime/companion-git-state";
 import { syncCompanionUnattended } from "../../runtime/companion-sync";
 import { folderDigest } from "../../runtime/submitted-arrivals";
+import { implicitRecord } from "../workset/inventory";
+import { confirmShare, previewShare, readTeamBacklog, refreshTeam } from "../workset/sharing";
 import { CompanionGitSync } from "./companion-git-sync";
 
 const TIMEOUT = 60_000;
@@ -210,6 +212,83 @@ describe("companion sync of a submitted change folder committed while active", (
       expect(plan.discarded).toBeUndefined();
       expect(fs.readFileSync(path.join(mine, LOGIN, "notes.md"), "utf8")).toBe(
         "edited after submit\n",
+      );
+    },
+    TIMEOUT,
+  );
+});
+
+/** `acme-login` planned in `mine` and shared to the inbox by Work; returns its folder. */
+async function sharedFrom(mine: string, home: string): Promise<string> {
+  const dir = changeLocally(mine, "acme-login", {
+    files: {
+      ".openspec.yaml": "schema: mate-v1\n",
+      "design.md": "# Design\n",
+      "tasks.md": "- [ ] 1.1 Do it\n",
+      "specs/acme/spec.md": "## ADDED Requirements\n",
+    },
+  });
+  const entry = {
+    id: "acme-login",
+    implicit: true,
+    record: implicitRecord("acme-login", ["acme-login"], []),
+    members: [{ name: "acme-login", kind: "active" as const }],
+    diagnostics: [],
+    actionable: true,
+  };
+  await refreshTeam(mine);
+  const preview = await previewShare(mine, entry, await readTeamBacklog(mine));
+  if ("refusal" in preview) throw new Error(preview.refusal);
+  const shared = await confirmShare(
+    mine,
+    { hash: preview.preview.hash, transactionId: "tx-share" },
+    { inventoryEntry: async () => entry, stateHome: home },
+  );
+  expect(shared.status).toBe("shared");
+  return dir;
+}
+
+describe("companion sync of a folder Work shared", () => {
+  test(
+    "the published archive arrives and the unchanged shared folder gives way",
+    async () => {
+      const fixture = await setup();
+      const home = path.join(fixture.root, "home");
+      const mine = fixture.clone("acme-mine");
+      const theirs = fixture.clone("acme-theirs");
+      const dir = await sharedFrom(mine, home);
+      expect(readSubmittedFolders(mine, home)[LOGIN]?.shared).toBeString();
+      fs.cpSync(dir, path.join(theirs, LOGIN), { recursive: true });
+      archiveIn(theirs);
+      pushFrom(theirs, "publish acme-login");
+
+      const result = await new CompanionGitSync({ stateHome: home }).sync(mine);
+
+      expect(result.discarded).toEqual([LOGIN]);
+      expect(fs.existsSync(path.join(mine, LOGIN))).toBe(false);
+      expect(readSubmittedFolders(mine, home)).toEqual({});
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "a shared folder edited since keeps its local copy when the archive arrives",
+    async () => {
+      const fixture = await setup();
+      const home = path.join(fixture.root, "home");
+      const mine = fixture.clone("acme-mine");
+      const theirs = fixture.clone("acme-theirs");
+      const dir = await sharedFrom(mine, home);
+      fs.cpSync(dir, path.join(theirs, LOGIN), { recursive: true });
+      archiveIn(theirs);
+      pushFrom(theirs, "publish acme-login");
+      fs.writeFileSync(path.join(dir, "design.md"), "# Edited after sharing\n");
+
+      const result = await new CompanionGitSync({ stateHome: home }).sync(mine);
+
+      expect(result.discarded ?? []).toEqual([]);
+      expect(fs.readFileSync(path.join(mine, LOGIN, "design.md"), "utf8")).toBe(
+        "# Edited after sharing\n",
       );
     },
     TIMEOUT,

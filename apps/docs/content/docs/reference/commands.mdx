@@ -936,7 +936,7 @@ falls back locally. Final delivery failure returns
 | `mate artifact publish <target> [options]`                         | Publish a submitted Delivery Group, a legacy archive, or drifted specs.        |
 | `mate artifact link <change>... [options]`                         | Record a change's delivery branch and merge state in `delivery.yaml`.          |
 | `mate artifact submit <change>... [options]`                       | Submit finished changes for publication: push their Delivery Group's folders.  |
-| `mate artifact take <change> [--json]`                             | Take a submitted change into this checkout, to revise and submit it again.     |
+| `mate artifact take <change> [--json]`                             | Take a submitted or shared change from the inbox into this checkout.           |
 | `mate artifact archive <change> [options]`                         | Deprecated alias of `mate artifact submit`.                                    |
 | `mate artifact resolve <change> --capability --requirement --file` | Resolve a publication conflict in a submitted change, from any machine.        |
 | `mate artifact project <change> [--json]`                          | Show the canonical specs once the change's `dependsOn` chain is published.     |
@@ -1034,9 +1034,11 @@ listing the pending branch's `ref`, so `git show <ref>:<path>/proposal.md` in
 the companion reads a file of it without a checkout. To revise a submitted
 change that is not in your checkout, a teammate's or your own from another
 machine, `mate artifact take <change>` writes its folder into
-`openspec/changes/<change>/`, uncommitted; edit it and submit it again. It is
-refused while your checkout holds a folder of that name, and when the folder on
-the pending branch holds a symbolic link or submodule. Separately it lists archives an earlier Mate left
+`openspec/changes/<change>/`, uncommitted; edit it and submit it again. It takes
+a change Studio's Work shared to the inbox the same way. A folder of that name
+in your checkout is replaced while it is unchanged since you last shared or took
+it; one you edited since is kept and the take refused. It is also refused when
+the folder on the pending branch holds a symbolic link or submodule. Separately it lists archives an earlier Mate left
 uncommitted in this checkout, publishable from this checkout only, and
 uncommitted specs no pending change accounts for. In Git mode `auto` it fetches
 the default and pending branches first; otherwise, or when the fetch fails, it

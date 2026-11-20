@@ -97,6 +97,14 @@ export function contentDigest(files: Iterable<readonly [string, Uint8Array]>): s
   return hash.digest("hex");
 }
 
+/** SHA-256 over relative paths and their Git blob ids, in path order; Work's shared digest. */
+export function blobDigest(files: Iterable<readonly [string, string]>): string {
+  const hash = createHash("sha256");
+  const sorted = [...files].toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  for (const [file, blob] of sorted) hash.update(file).update("\0").update(blob).update("\0");
+  return hash.digest("hex");
+}
+
 /**
  * {@link contentDigest} over `files` of `dir`, paths relative to it; every regular file below
  * `dir` when `files` is omitted.

@@ -19,7 +19,12 @@ import {
 import { errorMessage } from "../../../runtime/error-message";
 import { isSubmittedName } from "../../../runtime/pending-records";
 import { isWithin } from "../../../runtime/physical-path";
-import { contentDigest, folderDigest, ownFiles } from "../../../runtime/submitted-arrivals";
+import {
+  blobDigest,
+  contentDigest,
+  folderDigest,
+  ownFiles,
+} from "../../../runtime/submitted-arrivals";
 import type { PublicationSecretScan } from "../../../runtime/publication-secret-scan";
 import type { SecretFinding } from "../../../runtime/secret-scan";
 import {
@@ -34,6 +39,7 @@ import {
   type SubmissionState,
 } from "../record";
 import { isSettled } from "../refresh";
+import { OWNER_FILE } from "../../workset/claims";
 import { recordDir, sourceDir, type ArtifactType } from "./artifact-type";
 import { deliveryGroupFor, type DeliveryGroupName } from "./naming";
 import { sourcePathOf, staleParts, STALE_SCAN_LIMIT } from "./pending";
@@ -837,10 +843,11 @@ export interface TakeResult {
 }
 
 /**
- * Takes submitted change `name` into the checkout: writes its folder as the fetched pending
- * branch has it, untracked, and records it as submitted from this checkout, so an edit is
- * submitted again like one of the checkout's own and the folder gives way once its archive
- * arrives. Refused while the checkout holds a folder of that name; nothing is pushed.
+ * Takes change `name`, submitted or shared `active`, into the checkout: writes its folder as the
+ * fetched pending branch has it, untracked, and records it as submitted from this checkout, so
+ * an edit is submitted again like one of the checkout's own and the folder gives way once its
+ * archive arrives. A local folder of that name is replaced only while it still equals what
+ * this checkout last pushed or took of it; otherwise it is refused. Nothing is pushed.
  */
 export async function takeSubmitted(
   companionPath: string,
@@ -858,10 +865,15 @@ export async function takeSubmitted(
   if (!isChangeName(name)) return refused("missing", `mate: "${name}" is no change name.`);
   const relative = sourcePathOf(type, name);
   const dir = sourceDir(companionPath, type, name);
-  if (await pathIsDirectory(dir)) {
-    return refused("exists", `mate: ${relative} is in this checkout already; nothing was taken.`);
-  }
   const git = (deps.git ?? defaultGit)(companionPath);
+  // A copy unchanged since this checkout pushed or took it is caught up instead of refused.
+  const exists = await pathIsDirectory(dir);
+  if (exists && (await unchangedSinceRecorded(git, companionPath, relative, deps)) !== true) {
+    return refused(
+      "exists",
+      `mate: ${relative} is in this checkout already and changed since this checkout last pushed or took it; nothing was taken.`,
+    );
+  }
   const remote = await stagingRemote(git);
   if (!remote) return refused("no-remote", "mate: the companion has no upstream.");
   const fetched = await fetchPendingBranches(git, remote);
@@ -870,11 +882,15 @@ export async function takeSubmitted(
   const tip = (
     await git.run(["rev-parse", "--verify", "-q", `${pendingRef(remote)}^{commit}`])
   ).stdout.trim();
-  const record = isCommitId(tip)
+  const held =
+    isCommitId(tip) &&
+    (await git.run(["cat-file", "-e", "--end-of-options", `${tip}:${relative}`])).status === 0;
+  const record = held
     ? await git.run(["show", "--end-of-options", `${tip}:${relative}/${DELIVERY_FILE}`])
     : null;
-  if (record?.status !== 0 || !/^state:\s*submitted\s*$/m.test(record.stdout)) {
-    return refused("missing", `mate: ${name} is not submitted on ${pendingPlace(remote)}.`);
+  // Submitted, or shared by Work and still `active`; a dropped change is not taken.
+  if (!held || (record?.status === 0 && /^state:\s*dropped\s*$/m.test(record.stdout))) {
+    return refused("missing", `mate: ${name} is not on ${pendingPlace(remote)}.`);
   }
   // Anyone may push the inbox: a link there must not reach the checkout, where it is followed.
   const linked = await linkedContentPaths(git, tip, [relative]);
@@ -886,6 +902,8 @@ export async function takeSubmitted(
         : `mate: ${pendingPlace(remote)} holds a symbolic link or submodule at ${linked.join(", ")}; Mate does not take it.`,
     );
   }
+  // Replaced whole: a file the pending branch no longer has must not stay behind.
+  if (exists) await fs.rm(dir, { recursive: true, force: true });
   // The work tree only: the index stays as it is, so the folder is untracked like a submitted one.
   const written = await git.run([
     ...LITERAL_PATHSPECS,
@@ -912,6 +930,7 @@ export async function takeSubmitted(
           dir,
           files.filter((file) => file !== DELIVERY_FILE),
         ),
+        shared: await sharedDigestAt(git, tip, relative),
         submittedAt: (deps.now?.() ?? new Date()).toISOString(),
       },
     },
@@ -924,4 +943,50 @@ export async function takeSubmitted(
     path: relative,
     message: `Took ${name} into ${relative} as ${pendingPlace(remote)} has it. Edit it, then submit it again with \`mate artifact submit ${name}\`.`,
   };
+}
+
+/**
+ * True when the local folder `relative` equals what this checkout last pushed or took of it;
+ * false when it changed or was never recorded; null when Git cannot tell.
+ */
+async function unchangedSinceRecorded(
+  git: CompanionGit,
+  companionPath: string,
+  relative: string,
+  deps: Pick<SubmitDeps, "stateHome">,
+): Promise<boolean | null> {
+  const recorded = readSubmittedFolders(companionPath, deps.stateHome)[relative];
+  if (!recorded) return false;
+  const files = await ownFiles(git, companionPath, relative);
+  if (!files) return null;
+  return (
+    (await folderDigest(path.join(companionPath, ...relative.split("/")), files)) ===
+    recorded.digest
+  );
+}
+
+/** Work's shared digest of folder `relative` at `commit`: blob ids, the owner file left out. */
+async function sharedDigestAt(
+  git: CompanionGit,
+  commit: string,
+  relative: string,
+): Promise<string | undefined> {
+  const listed = await git.run([
+    ...LITERAL_PATHSPECS,
+    "ls-tree",
+    "-r",
+    "-z",
+    commit,
+    "--",
+    `${relative}/`,
+  ]);
+  if (listed.status !== 0) return undefined;
+  const entries: [string, string][] = [];
+  for (const line of listed.stdout.split("\0")) {
+    const match = /^\d+ blob ([0-9a-f]+)\t(.+)$/s.exec(line);
+    if (!match) continue;
+    const file = path.posix.relative(relative, match[2]!);
+    if (file !== OWNER_FILE) entries.push([file, match[1]!]);
+  }
+  return blobDigest(entries);
 }

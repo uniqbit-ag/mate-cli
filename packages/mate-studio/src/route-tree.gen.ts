@@ -18,6 +18,7 @@ import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as SpecsRouteImport } from './routes/specs'
 import { Route as UsageRouteImport } from './routes/usage'
 import { Route as VaultRouteImport } from './routes/vault'
+import { Route as WorkRouteImport } from './routes/work'
 import { Route as WorkflowRouteImport } from './routes/workflow'
 import { Route as GettingStartedIndexRouteImport } from './routes/getting-started.index'
 import { Route as GettingStartedTopicRouteImport } from './routes/getting-started.$topic'
@@ -67,6 +68,11 @@ const VaultRoute = VaultRouteImport.update({
   path: '/vault',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorkRoute = WorkRouteImport.update({
+  id: '/work',
+  path: '/work',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WorkflowRoute = WorkflowRouteImport.update({
   id: '/workflow',
   path: '/workflow',
@@ -93,6 +99,7 @@ export interface FileRoutesByFullPath {
   '/specs': typeof SpecsRoute
   '/usage': typeof UsageRoute
   '/vault': typeof VaultRoute
+  '/work': typeof WorkRoute
   '/workflow': typeof WorkflowRoute
   '/getting-started/$topic': typeof GettingStartedTopicRoute
   '/getting-started/': typeof GettingStartedIndexRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByTo {
   '/specs': typeof SpecsRoute
   '/usage': typeof UsageRoute
   '/vault': typeof VaultRoute
+  '/work': typeof WorkRoute
   '/workflow': typeof WorkflowRoute
   '/getting-started/$topic': typeof GettingStartedTopicRoute
   '/getting-started': typeof GettingStartedIndexRoute
@@ -121,6 +129,7 @@ export interface FileRoutesById {
   '/specs': typeof SpecsRoute
   '/usage': typeof UsageRoute
   '/vault': typeof VaultRoute
+  '/work': typeof WorkRoute
   '/workflow': typeof WorkflowRoute
   '/getting-started/$topic': typeof GettingStartedTopicRoute
   '/getting-started/': typeof GettingStartedIndexRoute
@@ -137,6 +146,7 @@ export interface FileRouteTypes {
     | '/specs'
     | '/usage'
     | '/vault'
+    | '/work'
     | '/workflow'
     | '/getting-started/$topic'
     | '/getting-started/'
@@ -150,6 +160,7 @@ export interface FileRouteTypes {
     | '/specs'
     | '/usage'
     | '/vault'
+    | '/work'
     | '/workflow'
     | '/getting-started/$topic'
     | '/getting-started'
@@ -164,6 +175,7 @@ export interface FileRouteTypes {
     | '/specs'
     | '/usage'
     | '/vault'
+    | '/work'
     | '/workflow'
     | '/getting-started/$topic'
     | '/getting-started/'
@@ -179,6 +191,7 @@ export interface RootRouteChildren {
   SpecsRoute: typeof SpecsRoute
   UsageRoute: typeof UsageRoute
   VaultRoute: typeof VaultRoute
+  WorkRoute: typeof WorkRoute
   WorkflowRoute: typeof WorkflowRoute
 }
 
@@ -247,6 +260,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VaultRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/work': {
+      id: '/work'
+      path: '/work'
+      fullPath: '/work'
+      preLoaderRoute: typeof WorkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/workflow': {
       id: '/workflow'
       path: '/workflow'
@@ -295,6 +315,7 @@ const rootRouteChildren: RootRouteChildren = {
   SpecsRoute: SpecsRoute,
   UsageRoute: UsageRoute,
   VaultRoute: VaultRoute,
+  WorkRoute: WorkRoute,
   WorkflowRoute: WorkflowRoute,
 }
 export const routeTree = rootRouteImport

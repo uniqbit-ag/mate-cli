@@ -46,7 +46,7 @@ export function usage(): string {
     ` ${n} artifact submit <change>... [--repository <org/repo>]`,
     "   [--branch <b> [--direct]|--not-applicable <reason>|--skip-branch] [--fetch] [--json]",
     ` ${n} artifact submit --drop <change>... [--json]`,
-    ` ${n} artifact take <change> [--json]   a submitted change into this checkout, to revise it`,
+    ` ${n} artifact take <change> [--json]   a submitted or shared change into this checkout`,
     ` ${n} artifact archive <change> [options] (deprecated alias of artifact submit)`,
     ` ${n} artifact resolve <change> (--capability <c> --requirement <name> --file <path>)...`,
     "   [--json]   one triple per stale requirement of the change",

@@ -66,14 +66,14 @@ function runner(
   maxRuns = 1,
   timers: Pick<
     ConstructorParameters<typeof FactoryRunner>[0],
-    "setTimer" | "clearTimer" | "maxBuilds" | "sessionLive" | "endSession"
+    "setTimer" | "clearTimer" | "maxBuilds" | "sessionLive" | "endSession" | "authorized"
   > = {},
 ) {
-  fs.mkdirSync(path.join(root, "worksets"), { recursive: true });
+  fs.mkdirSync(path.join(root, ".mate/scratchpad"), { recursive: true });
   fs.mkdirSync(path.join(root, "openspec", "changes"), { recursive: true });
   for (const id of ["acme-busy", "acme-a", "acme-b", "acme-c"]) {
     fs.writeFileSync(
-      path.join(root, "worksets", `${id}.yaml`),
+      path.join(root, ".mate/scratchpad", `${id}.yaml`),
       `id: ${id}\nrepositories: [acme/web]\nstage: ready\n`,
     );
   }
@@ -98,6 +98,29 @@ function runner(
   });
   return { r, settled };
 }
+
+describe("the local start gate", () => {
+  test("no request runs unless this installation started it, a pulled legacy start included", async () => {
+    const { agent, started } = heldAgent();
+    const reserved = new Set(["acme-b"]);
+    const { r } = runner(agent, {}, 2, { authorized: async (id) => reserved.has(id) });
+    fs.writeFileSync(
+      path.join(root, ".mate/scratchpad", "acme-a.yaml"),
+      "id: acme-a\nrepositories: [acme/web]\nstage: ready\nqueuedAt: 2026-10-01T00:00:00.000Z\n",
+    );
+    await expect(r.request("acme-a", "propose")).rejects.toThrow(
+      "not started in this installation",
+    );
+    await expect(r.pickUp("acme-a", "propose")).rejects.toThrow("not started in this installation");
+    expect(r.isActive("acme-a")).toBe(false);
+    await expect(r.retry("acme-a")).rejects.toThrow();
+    await r.request("acme-b", "propose");
+    while (started.length === 0) await tick();
+    expect(started).toEqual(["acme-b"]);
+    await r.cancel("acme-b");
+    await r.idle("acme-b");
+  });
+});
 
 describe("the build cap", () => {
   test("a build starts only after its pending build-wait write", async () => {
@@ -419,7 +442,7 @@ describe("returning to automation", () => {
 
   function started(id: string): void {
     fs.writeFileSync(
-      path.join(root, "worksets", `${id}.yaml`),
+      path.join(root, ".mate/scratchpad", `${id}.yaml`),
       `id: ${id}\nrepositories: [acme/web]\nstage: explore\nqueuedAt: 2026-11-02T09:00:00.000Z\n`,
     );
   }

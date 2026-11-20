@@ -151,9 +151,9 @@ function results(outcome: DeliveryOutcome): DeliveryResult[] {
 const written = (change: string) => readDeliveryRecord(changeDir(change));
 
 async function workset(id: string, changes: string[]): Promise<void> {
-  await fs.mkdir(path.join(companion, "worksets"), { recursive: true });
+  await fs.mkdir(path.join(companion, ".mate/scratchpad"), { recursive: true });
   await fs.writeFile(
-    path.join(companion, "worksets", `${id}.yaml`),
+    path.join(companion, ".mate/scratchpad", `${id}.yaml`),
     `id: ${id}\nrepositories: [${APP}]\nchanges: ${JSON.stringify(changes)}\n`,
   );
 }
@@ -235,7 +235,7 @@ describe("Workset branch defaults", () => {
 
   test("invalid resolution never suggests an existing Workset branch", async () => {
     await workset("acme-invalid", []);
-    await fs.writeFile(path.join(companion, "worksets/acme-invalid.yaml"), "id: wrong\n");
+    await fs.writeFile(path.join(companion, ".mate/scratchpad/acme-invalid.yaml"), "id: wrong\n");
     const outcome = await run(
       { changes: ["x"], requireDelivery: true },
       {},

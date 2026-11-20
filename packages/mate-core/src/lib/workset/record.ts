@@ -5,17 +5,21 @@ import path from "node:path";
 import { parse, stringify } from "yaml";
 
 import { errorMessage } from "../../runtime/error-message";
-import { changeNameOf, locateChange, parseAnchor } from "../change-layout";
+import { activeChanges, changeNameOf, locateChange, parseAnchor } from "../change-layout";
 import { isJiraKey, normalizeJiraKey } from "../delivery/record";
 import { scopedRepositories } from "../openspec-scopes";
+import { deriveGroups, readChangeLinks } from "./groups";
 
 /**
- * The Workset record: `worksets/<id>.yaml` in the Companion Repository. It groups
- * the changes shipped together, names their Working Repositories, and holds the
- * stage only before any change exists; afterwards the stage is derived.
+ * The Workset record: `.mate/scratchpad/<id>.yaml`, local to the companion checkout and
+ * ignored by Git. It holds an idea (and the factory's queue) before any change exists and
+ * may list the changes proposed from it; it is never shared. Records in the legacy shared
+ * `worksets/` folder are still read, and move to the scratchpad on their next write.
  */
 
-export const WORKSETS_RELATIVE_DIR = "worksets";
+export const WORKSETS_RELATIVE_DIR = ".mate/scratchpad";
+/** Where earlier versions kept records, in the shared tree. */
+export const LEGACY_WORKSETS_RELATIVE_DIR = "worksets";
 
 /** The stages a person moves a Workset through before propose links its first change. */
 export const PRE_PROPOSE_STAGES = ["clarify-intent", "explore", "ready"] as const;
@@ -34,6 +38,8 @@ export interface WorksetRecord {
   createdAt: string;
   /** When the Workset was started; absent while Later, which never runs by itself. */
   queuedAt?: string;
+  /** Read from the legacy shared folder: its `queuedAt` may come from another machine. */
+  legacy?: boolean;
   /** Fields this version does not know, kept so a write preserves them. */
   extra: Record<string, unknown>;
 }
@@ -79,8 +85,16 @@ export function isRepositoryIdentity(repository: string): boolean {
 }
 
 export function worksetsDirOf(companionPath: string): string {
-  return path.join(companionPath, WORKSETS_RELATIVE_DIR);
+  return path.join(companionPath, ...WORKSETS_RELATIVE_DIR.split("/"));
 }
+
+function legacyDirOf(companionPath: string): string {
+  return path.join(companionPath, LEGACY_WORKSETS_RELATIVE_DIR);
+}
+
+// Ignores the folder itself, so a record is never trackable even before setup writes the
+// managed `.gitignore` entry.
+const SELF_IGNORE = "*\n";
 
 function stringList(value: unknown): string[] | null {
   if (value === undefined || value === null) return [];
@@ -147,30 +161,50 @@ async function readWorksetFile(dir: string, id: string): Promise<WorksetRecord |
   }
 }
 
-/** Every record, sorted by id; an unreadable one is a problem, never a reason to stop. */
-export async function readWorksets(companionPath: string): Promise<WorksetListing> {
-  const dir = worksetsDirOf(companionPath);
+async function readDir(
+  dir: string,
+  relativeDir: string,
+  legacy: boolean,
+): Promise<(WorksetRecord | WorksetProblem)[]> {
   let entries: string[];
   try {
     entries = await fs.readdir(dir);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { worksets: [], problems: [] };
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   }
-  const read = await Promise.all(
+  return Promise.all(
     entries
       .filter((name) => name.endsWith(".yaml"))
       .toSorted()
       .map(async (entry): Promise<WorksetRecord | WorksetProblem> => {
         const record = await readWorksetFile(dir, entry.slice(0, -".yaml".length));
-        return typeof record === "string"
-          ? { path: path.join(WORKSETS_RELATIVE_DIR, entry), reason: record }
-          : record;
+        if (typeof record === "string") {
+          return { path: path.posix.join(relativeDir, entry), reason: record };
+        }
+        return legacy ? { ...record, legacy: true } : record;
       }),
   );
+}
+
+function isRecord(entry: WorksetRecord | WorksetProblem): entry is WorksetRecord {
+  return "id" in entry;
+}
+
+/**
+ * Every record, sorted by id; an unreadable one is a problem, never a reason to stop. A
+ * scratchpad record wins over a legacy one with the same id.
+ */
+export async function readWorksets(companionPath: string): Promise<WorksetListing> {
+  const [current, legacy] = await Promise.all([
+    readDir(worksetsDirOf(companionPath), WORKSETS_RELATIVE_DIR, false),
+    readDir(legacyDirOf(companionPath), LEGACY_WORKSETS_RELATIVE_DIR, true),
+  ]);
+  const ids = new Set(current.filter(isRecord).map((record) => record.id));
+  const moved = legacy.filter(isRecord).filter((record) => !ids.has(record.id));
   return {
-    worksets: read.filter((entry): entry is WorksetRecord => "id" in entry),
-    problems: read.filter((entry): entry is WorksetProblem => !("id" in entry)),
+    worksets: [...current.filter(isRecord), ...moved].toSorted((a, b) => a.id.localeCompare(b.id)),
+    problems: [...current, ...legacy].filter((entry): entry is WorksetProblem => !isRecord(entry)),
   };
 }
 
@@ -182,7 +216,9 @@ export async function findWorkset(
   // Reads only this record's file; an id that is no file name has none.
   if (!isWorksetId(id)) return undefined;
   const record = await readWorksetFile(worksetsDirOf(companionPath), id);
-  return typeof record === "string" ? undefined : record;
+  if (typeof record !== "string") return record;
+  const legacy = await readWorksetFile(legacyDirOf(companionPath), id);
+  return typeof legacy === "string" ? undefined : { ...legacy, legacy: true };
 }
 
 export type WorksetResolution =
@@ -238,6 +274,29 @@ async function resolveWorksetIdentity(
   return { id, implicit, diagnostics };
 }
 
+/**
+ * The derived Workset of an active change no record lists: its `dependsOn` and branch group,
+ * grouped with the records as the Work inventory groups it.
+ */
+async function derivedWorksetOf(
+  companionPath: string,
+  change: string,
+  worksets: readonly WorksetRecord[],
+): Promise<{ id: string; implicit: boolean }> {
+  const names = await activeChanges(companionPath).catch(() => [] as string[]);
+  if (!names.includes(change)) return { id: change, implicit: true };
+  const links = await Promise.all(names.map((name) => readChangeLinks(companionPath, name)));
+  const records = new Map(
+    worksets.map((record) => [record.id, record.changes.map(changeNameOf)] as const),
+  );
+  const group = deriveGroups(links, records).find((candidate) =>
+    candidate.members.includes(change),
+  );
+  if (!group) return { id: change, implicit: true };
+  // A group named by the record listing its other members is that record's Workset.
+  return { id: group.id, implicit: group.record !== group.id };
+}
+
 /** Resolves membership and branch ownership; malformed records never imply standalone work. */
 export async function resolveWorksetOf(
   companionPath: string,
@@ -255,13 +314,10 @@ export async function resolveWorksetOf(
       ],
     };
   }
-  return resolveWorksetIdentity(
-    companionPath,
-    members[0]?.id ?? changeNameOf(change),
-    members.length === 0,
-    repository,
-    listing,
-  );
+  if (members[0])
+    return resolveWorksetIdentity(companionPath, members[0].id, false, repository, listing);
+  const derived = await derivedWorksetOf(companionPath, changeNameOf(change), listing.worksets);
+  return resolveWorksetIdentity(companionPath, derived.id, derived.implicit, repository, listing);
 }
 
 function documentOf(record: WorksetRecord): Record<string, unknown> {
@@ -281,6 +337,9 @@ function documentOf(record: WorksetRecord): Record<string, unknown> {
 
 async function writeTemp(dir: string, record: WorksetRecord): Promise<string> {
   await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, ".gitignore"), SELF_IGNORE, { flag: "wx" }).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  });
   const temp = path.join(dir, `.${record.id}.${randomBytes(4).toString("hex")}.tmp`);
   await fs.writeFile(temp, stringify(documentOf(record)), "utf8");
   return temp;
@@ -324,6 +383,9 @@ export async function createWorkset(
     ...(input.start ? { queuedAt: createdAt } : {}),
     extra: {},
   };
+  if (await findWorkset(companionPath, record.id)) {
+    throw new WorksetError(`a Workset ${record.id} already exists`);
+  }
   const dir = worksetsDirOf(companionPath);
   const temp = await writeTemp(dir, record);
   try {
@@ -390,6 +452,17 @@ export interface NewOutcome {
   ticket?: string;
 }
 
+/** Active change names and the ids of the Worksets derived from them; a new idea avoids both. */
+async function derivedIds(companionPath: string): Promise<string[]> {
+  const names = await activeChanges(companionPath).catch(() => [] as string[]);
+  const links = await Promise.all(
+    names.map((name) =>
+      readChangeLinks(companionPath, name).catch(() => ({ name, dependsOn: [], branches: [] })),
+    ),
+  );
+  return [...names, ...deriveGroups(links).map((group) => group.id)];
+}
+
 /** Creates a Workset from an outcome text; identifier and title are derived, the repository defaults to the only linked one. */
 export async function createOutcome(
   companionPath: string,
@@ -414,10 +487,14 @@ export async function createOutcome(
   if (ticket !== undefined && !isJiraKey(ticket)) {
     throw new WorksetError(`ticket ${JSON.stringify(ticket)} is not a Jira key such as ABC-123`);
   }
-  const { worksets, problems } = await readWorksets(companionPath);
+  const [{ worksets, problems }, derived] = await Promise.all([
+    readWorksets(companionPath),
+    derivedIds(companionPath),
+  ]);
   const taken = new Set([
     ...worksets.map((workset) => workset.id),
     ...problems.map((problem) => path.basename(problem.path, ".yaml")),
+    ...derived,
   ]);
   const title = outcomeTitle(input.text);
   const id = worksetIdFor(title, taken);
@@ -436,11 +513,24 @@ export async function createOutcome(
   );
 }
 
-/** Replaces a record atomically, keeping fields this version does not know. */
-export async function writeWorkset(companionPath: string, record: WorksetRecord): Promise<void> {
+/**
+ * Replaces a record atomically in the scratchpad, keeping fields this version does not
+ * know. A legacy record moves: its shared copy is removed once the local one is written. Its
+ * start may come from another machine, so it moves unstarted unless `started` vouches for it.
+ */
+export async function writeWorkset(
+  companionPath: string,
+  record: WorksetRecord,
+  options: { started?: boolean } = {},
+): Promise<void> {
   const dir = worksetsDirOf(companionPath);
-  const temp = await writeTemp(dir, record);
+  const { legacy, ...local } = record;
+  const { queuedAt: _queuedAt, ...unstarted } = local;
+  const temp = await writeTemp(dir, legacy && !options.started ? unstarted : local);
   await fs.rename(temp, path.join(dir, `${record.id}.yaml`));
+  if (legacy) {
+    await fs.rm(path.join(legacyDirOf(companionPath), `${record.id}.yaml`), { force: true });
+  }
 }
 
 /** Deletes a Workset's record; a record already gone is no error. */
@@ -448,7 +538,11 @@ export async function removeWorkset(companionPath: string, id: string): Promise<
   if (!isWorksetId(id)) {
     throw new WorksetError(`Workset identifier ${JSON.stringify(id)} is not a kebab-case name`);
   }
-  await fs.rm(path.join(worksetsDirOf(companionPath), `${id}.yaml`), { force: true });
+  await Promise.all(
+    [worksetsDirOf(companionPath), legacyDirOf(companionPath)].map((dir) =>
+      fs.rm(path.join(dir, `${id}.yaml`), { force: true }),
+    ),
+  );
 }
 
 const NEXT_STAGE: Partial<Record<PreProposeStage, PreProposeStage>> = {
@@ -477,9 +571,7 @@ async function recordFor(companionPath: string, id: string): Promise<WorksetReco
   const { worksets, problems } = await readWorksets(companionPath);
   const record = worksets.find((workset) => workset.id === id);
   if (record) return record;
-  const problem = problems.find(
-    (entry) => entry.path === path.join(WORKSETS_RELATIVE_DIR, `${id}.yaml`),
-  );
+  const problem = problems.find((entry) => path.posix.basename(entry.path) === `${id}.yaml`);
   throw new WorksetError(problem ? `${problem.path} ${problem.reason}` : `no Workset ${id}`);
 }
 
@@ -494,13 +586,14 @@ export async function setWorksetStarted(
   now: () => Date = () => new Date(),
 ): Promise<WorksetRecord> {
   const record = await recordFor(companionPath, id);
-  const { queuedAt: _queuedAt, ...rest } = record;
+  const { queuedAt: _queuedAt, legacy, ...rest } = record;
   // Fields of earlier factory versions; dropped so they cannot mislead a reader.
   const { lane: _lane, priority: _priority, ...extra } = record.extra;
   const next: WorksetRecord = started
     ? { ...rest, extra, queuedAt: record.queuedAt ?? now().toISOString() }
     : { ...rest, extra };
-  await writeWorkset(companionPath, next);
+  await writeWorkset(companionPath, legacy ? { ...next, legacy } : next, { started });
+  // Written to the scratchpad, so no longer legacy.
   return next;
 }
 

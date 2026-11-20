@@ -60,6 +60,11 @@ export interface RunnerOptions {
   sessionLive?: (id: string) => boolean;
   /** Ends the person's live session for Return to automation; without it, Return waits for it. */
   endSession?: (id: string) => Promise<void>;
+  /**
+   * Whether this checkout's own scratchpad queued the Workset. Every request (dispatch,
+   * pickup, retry, resume) needs it; a start timestamp pulled through Git never runs.
+   */
+  authorized?: (id: string) => Promise<boolean>;
   /** Told once a Workset's run has ended, whatever its outcome; pickup hangs off this. */
   onSettled?: (id: string) => void;
   setTimer?: (callback: () => void, ms: number) => unknown;
@@ -133,6 +138,11 @@ export class FactoryRunner {
     feedback?: string,
   ): Promise<void> {
     if (this.isActive(id)) throw new StageError(`Workset ${id} already has a run`);
+    if (this.options.authorized && !(await this.options.authorized(id))) {
+      throw new StageError(
+        `Workset ${id} was not started in this installation's factory; start it from Work`,
+      );
+    }
     await this.options.runs.control.requireAutomatic(id);
     const rank = (await this.options.rankFor?.(id)) ?? null;
     // The rank lookup awaited; another request may have won meanwhile.

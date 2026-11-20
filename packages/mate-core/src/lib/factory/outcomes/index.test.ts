@@ -13,7 +13,13 @@ import { Run } from "../runner/run";
 import { NO_CREDENTIAL } from "../credential-store";
 import { RunStore } from "../runner/state";
 import type { StageAgent } from "../runner/workflow";
-import { type FactoryOutcomes, factoryOutcomes, recordOutcomes } from "./index";
+import {
+  adoptLegacyStarts,
+  type FactoryOutcomes,
+  factoryOutcomes,
+  type OutcomeGuard,
+  recordOutcomes,
+} from "./index";
 import type { OutcomeAction } from "./actions";
 import { LiveSessions } from "./sessions";
 import { compareUrlFor } from "./runs";
@@ -28,10 +34,10 @@ let keptReports: string[];
 beforeEach(() => {
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mate-outcomes-")));
   companion = path.join(root, "acme-companion");
-  fs.mkdirSync(path.join(companion, "worksets"), { recursive: true });
+  fs.mkdirSync(path.join(companion, ".mate/scratchpad"), { recursive: true });
   fs.mkdirSync(path.join(companion, "openspec", "changes"), { recursive: true });
   fs.writeFileSync(
-    path.join(companion, "worksets", "acme-login.yaml"),
+    path.join(companion, ".mate/scratchpad", "acme-login.yaml"),
     "id: acme-login\ntitle: Login\nrepositories: [acme/web]\nstage: explore\n",
   );
   runs = new Run(new RunStore(path.join(root, "runs")));
@@ -51,6 +57,7 @@ function outcomes(
     },
   },
   client: Pick<FactoryClient, "list" | "delete"> = { list: async () => [], delete: async () => {} },
+  guard?: OutcomeGuard,
 ): {
   outcomes: FactoryOutcomes;
   runner: FactoryRunner;
@@ -83,9 +90,215 @@ function outcomes(
       }),
       reports: { publish: async () => ({ id: "report-1" }), ids: async () => keptReports },
       sessions,
+      ...(guard ? { guard } : {}),
     }),
   };
 }
+
+/** Links a Working Repository `acme/web` to the companion, as capture needs one. */
+function linkAcmeWeb(): void {
+  const working = path.join(root, "acme-web");
+  execFileSync("git", ["init", "-q", working]);
+  execFileSync("git", [
+    "-C",
+    working,
+    "remote",
+    "add",
+    "origin",
+    "https://github.com/acme/web.git",
+  ]);
+  fs.mkdirSync(path.join(companion, ".mate", "config"), { recursive: true });
+  fs.writeFileSync(
+    path.join(companion, ".mate", "config", "registry.yaml"),
+    `repos:\n  - id: acme-web\n    path: ${working}\n`,
+  );
+}
+
+function plan(
+  name: string,
+  options: { done?: number; dependsOn?: string[]; complete?: boolean } = {},
+) {
+  const dir = path.join(companion, "openspec", "changes", name);
+  fs.mkdirSync(path.join(dir, "specs", "acme"), { recursive: true });
+  fs.writeFileSync(path.join(dir, ".openspec.yaml"), "schema: mate-v1\n");
+  const depends = options.dependsOn ? `dependsOn: [${options.dependsOn.join(", ")}]\n` : "";
+  fs.writeFileSync(
+    path.join(dir, "proposal.md"),
+    `---\nscopes:\n  - repository: acme/web\n    area: .\n${depends}---\n`,
+  );
+  fs.writeFileSync(path.join(dir, "specs", "acme", "spec.md"), "## ADDED Requirements\n");
+  fs.writeFileSync(
+    path.join(dir, "tasks.md"),
+    `${"- [x] done\n".repeat(options.done ?? 0)}- [ ] 1.1 open\n`,
+  );
+  if (options.complete !== false) fs.writeFileSync(path.join(dir, "design.md"), "# Design\n");
+}
+
+describe("dispatch and park", () => {
+  const guard = () => {
+    const calls: string[] = [];
+    const value: OutcomeGuard = {
+      reserve: async (id) => {
+        calls.push(`reserve:${id}`);
+        return null;
+      },
+      release: async (id) => {
+        calls.push(`release:${id}`);
+        return null;
+      },
+    };
+    return { value, calls };
+  };
+  const written = async (id: string) =>
+    (await readWorksets(companion)).worksets.find((workset) => workset.id === id);
+
+  test("a complete local proposal is checked and queued here, waiting for review without a run", async () => {
+    plan("acme-pay");
+    stage = "human-review";
+    const g = guard();
+    const { outcomes: o, runner } = outcomes(undefined, undefined, undefined, g.value);
+    await o.dispatch!("acme-pay", "propose-only", { members: ["acme-pay"] });
+    expect(g.calls).toEqual(["reserve:acme-pay"]);
+    const record = await written("acme-pay");
+    expect(record?.queuedAt).toBeString();
+    expect(record?.changes).toEqual(["acme-pay"]);
+    expect(record?.extra.dispatchMode).toBe("propose-only");
+    expect(runner.isActive("acme-pay")).toBe(false);
+    expect(turns).toEqual([]);
+  });
+
+  test("an incomplete plan resumes planning on its changes", async () => {
+    plan("acme-pay", { complete: false });
+    stage = "propose";
+    const { outcomes: o, runner } = outcomes(undefined, undefined, undefined, guard().value);
+    await o.dispatch!("acme-pay", "delivery", { members: ["acme-pay"] });
+    await runner.idle("acme-pay");
+    expect(turns[0]).toStartWith("/mate-propose-change Revise acme-pay to complete the plan");
+  });
+
+  test("partial implementation, outside dependencies and stale members are refused unchanged", async () => {
+    plan("acme-pay", { done: 1 });
+    plan("acme-fx", { dependsOn: ["acme-base"] });
+    const g = guard();
+    const { outcomes: o } = outcomes(undefined, undefined, undefined, g.value);
+    await expect(o.dispatch!("acme-pay", "delivery", { members: ["acme-pay"] })).rejects.toThrow(
+      "partially implemented",
+    );
+    await expect(o.dispatch!("acme-fx", "delivery", { members: ["acme-fx"] })).rejects.toThrow(
+      "acme-base",
+    );
+    await expect(o.dispatch!("acme-fx", "delivery", { members: ["acme-other"] })).rejects.toThrow(
+      "members changed",
+    );
+    expect(g.calls).toEqual([]);
+    expect(await written("acme-pay")).toBeUndefined();
+  });
+
+  test("Park returns a stopped plan; active runs are refused", async () => {
+    plan("acme-pay");
+    stage = "human-review";
+    const g = guard();
+    const { outcomes: o, runner } = outcomes(undefined, undefined, undefined, g.value);
+    await o.dispatch!("acme-pay", "delivery", { members: ["acme-pay"] });
+    await o.park!("acme-pay");
+    expect((await written("acme-pay"))?.queuedAt).toBeUndefined();
+    expect(g.calls).toEqual(["reserve:acme-pay", "release:acme-pay"]);
+    expect(runner.isActive("acme-pay")).toBe(false);
+
+    stage = "apply";
+    await expect(o.park!("acme-pay")).rejects.toThrow("implementation has begun");
+  });
+});
+
+describe("the start guard", () => {
+  test("Start is checked first; a refusal starts nothing and keeps the record unstarted", async () => {
+    const reserved: string[] = [];
+    const guard: OutcomeGuard = {
+      reserve: async (id) => {
+        reserved.push(id);
+        return "claimed by Acme Teammate";
+      },
+      release: async () => null,
+    };
+    const { outcomes: o, runner } = outcomes(undefined, undefined, undefined, guard);
+    await expect(
+      o.act("acme-login", "start", (name) => (name === "mode" ? "propose-only" : "")),
+    ).rejects.toThrow("claimed by Acme Teammate");
+    expect(reserved).toEqual(["acme-login"]);
+    expect((await readWorksets(companion)).worksets[0]?.queuedAt).toBeUndefined();
+    expect(runner.isActive("acme-login")).toBe(false);
+  });
+
+  test("a captured start is saved unstarted while the guard checks it", async () => {
+    linkAcmeWeb();
+    const seen: (string | undefined)[] = [];
+    let answer: string | null = "claimed by Acme Teammate";
+    const guard: OutcomeGuard = {
+      reserve: async (id) => {
+        seen.push((await readWorksets(companion)).worksets.find((w) => w.id === id)?.queuedAt);
+        return answer;
+      },
+      release: async () => null,
+    };
+    const { outcomes: o } = outcomes(undefined, undefined, undefined, guard);
+    const fields: Record<string, string> = { text: "Faster acme checkout", mode: "propose-only" };
+    await expect(o.create((name) => fields[name] ?? "")).rejects.toThrow(
+      "saved to Scratchpad but not started: claimed by Acme Teammate",
+    );
+    const created = async () =>
+      (await readWorksets(companion)).worksets.find((w) => w.id.startsWith("faster"));
+    expect((await created())?.queuedAt).toBeUndefined();
+
+    answer = null;
+    fields.text = "Faster acme search";
+    await o.create((name) => fields[name] ?? "");
+    expect(seen).toEqual([undefined, undefined]);
+    const started = (await readWorksets(companion)).worksets.find(
+      (w) => w.id === "faster-acme-search",
+    );
+    expect(started?.queuedAt).toBeString();
+  });
+
+  test("a legacy record started by this installation is adopted; a forged one is not", async () => {
+    fs.mkdirSync(path.join(companion, "worksets"), { recursive: true });
+    for (const id of ["acme-mine", "acme-forged"]) {
+      fs.writeFileSync(
+        path.join(companion, "worksets", `${id}.yaml`),
+        `id: ${id}\nrepositories: [acme/web]\nqueuedAt: 2026-11-01T00:00:00.000Z\n`,
+      );
+    }
+    await new RunStore(path.join(root, "runs")).write("acme-mine", {
+      state: "waiting",
+      updatedAt: "2026-11-01T01:00:00.000Z",
+    });
+    expect(await adoptLegacyStarts(companion, runs)).toEqual(["acme-mine"]);
+    const { worksets } = await readWorksets(companion);
+    const mine = worksets.find((w) => w.id === "acme-mine");
+    expect(mine?.legacy).toBeUndefined();
+    expect(mine?.queuedAt).toBe("2026-11-01T00:00:00.000Z");
+    expect(worksets.find((w) => w.id === "acme-forged")?.legacy).toBe(true);
+  });
+
+  test("Move to later tells the guard", async () => {
+    const released: string[] = [];
+    const guard: OutcomeGuard = {
+      reserve: async () => null,
+      release: async (id) => {
+        released.push(id);
+        return null;
+      },
+    };
+    stage = "clarify-intent";
+    fs.writeFileSync(
+      path.join(companion, ".mate/scratchpad", "acme-login.yaml"),
+      "id: acme-login\ntitle: Login\nrepositories: [acme/web]\nqueuedAt: 2026-11-01T00:00:00.000Z\n",
+    );
+    const { outcomes: o } = outcomes(undefined, undefined, undefined, guard);
+    await o.act("acme-login", "later", none);
+    expect(released).toEqual(["acme-login"]);
+    expect((await readWorksets(companion)).worksets[0]?.queuedAt).toBeUndefined();
+  });
+});
 
 const none = () => "";
 
@@ -179,7 +392,7 @@ describe("moving an Outcome to Later", () => {
   const STARTED = "2026-11-02T09:00:00.000Z";
   const started = (id: string) =>
     fs.writeFileSync(
-      path.join(companion, "worksets", `${id}.yaml`),
+      path.join(companion, ".mate/scratchpad", `${id}.yaml`),
       `id: ${id}\ntitle: ${id}\nrepositories: [acme/web]\nstage: explore\nqueuedAt: ${STARTED}\n`,
     );
   const queuedAt = async (id: string) =>
@@ -357,7 +570,7 @@ describe("deleting an Outcome", () => {
       },
     });
     fs.writeFileSync(
-      path.join(companion, "worksets", "acme-busy.yaml"),
+      path.join(companion, ".mate/scratchpad", "acme-busy.yaml"),
       "id: acme-busy\ntitle: Busy\nrepositories: [acme/web]\nstage: explore\n",
     );
     await busy.runner.request("acme-busy", "propose", "go on");
@@ -380,7 +593,7 @@ describe("deleting an Outcome", () => {
 
   test("an Outcome with a change is refused and changes nothing", async () => {
     fs.writeFileSync(
-      path.join(companion, "worksets", "acme-login.yaml"),
+      path.join(companion, ".mate/scratchpad", "acme-login.yaml"),
       "id: acme-login\ntitle: Login\nrepositories: [acme/web]\nchanges: [acme-login-plan]\n",
     );
     const { outcomes: o } = outcomes(undefined, undefined, brokered());
@@ -423,11 +636,15 @@ describe("Outcomes without the AFK runner", () => {
     }));
   const record = async () => (await readWorksets(companion)).worksets[0];
 
-  test("Start and Later change only the record's start time", async () => {
+  test("Start is refused without the factory; Later clears an earlier start", async () => {
     stage = "clarify-intent";
     const o = recorded();
-    await o.act("acme-login", "start", none);
-    expect((await record())?.queuedAt).toBeString();
+    await expect(o.act("acme-login", "start", none)).rejects.toThrow("not available here");
+    expect((await record())?.queuedAt).toBeUndefined();
+    fs.writeFileSync(
+      path.join(companion, ".mate/scratchpad", "acme-login.yaml"),
+      "id: acme-login\ntitle: Login\nrepositories: [acme/web]\nqueuedAt: 2026-11-01T00:00:00.000Z\n",
+    );
     await o.act("acme-login", "later", none);
     expect((await record())?.queuedAt).toBeUndefined();
     expect(await o.runs()).toBeNull();
@@ -450,9 +667,13 @@ describe("Outcomes without the AFK runner", () => {
       `repos:\n  - id: acme-web\n    path: ${working}\n`,
     );
     const fields: Record<string, string> = { text: "Faster acme checkout" };
-    await recorded().create((name) => fields[name] ?? "");
+    await expect(recorded().create((name) => fields[name] ?? "")).rejects.toThrow(
+      "not available here",
+    );
+    const saved: Record<string, string> = { text: "Faster acme checkout", start: "later" };
+    await recorded().create((name) => saved[name] ?? "");
     const created = (await readWorksets(companion)).worksets.find((w) => w.id !== "acme-login");
-    expect(created?.queuedAt).toBeString();
+    expect(created?.queuedAt).toBeUndefined();
   });
 
   test("an action that needs the runner is refused because it needs the factory mode", async () => {
@@ -465,7 +686,10 @@ describe("Outcomes without the AFK runner", () => {
 
   test("Later past Clarify intent is refused and keeps the start time", async () => {
     const o = recorded();
-    await o.act("acme-login", "start", none);
+    fs.writeFileSync(
+      path.join(companion, ".mate/scratchpad", "acme-login.yaml"),
+      "id: acme-login\ntitle: Login\nrepositories: [acme/web]\nstage: explore\nqueuedAt: 2026-11-01T00:00:00.000Z\n",
+    );
     const startedAt = (await record())?.queuedAt;
     await expect(o.act("acme-login", "later", none)).rejects.toThrow(
       "it can no longer move to Later",
@@ -473,11 +697,9 @@ describe("Outcomes without the AFK runner", () => {
     expect((await record())?.queuedAt).toBe(startedAt);
   });
 
-  test("Done refuses Start", async () => {
+  test("Start is refused before any other check", async () => {
     stage = "done";
-    await expect(recorded().act("acme-login", "start", none)).rejects.toThrow(
-      "Workset acme-login is done",
-    );
+    await expect(recorded().act("acme-login", "start", none)).rejects.toThrow("not available here");
     expect((await record())?.queuedAt).toBeUndefined();
   });
 

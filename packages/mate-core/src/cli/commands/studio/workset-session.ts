@@ -30,6 +30,11 @@ export interface WorksetResolverOptions {
    * native session resumes. `null` lets the session start as it otherwise would.
    */
   takenOver?: (id: string) => Promise<{ claudeSession: string | null } | null>;
+  /**
+   * The Work executor guard: `null` once this installation holds the Workset's reservation,
+   * else why the session may not start. Runs before any container is prepared.
+   */
+  authorize?: (companionPath: string, id: string) => Promise<string | null>;
 }
 
 /** Claude Code's project directory for a working directory: every non-alphanumeric becomes `-`. */
@@ -97,6 +102,8 @@ export function createWorksetResolver(
       if ((await client.info()).credential === null) {
         return { reason: NO_CREDENTIAL };
       }
+      const refusal = await options.authorize?.(companion.path, id);
+      if (refusal) return { reason: refusal };
       const { record, warnings } = await prepareWorkset(client, companion.path, id, options.env);
       const settings = await client.exec({ id, command: CLAUDE_SETTINGS });
       if (settings.status !== 0) {

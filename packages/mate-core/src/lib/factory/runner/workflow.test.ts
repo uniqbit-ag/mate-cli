@@ -29,7 +29,7 @@ beforeEach(() => {
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mate-runner-")));
   companion = path.join(root, "acme-companion");
   fs.mkdirSync(path.join(companion, "openspec", "changes", "archive"), { recursive: true });
-  fs.mkdirSync(path.join(companion, "worksets"), { recursive: true });
+  fs.mkdirSync(path.join(companion, ".mate/scratchpad"), { recursive: true });
   runs = new Run(new RunStore(path.join(root, "runs")));
 });
 
@@ -37,7 +37,7 @@ afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 
 function workset(changes: string[] = [], stage = "ready"): void {
   fs.writeFileSync(
-    path.join(companion, "worksets", "acme-login.yaml"),
+    path.join(companion, ".mate/scratchpad", "acme-login.yaml"),
     `id: acme-login\ntitle: Login\nrepositories: [acme/web]\nstage: ${stage}\nchanges: [${changes.join(", ")}]\n`,
   );
 }
@@ -112,7 +112,7 @@ function runner(
 }
 
 const record = () =>
-  parse(fs.readFileSync(path.join(companion, "worksets", "acme-login.yaml"), "utf8"));
+  parse(fs.readFileSync(path.join(companion, ".mate/scratchpad", "acme-login.yaml"), "utf8"));
 
 describe("stage sizes", () => {
   test("apply runs at the build size, every other stage at the agent size", () => {
@@ -169,6 +169,47 @@ describe("propose", () => {
     expect(
       PROMPTS.propose({ id: "acme-login", title: "Login", intent: "Add SSO login.\n" }),
     ).toContain("\nIntent: Add SSO login.\n");
+  });
+
+  test("each proposed member gets its own unlinked Delivery Record; existing ones are kept", async () => {
+    workset();
+    const { agent } = scriptedAgent((prompt) => {
+      if (!prompt.startsWith("/mate-propose-change")) return;
+      change("acme-login-a");
+      change("acme-login-b");
+      fs.writeFileSync(
+        path.join(companion, "openspec", "changes", "acme-login-b", "delivery.yaml"),
+        "version: 1\nchange: acme-login-b\ndeliveries:\n  - repository: acme/web\n    branch: workset/acme-login\n",
+      );
+    });
+    const r = runner(agent, commands().run);
+    await r.request("acme-login", "propose");
+    await r.idle("acme-login");
+    const delivery = (name: string) =>
+      fs.readFileSync(path.join(companion, "openspec", "changes", name, "delivery.yaml"), "utf8");
+    expect(delivery("acme-login-a")).toBe("version: 1\nchange: acme-login-a\ndeliveries: []\n");
+    expect(delivery("acme-login-b")).toContain("branch: workset/acme-login");
+  });
+
+  test("an incomplete plan resumes on its changes; a new slice links and the group is reviewed", async () => {
+    change("acme-login-a");
+    workset(["acme-login-a"]);
+    const { agent, prompts } = scriptedAgent((prompt) => {
+      if (prompt.startsWith("/mate-propose-change")) change("acme-login-b");
+    });
+    const r = runner(agent, commands().run);
+    await r.request("acme-login", "propose");
+    await r.idle("acme-login");
+    expect(prompts[0]).toStartWith(
+      "/mate-propose-change Revise acme-login-a to complete the plan of Workset acme-login (Login).",
+    );
+    expect(prompts[0]).toContain("Keep every existing artifact");
+    expect(record().changes).toEqual(["acme-login-a", "acme-login-b"]);
+    expect(prompts.slice(1)).toEqual([
+      expect.stringMatching(/^\/mate-show-me acme-login-a\n/),
+      expect.stringMatching(/^\/mate-show-me acme-login-b\n/),
+    ]);
+    expect((await runs.facts("acme-login")).execution.state).toBe("idle");
   });
 
   test("a propose that creates nothing for the repository fails naming it", async () => {
@@ -557,7 +598,7 @@ describe("limits", () => {
   test("runs at most the cap at once and queues the rest in order", async () => {
     for (const id of ["acme-a", "acme-b", "acme-c"]) {
       fs.writeFileSync(
-        path.join(companion, "worksets", `${id}.yaml`),
+        path.join(companion, ".mate/scratchpad", `${id}.yaml`),
         `id: ${id}\nrepositories: [acme/web]\nstage: ready\n`,
       );
     }

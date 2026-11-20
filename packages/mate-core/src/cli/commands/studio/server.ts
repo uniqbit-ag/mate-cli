@@ -62,6 +62,7 @@ import {
   modePolicy,
   parse,
   parseVaultSelection,
+  REFRESH_PARAM,
   resolveCompanion,
   type StudioModePolicy,
   type StudioProfile,
@@ -79,6 +80,8 @@ import {
 } from "./terminal";
 import type { StudioFormField, StudioServices } from "./services";
 import type { UsageCache } from "../../../lib/usage/cache";
+import { companionExecutorGuard, reserveManualLaunch } from "../../../lib/workset/execution";
+import { createWorkServices } from "./work";
 import { studioAppAsset, type StudioApp } from "./studio-app";
 import { terminalAsset } from "./terminal-assets";
 import {
@@ -446,6 +449,16 @@ export function createStudioFetch(
           collectInventory: inventory,
           launchCompanion,
           launchableAgents: (companionPath) => agentsFor(companionPath),
+          // Work starts from the terminal pass the same start guard; read-only Studio has none.
+          ...(writable
+            ? {
+                reserveWork: (companionPath, action, subject) =>
+                  reserveManualLaunch(companionPath, {
+                    kind: action.subject === "change" ? "change" : "workset",
+                    name: subject,
+                  }),
+              }
+            : {}),
         }),
         mateCommand: process.argv.slice(0, 2),
         sessions,
@@ -459,6 +472,9 @@ export function createStudioFetch(
                 noGit: options.noGit === true,
                 // A person in control continues the factory's own conversation.
                 takenOver: async (id) => (outcomes ? outcomes.takenOver(id) : null),
+                // An attended session is a Work start: only own work opens one.
+                authorize: async (companionPath, id) =>
+                  companionExecutorGuard(companionPath).reserve(id),
               }),
               // Quitting Claude in a person's session hands the Outcome back to automation.
               onWorksetExit: async (id, companionPath) => {
@@ -563,6 +579,31 @@ export function createStudioFetch(
   }
 
   let usage: Promise<UsageCache> | undefined = deps.usage && Promise.resolve(deps.usage);
+  const work = createWorkServices({
+    writable,
+    factoryMode: broker !== null,
+    outcomesFor,
+    broker,
+    inputFor: async (companionPath, refresh = false) => {
+      const url = new URL("http://studio.local/");
+      url.searchParams.set(COMPANION_PARAM, companionDigest(companionPath));
+      // The snapshot, as every view reads it; runs and Git facts are read fresh regardless.
+      if (refresh) url.searchParams.set(REFRESH_PARAM, "1");
+      const page = await collectPage(url);
+      const payload = page.payload;
+      const targeted = page.terminal?.target?.path === companionPath;
+      return {
+        changes: payload?.changes ?? [],
+        shipped: payload?.shipped ?? [],
+        runs: page.factoryRuns ?? null,
+        ...(payload?.skillInventory ? { skills: payload.skillInventory } : {}),
+        terminalAgents: targeted ? (page.terminal?.agents ?? []) : [],
+        linkedRepositories: payload?.linkedRepositories ?? [],
+        ...(payload?.ticketFormat ? { ticketFormat: payload.ticketFormat } : {}),
+      };
+    },
+  });
+
   const services: StudioServices = {
     writable,
     factoryMode: broker !== null,
@@ -581,6 +622,12 @@ export function createStudioFetch(
       if (!writable) throw new WorksetError(NOT_WRITABLE);
       await outcomesFor(await companionPathOf(digest)).create(field);
       boardChanged(digest);
+    },
+    work: async (digest) => work.work(await companionPathOf(digest)),
+    workAction: async (digest, request) => {
+      const result = await work.act(await companionPathOf(digest), request);
+      if (result.ok && request.action !== "share-preview") boardChanged(digest);
+      return result;
     },
     vault: async (digest, request) => {
       const { vaultView } = await import("./views/vault/view");

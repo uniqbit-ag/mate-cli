@@ -25,6 +25,8 @@ interface LinkedRemote {
   id: string;
   identity: string;
   remote: string;
+  /** The checkout on this machine. */
+  path: string;
   /** The registry entry's own folder, not one of an Umbrella Repository's children. */
   own: boolean;
 }
@@ -51,6 +53,7 @@ async function linkedRemotes(companionPath: string): Promise<LinkedRemote[]> {
                   id: repo.id,
                   identity: repositoryPath(remote),
                   remote: origin,
+                  path: checkout,
                   own: checkout === repo.path,
                 },
               ]
@@ -97,6 +100,43 @@ export async function repositorySources(
   return new Map(
     [...sourcesOf(linked, local.urls, env)].map(([identity, source]) => [identity, source.url]),
   );
+}
+
+/**
+ * Whether any linked Working Repository checkout on this machine has the local branch:
+ * a recorded Delivery Branch present here means the work is in progress here.
+ */
+export async function branchCheckedOutHere(
+  companionPath: string,
+  branch: string,
+): Promise<boolean> {
+  return branchProbe(companionPath)(branch);
+}
+
+/**
+ * {@link branchCheckedOutHere} for many branches at one moment: the linked checkouts are
+ * resolved once and each branch is asked once.
+ */
+export function branchProbe(companionPath: string): (branch: string) => Promise<boolean> {
+  let checkouts: Promise<string[]> | undefined;
+  const answers = new Map<string, Promise<boolean>>();
+  return (branch) => {
+    checkouts ??= linkedRemotes(companionPath).then((linked) => [
+      ...new Set(linked.map((entry) => entry.path)),
+    ]);
+    let answer = answers.get(branch);
+    if (!answer) {
+      answer = checkouts.then(async (paths) =>
+        (
+          await Promise.all(
+            paths.map((checkout) => workingRepoGit(checkout).hasRef(`refs/heads/${branch}`)),
+          )
+        ).includes(true),
+      );
+      answers.set(branch, answer);
+    }
+    return answer;
+  };
 }
 
 /** The `org/repository` names a new Workset may name, sorted. */

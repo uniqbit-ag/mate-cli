@@ -10,6 +10,7 @@ import type { VaultConflict, VaultSaved } from "./vault";
 import type { StudioPage } from "./views/model";
 import type { MdNode } from "./views/vault/markdown-tree";
 import type { VaultEntry, VaultView, VaultViewRequest } from "./views/vault/view";
+import type { StudioWorkPayload, WorkRequest, WorkResult } from "./work";
 
 /** The fields of a submitted factory form; an absent field reads as an empty string. */
 export type StudioFormField = (name: string) => string;
@@ -45,6 +46,13 @@ export interface StudioServices {
   ): Promise<void>;
   /** The outcome input: Start runs it at once, Save for later keeps it unstarted; needs `writable`. */
   createOutcome(companionDigest: string, field: StudioFormField): Promise<void>;
+  /** The Work view's model for a registered companion; reads local Git refs only. */
+  work(companionDigest: string): Promise<StudioWorkPayload>;
+  /**
+   * One Work action, rechecked on the server: write mode, Workset, ownership and, for factory
+   * actions, factory mode and availability. A refusal is a typed result, never a partial write.
+   */
+  workAction(companionDigest: string, request: WorkRequest): Promise<WorkResult>;
   /** The vault page: the bounded tree and the open folder or file. */
   vault(companionDigest: string, request: VaultViewRequest): Promise<VaultView>;
   /** A folder's entries, when first expanded; `null` when the listed tree lacks it. */

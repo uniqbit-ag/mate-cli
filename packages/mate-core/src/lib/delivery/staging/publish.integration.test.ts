@@ -1109,3 +1109,48 @@ describe.skipIf(!REAL_OPENSPEC)("publishSubmitted", () => {
     TIMEOUT,
   );
 });
+
+describe.skipIf(!REAL_OPENSPEC)("a shared active folder on the inbox", () => {
+  test(
+    "survives another group's publication and the inbox clean-up and is never pending",
+    async () => {
+      const fixture = await setup();
+      const mine = fixture.clone("acme-mine");
+      await submit(fixture, mine, "acme-login", {
+        branch: "workset/acme-login",
+        merged: true,
+        deltas: { widget: requirement("ADDED", "Widget logs in", "The widget SHALL log in.") },
+      });
+      // Shared by Work, as Share writes it: `state: active` beside the submitted change.
+      const sharer = fixture.clone("acme-sharer");
+      git(sharer, "fetch", "-q", "origin", INBOX);
+      git(sharer, "checkout", "-q", "-B", "share", "FETCH_HEAD");
+      const shared = path.join(sharer, "openspec", "changes", "acme-shared");
+      fs.mkdirSync(shared, { recursive: true });
+      fs.writeFileSync(path.join(shared, "proposal.md"), "## Why\n\nShared, not submitted.\n");
+      fs.writeFileSync(
+        path.join(shared, "delivery.yaml"),
+        "version: 1\nchange: acme-shared\nstate: active\ndeliveries: []\n",
+      );
+      git(sharer, "add", "-A");
+      git(sharer, "commit", "-q", "-m", "chore(openspec): share acme-shared");
+      git(sharer, "push", "-q", "origin", `HEAD:refs/heads/${INBOX}`);
+
+      const pending = await discoverSubmitted(mine, { fetch: true, tmpRoot: fixture.root });
+      expect(JSON.stringify(pending)).not.toContain("acme-shared");
+
+      const result = await publishSubmitted(mine, LOGIN, deps(fixture));
+
+      expect(result.status).toBe("ok");
+      expect(filesAt(fixture, INBOX, "openspec/changes/acme-login")).toEqual([]);
+      expect(filesAt(fixture, INBOX, "openspec/changes/acme-shared")).toEqual([
+        "openspec/changes/acme-shared/delivery.yaml",
+        "openspec/changes/acme-shared/proposal.md",
+      ]);
+      expect(filesAt(fixture, "main", "openspec/changes/acme-shared")).toEqual([]);
+      const after = await discoverSubmitted(mine, { fetch: true, tmpRoot: fixture.root });
+      expect(JSON.stringify(after)).not.toContain("acme-shared");
+    },
+    TIMEOUT,
+  );
+});

@@ -89,12 +89,12 @@ afterEach(async () => {
 describe("mate artifact link", () => {
   test("read-only defaults and invalid-record diagnostics are exposed without writes", async () => {
     expect((await run(["x"]))[0]).toMatchObject({ defaultBranch: "workset/x", diagnostics: [] });
-    await fs.mkdir(path.join(companion, "worksets"));
-    await fs.writeFile(path.join(companion, "worksets/acme-invalid.yaml"), "id: wrong\n");
+    await fs.mkdir(path.join(companion, ".mate/scratchpad"), { recursive: true });
+    await fs.writeFile(path.join(companion, ".mate/scratchpad/acme-invalid.yaml"), "id: wrong\n");
     const [result] = await run(["x"]);
     expect(result.defaultBranch).toBeNull();
-    expect(result.diagnostics.join()).toContain("worksets/acme-invalid.yaml");
-    expect(err.join()).toContain("worksets/acme-invalid.yaml");
+    expect(result.diagnostics.join()).toContain(".mate/scratchpad/acme-invalid.yaml");
+    expect(err.join()).toContain(".mate/scratchpad/acme-invalid.yaml");
     await expect(readRaw("x")).rejects.toThrow();
   });
 
@@ -151,9 +151,9 @@ describe("mate artifact link", () => {
 
   test("regrouping preserves recorded delivery until an explicit branch edit", async () => {
     await run(["x", "--branch", "workset/x"]);
-    await fs.mkdir(path.join(companion, "worksets"));
+    await fs.mkdir(path.join(companion, ".mate/scratchpad"), { recursive: true });
     await fs.writeFile(
-      path.join(companion, "worksets/acme-login.yaml"),
+      path.join(companion, ".mate/scratchpad/acme-login.yaml"),
       `id: acme-login\nrepositories: [${REPO}]\nchanges: [x]\n`,
     );
     const [read] = await run(["x"]);
@@ -226,9 +226,9 @@ describe("mate artifact link", () => {
   test("regrouping reports differing recorded branches", async () => {
     await run(["x", "--branch", "workset/x"]);
     await run(["a", "--branch", "workset/acme-login"]);
-    await fs.mkdir(path.join(companion, "worksets"));
+    await fs.mkdir(path.join(companion, ".mate/scratchpad"), { recursive: true });
     await fs.writeFile(
-      path.join(companion, "worksets/acme-login.yaml"),
+      path.join(companion, ".mate/scratchpad/acme-login.yaml"),
       `id: acme-login\nrepositories: [${REPO}]\nchanges: [x, a]\n`,
     );
     const [read] = await run(["x"]);

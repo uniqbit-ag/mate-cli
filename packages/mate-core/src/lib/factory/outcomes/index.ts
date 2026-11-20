@@ -6,10 +6,14 @@ import {
   createOutcome,
   findWorkset,
   isWorksetId,
+  readWorksets,
   removeWorkset,
   setWorksetStarted,
   WorksetError,
+  writeWorkset,
 } from "../../workset/record";
+import { companionExecutorGuard } from "../../workset/execution";
+import { dispatchPlan, materializeForFactory } from "./dispatch";
 import { linkedRepositoryIdentities } from "../../workset/repositories";
 import type { WorksetWithStage } from "../../workset/stages";
 import { attachSocketFor, FACTORY_BROKER_ENV, type FactoryClient, factoryClient } from "../client";
@@ -69,6 +73,17 @@ export interface Outcomes {
   create(fields: OutcomeFields): Promise<void>;
   /** Every Workset's run as the board shows it; `null` without the runner. */
   runs(): Promise<Record<string, FactoryRunView> | null>;
+  /**
+   * Start in local factory for an idea or an unapplied plan of own work: validated, then
+   * queued in this checkout's scratchpad. Only the factory offers it.
+   */
+  dispatch?(
+    id: string,
+    mode: "propose-only" | "delivery",
+    expected: { members: string[] },
+  ): Promise<void>;
+  /** Park proposal: a stopped, unapplied plan leaves the factory, keeping its claim. */
+  park?(id: string): Promise<void>;
 }
 
 /**
@@ -100,12 +115,26 @@ export interface OutcomesPorts {
   sessions: LiveSessions;
 }
 
+/** The Work start guard as the Outcomes module uses it. */
+export interface OutcomeGuard {
+  /** `null` when this installation may start the Workset, else why not. */
+  reserve(id: string): Promise<string | null>;
+  /** `null` once nothing of this installation's start remains, else why not. */
+  release(id: string): Promise<string | null>;
+}
+
 /** A built runner with the ports: the seam tests assemble the module from. */
 export interface OutcomesParts extends RunnerParts, OutcomesPorts {
   client: Pick<FactoryClient, "list" | "delete">;
   /** Settles once stale runs are marked interrupted; every action waits for it. */
   ready?: Promise<unknown>;
+  /** Absent in tests that assemble the module without Work coordination. */
+  guard?: OutcomeGuard;
 }
+
+/** Why a start is refused where the local factory does not run the companion. */
+export const NO_FACTORY_START =
+  "the local factory is not available here; save the idea to Scratchpad or continue it manually";
 
 /** The most questions one `ask_human` call carries. */
 const MAX_QUESTIONS = 5;
@@ -170,14 +199,17 @@ async function acceptedAction(
   return workset;
 }
 
-/** A new Outcome from the outcome input; true when it was started. */
-async function createOutcomeFrom(companionPath: string, fields: OutcomeFields): Promise<boolean> {
+/** A new Outcome from the outcome input, and whether it was started. */
+export async function createOutcomeFrom(
+  companionPath: string,
+  fields: OutcomeFields,
+): Promise<{ id: string; started: boolean }> {
   const start = fields("start") !== "later";
   const ticket = fields("ticket").trim();
   if (ticket && (await companionTicketFormat(companionPath)) !== "jira") {
     throw new WorksetError(TICKETS_OFF);
   }
-  await createOutcome(
+  const record = await createOutcome(
     companionPath,
     {
       text: fields("text"),
@@ -187,7 +219,7 @@ async function createOutcomeFrom(companionPath: string, fields: OutcomeFields): 
     },
     await linkedRepositoryIdentities(companionPath),
   );
-  return start;
+  return { id: record.id, started: start };
 }
 
 /**
@@ -199,10 +231,13 @@ export function recordOutcomes(companionPath: string, stages: WorksetStagesReade
     companionPath,
     automated: false,
     async act(id, action) {
+      // Without the factory nothing may be started; Later only clears an earlier start.
+      if (action === "start") throw new StageError(NO_FACTORY_START);
       await acceptedAction(id, action, { stages, runner: false });
-      await setWorksetStarted(companionPath, id, action === "start");
+      await setWorksetStarted(companionPath, id, false);
     },
     async create(fields) {
+      if (fields("start") !== "later") throw new StageError(NO_FACTORY_START);
       await createOutcomeFrom(companionPath, fields);
     },
     runs: async () => null,
@@ -210,7 +245,7 @@ export function recordOutcomes(companionPath: string, stages: WorksetStagesReade
 }
 
 function assemble(parts: OutcomesParts) {
-  const { runner, runs, companionPath, client, stages, reports, sessions } = parts;
+  const { runner, runs, companionPath, client, stages, reports, sessions, guard } = parts;
   const ready = parts.ready ?? Promise.resolve();
   const busy = () => sessions.busy();
 
@@ -249,7 +284,12 @@ function assemble(parts: OutcomesParts) {
         const facts = running ? { ...run, state: "running" as const } : run;
         return outcomeRefusal("later", outcomeFacts(id, current), facts, { runner: true });
       },
-      () => setWorksetStarted(companionPath, id, false),
+      async () => {
+        await setWorksetStarted(companionPath, id, false);
+        // Back to Scratchpad; a claim stays.
+        const refusal = await guard?.release(id);
+        if (refusal) throw new StageError(refusal);
+      },
     );
 
   /**
@@ -285,6 +325,8 @@ function assemble(parts: OutcomesParts) {
       });
       await ready;
       if (action === "start") {
+        const refusal = await guard?.reserve(id);
+        if (refusal) throw new StageError(refusal);
         await setWorksetStarted(companionPath, id, true);
         await runner.rerank(id);
         await pickUp();
@@ -325,9 +367,63 @@ function assemble(parts: OutcomesParts) {
     },
     async create(fields) {
       await ready;
-      if (await createOutcomeFrom(companionPath, fields)) await pickUp();
+      // Saved unstarted first: a pickup during the reserve must not find it queued.
+      const created = await createOutcomeFrom(companionPath, (name) =>
+        name === "start" ? "later" : fields(name),
+      );
+      if (fields("start") === "later") return;
+      const refusal = await guard?.reserve(created.id);
+      // Kept as an unstarted idea in Scratchpad.
+      if (refusal) throw new StageError(`saved to Scratchpad but not started: ${refusal}`);
+      await setWorksetStarted(companionPath, created.id, true);
+      await pickUp();
     },
     runs: () => runViews(runs, companionPath, () => reports.ids()),
+    async dispatch(id, mode, expected) {
+      await ready;
+      assertWorksetId(id);
+      if (runner.isActive(id)) throw new StageError(`Workset ${id} already has a run`);
+      const plan = await dispatchPlan(companionPath, id, expected.members);
+      const refusal = await guard?.reserve(id);
+      if (refusal) throw new StageError(refusal);
+      await materializeForFactory(companionPath, plan, mode);
+      await runner.rerank(id);
+      if (plan.resume) {
+        // An incomplete plan resumes planning on the same changes; nothing is re-proposed.
+        await runner.request(id, "propose");
+      } else {
+        await pickUp();
+      }
+    },
+    async park(id) {
+      await ready;
+      assertWorksetId(id);
+      await runner.park(
+        id,
+        async (running) => {
+          if (running) return "the run is active; cancel it first";
+          const current = (await stages()).worksets.find((entry) => entry.record.id === id);
+          if (!current) return `this companion has no valid Workset ${id}`;
+          const stage = current.derived.stage;
+          if (current.record.changes.length === 0)
+            return "nothing is planned yet; use Move to later";
+          if (stage !== "propose" && stage !== "human-review") {
+            return "implementation has begun; it cannot be parked";
+          }
+          const run = await runFacts(id);
+          if (run.state === "running" || run.state === "waiting") {
+            return "the run is active; cancel it first";
+          }
+          return null;
+        },
+        async () => {
+          await setWorksetStarted(companionPath, id, false);
+          const refusal = await guard?.release(id);
+          if (refusal) throw new StageError(refusal);
+        },
+      );
+      await pickUp();
+    },
     log: (id) => runs.readLog(id),
     watch: (id) => runner.live.watch(id),
     onChanged(listener) {
@@ -359,6 +455,24 @@ export function factoryOutcomes(parts: OutcomesParts): FactoryOutcomes {
 }
 
 /**
+ * Moves legacy shared records this installation started, before records became local, into
+ * the scratchpad still started. Its own run state vouches for them; the inbox cannot forge it.
+ */
+export async function adoptLegacyStarts(companionPath: string, runs: Run): Promise<string[]> {
+  const { worksets } = await readWorksets(companionPath);
+  const adopted: string[] = [];
+  for (const record of worksets) {
+    if (!record.legacy || !record.queuedAt) continue;
+    // oxlint-disable-next-line no-await-in-loop -- a few legacy records, once at startup
+    if (!(await runs.facts(record.id)).recorded) continue;
+    // oxlint-disable-next-line no-await-in-loop -- same record
+    await writeWorkset(companionPath, record, { started: true });
+    adopted.push(record.id);
+  }
+  return adopted;
+}
+
+/**
  * The factory's Outcomes for the companion the appliance serves; `null` outside factory
  * mode. Starts at once: stale runs are marked interrupted, then started Outcomes are picked
  * up and Done Worksets reclaimed.
@@ -376,6 +490,7 @@ export function createFactoryOutcomes(
   const ready = Promise.all([
     runs.interruptActive(),
     runs.control.recover(() => activeChanges(companionPath)),
+    adoptLegacyStarts(companionPath, runs),
   ]);
 
   const harness = createHarnessStageAgent({
@@ -405,7 +520,9 @@ export function createFactoryOutcomes(
 
   const gitEnv = factoryGitEnv(env);
   const recordFor = (id: string) => findWorkset(companionPath, id);
-  const runner = new FactoryRunner({
+  const guard = companionExecutorGuard(companionPath);
+  const runner: FactoryRunner = new FactoryRunner({
+    authorized: guard.authorized,
     runs,
     ...runnerLimits(env),
     depsFor: (id) => ({
@@ -431,6 +548,7 @@ export function createFactoryOutcomes(
     companionPath,
     client,
     ready,
+    guard,
   });
   void ready.then(
     () => {

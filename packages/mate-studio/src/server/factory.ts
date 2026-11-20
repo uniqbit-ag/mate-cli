@@ -63,6 +63,10 @@ export const runFactoryAction = createServerFn({ method: "POST" })
     if (!context.studio.writable) {
       throw new Error("start Studio with --writable to create or start Worksets");
     }
+    // Factory controls exist only in factory mode; a direct request is refused all the same.
+    if (!context.studio.factoryMode) {
+      throw new Error("the factory is not available on this installation");
+    }
     const field = (name: string) => data.fields[name] ?? "";
     if (data.action === "create") await context.studio.createOutcome(data.companion, field);
     else await context.studio.worksetAction(data.companion, data.id!, data.action, field);

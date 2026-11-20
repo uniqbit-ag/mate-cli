@@ -36,6 +36,11 @@ export interface SubmittedFolder {
   digest: string;
   /** The same without the Delivery Record; absent on a record of an earlier Mate. */
   content?: string;
+  /**
+   * Blob-id digest of the files Work shares, the owner file left out, as last pushed or taken
+   * here; Work's sync state compares it. Absent when Work never pushed or took the folder.
+   */
+  shared?: string;
   submittedAt: string;
 }
 

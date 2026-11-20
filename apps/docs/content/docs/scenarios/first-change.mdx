@@ -348,6 +348,68 @@ Large features work best as several small changes:
 4. After the feature PR merges, publish them together from any machine: they
    share one Delivery Group, and one lookup or one answer settles all of them.
 
+## Share And Carry Work In Studio
+
+Studio's **Work** view, under Engineering, shows your ideas, your changes and
+the team's shared changes. It needs no Docker and no factory, and the normal
+explore, propose, apply and submit flow writes nothing for it: Work reads the
+changes, their `dependsOn` and their `delivery.yaml`, and Git.
+
+- **Scratchpad** holds ideas you saved with its one input, "What should we build
+  or improve?". An idea is a file in `.mate/scratchpad/` of your companion
+  checkout, which Git ignores: it is never committed or shared. Each idea offers
+  the explore and propose prompts of your installed skills to copy, or to run in
+  Studio's terminal.
+- **Local work** is a change that is not shared yet, one you claimed, or one
+  whose Delivery Branch is checked out in one of your Working Repositories.
+- **Remote work** is every other change on the companion's inbox `mate/inbox`,
+  the same pending branch submit uses: available, claimed by someone else, or in
+  progress on a Delivery Branch you do not have. It reads the inbox you last
+  fetched; **Refresh** fetches it again, and the inbox is never merged into your
+  checkout. A proposal pushed to the inbox outside Studio appears there.
+
+Changes that list each other in `dependsOn`, or record the same Delivery
+Branch, are one Workset and one card. It lists each change with its own stage,
+stands at the stage of the least advanced one, and is done only when every
+change is delivered.
+
+**Share** previews exactly what it would push: each change of the Workset with
+the files submit would copy, `delivery.yaml` included and `owner.yaml` left out.
+Scratchpad files, ignored files, symbolic links and anything that looks like a
+secret are never shared. It then pushes them to the inbox as one commit,
+`chore(openspec): share <workset>`, through the same transaction submit uses:
+the publication secret scan runs first, and nothing is forced. Your checkout
+stays as it is, uncommitted; Mate records what it pushed, so a later companion
+sync lets your copy give way to its published archive. The changes stay
+`state: active`, so publication and `mate artifact pending` pass them over:
+sharing is not submitting. It claims nothing, publishes no spec and starts no
+work. When the files or the inbox changed after the preview, it refuses and
+asks for a new one; an unrelated push landing first is no reason to.
+
+**Claim** takes available Remote work: it adds `owner.yaml` with your Git
+`user.name` and `user.email` to every change of the Workset, in one commit on
+the inbox. Your email identifies you, so two people with the same name stay
+distinct. A claim takes effect only after the remote accepted it, so two people
+claiming at once cannot both win. Work in progress on someone's Delivery Branch
+is not offered for claiming. **Release** removes your `owner.yaml` files again.
+Claims coordinate trusted teammates: they are not access control, and anyone who
+can push may still change the files.
+
+Shared work reaches your checkout only when you take it:
+`mate artifact take <change>` writes the change as the inbox has it. It also
+replaces your copy while that copy is unchanged since you last shared or took
+it, which is how you catch up with a teammate's newer version. Claim names the
+changes to take when your checkout lacks them.
+
+A card shows whether your copy is in sync with the shared one, ahead of it, or
+behind it; a behind or differing Workset asks you to take the shared version
+before you share it or start it. **Continue manually** checks that the Workset
+is yours to continue, then shows the prompts for your own agent session. A
+prompt you copy runs wherever you paste it, and Studio cannot see that session.
+
+A submitted change, yours or one on the inbox, waits for its merge and
+publication: its card says so and offers no Share, Claim or start.
+
 ## Breaking Changes
 
 {/* breaking:start */}

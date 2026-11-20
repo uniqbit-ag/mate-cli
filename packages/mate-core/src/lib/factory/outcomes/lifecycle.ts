@@ -165,6 +165,8 @@ export async function pickUpReady(deps: PickUpDeps): Promise<string[]> {
   const busy = deps.busy?.() ?? new Set<string>();
   const candidates = worksets
     .flatMap((record) => {
+      // A legacy shared record's start may come from another machine; it never runs here.
+      if (record.legacy) return [];
       const stage = pickableStage(record);
       if (!stage || busy.has(record.id) || deps.runner.isActive(record.id)) return [];
       return [{ id: record.id, stage, rank: rankOf(record) }];

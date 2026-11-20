@@ -317,9 +317,9 @@ describe("submitChanges", () => {
 
   test("regrouping keeps the recorded delivery through submit", async () => {
     await linkBranch("x", "workset/x");
-    await fs.mkdir(path.join(companion, "worksets"));
+    await fs.mkdir(path.join(companion, ".mate/scratchpad"), { recursive: true });
     await fs.writeFile(
-      path.join(companion, "worksets/acme-login.yaml"),
+      path.join(companion, ".mate/scratchpad/acme-login.yaml"),
       `id: acme-login\nrepositories: [${REPO}]\nchanges: [x]\n`,
     );
     const result = await submit();

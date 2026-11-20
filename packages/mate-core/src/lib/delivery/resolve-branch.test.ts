@@ -49,9 +49,9 @@ async function dependsOn(change: string, dependencies: string[]): Promise<void> 
 }
 
 async function workset(id: string, changes: string[], ticket?: string): Promise<void> {
-  await fs.mkdir(path.join(companion, "worksets"), { recursive: true });
+  await fs.mkdir(path.join(companion, ".mate/scratchpad"), { recursive: true });
   await fs.writeFile(
-    path.join(companion, "worksets", `${id}.yaml`),
+    path.join(companion, ".mate/scratchpad", `${id}.yaml`),
     `id: ${id}\nrepositories: [${WEB}]\nchanges: ${JSON.stringify(changes)}\n${ticket ? `ticket: ${ticket}\n` : ""}`,
   );
 }
@@ -211,8 +211,8 @@ describe("resolveDeliveryBranch", () => {
   });
 
   test("an invalid Workset record resolves to none", async () => {
-    await fs.mkdir(path.join(companion, "worksets"), { recursive: true });
-    await fs.writeFile(path.join(companion, "worksets", "acme-bad.yaml"), "id: wrong\n");
+    await fs.mkdir(path.join(companion, ".mate/scratchpad"), { recursive: true });
+    await fs.writeFile(path.join(companion, ".mate/scratchpad", "acme-bad.yaml"), "id: wrong\n");
     const resolution = await resolve("acme-fix", existing());
     expect(resolution.branch).toBeNull();
     expect(resolution.diagnostics.join()).toContain("acme-bad.yaml");

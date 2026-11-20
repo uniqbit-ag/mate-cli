@@ -12,9 +12,44 @@ export interface StudioAction {
   id: string;
   skill: string;
   label: string;
-  subject: "spec";
+  /** `workset` and `change` subjects are Work starts: the executor guard runs before launch. */
+  subject: "spec" | "workset" | "change";
   prompts: Record<TerminalAgent, (subject: string) => string>;
 }
+
+/** Manual continuation of Work: the installed Delivery Path skills, no factory needed. */
+export const WORK_ACTIONS: readonly StudioAction[] = [
+  {
+    id: "explore-workset",
+    skill: "mate-explore-change",
+    label: "Explore",
+    subject: "workset",
+    prompts: {
+      claude: (subject) => `/mate-explore-change ${subject}`,
+      opencode: (subject) => `Use the mate-explore-change skill on Workset ${subject}.`,
+    },
+  },
+  {
+    id: "propose-workset",
+    skill: "mate-propose-change",
+    label: "Propose",
+    subject: "workset",
+    prompts: {
+      claude: (subject) => `/mate-propose-change ${subject}`,
+      opencode: (subject) => `Use the mate-propose-change skill for ${subject}.`,
+    },
+  },
+  {
+    id: "apply-change",
+    skill: "mate-apply-change",
+    label: "Apply",
+    subject: "change",
+    prompts: {
+      claude: (subject) => `/mate-apply-change ${subject}`,
+      opencode: (subject) => `Use the mate-apply-change skill on change ${subject}.`,
+    },
+  },
+];
 
 export const STUDIO_ACTIONS: readonly StudioAction[] = [
   {
@@ -30,7 +65,7 @@ export const STUDIO_ACTIONS: readonly StudioAction[] = [
 ];
 
 export function findAction(id: unknown): StudioAction | null {
-  return STUDIO_ACTIONS.find((action) => action.id === id) ?? null;
+  return [...STUDIO_ACTIONS, ...WORK_ACTIONS].find((action) => action.id === id) ?? null;
 }
 
 /** Skill trees each agent loads; Claude does not read the shared Agents tree. */

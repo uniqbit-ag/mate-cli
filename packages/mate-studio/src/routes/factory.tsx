@@ -12,13 +12,13 @@ export const Route = createFileRoute("/factory")({
     typeof raw.outcome === "string" && /^[a-z0-9][a-z0-9-]*$/.test(raw.outcome)
       ? { outcome: raw.outcome }
       : {},
-  // Only offered where the factory broker runs; elsewhere the address lands on the Overview.
+  loaderDeps: ({ search }) => ({ companion: search.companion, studioMode: search.studioMode }),
+  // Only offered where the factory broker runs; elsewhere the address opens Work.
   beforeLoad: async ({ context, search }) => {
     const studioSearch = { companion: search.companion, studioMode: search.studioMode };
     const shell = await loadHeld(context.queryClient, shellQuery(studioSearch));
-    if (!shell.factoryMode) throw redirect({ to: "/", search: studioSearch });
+    if (!shell.factoryMode) throw redirect({ to: "/work", search: studioSearch, replace: true });
   },
-  loaderDeps: ({ search }) => ({ companion: search.companion, studioMode: search.studioMode }),
   loader: async ({ context, deps }) => {
     const companion = await registeredCompanion(context.queryClient, deps);
     return companion ? loadView(context.queryClient, factoryQuery(companion)) : null;

@@ -76,7 +76,7 @@ describe("pickup", () => {
 
   beforeEach(() => {
     companion = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mate-pickup-")));
-    fs.mkdirSync(path.join(companion, "worksets"));
+    fs.mkdirSync(path.join(companion, ".mate/scratchpad"), { recursive: true });
     runs = new Run(new RunStore(path.join(companion, "runs")));
   });
 
@@ -84,7 +84,7 @@ describe("pickup", () => {
 
   function workset(id: string, fields: string): void {
     fs.writeFileSync(
-      path.join(companion, "worksets", `${id}.yaml`),
+      path.join(companion, ".mate/scratchpad", `${id}.yaml`),
       `id: ${id}\nrepositories: [acme/web]\n${fields}`,
     );
   }

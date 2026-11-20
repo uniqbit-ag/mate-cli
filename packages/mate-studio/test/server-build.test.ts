@@ -419,14 +419,14 @@ describe("built server", () => {
     expect(main).toContain('data-submitted="acme-awaiting"');
   });
 
-  test("sends the Factory view to the Overview without the factory broker", async () => {
+  test("sends the Factory view to Work without the factory broker", async () => {
     const handler = await built();
     const response = await handler.fetch(
       new Request("http://127.0.0.1/factory?studioMode=engineering"),
       { context: { studio: { ...services, factoryMode: false } } },
     );
     expect(response.status).toBe(307);
-    expect(new URL(response.headers.get("location")!, "http://127.0.0.1").pathname).toBe("/");
+    expect(new URL(response.headers.get("location")!, "http://127.0.0.1").pathname).toBe("/work");
   });
 
   test("names the effective mode in an address that names none or a legacy role", async () => {

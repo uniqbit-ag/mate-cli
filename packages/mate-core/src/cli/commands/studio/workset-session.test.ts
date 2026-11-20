@@ -15,14 +15,14 @@ let companion: string;
 beforeEach(() => {
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mate-workset-session-")));
   companion = path.join(root, "acme-companion");
-  fs.mkdirSync(path.join(companion, "worksets"), { recursive: true });
+  fs.mkdirSync(path.join(companion, ".mate/scratchpad"), { recursive: true });
   fs.mkdirSync(path.join(companion, ".mate", "config"), { recursive: true });
 });
 
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 
 function record(id: string, body: string): void {
-  fs.writeFileSync(path.join(companion, "worksets", `${id}.yaml`), `id: ${id}\n${body}`);
+  fs.writeFileSync(path.join(companion, ".mate/scratchpad", `${id}.yaml`), `id: ${id}\n${body}`);
 }
 
 function fakeClient(
@@ -189,7 +189,7 @@ describe("resolving a Workset session", () => {
     const first = await resolver(client)("acme-login", null, SESSION);
     expect("argv" in first && first.argv).toContain("explore");
     const saved = parse(
-      fs.readFileSync(path.join(companion, "worksets", "acme-login.yaml"), "utf8"),
+      fs.readFileSync(path.join(companion, ".mate/scratchpad", "acme-login.yaml"), "utf8"),
     );
     expect(saved.exploreStartedAt).toBe("2026-10-29T12:00:00.000Z");
     const second = await resolver(client)("acme-login", null, SESSION);
@@ -227,7 +227,7 @@ describe("resolving a Workset session", () => {
     });
     // Explore change is not recorded as started by a session that never opened.
     const saved = parse(
-      fs.readFileSync(path.join(companion, "worksets", "acme-login.yaml"), "utf8"),
+      fs.readFileSync(path.join(companion, ".mate/scratchpad", "acme-login.yaml"), "utf8"),
     );
     expect(saved.exploreStartedAt).toBeUndefined();
   });
@@ -313,7 +313,7 @@ describe("resolving a Workset session", () => {
     ]);
     // Never a new conversation, and Explore change is not recorded as started.
     const saved = parse(
-      fs.readFileSync(path.join(companion, "worksets", "acme-login.yaml"), "utf8"),
+      fs.readFileSync(path.join(companion, ".mate/scratchpad", "acme-login.yaml"), "utf8"),
     );
     expect(saved.exploreStartedAt).toBeUndefined();
   });

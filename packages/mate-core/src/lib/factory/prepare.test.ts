@@ -13,13 +13,13 @@ const ENV = { MATE_FACTORY_REPOSITORIES: "git://127.0.0.1/acme/web.git" };
 beforeEach(() => {
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mate-prepare-")));
   companion = path.join(root, "acme-companion");
-  fs.mkdirSync(path.join(companion, "worksets"), { recursive: true });
+  fs.mkdirSync(path.join(companion, ".mate/scratchpad"), { recursive: true });
 });
 
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 
 function record(id: string, body: string): void {
-  fs.writeFileSync(path.join(companion, "worksets", `${id}.yaml`), `id: ${id}\n${body}`);
+  fs.writeFileSync(path.join(companion, ".mate/scratchpad", `${id}.yaml`), `id: ${id}\n${body}`);
 }
 
 function fakeClient(linkStatus = 0, warnings?: string[]) {

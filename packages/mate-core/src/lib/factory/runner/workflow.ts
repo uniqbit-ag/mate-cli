@@ -3,7 +3,12 @@ import path from "node:path";
 
 import { activeChanges, changesDirOf } from "../../change-layout";
 import { declaredDependencies } from "../../delivery/overlap";
-import { findDelivery, readDeliveryRecord, sameRepository } from "../../delivery/record";
+import {
+  createDeliveryRecordIfAbsent,
+  findDelivery,
+  readDeliveryRecord,
+  sameRepository,
+} from "../../delivery/record";
 import { scopedRepositories } from "../../openspec-scopes";
 import {
   advanceWorkset,
@@ -96,6 +101,13 @@ export const PROMPTS = {
       `/mate-propose-change Propose Workset ${record.id} (${record.title}), one change per slice.`,
       record.intent.trim() ? `Intent: ${record.intent.trim()}` : "The Workset records no intent.",
       "Use the slices agreed in this conversation when there is one; otherwise slice the intent yourself.",
+      REPORT,
+    ].join("\n"),
+  // An incomplete plan dispatched to the factory: finish it, never propose it afresh.
+  resume: (record: Pick<WorksetRecord, "id" | "title" | "changes">) =>
+    [
+      `/mate-propose-change Revise ${record.changes.join(", ")} to complete the plan of Workset ${record.id} (${record.title}).`,
+      "Keep every existing artifact; write only what is missing, one change per slice.",
       REPORT,
     ].join("\n"),
   // The prompt names the file too, in case a harness drops the turn's environment.
@@ -236,23 +248,37 @@ export function exploreStage(deps: WorkflowDeps, id: string, answer?: string) {
   return planningStage(deps, id, "explore", PROMPTS.explore, answer);
 }
 
-/** Propose, then link the changes it created for the Workset's repository. */
+/**
+ * Propose, then link the changes it created for the Workset's repository. A Workset that
+ * already links changes resumes their incomplete plan instead; new slices still link.
+ * Every member then has its own unlinked Delivery Record, and the whole group goes to review.
+ */
 export async function proposeStage(
   deps: WorkflowDeps,
   id: string,
   answer?: string,
 ): Promise<StageOutcome> {
   const record = await recordOf(deps.companionPath, id);
-  const before = new Set(await activeChanges(deps.companionPath));
+  const active = new Set(await activeChanges(deps.companionPath));
+  const resuming = record.changes.some((change) => active.has(change));
   // An answer continues the propose turn that asked, so what it creates counts as proposed.
-  const outcome = await turn(deps, id, answer ?? PROMPTS.propose(record));
+  const prompt = answer ?? (resuming ? PROMPTS.resume(record) : PROMPTS.propose(record));
+  const outcome = await turn(deps, id, prompt);
   if (outcome.kind === "question") return outcome;
 
-  const ours = await linkCreatedChanges(deps, id, before);
-  if (ours.length === 0) {
+  const created = await linkCreatedChanges(deps, id, active);
+  const now = new Set(await activeChanges(deps.companionPath));
+  const members = resuming
+    ? (await recordOf(deps.companionPath, id)).changes.filter((change) => now.has(change))
+    : created;
+  if (members.length === 0) {
     throw new StageError(`propose created no change for ${record.repositories[0]!}`);
   }
-  return reviewReports(deps, id, ours);
+  for (const change of members) {
+    // oxlint-disable-next-line no-await-in-loop -- one create-only write per member
+    await createDeliveryRecordIfAbsent(changeDir(deps.companionPath, change), change);
+  }
+  return reviewReports(deps, id, members);
 }
 
 /**

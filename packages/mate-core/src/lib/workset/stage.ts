@@ -53,9 +53,12 @@ export interface ChangeFacts {
   mergeSettled: boolean;
   /** The archive is committed to the companion: published. */
   published: boolean;
+  /** Submitted for publication but not archived yet; it then waits like an archive. */
+  submitted?: boolean;
 }
 
 export function changeStage(facts: ChangeFacts): WorksetStageId {
+  if (!facts.archived && facts.submitted) return facts.mergeSettled ? "publish" : "merge-wait";
   if (!facts.archived) {
     if (!facts.artifactsComplete) return "propose";
     return facts.checkedTasks === 0 ? "human-review" : "apply";

@@ -10,6 +10,7 @@ import { getReports } from "../server/reports";
 import { getShell, type ShellData } from "../server/shell";
 import { getSkillPreview } from "../server/skills";
 import { getVault, getVaultChildren, getVaultMatches } from "../server/vault";
+import { getWork } from "../server/work";
 import { type CompanionView, getCompanionView } from "../server/views";
 
 /**
@@ -22,6 +23,7 @@ const keys = {
   views: (companion: string | null) => [companion, "view"] as const,
   skills: (companion: string) => [companion, "skills"] as const,
   factory: (companion: string) => [companion, "factory"] as const,
+  work: (companion: string) => [companion, "work"] as const,
   vault: (companion: string) => [companion, "vault"] as const,
   vaultViews: (companion: string) => [companion, "vault", "view"] as const,
   reports: (companion: string) => [companion, "reports"] as const,
@@ -89,6 +91,14 @@ export const factoryQuery = (companion: string) =>
     refetchInterval: 30_000,
   });
 
+/** Work's buckets; board events make it stale, as they do the Factory's. */
+export const workQuery = (companion: string) =>
+  queryOptions({
+    queryKey: keys.work(companion),
+    queryFn: () => getWork({ data: { companion } }),
+    refetchInterval: 30_000,
+  });
+
 export const vaultQuery = (companion: string, search: VaultSearch, wait = false) =>
   queryOptions({
     queryKey: [...keys.vaultViews(companion), search.path ?? null, search.dir ?? null, wait],
@@ -135,14 +145,18 @@ export async function afterEvent(
   if (type === "board") {
     // A shown board's refetch collects afresh; the shell and views read what it collected, so
     // they wait for it. Without one, another tab may have collected, so they refetch at once.
-    const board = queryClient.getQueryCache().find({ queryKey: keys.factory(companion) });
-    if (board?.isActive()) {
-      await stale(queryClient, keys.factory(companion));
+    const cache = queryClient.getQueryCache();
+    const shown = [keys.factory(companion), keys.work(companion)].some(
+      (queryKey) => cache.find({ queryKey })?.isActive() === true,
+    );
+    if (shown) {
+      await stale(queryClient, keys.factory(companion), keys.work(companion));
       await stale(queryClient, keys.shell(companion), keys.views(companion));
     } else {
       await stale(
         queryClient,
         keys.factory(companion),
+        keys.work(companion),
         keys.shell(companion),
         keys.views(companion),
       );
@@ -154,7 +168,11 @@ export async function afterEvent(
 }
 
 export const afterFactoryAction = (queryClient: QueryClient, companion: string) =>
-  stale(queryClient, keys.factory(companion));
+  stale(queryClient, keys.factory(companion), keys.work(companion));
+
+/** After a Work action; a dispatch or park also changes what the Factory bucket shows. */
+export const afterWorkAction = (queryClient: QueryClient, companion: string) =>
+  stale(queryClient, keys.work(companion), keys.factory(companion), keys.views(companion));
 
 /** The refresh answer is shown at once; the companion's other vault reads follow. */
 export function afterVaultRefresh(

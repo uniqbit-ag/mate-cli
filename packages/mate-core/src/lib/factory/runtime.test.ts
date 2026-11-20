@@ -566,9 +566,9 @@ describe("spawn", () => {
   });
 
   test("the Workset record's ticket names the new Delivery Branch", async () => {
-    fs.mkdirSync(path.join(companion, "worksets"));
+    fs.mkdirSync(path.join(companion, ".mate/scratchpad"), { recursive: true });
     fs.writeFileSync(
-      path.join(companion, "worksets/acme-login.yaml"),
+      path.join(companion, ".mate/scratchpad/acme-login.yaml"),
       "id: acme-login\nticket: ABC-123\nrepositories: [acme/app]\nchanges: []\n",
     );
     const info = await spawnAcme();
@@ -579,9 +579,9 @@ describe("spawn", () => {
   });
 
   test("a member's recorded branch is the new Delivery Branch", async () => {
-    fs.mkdirSync(path.join(companion, "worksets"));
+    fs.mkdirSync(path.join(companion, ".mate/scratchpad"), { recursive: true });
     fs.writeFileSync(
-      path.join(companion, "worksets/acme-login.yaml"),
+      path.join(companion, ".mate/scratchpad/acme-login.yaml"),
       "id: acme-login\nrepositories: [acme/app]\nchanges: [acme-form]\n",
     );
     const form = path.join(companion, "openspec/changes/acme-form");
@@ -674,9 +674,9 @@ describe("spawn", () => {
   });
 
   test("a collision refuses branch creation or reuse before Git runs", async () => {
-    fs.mkdirSync(path.join(companion, "worksets"));
+    fs.mkdirSync(path.join(companion, ".mate/scratchpad"), { recursive: true });
     fs.writeFileSync(
-      path.join(companion, "worksets/acme-login.yaml"),
+      path.join(companion, ".mate/scratchpad/acme-login.yaml"),
       "id: acme-login\nrepositories: [acme/app]\nchanges: [acme-form]\n",
     );
     fs.mkdirSync(path.join(companion, "openspec/changes/acme-login"), { recursive: true });
@@ -689,9 +689,9 @@ describe("spawn", () => {
 
   test("regrouping does not switch an existing worktree", async () => {
     await spawnAcme();
-    fs.mkdirSync(path.join(companion, "worksets"));
+    fs.mkdirSync(path.join(companion, ".mate/scratchpad"), { recursive: true });
     fs.writeFileSync(
-      path.join(companion, "worksets/acme-login.yaml"),
+      path.join(companion, ".mate/scratchpad/acme-login.yaml"),
       "id: acme-login\nrepositories: [acme/app]\nchanges: [acme-form]\n",
     );
     fs.mkdirSync(path.join(companion, "openspec/changes/acme-login"), { recursive: true });

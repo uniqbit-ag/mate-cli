@@ -1091,13 +1091,15 @@ describe("takeSubmitted", () => {
   );
 
   test(
-    "refuses a change the checkout already holds, and one that is not submitted",
+    "refuses a change the checkout holds edited since, and one that is not submitted",
     async () => {
       const fixture = await setup();
       const teammate = fixture.clone("acme-teammate");
       const change = changeLocally(teammate, "acme-login");
       await markSubmitted(teammate, "acme-login");
       await submitGroups(teammate, ["acme-login"], deps(fixture));
+      // An unchanged copy would be caught up; an edited one is kept.
+      fs.appendFileSync(path.join(change, "proposal.md"), "\nEdited after submit.\n");
       const before = fs.readFileSync(path.join(change, "proposal.md"), "utf8");
 
       expect(await takeSubmitted(teammate, "acme-login", deps(fixture))).toMatchObject({

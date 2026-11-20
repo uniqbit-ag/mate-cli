@@ -85,7 +85,7 @@ const create = (handler: ReturnType<typeof handlerFor>, fields: Record<string, s
   );
 
 const record = (id = "acme-login") =>
-  parse(fs.readFileSync(path.join(companion, "worksets", `${id}.yaml`), "utf8"));
+  parse(fs.readFileSync(path.join(companion, ".mate/scratchpad", `${id}.yaml`), "utf8"));
 
 const move = (handler: ReturnType<typeof handlerFor>, action: string, id = "acme-login") =>
   handler.services.worksetAction(digest, id, action, form({}));
@@ -107,10 +107,10 @@ describe("describing an outcome", () => {
     handler.close();
   });
 
-  test("Start starts it at once, stamping when", async () => {
+  test("without factory mode Start is refused and nothing is written", async () => {
     const handler = handlerFor();
-    await create(handler, { start: "start" });
-    expect(typeof record().queuedAt).toBe("string");
+    await expect(create(handler, { start: "start" })).rejects.toThrow("not available here");
+    expect(fs.existsSync(path.join(companion, ".mate/scratchpad"))).toBe(false);
     handler.close();
   });
 
@@ -125,14 +125,14 @@ describe("describing an outcome", () => {
   test("refuses a text that gives no title", async () => {
     const handler = handlerFor();
     await expect(create(handler, { text: "???" })).rejects.toThrow("gives no title");
-    expect(fs.existsSync(path.join(companion, "worksets"))).toBe(false);
+    expect(fs.existsSync(path.join(companion, ".mate/scratchpad"))).toBe(false);
     handler.close();
   });
 
   test("refuses a repository not linked to the companion", async () => {
     const handler = handlerFor();
     await expect(create(handler, { repository: "acme/other" })).rejects.toThrow("not linked");
-    expect(fs.existsSync(path.join(companion, "worksets"))).toBe(false);
+    expect(fs.existsSync(path.join(companion, ".mate/scratchpad"))).toBe(false);
     handler.close();
   });
 
@@ -150,7 +150,7 @@ describe("describing an outcome", () => {
   test("with tickets off, a submitted ticket is refused and nothing is written", async () => {
     const handler = handlerFor();
     await expect(create(handler, { ticket: "ABC-123" })).rejects.toThrow("ticket: jira");
-    expect(fs.existsSync(path.join(companion, "worksets"))).toBe(false);
+    expect(fs.existsSync(path.join(companion, ".mate/scratchpad"))).toBe(false);
     handler.close();
   });
 
@@ -171,15 +171,10 @@ describe("describing an outcome", () => {
 });
 
 describe("start and later", () => {
-  test("a Later outcome starts, keeps its start time, and goes back to Later", async () => {
+  test("without factory mode a saved outcome cannot be started", async () => {
     const handler = handlerFor();
     await create(handler);
-    await move(handler, "start");
-    const queuedAt = record().queuedAt;
-    expect(typeof queuedAt).toBe("string");
-    await move(handler, "start");
-    expect(record().queuedAt).toBe(queuedAt);
-    await move(handler, "later");
+    await expect(move(handler, "start")).rejects.toThrow("not available here");
     expect(record().queuedAt).toBeUndefined();
     handler.close();
   });
@@ -187,13 +182,16 @@ describe("start and later", () => {
   test("outside factory mode, an action needing the runner is refused and changes nothing", async () => {
     const handler = handlerFor();
     await create(handler);
-    const before = fs.readFileSync(path.join(companion, "worksets", "acme-login.yaml"), "utf8");
+    const before = fs.readFileSync(
+      path.join(companion, ".mate/scratchpad", "acme-login.yaml"),
+      "utf8",
+    );
     await expect(move(handler, "retry")).rejects.toThrow(
       "the AFK runner needs the appliance's factory mode for this companion",
     );
-    expect(fs.readFileSync(path.join(companion, "worksets", "acme-login.yaml"), "utf8")).toBe(
-      before,
-    );
+    expect(
+      fs.readFileSync(path.join(companion, ".mate/scratchpad", "acme-login.yaml"), "utf8"),
+    ).toBe(before);
     handler.close();
   });
 
@@ -212,7 +210,7 @@ describe("the write path", () => {
   test("read-only Studio refuses to create an Outcome", async () => {
     const handler = handlerFor({ writable: false });
     await expect(create(handler)).rejects.toThrow("--writable");
-    expect(fs.existsSync(path.join(companion, "worksets"))).toBe(false);
+    expect(fs.existsSync(path.join(companion, ".mate/scratchpad"))).toBe(false);
     handler.close();
   });
 
@@ -228,7 +226,7 @@ describe("the write path", () => {
       ))!;
       expect(response.status).toBe(405);
     }
-    expect(fs.existsSync(path.join(companion, "worksets"))).toBe(false);
+    expect(fs.existsSync(path.join(companion, ".mate/scratchpad"))).toBe(false);
     handler.close();
   });
 });

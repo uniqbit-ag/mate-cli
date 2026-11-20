@@ -279,6 +279,48 @@ describe("createLaunchResolver", () => {
     });
     expect(await gone("claude", null)).toHaveProperty("reason");
   });
+
+  test("a Work start reserves through the executor guard before the agent starts", async () => {
+    const reserved: string[] = [];
+    const resolver = (
+      reserveWork?: (
+        path: string,
+        action: { id: string },
+        subject: string,
+      ) => Promise<string | null>,
+    ) =>
+      createLaunchResolver({
+        collectInventory: inventory,
+        launchableAgents: async () => ["claude"],
+        defaultAgent: async () => ({}),
+        skillInventory: async () =>
+          ({ claude: ["mate-apply-change"], opencode: [], agents: [] }) as never,
+        ...(reserveWork ? { reserveWork } : {}),
+      });
+    const guarded = resolver(async (companionPath, action, subject) => {
+      reserved.push(`${companionPath}:${action.id}:${subject}`);
+      return subject === "acme-claimed" ? "claimed by Acme Teammate" : null;
+    });
+    const launch = { action: "apply-change", subject: "acme-login" };
+    expect(await guarded("claude", companionDigest(ACME), launch)).toEqual({
+      companionPath: ACME,
+      promptArgs: ["/mate-apply-change acme-login"],
+    });
+    expect(
+      await guarded("claude", companionDigest(ACME), { ...launch, subject: "acme-claimed" }),
+    ).toEqual({ reason: "claimed by Acme Teammate" });
+    expect(reserved).toEqual([
+      `${ACME}:apply-change:acme-login`,
+      `${ACME}:apply-change:acme-claimed`,
+    ]);
+    // Read-only Studio wires no guard: Work starts are refused, not run unguarded.
+    expect(await resolver()("claude", companionDigest(ACME), launch)).toEqual({
+      reason: "Work starts are not available here",
+    });
+    expect(
+      await guarded("claude", companionDigest(ACME), { action: "apply-change", subject: "--evil" }),
+    ).toHaveProperty("reason");
+  });
 });
 
 describe("defaultAgentFor", () => {

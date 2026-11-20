@@ -25,10 +25,10 @@ let stage: StudioWorkset["stage"];
 beforeEach(() => {
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mate-studio-runner-")));
   companion = path.join(root, "acme-companion");
-  fs.mkdirSync(path.join(companion, "worksets"), { recursive: true });
+  fs.mkdirSync(path.join(companion, ".mate/scratchpad"), { recursive: true });
   fs.mkdirSync(path.join(companion, "openspec", "changes"), { recursive: true });
   fs.writeFileSync(
-    path.join(companion, "worksets", "acme-login.yaml"),
+    path.join(companion, ".mate/scratchpad", "acme-login.yaml"),
     "id: acme-login\ntitle: Login\nrepositories: [acme/web]\nstage: explore\n",
   );
   runs = new Run(new RunStore(path.join(root, "runs")));
@@ -243,7 +243,7 @@ describe("the board's runner actions", () => {
   test("Return to automation links what the person proposed and continues with the note", async () => {
     const { handler, runner, act } = handlerFor();
     fs.writeFileSync(
-      path.join(companion, "worksets", "acme-login.yaml"),
+      path.join(companion, ".mate/scratchpad", "acme-login.yaml"),
       "id: acme-login\ntitle: Login\nrepositories: [acme/web]\nstage: explore\nqueuedAt: 2026-11-02T09:00:00.000Z\n",
     );
     await runs.saveTurn("acme-login", {

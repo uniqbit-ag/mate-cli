@@ -254,10 +254,11 @@ describe("the companion switcher", () => {
 });
 
 describe("the sidebar", () => {
-  it("offers Engineering's views, then the library, in order", () => {
+  it("offers Engineering's views, Work on every installation, then the library, in order", () => {
     const markup = sidebar(shell());
     expect(viewLinks(markup)).toEqual([
       "/",
+      "/work",
       "/workflow",
       "/skills",
       "/getting-started",
@@ -297,6 +298,7 @@ describe("the sidebar", () => {
     expect(viewLinks(sidebar(shell()))).not.toContain("/factory");
     expect(viewLinks(sidebar(shell({ factoryMode: true })))).toEqual([
       "/",
+      "/work",
       "/workflow",
       "/factory",
       "/skills",

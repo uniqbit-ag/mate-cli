@@ -42,8 +42,9 @@ docker run \
   only, the factory starts Studio in the standard profile: Engineering is
   selected by default and Analysis can be chosen from the sidebar's Mode
   switch. This holds with factory mode on or off. The Factory view appears in
-  Engineering only while the factory broker runs; choosing Analysis neither
-  stops nor reconfigures the broker.
+  Engineering, after Workflow, only while the factory broker runs; elsewhere
+  `/factory` opens Work. Choosing Analysis neither stops nor reconfigures the
+  broker.
 - **The host boundary.** A privileged container is bounded by the Docker
   Desktop VM or the host kernel, not by Docker. Workset containers themselves
   are unprivileged: root inside them maps to an unprivileged user outside. Run
@@ -181,7 +182,9 @@ factory starts offline like the appliance.
   build or improve?** and press **Start** (or Ctrl/Cmd+Enter). The factory
   takes it from there: its title comes from the first sentence, the whole text
   is the intent, and the repository is asked for only when several are linked.
-  **Save for later** keeps it unstarted under **Later**. When the companion's
+  **Save for later** keeps it unstarted under **Later**. Its record is a file in
+  the companion's gitignored `.mate/scratchpad/`, so it also shows in Work's
+  **Scratchpad**, which describes and starts outcomes the same way. When the companion's
   openspec capability sets `ticket: jira`, the input (and **Start as a new
   outcome** after publish) has an optional **Ticket** field: a Jira key such as
   `ABC-123`, stored on the Workset record, that names its Delivery Branch
@@ -194,8 +197,9 @@ factory starts offline like the appliance.
   Its dialog leads with what needs you (a question round, a review, a merge, a
   problem or control), then the live log, then the situation with the next
   step, the checks, **Review plan** and **View changes**, and the run's actions
-  (**Start**, **Cancel run**, **Regenerate reports**, **Move to later**, **Take
-  control**). What happened so far, the intent and **Request a change** follow.
+  (**Start**, **Cancel run**, **Regenerate reports**, **Move to later**, **Park
+  proposal**, **Take control**). What happened so far, the intent and **Request
+  a change** follow.
   Beside it, the Delivery Path map marks where the Outcome is (milestones
   Understood, Approach chosen, Plan ready, Plan approved, Built, Merged,
   Delivered), with the stage, the run, the changes and the branch under it.
@@ -205,8 +209,10 @@ factory starts offline like the appliance.
   in the order they were started, `MATE_FACTORY_PARALLEL_RUNS` at a time, and
   at most `MATE_FACTORY_PARALLEL_BUILDS` of them in apply. A build waits for a
   build slot, keeping its place, while agent stages behind it go ahead. A Later
-  one waits until you press **Start**, in its row or its dialog. Moving an
-  Outcome to Later drops a queued run, and a running one finishes. No stage is
+  one waits until you press **Start**, in its row or its dialog, or **Start in
+  local factory** in Work. Moving an Outcome to Later drops a queued run, and a
+  running one finishes; once a plan exists, **Park proposal** does that instead
+  (see Work and the factory). No stage is
   set by hand: the runner moves an Outcome through Clarify intent and Explore
   change, and you step in through its questions, Take control or Request a
   change.
@@ -318,6 +324,47 @@ factory starts offline like the appliance.
   not exist there, so list the repositories in `MATE_FACTORY_REPOSITORIES`. The
   outcome input offers those too. Cloning uses the Git credentials the container
   already has for its remotes.
+
+## Work and the factory
+
+The factory is an optional executor of Work. Everything Work offers without it
+(Scratchpad, Local work, Remote work, Share, Claim and manual continuation)
+keeps working when the factory is stopped or unusable.
+
+- **Run badges.** In factory mode, a Work card whose Workset has a run here shows
+  its state (queued, running, waiting for you, plan ready, failed) and links to
+  the Outcome in the Factory view. The card stays in its bucket.
+- **Availability.** Dispatch needs factory mode, a reachable broker, a usable
+  runner and an agent credential for the selected companion. The server checks
+  them again before it queues anything. When one is missing, Work names the
+  reason and offers no **Start in local factory**; existing runs and reports
+  stay readable, and a factory that comes back restarts nothing by itself.
+  Without factory mode the server refuses every factory request.
+- **Start in local factory.** Offered on your own work only: unshared changes,
+  Worksets you claimed, and Worksets whose Delivery Branch is checked out here.
+  Claim available shared work first. Choose **Propose only** (plan it, then
+  wait) or **Start delivery** (plan it, and build it once you approve). Both
+  stop for your review; neither applies a plan by itself. An idea enters
+  planning, a complete plan waits for review without being proposed again, and
+  an incomplete plan resumes planning on its existing changes. Partly
+  implemented, submitted or conflicting work is refused with its actual state.
+  An unshared proposal needs no commit or push.
+- **Locally queued runs only.** Starting writes `queuedAt` into the Workset's
+  scratchpad record, which only this checkout has. The runner picks up only
+  those: a start timestamp in a legacy shared `worksets/` record, pulled from a
+  teammate, never runs. Nothing else is reserved, so the same person starting
+  one Workset on two machines is not prevented; teammates are kept apart by
+  claims.
+- **Park proposal.** On a stopped plan with no implementation started, it drops
+  the queued run here; the Workset stays in Local work. Your claim, the files,
+  reports, the conversation and the container stay. A running or partly built
+  Outcome is refused; cancel it first. **Cancel run** keeps the claim and the
+  work; nothing expires or is taken over by itself.
+- **Several changes.** A Workset is dispatched once. New slices list their
+  sibling in `dependsOn`, and each gets its own unlinked `delivery.yaml`; apply
+  records the same Workset branch in each change of one Working Repository and
+  builds them in dependency order. One change finishing does not finish the
+  Workset.
 
 ## Factory settings
 
