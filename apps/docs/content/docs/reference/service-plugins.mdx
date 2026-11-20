@@ -35,6 +35,7 @@ const createPlugin: CreatePlugin = () => {
           id: "board",
           label: "Acme",
           module: { dir: "/opt/acme/studio", entry: "board.js" },
+          attention: "/waiting",
         },
       ],
     }),
@@ -90,17 +91,18 @@ Studio calls `studio(host)` once when it starts, for each service whose
 daemon is there. A service that throws is left out with a warning; Studio keeps
 serving. The `host` gives the service:
 
-| Field                   | What it is                                                                          |
-| ----------------------- | ----------------------------------------------------------------------------------- |
-| `connection`            | The resolved daemon connection, or `null`.                                          |
-| `writable`, `noGit`     | Studio was started with `--writable`, or with `--no-git`.                           |
-| `launchCompanion`       | The companion Studio was started for, when pinned.                                  |
-| `mateCommand`           | The Mate invocation, for an argv the service hands the terminal.                    |
-| `companionPath(digest)` | The registered companion a page names; throws for an unknown one.                   |
-| `launchTarget(digest)`  | The companion a terminal session for that page runs in.                             |
-| `boardChanged(path)`    | Tells open pages that the companion's Workset board changed.                        |
-| `reports`               | Publishes a hosted report for a companion, and lists its ids.                       |
-| `terminal`              | Studio's terminal sessions: which Worksets have one, when one ends, and ending one. |
+| Field                       | What it is                                                                             |
+| --------------------------- | -------------------------------------------------------------------------------------- |
+| `connection`                | The resolved daemon connection, or `null`.                                             |
+| `writable`, `noGit`         | Studio was started with `--writable`, or with `--no-git`.                              |
+| `launchCompanion`           | The companion Studio was started for, when pinned.                                     |
+| `mateCommand`               | The Mate invocation, for an argv the service hands the terminal.                       |
+| `companionPath(digest)`     | The registered companion a page names; throws for an unknown one.                      |
+| `companionSnapshot(digest)` | The companion's collected payload as Studio's views read it; `refresh` collects again. |
+| `launchTarget(digest)`      | The companion a terminal session for that page runs in.                                |
+| `boardChanged(path)`        | Tells open pages that the companion's Workset board changed.                           |
+| `reports`                   | Publishes a hosted report for a companion, and lists its ids.                          |
+| `terminal`                  | Studio's terminal sessions: which Worksets have one, when one ends, and ending one.    |
 
 ### Routes
 
@@ -141,6 +143,11 @@ export const mount: StudioViewMount = (element, { companion, apiBase, writable }
 The module owns everything inside `element` and brings its own framework and
 styles. Studio mounts it again when the selected companion changes, and calls
 the returned function when the view leaves.
+
+A view can name an `attention` route: a `read` GET route of the service, as a
+path below its prefix, that answers `{ "count": <number> }` for
+`?companion=<digest>`. Studio shows a count above zero on the view's
+navigation entry and asks again when the companion's Workset board changes.
 
 ### Workset terminal sessions
 

@@ -42,7 +42,7 @@ async function makeFixture(options: { registerFails?: string } = {}): Promise<Fi
   const dataHome = path.join(root, "data");
   await fs.mkdir(path.join(repoPath, "packages", "web"), { recursive: true });
   await fs.mkdir(path.join(companionPath, "openspec"), { recursive: true });
-  await fs.writeFile(path.join(companionPath, "openspec", "config.yaml"), "schema: mate-v1\n");
+  await fs.writeFile(path.join(companionPath, "openspec", "config.yaml"), "schema: mate-full\n");
   await fs.writeFile(path.join(repoPath, "README.md"), "acme\n");
   execFileSync("git", ["init", "-q"], { cwd: repoPath });
   execFileSync("git", ["add", "-A"], { cwd: repoPath });

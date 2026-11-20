@@ -96,7 +96,7 @@ const CUSTOM_ONLY: DeliveryWorkflow = {
 };
 
 const pathOf = (workflow: DeliveryWorkflow | null | undefined): WorkflowPath =>
-  buildPath("mate-v1", SCHEMA_ARTIFACTS["mate-v1"], { workflow });
+  buildPath("mate-full", SCHEMA_ARTIFACTS["mate-full"], { workflow });
 
 const stepOf = (path: WorkflowPath, id: string) => {
   const step = path.steps.find((entry) => entry.id === id);
@@ -196,7 +196,7 @@ describe("a declared path", () => {
   });
 
   it("reports a declared skill the companion does not hold", () => {
-    const reported = buildPath("mate-v1", SCHEMA_ARTIFACTS["mate-v1"], {
+    const reported = buildPath("mate-full", SCHEMA_ARTIFACTS["mate-full"], {
       workflow: WITH_SECURITY_REVIEW,
       skills: ["mate-apply-change"],
     });

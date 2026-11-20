@@ -13,7 +13,10 @@ import {
 } from "./lock-drift";
 
 const CONTAINER_LOCK = "apps/mate-container/locks/global-tools.package-lock.json";
-const FACTORY_LOCK = "apps/mate-factory/locks/global-tools.package-lock.json";
+/** A second image, so the tests cover locks checked and refreshed side by side. */
+const SECOND_IMAGE = "apps/second-image";
+const ROOTS = ["apps/mate-container", SECOND_IMAGE];
+const FACTORY_LOCK = `${SECOND_IMAGE}/locks/global-tools.package-lock.json`;
 const REGISTRY = "https://registry.npmjs.org";
 
 const tempDirs: string[] = [];
@@ -82,7 +85,7 @@ function workspace(
   });
   for (const [image, lock] of [
     ["apps/mate-container", options.containerLock ?? lockFixture()],
-    ["apps/mate-factory", options.factoryLock ?? lockFixture()],
+    [SECOND_IMAGE, options.factoryLock ?? lockFixture()],
   ] as const) {
     write(path.join(root, image, "locks/global-tools.package.json"), {
       name: "acme-tools",
@@ -154,7 +157,7 @@ describe("checkImageLocks", () => {
   test("accepts locks whose release metadata and graph match, whatever the release version", () => {
     const root = workspace();
 
-    const results = checkImageLocks(root, { runNpm: spawnNpm });
+    const results = checkImageLocks(root, { runNpm: spawnNpm }, ROOTS);
 
     expect(results).toEqual([
       { lock: CONTAINER_LOCK, problems: [] },
@@ -165,7 +168,7 @@ describe("checkImageLocks", () => {
   test("names the dependency, package and both locks when core gains a dependency", () => {
     const root = workspace({ coreDependencies: addsNew });
 
-    const results = checkImageLocks(root, { runNpm: spawnNpm });
+    const results = checkImageLocks(root, { runNpm: spawnNpm }, ROOTS);
 
     for (const result of results) {
       expect(result.problems).toEqual([
@@ -180,7 +183,7 @@ describe("checkImageLocks", () => {
     stale.packages["node_modules/acme-old"] = pinned("acme-old", "1.0.0");
     const root = workspace({ factoryLock: stale });
 
-    const [container, factory] = checkImageLocks(root, { runNpm: spawnNpm });
+    const [container, factory] = checkImageLocks(root, { runNpm: spawnNpm }, ROOTS);
 
     expect(container!.problems).toEqual([]);
     expect(factory).toEqual({
@@ -197,7 +200,7 @@ describe("checkImageLocks", () => {
     delete missing.packages["node_modules/@uniqbit/mate-core"];
     const root = workspace({ containerLock: changed, factoryLock: missing });
 
-    const [container, factory] = checkImageLocks(root, { runNpm: spawnNpm });
+    const [container, factory] = checkImageLocks(root, { runNpm: spawnNpm }, ROOTS);
 
     expect(container!.problems).toContain(
       '@uniqbit/mate-core dependencies: "acme-dep" is ^0.9.0 in the lock but ^1.0.0 in the release package',
@@ -209,7 +212,7 @@ describe("checkImageLocks", () => {
     const lock = lockFixture({ coreDependencies: addsNew });
     const root = workspace({ coreDependencies: addsNew, containerLock: lock });
 
-    const [container, factory] = checkImageLocks(root, { runNpm: spawnNpm });
+    const [container, factory] = checkImageLocks(root, { runNpm: spawnNpm }, ROOTS);
 
     expect(container!.problems).toEqual([
       expect.stringContaining("missing: acme-new@^3.0.0, required by @uniqbit/mate-core@1.0.0"),
@@ -224,7 +227,7 @@ describe("checkImageLocks", () => {
     const before = snapshot(root);
     const calls: string[][] = [];
 
-    checkImageLocks(root, { runNpm: scriptedNpm(addsNewDependency, calls) });
+    checkImageLocks(root, { runNpm: scriptedNpm(addsNewDependency, calls) }, ROOTS);
 
     expect(calls.length).toBe(2);
     for (const call of calls) {
@@ -245,7 +248,6 @@ describe("check command", () => {
 
     expect(status).toBe(1);
     expect(io.err).toContain(`${CONTAINER_LOCK} is out of date`);
-    expect(io.err).toContain(`${FACTORY_LOCK} is out of date`);
     expect(io.err).toContain("bun scripts/image-locks/cli.ts refresh");
   });
 });
@@ -255,7 +257,7 @@ describe("refreshImageLocks", () => {
     const root = workspace({ coreDependencies: addsNew });
     const calls: string[][] = [];
 
-    const results = refreshImageLocks(root, deps(scriptedNpm(addsNewDependency, calls)));
+    const results = refreshImageLocks(root, deps(scriptedNpm(addsNewDependency, calls)), ROOTS);
 
     expect(results.map(({ lock, changed }) => ({ lock, changed }))).toEqual([
       { lock: CONTAINER_LOCK, changed: true },
@@ -278,15 +280,15 @@ describe("refreshImageLocks", () => {
     for (const call of calls.filter((args) => args[0] === "install")) {
       expect(call).toEqual(expect.arrayContaining(["--package-lock-only", "--ignore-scripts"]));
     }
-    expect(checkImageLocks(root, { runNpm: spawnNpm }).flatMap(({ problems }) => problems)).toEqual(
-      [],
-    );
+    expect(
+      checkImageLocks(root, { runNpm: spawnNpm }, ROOTS).flatMap(({ problems }) => problems),
+    ).toEqual([]);
   });
 
   test("leaves release-owned Mate ranges to publication", () => {
     const root = workspace();
 
-    refreshImageLocks(root, deps(scriptedNpm(() => {})));
+    refreshImageLocks(root, deps(scriptedNpm(() => {})), ROOTS);
 
     const cli = readLock(root, CONTAINER_LOCK).packages["node_modules/@uniqbit/mate"]!;
     expect(cli.dependencies).toMatchObject({ "@uniqbit/mate-core": "1.0.0" });
@@ -303,6 +305,7 @@ describe("refreshImageLocks", () => {
         scriptedNpm(() => {}),
         { writeFile: (file) => void writes.push(file) },
       ),
+      ROOTS,
     );
 
     expect(results.map(({ changed }) => changed)).toEqual([false, false]);
@@ -325,6 +328,7 @@ describe("refreshImageLocks", () => {
           lock.packages["node_modules/acme-dep"] = pinned("acme-dep", "1.6.0");
         }),
       ),
+      ROOTS,
     );
 
     expect(results[0]!.changes).toEqual([
@@ -354,6 +358,7 @@ describe("refreshImageLocks", () => {
           lock.packages["node_modules/acme-helper"] = pinned("acme-helper", "2.0.0");
         }),
       ),
+      ROOTS,
     );
 
     expect(results[0]!.changes.map(({ path }) => path)).toEqual([
@@ -375,6 +380,7 @@ describe("refreshImageLocks", () => {
             lock.packages["node_modules/acme-dep"] = pinned("acme-dep", "1.9.0");
           }),
         ),
+        ROOTS,
       ),
     ).toThrow(/node_modules\/acme-dep 1\.2\.0 -> 1\.9\.0/);
     expect(snapshot(root)).toEqual(before);
@@ -394,6 +400,7 @@ describe("refreshImageLocks", () => {
             ? { status: 1, stdout: "", stderr: "npm error code ETARGET" }
             : runNpm(args, options),
         ),
+        ROOTS,
       ),
     ).toThrow(/ETARGET/);
     expect(snapshot(root)).toEqual(before);
@@ -406,6 +413,7 @@ describe("refreshImageLocks", () => {
       refreshImageLocks(
         root,
         deps(() => ({ status: 1, stdout: "", stderr: "npm error code ENOTFOUND" })),
+        ROOTS,
       ),
     ).toThrow(/could not be reached/);
   });
@@ -414,7 +422,7 @@ describe("refreshImageLocks", () => {
     const root = workspace({ coreDependencies: addsNew });
     const before = snapshot(root);
 
-    expect(() => refreshImageLocks(root, deps(scriptedNpm(() => {})))).toThrow(
+    expect(() => refreshImageLocks(root, deps(scriptedNpm(() => {})), ROOTS)).toThrow(
       /the candidate is not valid/,
     );
     expect(snapshot(root)).toEqual(before);
@@ -434,11 +442,12 @@ describe("refreshImageLocks", () => {
             fs.renameSync(from, to);
           },
         }),
+        ROOTS,
       ),
     ).toThrow("disk full");
 
     expect(snapshot(root)).toEqual(before);
-    expect(fs.readdirSync(path.join(root, "apps/mate-factory/locks")).sort()).toEqual([
+    expect(fs.readdirSync(path.join(root, SECOND_IMAGE, "locks")).sort()).toEqual([
       "global-tools.package-lock.json",
       "global-tools.package.json",
     ]);
@@ -454,7 +463,6 @@ describe("refresh command", () => {
 
     expect(status).toBe(0);
     expect(io.out).toContain(`${CONTAINER_LOCK}: 1 pin change(s)`);
-    expect(io.out).toContain(`${FACTORY_LOCK}: 1 pin change(s)`);
     expect(io.out).toContain("+ node_modules/acme-new 3.1.0");
     expect(io.out).toContain("Release preparation replaces them");
   });

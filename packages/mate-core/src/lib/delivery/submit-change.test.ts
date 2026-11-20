@@ -73,7 +73,7 @@ function withStatus(artifacts: Record<string, string>): RunOpenSpec {
     if (args[0] !== "status") return fakeOpenSpec()(args, options);
     calls.push("status");
     const stdout = JSON.stringify({
-      schemaName: "mate-v1",
+      schemaName: "mate-full",
       artifacts: Object.entries(artifacts).map(([id, status]) => ({ id, status })),
     });
     return { code: 0, stdout, stderr: "" };

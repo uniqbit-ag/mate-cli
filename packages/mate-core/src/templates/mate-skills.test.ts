@@ -1114,7 +1114,7 @@ describe("bundled Delivery Path stage skills", () => {
     }
   });
 
-  test("propose revise mode upgrades a minimal change to mate-v1 and never downgrades", async () => {
+  test("propose revise mode upgrades a minimal change to mate-full and never downgrades", async () => {
     const flat = (source: string) => source.replace(/\s+/g, " ");
     const [claude, agents] = await Promise.all(
       bothRoots.map((root) => readReference(root, "mate-propose-change", "mate-revise.md")),
@@ -1122,13 +1122,23 @@ describe("bundled Delivery Path stage skills", () => {
     expect(agents).toBe(claude);
     const source = flat(claude ?? "");
     expect(source).toContain("**Upgrade a minimal change when it outgrows the gate.**");
-    expect(source).toContain("Set `schema: mate-v1` in the change's `.openspec.yaml`, first");
+    expect(source).toContain("Set `schema: mate-full` in the change's `.openspec.yaml`, first");
     expect(source).toContain(
       "Write the proposal from the existing specs and tasks, then the design",
     );
     expect(source).toContain("Keep task numbers and check marks.");
     expect(source).toContain("only case in which revise mode creates a missing artifact");
-    expect(source).toContain("Never downgrade a `mate-v1` change");
+    expect(source).toContain("Never downgrade a `mate-full` or `mate-v1` change");
+  });
+
+  test("propose names mate-full, never mate-v1, as the schema to choose", async () => {
+    const flat = (source: string) => source.replace(/\s+/g, " ");
+    for (const root of bothRoots) {
+      const skill = flat(await readSkillFrom(root, "mate-propose-change"));
+      expect(skill).toContain("(mate-minimal or mate-full)");
+      expect(skill).toContain("otherwise use `mate-full` (proposal, specs, design, tasks)");
+      expect(skill).not.toContain("mate-v1");
+    }
   });
 
   test("apply keeps the full transport by default and compact apply is opt-in", async () => {

@@ -352,7 +352,7 @@ describe("the hand-off on the default path", () => {
     );
   });
 
-  test("a mate-v1 change lists its four artifacts in review order", () => {
+  test("a mate-full change lists its four artifacts in review order", () => {
     const text = handoff(workflow, "propose", "acme-queue", { tasks: [0, 3], files: V1 });
 
     expect(text.split("\n").slice(1, 5)).toEqual([

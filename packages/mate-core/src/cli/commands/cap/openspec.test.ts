@@ -22,24 +22,24 @@ describe("readOpenSpecProjectSchema", () => {
   test("reads schema from companion-local openspec config", async () => {
     const root = await makeTempDir("mate-cap-openspec-schema-");
     await fs.mkdir(path.join(root, "openspec"), { recursive: true });
-    await fs.writeFile(path.join(root, "openspec", "config.yaml"), "schema: mate-v1\n", "utf8");
+    await fs.writeFile(path.join(root, "openspec", "config.yaml"), "schema: mate-full\n", "utf8");
 
-    expect(readOpenSpecProjectSchema(root)).toBe("mate-v1");
+    expect(readOpenSpecProjectSchema(root)).toBe("mate-full");
   });
 });
 
 describe("injectSchemaForBrokenOpenSpecCommands", () => {
   test("injects project schema for templates when --schema is absent", () => {
-    expect(injectSchemaForBrokenOpenSpecCommands(["templates", "--json"], "mate-v1")).toEqual([
+    expect(injectSchemaForBrokenOpenSpecCommands(["templates", "--json"], "mate-full")).toEqual([
       "templates",
       "--schema",
-      "mate-v1",
+      "mate-full",
       "--json",
     ]);
   });
 
   test("does not inject for other commands", () => {
-    expect(injectSchemaForBrokenOpenSpecCommands(["update", "--force"], "mate-v1")).toEqual([
+    expect(injectSchemaForBrokenOpenSpecCommands(["update", "--force"], "mate-full")).toEqual([
       "update",
       "--force",
     ]);
@@ -49,7 +49,7 @@ describe("injectSchemaForBrokenOpenSpecCommands", () => {
     expect(
       injectSchemaForBrokenOpenSpecCommands(
         ["templates", "--schema", "spec-driven", "--json"],
-        "mate-v1",
+        "mate-full",
       ),
     ).toEqual(["templates", "--schema", "spec-driven", "--json"]);
   });

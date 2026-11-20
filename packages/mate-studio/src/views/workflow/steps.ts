@@ -1,5 +1,6 @@
 import {
   BUILTIN_ARTIFACT_TYPE,
+  canonicalSchema,
   CHANGE_PLACEHOLDER,
   DEFAULT_SCHEMA,
   defaultWorkflow,
@@ -7,9 +8,9 @@ import {
   IDEA_PLACEHOLDER,
   isMateSchema,
   SCHEMA_ARTIFACTS,
+  SHIPPED_SCHEMAS,
   WORKFLOW_FILE,
   type DeliveryStage,
-  type MateSchema,
   type SkillStage,
   type SkillStageId,
   type Workflow,
@@ -200,8 +201,11 @@ function badgesFor(stage: DeliveryStage, workflow: Workflow): WorkflowStepBadge[
   return badges;
 }
 
-const SHIPPED_PATH_TEXT: Record<MateSchema, { tagline: string; description: string }> = {
-  "mate-v1": {
+const SHIPPED_PATH_TEXT: Record<
+  (typeof SHIPPED_SCHEMAS)[number],
+  { tagline: string; description: string }
+> = {
+  "mate-full": {
     tagline: "full planning",
     description: "Full planning path: proposal, specs, design, and tasks.",
   },
@@ -213,7 +217,10 @@ const SHIPPED_PATH_TEXT: Record<MateSchema, { tagline: string; description: stri
 };
 
 function pathText(schema: string): { tagline: string; description: string } {
-  if (isMateSchema(schema)) return SHIPPED_PATH_TEXT[schema];
+  const canonical = canonicalSchema(schema);
+  if (Object.hasOwn(SHIPPED_PATH_TEXT, canonical)) {
+    return SHIPPED_PATH_TEXT[canonical as keyof typeof SHIPPED_PATH_TEXT];
+  }
   return { tagline: "custom schema", description: `Planning path of the ${schema} schema.` };
 }
 
@@ -335,11 +342,17 @@ function schemaArtifacts(
 
 /** The Delivery Path Studio shows: a path per schema Mate ships, or the served schema's alone. */
 export function workflowPlan(options: WorkflowPlanOptions = {}): WorkflowPlan {
-  const served = options.topology?.schemaName;
-  const schemas = served && !isMateSchema(served) ? [served] : Object.keys(SCHEMA_ARTIFACTS);
+  // A served legacy alias (`mate-v1`) feeds the path of the schema it names.
+  const topology = options.topology && {
+    ...options.topology,
+    schemaName: canonicalSchema(options.topology.schemaName),
+  };
+  const normalized = { ...options, topology };
+  const served = topology?.schemaName;
+  const schemas: readonly string[] = served && !isMateSchema(served) ? [served] : SHIPPED_SCHEMAS;
   return {
     paths: schemas.map((schema) =>
-      buildPath(schema, schemaArtifacts(schema, options.topology), options),
+      buildPath(schema, schemaArtifacts(schema, topology), normalized),
     ),
   };
 }

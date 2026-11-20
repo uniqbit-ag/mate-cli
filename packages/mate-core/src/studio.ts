@@ -131,10 +131,13 @@ export {
 } from "./cli/commands/studio/actions";
 export { WORKSET_STAGE_ORDER, type WorksetStageId } from "./lib/workset/stage";
 export {
+  canonicalSchema,
   DEFAULT_SCHEMA,
   deliveryPath,
   isMateSchema,
+  LEGACY_SCHEMA_ALIASES,
   SCHEMA_ARTIFACTS,
+  SHIPPED_SCHEMAS,
   type DeliveryPath,
   type DeliveryStage,
   type MateSchema,

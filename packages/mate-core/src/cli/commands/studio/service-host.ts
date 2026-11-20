@@ -22,6 +22,8 @@ export interface StudioServiceViewSummary {
   description?: string;
   /** Where the view's module is served from, when the service ships one. */
   moduleUrl?: string;
+  /** The service route answering the view's attention count, when it declares one. */
+  attentionUrl?: string;
 }
 
 /** A mounted service as Studio's application sees it. */
@@ -146,6 +148,9 @@ function mountedServices(mounted: MountedService[]): MountedServices {
             ? {
                 moduleUrl: `${SERVICE_ASSET_PREFIX}${service.id}/${view.id}/${view.module.entry}`,
               }
+            : {}),
+          ...(view.attention
+            ? { attentionUrl: `${SERVICE_ROUTE_PREFIX}${service.id}${view.attention}` }
             : {}),
         })),
       })),

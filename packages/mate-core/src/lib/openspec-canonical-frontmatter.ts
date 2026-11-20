@@ -5,6 +5,7 @@ import path from "node:path";
 import { parse } from "yaml";
 
 import { archiveDirOf, deltaSpecs } from "./change-layout";
+import { isMateSchema } from "./delivery/stages";
 import { FRONTMATTER_PATTERN } from "./frontmatter";
 import { BOM, DELTA_COMMENT_PATTERN, parseScopes, type ScopePair } from "./openspec-scopes";
 
@@ -67,7 +68,7 @@ async function archivedChangeUsesMateSchema(
     const parsed = parse(await fs.readFile(metadataPath, "utf8")) as unknown;
     if (!parsed || typeof parsed !== "object") return false;
     const schema = (parsed as Record<string, unknown>).schema;
-    return typeof schema === "string" && ["mate-v1", "mate-minimal"].includes(schema.trim());
+    return typeof schema === "string" && isMateSchema(schema.trim());
   } catch {
     return false;
   }

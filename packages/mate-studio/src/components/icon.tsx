@@ -22,7 +22,6 @@ const PATHS = {
   terminal: "M3 4h14v12H3zM6 8l2.5 2L6 12m4 0h4",
   check: "m5 10.5 3 3 7-7",
   play: "M7 5v10l8-5z",
-  factory: "M3 17V9l4 2.5V9l4 2.5V5h3l1 12zM3 17h14",
   plus: "M10 4v12M4 10h12",
   external: "M11 4h5v5M16 4l-7 7M14 12v4H4V6h4",
   sidebar: "M3 4h14v12H3zM8 4v12",

@@ -7,8 +7,23 @@ import path from "node:path";
 import { releaseTerminal } from "../../lib/live-progress";
 import { isWithin } from "../../runtime/physical-path";
 
-// Merges src into dest: existing files are kept, but src wins on name clashes.
-export async function mergeDir(src: string, dest: string): Promise<void> {
+/** Rewrites a copied file's text; gets the file's base name. */
+export type MergeTransform = (fileName: string, content: string) => string;
+
+/** Removes a symlink at `target`, so a write there cannot reach the link's target. */
+async function unlinkSymlink(target: string): Promise<void> {
+  const stat = await fs.lstat(target).catch(() => null);
+  if (stat?.isSymbolicLink()) await fs.unlink(target);
+}
+
+// Merges src into dest: existing files are kept, but src wins on name clashes. A symlink at a
+// copied path is replaced, never written through: dest may be a committed, shared tree.
+export async function mergeDir(
+  src: string,
+  dest: string,
+  transform?: MergeTransform,
+): Promise<void> {
+  await unlinkSymlink(dest);
   await fs.mkdir(dest, { recursive: true });
   const entries = await fs.readdir(src, { withFileTypes: true });
   for (const entry of entries) {
@@ -16,7 +31,13 @@ export async function mergeDir(src: string, dest: string): Promise<void> {
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
     if (entry.isDirectory()) {
-      await mergeDir(srcPath, destPath);
+      await mergeDir(srcPath, destPath, transform);
+      continue;
+    }
+    await unlinkSymlink(destPath);
+    if (transform) {
+      const content = await fs.readFile(srcPath, "utf8");
+      await fs.writeFile(destPath, transform(entry.name, content), "utf8");
     } else {
       await fs.copyFile(srcPath, destPath);
     }

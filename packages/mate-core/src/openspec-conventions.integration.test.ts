@@ -51,7 +51,7 @@ interface Sandbox {
   openspec: (args: string[]) => { status: number | null; stdout: string; stderr: string };
 }
 
-/** A companion seeded by Mate's own capability sync with `mate-v1` selected. */
+/** A companion seeded by Mate's own capability sync with `mate-full` selected. */
 async function makeSandbox(): Promise<Sandbox> {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "openspec-conventions-")));
   tempRoots.push(root);
@@ -116,14 +116,14 @@ tags: [openspec/spec]
 ---
 `;
 
-/** A complete mate-v1 change whose delta for `widget` uses `section` (ADDED or MODIFIED). */
+/** A complete mate-full change whose delta for `widget` uses `section` (ADDED or MODIFIED). */
 function proposeChange(sandbox: Sandbox, name: string, section: string, requirement: string): void {
   expectOk(sandbox.openspec(["new", "change", name]), `new change ${name}`);
   const change = path.join(sandbox.companion, "openspec", "changes", name);
   const scopes = "scopes:\n  - repository: acme/product\n    area: packages/web\n---\n\n";
   fs.writeFileSync(
     path.join(change, "proposal.md"),
-    `---\ntype: change-proposal\nchange: ${name}\nschema: mate-v1\n${scopes}## Why\n\nThe widget needs a reason that is long enough to pass.\n\n## What Changes\n\n- Changes the widget.\n`,
+    `---\ntype: change-proposal\nchange: ${name}\nschema: mate-full\n${scopes}## Why\n\nThe widget needs a reason that is long enough to pass.\n\n## What Changes\n\n- Changes the widget.\n`,
   );
   fs.writeFileSync(
     path.join(change, "design.md"),
@@ -258,12 +258,12 @@ describe.skipIf(!REAL_OPENSPEC)("Mate OpenSpec conventions with the real CLI", (
   );
 
   test(
-    "a delta filled in from the synced mate-v1 template passes strict validation",
+    "a delta filled in from the synced mate-full template passes strict validation",
     async () => {
       const sandbox = await makeSandbox();
       proposeChange(sandbox, "add-widget", "ADDED", "The system SHALL render the widget.");
       const template = fs.readFileSync(
-        path.join(sandbox.companion, "openspec", "schemas", "mate-v1", "templates", "spec.md"),
+        path.join(sandbox.companion, "openspec", "schemas", "mate-full", "templates", "spec.md"),
         "utf8",
       );
       const filled = template
@@ -303,6 +303,55 @@ describe.skipIf(!REAL_OPENSPEC)("Mate OpenSpec conventions with the real CLI", (
       const archived = sandbox.openspec(["archive", "add-widget", "--yes"]);
       expectOk(archived, "archive add-widget");
       expect(`${archived.stdout}${archived.stderr}`).not.toMatch(/warn/i);
+    },
+    OPENSPEC_TEST_TIMEOUT,
+  );
+
+  test(
+    "mate-v1 changes keep resolving and stay byte-for-byte unchanged across a sync",
+    async () => {
+      const sandbox = await makeSandbox();
+      const changesDir = path.join(sandbox.companion, "openspec", "changes");
+      // A companion set up after the rename still accepts the old name.
+      expectOk(
+        sandbox.openspec(["new", "change", "acme-login", "--schema", "mate-v1"]),
+        "new change acme-login",
+      );
+      const archived = path.join(changesDir, "archive", "2026-01-01-acme-logout");
+      fs.mkdirSync(archived, { recursive: true });
+      fs.writeFileSync(path.join(archived, ".openspec.yaml"), "schema: mate-v1\n");
+      fs.writeFileSync(path.join(archived, "proposal.md"), "---\nschema: mate-v1\n---\n");
+      const snapshot = () =>
+        Object.fromEntries(
+          fs
+            .readdirSync(changesDir, { recursive: true, encoding: "utf8" })
+            .map((entry) => path.join(changesDir, entry))
+            .filter((file) => fs.statSync(file).isFile())
+            .map((file) => [file, fs.readFileSync(file, "utf8")]),
+        );
+      const before = snapshot();
+
+      await createOpenspecPlugin({}).apply({
+        companionPath: sandbox.companion,
+        activeProviders: [],
+        mode: "sync",
+        config: { allowedAgents: [], capabilities: [{ name: "openspec" }] },
+      });
+
+      expect(snapshot()).toEqual(before);
+      const status = JSON.parse(
+        expectOk(
+          sandbox.openspec(["status", "--change", "acme-login", "--json"]),
+          "status acme-login",
+        ),
+      ) as { schemaName: string; artifacts: { id: string }[] };
+      expect(status.schemaName).toBe("mate-v1");
+      expect(status.artifacts.map((artifact) => artifact.id)).toEqual([
+        "proposal",
+        "specs",
+        "design",
+        "tasks",
+      ]);
     },
     OPENSPEC_TEST_TIMEOUT,
   );

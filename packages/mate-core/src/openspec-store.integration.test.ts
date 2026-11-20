@@ -56,20 +56,20 @@ interface Sandbox {
   registrations: () => number;
 }
 
-/** Isolated OpenSpec state and a companion that is a `mate-v1` OpenSpec root. */
+/** Isolated OpenSpec state and a companion that is a `mate-full` OpenSpec root. */
 function makeSandbox(): Sandbox {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "openspec-e2e-")));
   tempRoots.push(root);
   const companion = path.join(root, "acme-companion");
   fs.mkdirSync(path.join(companion, "openspec", "schemas"), { recursive: true });
   fs.cpSync(
-    path.join(SCHEMA_SOURCE, "mate-v1"),
-    path.join(companion, "openspec", "schemas", "mate-v1"),
+    path.join(SCHEMA_SOURCE, "mate-full"),
+    path.join(companion, "openspec", "schemas", "mate-full"),
     {
       recursive: true,
     },
   );
-  fs.writeFileSync(path.join(companion, "openspec", "config.yaml"), "schema: mate-v1\n");
+  fs.writeFileSync(path.join(companion, "openspec", "config.yaml"), "schema: mate-full\n");
 
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
@@ -187,7 +187,7 @@ describe.skipIf(!REAL_OPENSPEC)("the OpenSpec store pointer with the real CLI", 
       acme.path,
       sandbox.companion,
     ]);
-    expect(openspec(sandbox, web, ["templates", "--json"])).toContain("mate-v1");
+    expect(openspec(sandbox, web, ["templates", "--json"])).toContain("mate-full");
   });
 
   test("two checkouts of one companion share a single registration", async () => {
