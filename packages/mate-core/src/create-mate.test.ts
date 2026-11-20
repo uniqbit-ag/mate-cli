@@ -14,8 +14,7 @@ function makePlugin(id: string, kind: Plugin["kind"] = "capability"): Plugin {
     description: "",
     defaultSelected: false,
     isEnabled: () => true,
-    async apply() {},
-    async teardown() {},
+    lifecycle: { companion: { async apply() {}, async teardown() {} } },
   };
 }
 

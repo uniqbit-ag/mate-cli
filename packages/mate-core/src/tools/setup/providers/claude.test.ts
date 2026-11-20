@@ -35,6 +35,7 @@ function declaredContributions(
     },
     mode: "setup",
     activeProviders: ["claude"],
+    scope: "companion",
   };
   return [
     {
@@ -59,6 +60,7 @@ async function declaredContributionsAsync(
     },
     mode: "setup",
     activeProviders: ["claude"],
+    scope: "companion",
   };
   return [
     {
@@ -833,11 +835,12 @@ describe("Claude provider apply (mate hook migration)", () => {
     }
     await fs.writeFile(path.join(hooksDir, "user-hook.sh"), "#!/bin/sh\nexit 0\n", "utf8");
 
-    await createClaudePlugin().apply({
+    await createClaudePlugin().lifecycle.companion!.apply({
       companionPath,
       config: { allowedAgents: ["claude"], capabilities: [] },
       mode: "sync",
       activeProviders: ["claude"],
+      scope: "companion",
     });
 
     for (const stale of [
@@ -857,11 +860,12 @@ describe("Claude provider apply (mate hook migration)", () => {
     await fs.mkdir(hooksDir, { recursive: true });
     await fs.writeFile(path.join(hooksDir, "validate-artifact-path"), "#!/bin/sh\n", "utf8");
 
-    await createClaudePlugin().apply({
+    await createClaudePlugin().lifecycle.companion!.apply({
       companionPath,
       config: { allowedAgents: ["claude"], capabilities: [] },
       mode: "sync",
       activeProviders: ["claude"],
+      scope: "companion",
     });
 
     await expect(fs.access(hooksDir)).rejects.toThrow();

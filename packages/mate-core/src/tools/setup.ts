@@ -173,6 +173,7 @@ function planSyncPass(
     config,
     mode: "sync",
     activeProviders: plan.activeProviders,
+    scope: "companion",
     ...extra,
   };
   return { plan, ctx };
@@ -216,7 +217,13 @@ export async function inspectClaudePluginDirectories(
 }
 
 function managedGitignoreEntries(companionPath: string, config: FrameworkConfig): string[] {
-  const ctx: SetupContext = { companionPath, config, mode: "sync", activeProviders: [] };
+  const ctx: SetupContext = {
+    companionPath,
+    config,
+    mode: "sync",
+    activeProviders: [],
+    scope: "companion",
+  };
   return collectManagedGitignoreEntries(ctx, getActiveDistribution().registry.getAll());
 }
 

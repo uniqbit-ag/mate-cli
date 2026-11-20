@@ -45,8 +45,7 @@ function tool(id: string, present: boolean, recommendedBy?: string[]): Plugin {
     defaultSelected: false,
     isEnabled: () => true,
     getInstallRequirements: () => [requirement],
-    async apply() {},
-    async teardown() {},
+    lifecycle: { companion: { async apply() {}, async teardown() {} } },
   };
 }
 

@@ -21,7 +21,11 @@ export function createCompanionMentionsPlugin(): CapabilityPlugin {
         },
       };
     },
-    async apply() {},
-    async teardown() {},
+    lifecycle: {
+      companion: {
+        async apply() {},
+        async teardown() {},
+      },
+    },
   };
 }

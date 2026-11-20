@@ -217,26 +217,34 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
         },
       ];
     },
-    async apply(ctx) {
-      const legacyInstallDir = getLegacyInstallDir(ctx.companionPath);
-      await fs.rm(legacyInstallDir, { recursive: true, force: true });
-      await pruneEmptyAncestors(path.dirname(legacyInstallDir), ctx.companionPath);
-      // Setup installs unless the member declined; then it behaves like sync.
-      const declined = (await readMemberChoices(ctx.companionPath))["context-mode"] === "declined";
-      if (ctx.mode === "setup" && !declined) {
-        await installPackage(ctx.companionPath);
-      } else if (await isWiredForMember(ctx.companionPath)) {
-        await validatePackage(ctx.companionPath);
-      }
-      await ctx.instructions?.append(CONTEXT_MODE_OPENCODE_GUIDANCE, {
-        providers: ["opencode"],
-      });
-      await fs.rm(getLegacyOwnershipPath(ctx.companionPath), { force: true });
-    },
-    async teardown(ctx) {
-      await fs.rm(getContextModeInstallDir(ctx.companionPath), { recursive: true, force: true });
-      await pruneEmptyAncestors(getContextModeInstallDir(ctx.companionPath), ctx.companionPath);
-      await fs.rm(getLegacyOwnershipPath(ctx.companionPath), { force: true });
+    lifecycle: {
+      companion: {
+        async apply(ctx) {
+          const legacyInstallDir = getLegacyInstallDir(ctx.companionPath);
+          await fs.rm(legacyInstallDir, { recursive: true, force: true });
+          await pruneEmptyAncestors(path.dirname(legacyInstallDir), ctx.companionPath);
+          // Setup installs unless the member declined; then it behaves like sync.
+          const declined =
+            (await readMemberChoices(ctx.companionPath))["context-mode"] === "declined";
+          if (ctx.mode === "setup" && !declined) {
+            await installPackage(ctx.companionPath);
+          } else if (await isWiredForMember(ctx.companionPath)) {
+            await validatePackage(ctx.companionPath);
+          }
+          await ctx.instructions?.append(CONTEXT_MODE_OPENCODE_GUIDANCE, {
+            providers: ["opencode"],
+          });
+          await fs.rm(getLegacyOwnershipPath(ctx.companionPath), { force: true });
+        },
+        async teardown(ctx) {
+          await fs.rm(getContextModeInstallDir(ctx.companionPath), {
+            recursive: true,
+            force: true,
+          });
+          await pruneEmptyAncestors(getContextModeInstallDir(ctx.companionPath), ctx.companionPath);
+          await fs.rm(getLegacyOwnershipPath(ctx.companionPath), { force: true });
+        },
+      },
     },
     forProvider: {
       claude: {

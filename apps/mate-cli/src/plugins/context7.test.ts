@@ -4,7 +4,7 @@ import { CONTEXT7_MCP_COMMAND, CONTEXT7_MCP_VERSION, createContext7Plugin } from
 
 async function registrationFor(plugin: ReturnType<typeof createContext7Plugin>) {
   const registrations: Array<{ name: string; command?: string; args?: string[] }> = [];
-  await plugin.apply?.({
+  await plugin.lifecycle.companion?.apply({
     mcp: {
       register: async (server: { name: string; command?: string; args?: string[] }) => {
         registrations.push(server);

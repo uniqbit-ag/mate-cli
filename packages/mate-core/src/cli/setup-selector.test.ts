@@ -40,8 +40,7 @@ describe("required plugins in the wizard", () => {
       description: `${id} capability`,
       defaultSelected: false,
       isEnabled: () => false,
-      async apply() {},
-      async teardown() {},
+      lifecycle: { companion: { async apply() {}, async teardown() {} } },
     };
   }
 

@@ -28,6 +28,7 @@ function context(companionPath: string, enabled = true): SetupContext {
     },
     mode: "setup",
     activeProviders: ["claude", "opencode"],
+    scope: "companion",
   };
 }
 
@@ -118,7 +119,7 @@ describe("reactDoctorPlugin", () => {
     const companionPath = await makeTempDir("mate-react-doctor-apply-");
     const legacy = await seedLegacyArtifacts(companionPath);
 
-    await reactDoctorPlugin.apply(context(companionPath));
+    await reactDoctorPlugin.lifecycle.companion!.apply(context(companionPath));
     await reactDoctorPlugin.forProvider?.claude?.apply?.(context(companionPath));
 
     for (const target of legacy) expect(await exists(target)).toBe(false);
@@ -129,7 +130,7 @@ describe("reactDoctorPlugin", () => {
     const companionPath = await makeTempDir("mate-react-doctor-teardown-");
     const legacy = await seedLegacyArtifacts(companionPath);
 
-    await reactDoctorPlugin.teardown(context(companionPath, false));
+    await reactDoctorPlugin.lifecycle.companion!.teardown(context(companionPath, false));
     await reactDoctorPlugin.forProvider?.claude?.teardown?.(context(companionPath, false));
 
     for (const target of legacy) expect(await exists(target)).toBe(false);
@@ -138,9 +139,9 @@ describe("reactDoctorPlugin", () => {
   test("cleanup is silent when nothing is present", async () => {
     const companionPath = await makeTempDir("mate-react-doctor-empty-");
 
-    await reactDoctorPlugin.apply(context(companionPath));
+    await reactDoctorPlugin.lifecycle.companion!.apply(context(companionPath));
     await reactDoctorPlugin.forProvider?.claude?.apply?.(context(companionPath));
-    await reactDoctorPlugin.teardown(context(companionPath, false));
+    await reactDoctorPlugin.lifecycle.companion!.teardown(context(companionPath, false));
     await reactDoctorPlugin.forProvider?.claude?.teardown?.(context(companionPath, false));
 
     expect(await fs.readdir(companionPath)).toEqual([]);

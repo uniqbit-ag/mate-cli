@@ -9,6 +9,7 @@ function makeContext(config: Partial<FrameworkConfig>): SetupContext {
     companionPath: "/companion",
     mode: "sync",
     activeProviders: [],
+    scope: "companion",
     config: {
       allowedAgents: [],
       ...config,

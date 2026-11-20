@@ -40,6 +40,7 @@ export type {
   Plugin,
   PluginCliCommand,
   PluginDirectoryContribution,
+  PluginLifecycle,
   PluginPolicy,
   PluginRegistration,
   ProviderHosting,
@@ -47,6 +48,7 @@ export type {
   RuntimeContributions,
   RuntimeContributionsByRuntime,
   SetupContext,
+  SetupScope,
   TemplatesService,
 } from "./tools/setup/plugin";
 export type { SessionKind } from "./runtime/session-kind";

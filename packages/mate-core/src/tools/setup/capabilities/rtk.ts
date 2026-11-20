@@ -167,17 +167,21 @@ export function createRtkPlugin(deps: RtkDeps = {}): CapabilityPlugin {
         },
       ];
     },
-    async apply(ctx) {
-      if (checkRtkPath() || ctx.mode !== "setup") return;
-      if (await isDeclinedByMember(ctx.companionPath, ["rtk"], deps.readMemberChoices)) return;
+    lifecycle: {
+      companion: {
+        async apply(ctx) {
+          if (checkRtkPath() || ctx.mode !== "setup") return;
+          if (await isDeclinedByMember(ctx.companionPath, ["rtk"], deps.readMemberChoices)) return;
 
-      const command = checkBrew() ? RTK_INSTALL_CMD_BREW : RTK_INSTALL_CMD_FALLBACK;
-      process.stdout.write(`rtk binary not found. To install:\n  ${command}\n`);
-      if (await askConfirm("Run this install command now?")) {
-        await runRtkInstall(command);
-      }
+          const command = checkBrew() ? RTK_INSTALL_CMD_BREW : RTK_INSTALL_CMD_FALLBACK;
+          process.stdout.write(`rtk binary not found. To install:\n  ${command}\n`);
+          if (await askConfirm("Run this install command now?")) {
+            await runRtkInstall(command);
+          }
+        },
+        async teardown(_ctx) {},
+      },
     },
-    async teardown(_ctx) {},
     forProvider: {
       claude: {
         async apply(ctx: SetupContext) {

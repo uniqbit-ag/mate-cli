@@ -59,11 +59,15 @@ export function createReactDoctorPlugin(): CapabilityPlugin {
       };
     },
     gitignoreEntries: () => skillIgnoreEntries([SKILL_NAME]),
-    async apply(ctx: SetupContext) {
-      await removeLegacySkills(ctx.companionPath);
-    },
-    async teardown(ctx: SetupContext) {
-      await removeLegacySkills(ctx.companionPath);
+    lifecycle: {
+      companion: {
+        async apply(ctx: SetupContext) {
+          await removeLegacySkills(ctx.companionPath);
+        },
+        async teardown(ctx: SetupContext) {
+          await removeLegacySkills(ctx.companionPath);
+        },
+      },
     },
     // Cleanup only: stale hook groups are stripped by settings-sync through the
     // `react-doctor.sh` managed marker; the script file itself is removed here.

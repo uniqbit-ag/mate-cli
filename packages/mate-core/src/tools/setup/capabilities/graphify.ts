@@ -209,47 +209,56 @@ export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityP
       },
     ],
 
-    async apply(ctx: SetupContext) {
-      // binary: graphify (single y); package: graphifyy (double y)
-      const isInstalled = graphifyOnPath() || checkUvTool("graphifyy");
+    lifecycle: {
+      companion: {
+        async apply(ctx: SetupContext) {
+          // binary: graphify (single y); package: graphifyy (double y)
+          const isInstalled = graphifyOnPath() || checkUvTool("graphifyy");
 
-      if (
-        !isInstalled &&
-        ctx.mode === "setup" &&
-        !(await isDeclinedByMember(ctx.companionPath, ["graphify"], deps.readMemberChoices))
-      ) {
-        process.stdout.write(`graphify binary not found. To install:\n  ${GRAPHIFY_INSTALL_CMD}\n`);
-        const ok = await askConfirm("Run this install command now?");
-        if (ok) {
-          try {
-            await runCommand(GRAPHIFY_INSTALL_CMD);
-          } catch {
-            process.stderr.write(
-              `graphify: install failed — install manually with \`${GRAPHIFY_INSTALL_CMD}\`\n`,
+          if (
+            !isInstalled &&
+            ctx.mode === "setup" &&
+            !(await isDeclinedByMember(ctx.companionPath, ["graphify"], deps.readMemberChoices))
+          ) {
+            process.stdout.write(
+              `graphify binary not found. To install:\n  ${GRAPHIFY_INSTALL_CMD}\n`,
             );
+            const ok = await askConfirm("Run this install command now?");
+            if (ok) {
+              try {
+                await runCommand(GRAPHIFY_INSTALL_CMD);
+              } catch {
+                process.stderr.write(
+                  `graphify: install failed — install manually with \`${GRAPHIFY_INSTALL_CMD}\`\n`,
+                );
+              }
+            }
           }
-        }
-      }
 
-      // Written here so it exists before any extraction; every Mate-invoked
-      // extraction rewrites it anyway and prunes whatever still gets through.
-      if (ctx.repoPath) {
-        try {
-          await ensureGraphifySecretExclusion(ctx.repoPath, resolveSecretPolicy(ctx.companionPath));
-        } catch (error) {
-          process.stderr.write(`graphify: ${(error as Error).message}\n`);
-        }
-      }
-    },
+          // Written here so it exists before any extraction; every Mate-invoked
+          // extraction rewrites it anyway and prunes whatever still gets through.
+          if (ctx.repoPath) {
+            try {
+              await ensureGraphifySecretExclusion(
+                ctx.repoPath,
+                resolveSecretPolicy(ctx.companionPath),
+              );
+            } catch (error) {
+              process.stderr.write(`graphify: ${(error as Error).message}\n`);
+            }
+          }
+        },
 
-    async teardown(ctx: SetupContext) {
-      await stripSectionFromFile(
-        path.join(ctx.companionPath, "AGENTS.md"),
-        graphifySectionOptions(),
-      );
-      // Don't uninstall the global graphify binary — companion-managed files are
-      // cleaned up per-provider in forProvider[].teardown. Graph data under
-      // .graphify/ is retained as user data.
+        async teardown(ctx: SetupContext) {
+          await stripSectionFromFile(
+            path.join(ctx.companionPath, "AGENTS.md"),
+            graphifySectionOptions(),
+          );
+          // Don't uninstall the global graphify binary — companion-managed files are
+          // cleaned up per-provider in forProvider[].teardown. Graph data under
+          // .graphify/ is retained as user data.
+        },
+      },
     },
 
     forProvider: Object.fromEntries(

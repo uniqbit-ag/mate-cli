@@ -20,9 +20,17 @@ import { loadDynamicPlugin, type DynamicPluginLoadDeps } from "./loader";
 // Packages already registered in this process; re-hydration (e.g. right after
 // an install inside the same run) only picks up plugins that failed before.
 const hydratedPackages = new Set<string>();
+// Held back from every-invocation stderr; `mate install` reports them.
+const hydratedDeprecations = new Map<string, string>();
 
 export function resetDynamicPluginHydration(): void {
   hydratedPackages.clear();
+  hydratedDeprecations.clear();
+}
+
+/** Deprecation notices of the plugins hydrated in this process. */
+export function dynamicPluginDeprecations(): string[] {
+  return [...hydratedDeprecations.values()];
 }
 
 export interface HydrateDynamicPluginsDeps extends DynamicPluginLoadDeps {
@@ -109,6 +117,7 @@ export async function hydrateDynamicPlugins(deps: HydrateDynamicPluginsDeps = {}
         warn(result.warning);
         continue;
       }
+      for (const warning of result.warnings) warn(warning);
 
       const namespace = result.plugin.cliNamespace ?? result.plugin.id;
       const holder = registry
@@ -125,6 +134,7 @@ export async function hydrateDynamicPlugins(deps: HydrateDynamicPluginsDeps = {}
         policy: declaration.policy ?? "optional",
       });
       hydratedPackages.add(declaration.package);
+      if (result.deprecation) hydratedDeprecations.set(declaration.package, result.deprecation);
     }
   } catch (error) {
     warn(

@@ -43,8 +43,7 @@ export function createBunPlugin(): Plugin {
     description: "Framework runtime package manager for Node.js workflows.",
     defaultSelected: true,
     isEnabled: (config) => (config.packageManagers ?? ["bun"]).includes("bun"),
-    async apply() {},
-    async teardown() {},
+    lifecycle: { companion: { async apply() {}, async teardown() {} } },
     getInstallRequirements: () => {
       const plan = bunInstallPlan();
       return [

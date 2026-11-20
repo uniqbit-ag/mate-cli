@@ -38,10 +38,14 @@ describe("hub setup scope", () => {
       description: "hub MCP fixture",
       defaultSelected: false,
       isEnabled: () => true,
-      apply: async () => {
-        capabilityApplied = true;
+      lifecycle: {
+        companion: {
+          apply: async () => {
+            capabilityApplied = true;
+          },
+          teardown: async () => {},
+        },
       },
-      teardown: async () => {},
       getRuntimeContributions: (_ctx: SetupContext) => ({
         claude: { mcpServers: [{ name: "acme", command: "acme", args: ["serve"] }] },
         opencode: { mcpServers: [{ name: "acme", command: "acme", args: ["serve"] }] },
@@ -95,6 +99,37 @@ describe("hub setup scope", () => {
     }
   });
 
+  test("Claude hub teardown removes only what hub apply wrote", async () => {
+    const hubPath = await makeTempDir();
+    const config: FrameworkConfig = {
+      type: "hub",
+      allowedAgents: [],
+      packageManagers: [],
+      capabilities: [],
+    };
+    const userFiles = ["AGENTS.md", "CLAUDE.md", path.join(".claude", "settings.json")];
+    await fs.mkdir(path.join(hubPath, ".claude"), { recursive: true });
+    for (const file of userFiles) await fs.writeFile(path.join(hubPath, file), "user\n");
+    const hub = createClaudePlugin().lifecycle.hub!;
+    const ctx: SetupContext = {
+      companionPath: hubPath,
+      config,
+      mode: "setup",
+      activeProviders: ["claude"],
+      scope: "hub",
+    };
+
+    await hub.apply(ctx);
+    await hub.teardown(ctx);
+
+    for (const file of userFiles) {
+      expect(await fs.readFile(path.join(hubPath, file), "utf8")).toBe("user\n");
+    }
+    for (const file of [path.join(".claude", "settings.local.json"), ".mcp.json"]) {
+      await expect(fs.access(path.join(hubPath, file))).rejects.toThrow();
+    }
+  });
+
   test("materializes and prunes agent definition files without other companion surfaces", async () => {
     const hubPath = await makeTempDir();
     const capability: CapabilityPlugin = {
@@ -104,8 +139,7 @@ describe("hub setup scope", () => {
       description: "hub agent-definition fixture",
       defaultSelected: false,
       isEnabled: () => true,
-      apply: async () => {},
-      teardown: async () => {},
+      lifecycle: { companion: { async apply() {}, async teardown() {} } },
       getRuntimeContributions: (_ctx: SetupContext) => ({
         claude: {
           agentDefinitions: [{ name: "acme", content: "---\nname: acme\n---\nAcme agent body.\n" }],
@@ -166,5 +200,41 @@ describe("hub setup scope", () => {
 
     await expect(fs.access(path.join(hubPath, ".claude", "agents", "acme.md"))).rejects.toThrow();
     await expect(fs.access(path.join(hubPath, ".opencode", "agents", "acme.md"))).rejects.toThrow();
+  });
+
+  test("tears down a disabled provider through its hub lifecycle", async () => {
+    const hubPath = await makeTempDir();
+    const registry = new PluginRegistry([createClaudePlugin(), createOpenCodePlugin()]);
+    setActiveDistribution({ config: { runtime: "bun", version: "test" }, registry });
+    const registrations = registry.getEntries();
+    const run = async (allowedAgents: string[]) => {
+      const config: FrameworkConfig = {
+        type: "hub",
+        allowedAgents,
+        packageManagers: [],
+        capabilities: [],
+      };
+      const plan = buildSetupInstallationPlan(config, registrations);
+      await executeSetupInstallationPlan(
+        {
+          companionPath: hubPath,
+          config,
+          mode: "setup",
+          activeProviders: plan.activeProviders,
+          scope: "hub",
+        },
+        registrations,
+        plan,
+      );
+    };
+
+    await run(["claude", "opencode"]);
+    await fs.access(path.join(hubPath, ".claude", "settings.local.json"));
+    // OpenCode's hub apply writes nothing; its teardown prunes empty runtime folders.
+    await fs.mkdir(path.join(hubPath, ".opencode", "skills"), { recursive: true });
+
+    await run([]);
+    await expect(fs.access(path.join(hubPath, ".claude", "settings.local.json"))).rejects.toThrow();
+    await expect(fs.access(path.join(hubPath, ".opencode"))).rejects.toThrow();
   });
 });

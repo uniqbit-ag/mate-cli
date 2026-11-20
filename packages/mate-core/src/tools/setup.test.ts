@@ -1105,6 +1105,7 @@ describe("uv plugin (createUvPluginForTest)", () => {
       config: { allowedAgents: [] },
       mode: "setup",
       activeProviders: [],
+      scope: "companion",
     };
   }
 
@@ -1117,7 +1118,7 @@ describe("uv plugin (createUvPluginForTest)", () => {
       runShellCommand: runShellCommandMock,
     });
 
-    await uvPlugin.apply(makeCtx("/tmp/companion"));
+    await uvPlugin.lifecycle.companion!.apply(makeCtx("/tmp/companion"));
 
     expect(runShellCommandMock).not.toHaveBeenCalled();
     expect(runCommandMock).not.toHaveBeenCalled();
@@ -1132,7 +1133,7 @@ describe("uv plugin (createUvPluginForTest)", () => {
       runShellCommand: mock(async () => {}),
     });
 
-    await uvPlugin.apply(makeCtx("/tmp/companion"));
+    await uvPlugin.lifecycle.companion!.apply(makeCtx("/tmp/companion"));
 
     expect(runCommandMock).toHaveBeenCalledWith("brew", ["install", "uv"]);
     expect(runCommandMock).toHaveBeenCalledWith("uv", ["tool", "update-shell"]);
@@ -1148,7 +1149,7 @@ describe("uv plugin (createUvPluginForTest)", () => {
       runShellCommand: runShellCommandMock,
     });
 
-    await uvPlugin.apply(makeCtx("/tmp/companion"));
+    await uvPlugin.lifecycle.companion!.apply(makeCtx("/tmp/companion"));
 
     expect(runShellCommandMock).toHaveBeenCalledWith(
       "curl -LsSf https://astral.sh/uv/install.sh | sh",
@@ -1166,7 +1167,7 @@ describe("uv plugin (createUvPluginForTest)", () => {
       runShellCommand: runShellCommandMock,
     });
 
-    await uvPlugin.apply(makeCtx("/tmp/companion"));
+    await uvPlugin.lifecycle.companion!.apply(makeCtx("/tmp/companion"));
 
     expect(runShellCommandMock).toHaveBeenCalledWith(
       "curl -LsSf https://astral.sh/uv/install.sh | sh",
@@ -1183,7 +1184,7 @@ describe("uv plugin (createUvPluginForTest)", () => {
       runShellCommand: mock(async () => {}),
     });
 
-    await uvPlugin.apply(makeCtx("/tmp/companion"));
+    await uvPlugin.lifecycle.companion!.apply(makeCtx("/tmp/companion"));
 
     expect(runCommandMock).toHaveBeenCalledWith("powershell", [
       "-ExecutionPolicy",
@@ -1202,14 +1203,16 @@ describe("uv plugin (createUvPluginForTest)", () => {
       runShellCommand: mock(async () => {}),
     });
 
-    await expect(uvPlugin.apply(makeCtx("/tmp/companion"))).rejects.toThrow(
+    await expect(uvPlugin.lifecycle.companion!.apply(makeCtx("/tmp/companion"))).rejects.toThrow(
       "Unsupported platform for uv setup: aix",
     );
   });
 
   test("uv teardown is a no-op", async () => {
     const uvPlugin = createUvPluginForTest({});
-    await expect(uvPlugin.teardown(makeCtx("/tmp/companion"))).resolves.toBeUndefined();
+    await expect(
+      uvPlugin.lifecycle.companion!.teardown(makeCtx("/tmp/companion")),
+    ).resolves.toBeUndefined();
   });
 });
 
@@ -1940,10 +1943,14 @@ describe("applySetupCompatibilities — managed-output report", () => {
       description: "acme",
       defaultSelected: true,
       isEnabled: () => true,
-      async apply(ctx) {
-        record(ctx);
+      lifecycle: {
+        companion: {
+          async apply(ctx) {
+            record(ctx);
+          },
+          async teardown() {},
+        },
       },
-      async teardown() {},
     };
   }
 

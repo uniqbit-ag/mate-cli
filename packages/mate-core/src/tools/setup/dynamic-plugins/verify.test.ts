@@ -39,7 +39,13 @@ async function install(
   await fs.mkdir(root, { recursive: true });
   await fs.writeFile(
     path.join(root, "package.json"),
-    JSON.stringify({ name, version: "1.0.0", type: "module", main: "index.js" }),
+    JSON.stringify({
+      name,
+      version: "1.0.0",
+      type: "module",
+      main: "index.js",
+      mate: { pluginApiVersion: 2 },
+    }),
   );
   const side = marker
     ? `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(marker)}, "ran");\n`
@@ -47,7 +53,7 @@ async function install(
   await fs.writeFile(
     path.join(root, "index.js"),
     `${side}export default () => ({ id: "p", kind: "capability", label: "p", description: "p",
-  defaultSelected: false, isEnabled: () => true, apply: async () => {}, teardown: async () => {} });`,
+  defaultSelected: false, isEnabled: () => true, lifecycle: { companion: { apply: async () => {}, teardown: async () => {} } } });`,
   );
 }
 

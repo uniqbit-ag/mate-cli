@@ -6,6 +6,15 @@ import type { PluginService } from "./service";
 
 export type SetupScope = "companion" | "hub";
 
+// Exhaustive over SetupScope, so a new scope cannot slip past validation.
+const SETUP_SCOPE_RECORD: Record<SetupScope, true> = { companion: true, hub: true };
+
+export function isSetupScope(value: unknown): value is SetupScope {
+  return typeof value === "string" && Object.hasOwn(SETUP_SCOPE_RECORD, value);
+}
+
+export const SETUP_SCOPES = Object.keys(SETUP_SCOPE_RECORD) as SetupScope[];
+
 /**
  * Where a reconcile pass lands its documents. `companion` writes the material's
  * own repository; `working` renders the documents an Agent Runtime discovers by
@@ -18,8 +27,8 @@ export interface SetupContext {
   config: FrameworkConfig;
   mode: "setup" | "sync";
   activeProviders: string[];
-  /** Hub setup runs providers but excludes companion-only surfaces. */
-  scope?: SetupScope;
+  /** Selects which `Plugin.lifecycle` entry the engine dispatches. */
+  scope: SetupScope;
   /** Working repository path when syncing from a linked repo (e.g. during launch). */
   repoPath?: string;
   /** Defaults to `companion`, so a caller that names no target is unchanged. */
@@ -123,6 +132,12 @@ export interface PluginCliCommand {
   run(argv: string[]): Promise<void>;
 }
 
+/** Imperative setup handlers for one {@link SetupScope}; a declared scope has both. */
+export interface PluginLifecycle {
+  apply(ctx: SetupContext): Promise<void>;
+  teardown(ctx: SetupContext): Promise<void>;
+}
+
 export interface Plugin {
   id: string;
   kind: "provider" | "capability" | "packageManager" | "integration" | "root";
@@ -135,8 +150,8 @@ export interface Plugin {
    */
   selectable?: boolean;
   isEnabled(config: FrameworkConfig): boolean;
-  apply(ctx: SetupContext): Promise<void>;
-  teardown(ctx: SetupContext): Promise<void>;
+  /** An omitted scope is an intentional no-op in that scope. */
+  lifecycle: Partial<Record<SetupScope, PluginLifecycle>>;
   gitignoreEntries?(ctx: SetupContext): string[];
   persistGitignoreEntries?: boolean;
   getInstallRequirements?(ctx: InstallRequirementContext): InstallRequirement[];
@@ -285,6 +300,7 @@ export interface CapabilityPlugin extends Plugin {
   getRuntimeContributions?(
     ctx: SetupContext,
   ): RuntimeContributionsByRuntime | Promise<RuntimeContributionsByRuntime>;
+  /** Dispatched in companion scope only. */
   forProvider?: Record<
     string,
     {
@@ -293,11 +309,4 @@ export interface CapabilityPlugin extends Plugin {
       preflight?(ctx: LaunchPreflightContext): Promise<string[]>;
     }
   >;
-  /**
-   * Hub-scope counterparts to apply/teardown. The engine calls these instead
-   * of apply/teardown when ctx.scope === "hub", never in addition. Absent
-   * hooks keep the capability-phase action skipped for hub scope, unchanged.
-   */
-  applyHub?(ctx: SetupContext): Promise<void>;
-  teardownHub?(ctx: SetupContext): Promise<void>;
 }

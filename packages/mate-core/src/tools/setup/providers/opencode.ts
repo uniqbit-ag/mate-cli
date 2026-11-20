@@ -733,6 +733,10 @@ async function reconcileOpenCodeAgentDefinitionContributions(
   }
 }
 
+async function teardownOpenCodeProvider(ctx: SetupContext): Promise<void> {
+  await teardownOpenCode(ctx.companionPath, ctx.activeProviders);
+}
+
 export function createOpenCodePlugin(): ProviderPlugin {
   return {
     id: "opencode",
@@ -763,16 +767,21 @@ export function createOpenCodePlugin(): ProviderPlugin {
         getFilePath: (ctx: SetupContext) => path.join(ctx.companionPath, "AGENTS.md"),
       },
     },
-    async apply(ctx: SetupContext) {
-      if (ctx.scope === "hub") return;
-      await syncOpenCodeRuntimeFiles(
-        path.join(getSetupProvidersRoot(), "opencode"),
-        ctx.companionPath,
-      );
-      await configureOpenCodeGuidance(ctx.companionPath);
-    },
-    async teardown(ctx: SetupContext) {
-      await teardownOpenCode(ctx.companionPath, ctx.activeProviders);
+    lifecycle: {
+      companion: {
+        async apply(ctx: SetupContext) {
+          await syncOpenCodeRuntimeFiles(
+            path.join(getSetupProvidersRoot(), "opencode"),
+            ctx.companionPath,
+          );
+          await configureOpenCodeGuidance(ctx.companionPath);
+        },
+        teardown: teardownOpenCodeProvider,
+      },
+      hub: {
+        async apply() {},
+        teardown: teardownOpenCodeProvider,
+      },
     },
   };
 }

@@ -35,6 +35,7 @@ function makeCtx(companionPath: string): SetupContext {
     config: { allowedAgents: ["opencode"], capabilities: [] },
     mode: "sync",
     activeProviders: ["opencode"],
+    scope: "companion",
   };
 }
 
@@ -213,7 +214,7 @@ describe("Mate's own OpenCode plugin is not bound into the companion config", ()
       "utf8",
     );
 
-    await createOpenCodePlugin().apply?.(makeCtx(companion));
+    await createOpenCodePlugin().lifecycle.companion?.apply(makeCtx(companion));
 
     const config = await fs.readFile(path.join(companion, ".opencode", "opencode.json"), "utf8");
     expect(config).not.toContain("mate-opencode-plugin");

@@ -515,8 +515,7 @@ describe("the Claude plugin folders a wrap pass publishes", () => {
       description: "ships a Claude plugin folder",
       defaultSelected: false,
       isEnabled: () => true,
-      async apply() {},
-      async teardown() {},
+      lifecycle: { companion: { async apply() {}, async teardown() {} } },
       getRuntimeContributions: () => ({ claude: { pluginDirectories: [{ path: folder }] } }),
     };
     const plugins = [...getActiveDistribution().registry.getAll(), capability];

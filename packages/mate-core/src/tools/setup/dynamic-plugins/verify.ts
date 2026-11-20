@@ -16,6 +16,8 @@ export interface PluginInspection {
   failures: PluginVerificationFailure[];
   /** IDs of the capabilities the loaded plugins provide. */
   capabilities: string[];
+  /** Notices for loaded plugins on a deprecated plugin API version. */
+  deprecations: string[];
 }
 
 /**
@@ -38,6 +40,7 @@ export async function inspectDeclaredPlugins(
   const env = deps.env ?? process.env;
   const failures: PluginVerificationFailure[] = [];
   const capabilities: string[] = [];
+  const deprecations: string[] = [];
   const declarations: Array<{ declaration: PluginDeclaration; audience: string | null }> = [];
   for (const { entry, audience } of await readEffectiveEntries(
     companionPath,
@@ -64,8 +67,12 @@ export async function inspectDeclaredPlugins(
     }
     // oxlint-disable-next-line no-await-in-loop -- declared order is part of the contract
     const result = await loadDynamicPlugin(companionPath, declaration, { ...deps, env }, audience);
-    if (!result.ok) failures.push({ package: name, reason: result.warning });
-    else if (result.plugin.kind === "capability") capabilities.push(result.plugin.id);
+    if (!result.ok) {
+      failures.push({ package: name, reason: result.warning });
+      continue;
+    }
+    if (result.deprecation) deprecations.push(result.deprecation);
+    if (result.plugin.kind === "capability") capabilities.push(result.plugin.id);
   }
-  return { failures, capabilities };
+  return { failures, capabilities, deprecations };
 }

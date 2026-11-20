@@ -55,8 +55,7 @@ export default function createPlugin(config, host) {
     defaultSelected: false,
     isEnabled: (frameworkConfig) =>
       (frameworkConfig.capabilities ?? []).some((capability) => capability.name === "acme-custom"),
-    apply: async () => {},
-    teardown: async () => {},
+    lifecycle: { companion: { apply: async () => {}, teardown: async () => {} } },
     cliCommands: [
       {
         name: "mcp",
@@ -85,7 +84,7 @@ const fakeNpmInstall: NpmInstallRunner = async (installDir) => {
       version: "1.2.0",
       type: "module",
       main: "index.js",
-      mate: { pluginApiVersion: 1 },
+      mate: { pluginApiVersion: 2 },
     }),
     "utf8",
   );
@@ -275,8 +274,7 @@ export default function createPlugin() {
     description: "ships a Claude plugin folder",
     defaultSelected: false,
     isEnabled: () => false,
-    apply: async () => {},
-    teardown: async () => {},
+    lifecycle: { companion: { apply: async () => {}, teardown: async () => {} } },
     getRuntimeContributions: () => ({ claude: { pluginDirectories: [{ path: pluginDir }] } }),
   };
 }
@@ -292,7 +290,7 @@ const shipperNpmInstall: NpmInstallRunner = async (installDir) => {
       version: "1.0.0",
       type: "module",
       main: "index.js",
-      mate: { pluginApiVersion: 1 },
+      mate: { pluginApiVersion: 2 },
     }),
     "utf8",
   );
@@ -317,8 +315,7 @@ const claudeProvider: ProviderPlugin = {
   description: "fixture runtime",
   defaultSelected: true,
   isEnabled: () => true,
-  apply: async () => {},
-  teardown: async () => {},
+  lifecycle: { companion: { async apply() {}, async teardown() {} } },
 };
 
 describe("dynamic plugin Claude plugin folders", () => {

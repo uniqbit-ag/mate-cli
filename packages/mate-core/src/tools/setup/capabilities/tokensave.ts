@@ -562,34 +562,39 @@ export function createTokensavePlugin(): CapabilityPlugin {
         opencode: { mcpServers },
       };
     },
-    async apply(ctx) {
-      // Presence only: make sure the tokensave binary is installed so the graph can be
-      // built later. The graph build itself (init/sync) lives in `mate cap index`, never
-      // in setup or launch-time sync — keeping launch fast and indexing an explicit step.
-      if (ctx.activeProviders.filter((p) => TOKENSAVE_SUPPORTED_AGENTS.has(p)).length === 0) return;
+    lifecycle: {
+      companion: {
+        async apply(ctx) {
+          // Presence only: make sure the tokensave binary is installed so the graph can be
+          // built later. The graph build itself (init/sync) lives in `mate cap index`, never
+          // in setup or launch-time sync — keeping launch fast and indexing an explicit step.
+          if (ctx.activeProviders.filter((p) => TOKENSAVE_SUPPORTED_AGENTS.has(p)).length === 0)
+            return;
 
-      const targetPath = ctx.repoPath ?? ctx.companionPath;
-      // Installing is the member's choice (`mate install`); neither a launch
-      // sync nor setup for a member who declined installs TokenSave.
-      const mayInstall =
-        ctx.mode === "setup" &&
-        !(await isDeclinedByMember(
-          ctx.companionPath,
-          ["tokensave"],
-          tokensaveDeps.readMemberChoices,
-        ));
-      const installed = mayInstall
-        ? await ensureTokensaveInstalled(targetPath, { upgrade: true })
-        : await tokensaveInstalled(targetPath);
-      if (!installed) return;
-      await ensureTokensaveBranchingPosture(targetPath, resolveSecretPolicy(ctx.companionPath));
-      if (ctx.mode === "setup") {
-        installTokensaveAgentIntegrations(ctx.activeProviders, targetPath);
-      }
-    },
-    async teardown(ctx) {
-      if (!ctx.repoPath) return;
-      await teardownDriver(ctx.repoPath, ctx.activeProviders);
+          const targetPath = ctx.repoPath ?? ctx.companionPath;
+          // Installing is the member's choice (`mate install`); neither a launch
+          // sync nor setup for a member who declined installs TokenSave.
+          const mayInstall =
+            ctx.mode === "setup" &&
+            !(await isDeclinedByMember(
+              ctx.companionPath,
+              ["tokensave"],
+              tokensaveDeps.readMemberChoices,
+            ));
+          const installed = mayInstall
+            ? await ensureTokensaveInstalled(targetPath, { upgrade: true })
+            : await tokensaveInstalled(targetPath);
+          if (!installed) return;
+          await ensureTokensaveBranchingPosture(targetPath, resolveSecretPolicy(ctx.companionPath));
+          if (ctx.mode === "setup") {
+            installTokensaveAgentIntegrations(ctx.activeProviders, targetPath);
+          }
+        },
+        async teardown(ctx) {
+          if (!ctx.repoPath) return;
+          await teardownDriver(ctx.repoPath, ctx.activeProviders);
+        },
+      },
     },
   };
 }

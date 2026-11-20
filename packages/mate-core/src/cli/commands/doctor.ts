@@ -112,6 +112,8 @@ export interface DoctorReport {
   audienceError?: string;
   /** IDs of the capabilities the verified plugins provide. */
   pluginCapabilities?: string[];
+  /** Notices for declared plugins on a deprecated plugin API version. */
+  pluginDeprecations?: string[];
   engineRequirement?: { range: string; ok: boolean; detail: string };
   /** Present when the companion's `openspec/config.yaml` has `rules` keys OpenSpec ignores. */
   openspecRuleWarnings?: Array<{ key: string; message: string }>;
@@ -548,6 +550,7 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
     const inspection = await inspect(root.rootPath);
     report.pluginFailures = inspection.failures;
     report.pluginCapabilities = inspection.capabilities;
+    if (inspection.deprecations.length > 0) report.pluginDeprecations = inspection.deprecations;
   }
 
   return report;
@@ -821,6 +824,9 @@ export async function runDoctorCommand(argv: string[] = [], deps: DoctorDeps = {
   const failures = report.pluginFailures ?? [];
   for (const failure of failures) {
     process.stderr.write(`${FRAMEWORK_NAME}: plugin ${failure.package}: ${failure.reason}\n`);
+  }
+  for (const notice of report.pluginDeprecations ?? []) {
+    process.stderr.write(`${FRAMEWORK_NAME}: ${notice}\n`);
   }
   for (const failure of report.claudePluginFailures ?? []) {
     process.stderr.write(

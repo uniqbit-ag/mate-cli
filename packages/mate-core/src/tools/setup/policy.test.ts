@@ -32,8 +32,7 @@ function makePlugin(id: string, kind: Plugin["kind"]): Plugin {
     description: `${id} plugin`,
     defaultSelected: false,
     isEnabled: () => false,
-    async apply() {},
-    async teardown() {},
+    lifecycle: { companion: { async apply() {}, async teardown() {} } },
   };
 }
 

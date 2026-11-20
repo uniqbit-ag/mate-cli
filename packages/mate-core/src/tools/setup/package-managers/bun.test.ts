@@ -25,7 +25,7 @@ describe("bunPlugin", () => {
   });
 
   test("apply and teardown are no-op promises", async () => {
-    await expect(bunPlugin.apply({} as never)).resolves.toBeUndefined();
-    await expect(bunPlugin.teardown({} as never)).resolves.toBeUndefined();
+    await expect(bunPlugin.lifecycle.companion!.apply({} as never)).resolves.toBeUndefined();
+    await expect(bunPlugin.lifecycle.companion!.teardown({} as never)).resolves.toBeUndefined();
   });
 });

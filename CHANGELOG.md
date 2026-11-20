@@ -34,6 +34,24 @@
 - Worksets are then isolated from each other by runc alone, and the factory only by the sandbox around it: for development and CI, not for production. The default, `sysbox`, is unchanged.
 - `bun run factory:local` passes the setting through, and the factory README describes a small profile for a workshop. `pack-local.sh` now also runs with GNU `mktemp` on Linux.
 
+### Plugin API v2: plugins declare their lifecycle per setup scope (breaking)
+
+- A plugin declares its setup handlers per scope in `lifecycle`, instead of top-level `apply`/`teardown` and `applyHub`/`teardownHub`. Mate runs only the entry for the current scope; an omitted scope does nothing there. `forProvider` is unchanged and runs in companion scope only. Built-in plugins keep their behavior.
+- A dynamic plugin opts in with `"mate": { "pluginApiVersion": 2 }` in its `package.json`, and returns:
+
+  ```js
+  lifecycle: {
+    companion: { async apply(ctx) {}, async teardown(ctx) {} },
+    hub: { async apply(ctx) {}, async teardown(ctx) {} }, // omit if the plugin does no hub work
+  }
+  ```
+
+  A declared scope needs both handlers, or the plugin is refused. `host.apiVersion` is now 2.
+
+- **v1 is deprecated, not refused.** Mate still loads a plugin that declares version 1 or no version, and maps it: `apply`/`teardown` to `lifecycle.companion` (and to `lifecycle.hub` for a plugin of kind `provider`, as before), `applyHub`/`teardownHub` to `lifecycle.hub`. `mate install` and `mate doctor` name each v1 plugin. A later release refuses v1, so move plugins to v2 now: `applyHub` becomes `lifecycle.hub.apply`, `teardownHub` becomes `lifecycle.hub.teardown`.
+- **Breaking for code built against mate-core:** the `Plugin` type has `lifecycle` instead of `apply`/`teardown`, `CapabilityPlugin.applyHub`/`teardownHub` are removed, and `SetupContext.scope` is required.
+- Removing Claude from a hub removes only what hub setup wrote there: `.claude/settings.local.json` and `.mcp.json`. Before, it also deleted the hub root's `.claude/settings.json` and `.claude/bin`, removed `AGENTS.md` unless OpenCode was allowed, and stripped Mate's block from `CLAUDE.md`.
+
 ### Studio issues an access token on every start (breaking)
 
 - `mate studio` now generates a token on every start, with or without `--writable` and `--terminal`, and prints and opens `http://localhost:<port>/?token=…`. Before, `mate studio --writable` without `--terminal` issued none, and a save needed only a matching `Origin` header, which any local process can set. So another user or process on the machine could create, overwrite or delete companion files.

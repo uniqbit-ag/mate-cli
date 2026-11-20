@@ -13,6 +13,7 @@ import type {
   RuntimeContributionsByRuntime,
   SetupContext,
 } from "./plugin";
+import { isSetupScope } from "./plugin";
 import {
   declaredHookMarkers,
   reconcileClaudeContributions,
@@ -129,6 +130,10 @@ export async function executeSetupInstallationPlan(
   registrations: PluginRegistration[],
   plan: SetupInstallationPlan,
 ): Promise<SetupInstallationOutcome> {
+  // An unknown scope would otherwise dispatch nothing, silently.
+  if (!isSetupScope(ctx.scope)) {
+    throw new Error(`unknown setup scope: ${String(ctx.scope)}`);
+  }
   const plugins = registrations.map((entry) => normalizeRegistration(entry).plugin);
   const pluginById = new Map(plugins.map((plugin) => [plugin.id, plugin]));
   const executedActions: SetupInstallationPlanAction[] = [];
@@ -153,17 +158,14 @@ export async function executeSetupInstallationPlan(
       continue;
     }
 
-    if (ctx.scope === "hub" && action.phase !== "provider") {
-      if (action.phase === "capability" && !action.providerId) {
-        const capability = plugin as CapabilityPlugin;
-        const hubHandler = action.action === "apply" ? capability.applyHub : capability.teardownHub;
-        if (hubHandler) {
-          mediator.track(action.pluginId);
-          const actionCtx: SetupContext = { ...ctx, ...mediator.servicesFor(action.pluginId) };
-          await hubHandler(actionCtx);
-          executedActions.push(action);
-        }
-      }
+    const companion = ctx.scope === "companion";
+    if (action.providerId && !companion) {
+      continue;
+    }
+    const lifecycle = plugin.lifecycle[ctx.scope];
+    // Companion scope keeps every planned plugin in play, handler or not, so
+    // finalize removes entries it no longer registers (all of them on teardown).
+    if (!companion && !lifecycle) {
       continue;
     }
 
@@ -174,14 +176,11 @@ export async function executeSetupInstallationPlan(
       emitWarning(warning);
     }
 
-    // Track every planned plugin so bookkeeping reconciles entries the plugin
-    // no longer registers (including all of them on teardown).
     mediator.track(action.pluginId);
     const actionCtx: SetupContext = { ...ctx, ...mediator.servicesFor(action.pluginId) };
 
     if (action.providerId) {
-      const capability = plugin as CapabilityPlugin;
-      const handler = capability.forProvider?.[action.providerId];
+      const handler = (plugin as CapabilityPlugin).forProvider?.[action.providerId];
       if (!handler) {
         continue;
       }
@@ -190,7 +189,10 @@ export async function executeSetupInstallationPlan(
       continue;
     }
 
-    await plugin[action.action](actionCtx);
+    if (!lifecycle) {
+      continue;
+    }
+    await lifecycle[action.action](actionCtx);
     executedActions.push(action);
   }
 

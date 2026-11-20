@@ -10,6 +10,7 @@ export type {
   McpServerDescriptor,
   Plugin,
   PluginCliCommand,
+  PluginLifecycle,
   RuntimeContributions,
   RuntimeContributionsByRuntime,
   SetupContext,
