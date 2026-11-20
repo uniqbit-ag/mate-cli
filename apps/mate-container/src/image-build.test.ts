@@ -117,6 +117,23 @@ describe("the recipe itself", () => {
     expect(dockerfile).not.toContain("bun run build");
   });
 
+  test("installs Studio Chat's bridge only when the build asks for one, and points Studio at it", () => {
+    const local = fs.readFileSync(path.join(CONTAINER_ROOT, "local.Dockerfile"), "utf8");
+    const prepare = 'mate-prepare-chat-bridges /opt/mate/tools "${MATE_STUDIO_CHAT_BRIDGES}"';
+    // Off by default: the published image carries no bridge.
+    expect(dockerfile).toMatch(/^ARG MATE_STUDIO_CHAT_BRIDGES=$/m);
+    expect(dockerfile).toContain('if [ -n "${MATE_STUDIO_CHAT_BRIDGES}" ]; then');
+    expect(dockerfile).toContain(prepare);
+    // After the installed Mate, whose pinned harness it prepares.
+    expect(dockerfile.indexOf(prepare)).toBeGreaterThan(
+      dockerfile.indexOf("COPY --from=packages /opt/mate/tools"),
+    );
+    // The local image installs another Mate, so it prepares that Mate's bridge again.
+    expect(local).toContain(prepare);
+    expect(local.indexOf(prepare)).toBeGreaterThan(local.indexOf("npm install --omit=dev"));
+    expect(dockerfile).toContain("MATE_STUDIO_CHAT_BRIDGES=${MATE_STUDIO_CHAT_BRIDGES}");
+  });
+
   test("names the Mate version exactly rather than resolving a channel", () => {
     expect(dockerfile).toContain("ARG MATE_VERSION");
     // No default: a build that is not told which release to install fails.

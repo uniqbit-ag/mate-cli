@@ -55,6 +55,7 @@ const shell = (overrides: Partial<ShellData> = {}): ShellData => ({
   metrics: null,
   writable: false,
   factoryMode: false,
+  chat: false,
   terminal: null,
   ...overrides,
 });
@@ -314,6 +315,19 @@ describe("the sidebar", () => {
     expect(viewLinks(markup)).toEqual(["/", "/specs", "/vault", "/graph", "/usage", "/reports"]);
     expect(markup).toContain('data-studio-nav-section="Analysis"');
     expect(markup).toContain('data-studio-nav-section="Published"');
+  });
+
+  it("offers Chat after the Analysis Overview only with chat enabled", () => {
+    expect(viewLinks(sidebar(shell({ studioMode: "analysis", chat: true })))).toEqual([
+      "/",
+      "/chat",
+      "/specs",
+      "/vault",
+      "/graph",
+      "/usage",
+      "/reports",
+    ]);
+    expect(viewLinks(sidebar(shell({ chat: true })))).not.toContain("/chat");
   });
 
   it("keeps companion and mode in every view link, and marks the current view", () => {

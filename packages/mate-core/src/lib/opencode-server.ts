@@ -3,7 +3,6 @@ import { execFileSync, spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
-import net from "node:net";
 
 import {
   activeSessions,
@@ -17,6 +16,7 @@ import {
   readServerRecord,
   serverFileBase,
 } from "../runtime/opencode-server-record";
+import { freeLoopbackPort } from "../runtime/host-process";
 import { withLock } from "../runtime/session-registry";
 import { writeAtomic } from "../runtime/write-atomic";
 
@@ -62,21 +62,6 @@ function startServe({ cwd, env, port, log }: Parameters<ServerDeps["start"]>[0])
   }
 }
 
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const probe = net.createServer();
-    probe.once("error", reject);
-    probe.listen(0, "127.0.0.1", () => {
-      const address = probe.address();
-      probe.close(() =>
-        typeof address === "object" && address
-          ? resolve(address.port)
-          : reject(new Error("no free port")),
-      );
-    });
-  });
-}
-
 function commandOf(pid: number): string | null {
   try {
     return execFileSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8" }).trim();
@@ -91,7 +76,7 @@ const isOpenCodeServe = (command: string | null) => /\bopencode\b.*\bserve\b/.te
 export const defaultServerDeps: ServerDeps = {
   dir: openCodeServersDir(),
   start: startServe,
-  freePort,
+  freePort: freeLoopbackPort,
   fetch,
   alive: processAlive,
   command: commandOf,

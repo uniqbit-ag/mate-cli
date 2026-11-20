@@ -1,6 +1,7 @@
 import {
   createStudioAccess,
   exchangeStudioToken,
+  isLoopbackHostname,
   normalizeOrigin,
   readBearer,
   studioAddress,
@@ -41,6 +42,9 @@ import { factoryCredentialResponse } from "./factory-credential";
 import { factoryGitTokensResponse } from "./factory-git-tokens";
 import { createWorksetResolver } from "./workset-session";
 import {
+  CHAT_CREDENTIAL_ROUTE,
+  CHAT_ROUTE,
+  CHAT_SESSION_ROUTE,
   FACTORY_CREDENTIAL_ROUTE,
   FACTORY_GIT_TOKENS_ROUTE,
   FACTORY_WORKSETS_ROUTE,
@@ -67,6 +71,18 @@ import {
   type StudioProfile,
 } from "./selection";
 import { errorMessage } from "../../../runtime/error-message";
+import { physicalPath } from "../../../runtime/physical-path";
+import {
+  CHAT_EFFORTS,
+  CHAT_HARNESSES,
+  CHAT_MODELS,
+  type ChatAgent,
+  renderPrompt,
+} from "../../../lib/studio-chat/agent";
+import { AgentCredentialError, checkedCredential } from "../../../lib/agent-credential";
+import { type ChatCredentials, createChatCredentials } from "../../../lib/studio-chat/credential";
+import { chatSession } from "../../../lib/studio-chat/session";
+import { ChatTurns } from "../../../lib/studio-chat/turns";
 import type { SpecGraphCache } from "./graph";
 import { createStudioSnapshotCache, type StudioSnapshotCache } from "./snapshot";
 import type { StudioPage } from "./views/model";
@@ -160,6 +176,11 @@ export interface StudioServerDeps {
   worksetStages?: (companionPath: string) => Promise<{ worksets: WorksetWithStage[] }>;
   /** The factory broker's client; from the environment when absent, null outside factory mode. */
   factoryClient?: FactoryClient | null;
+  /** The Analysis chat's backend; the local Claude Code harness when absent. */
+  chatAgent?: ChatAgent;
+  /** The chat's Claude credential; the profile's store under Mate's home when absent. */
+  chatCredentials?: ChatCredentials;
+  chatTurns?: ChatTurns;
 }
 
 export interface StudioServerOptions {
@@ -216,10 +237,12 @@ const FACTORY_LOG = new RegExp(`^${FACTORY_WORKSETS_ROUTE}/([^/]+)/log(/stream)?
  * What a route is, for its guard. A read needs the token where the invocation requires it
  * for reading; a write also needs the same origin, the token for saving and, when it names
  * a reason, the write path; a terminal call needs the token for the terminal and, when
- * privileged, the same origin; a session call is checked by its own bearer credential only.
+ * privileged, the same origin; a chat call needs a local-only Studio, the same origin and the
+ * token; a session call is checked by its own bearer credential only.
  */
 type RouteKind =
   | { kind: "read"; methods: readonly string[] }
+  | { kind: "chat"; methods: readonly string[] }
   | { kind: "write"; methods: readonly string[]; writable?: string }
   | { kind: "terminal"; methods: readonly string[]; privileged: boolean }
   | { kind: "session"; methods: readonly string[] };
@@ -227,7 +250,10 @@ type RouteKind =
 const ORIGIN_REASON = {
   write: "a change must come from Studio's own page",
   terminal: "the terminal is reachable only from Studio's own page",
+  chat: "the chat is reachable only from Studio's own page",
 } as const;
+
+const CHAT_OFF_REASON = "the chat is offered only when Studio listens on localhost alone";
 
 const READS = ["GET", "HEAD"] as const;
 
@@ -236,6 +262,11 @@ function routeOf(url: URL, method: string, hasApp: boolean): RouteKind {
   const { pathname } = url;
   if (pathname === REPORTS_ROUTE && method === "POST")
     return { kind: "session", methods: ["POST"] };
+  if (pathname === CHAT_ROUTE) return { kind: "chat", methods: ["POST"] };
+  if (pathname === CHAT_SESSION_ROUTE) return { kind: "chat", methods: ["GET"] };
+  if (pathname === CHAT_CREDENTIAL_ROUTE) {
+    return { kind: "chat", methods: ["GET", "HEAD", "PUT", "DELETE"] };
+  }
   if (pathname === FACTORY_CREDENTIAL_ROUTE) {
     return method === "GET" || method === "HEAD"
       ? { kind: "read", methods: [method] }
@@ -269,6 +300,12 @@ function routeOf(url: URL, method: string, hasApp: boolean): RouteKind {
     return { kind: "write", methods: ["POST"] };
   }
   return { kind: "read", methods: READS };
+}
+
+/** `value` when it is one of `allowed`, `undefined` when absent, `null` when it is anything else. */
+function oneOf<T extends string>(allowed: readonly T[], value: unknown): T | undefined | null {
+  if (value === undefined) return undefined;
+  return allowed.includes(value as T) ? (value as T) : null;
 }
 
 function refused(reason: string, status: number): Response {
@@ -334,6 +371,9 @@ async function readCapped(request: Request, limit: number): Promise<string | nul
 
 const NOT_WRITABLE = "start Studio with --writable to create or start Worksets";
 
+/** One chat request: its JSON body and how many messages the conversation may hold. */
+export const CHAT_LIMITS = { bodyBytes: 256 * 1024, messages: 100 } as const;
+
 const TOKEN_REASON =
   "Studio's access token is required; open the address Studio printed when it started";
 
@@ -368,6 +408,8 @@ export interface StudioFetchOptions extends Pick<
   publicOrigin?: string | null;
   /** Enables the terminal; the invocation sets its default detach window. */
   terminal?: boolean;
+  /** Enables the Analysis chat and its route. */
+  chat?: boolean;
   /** Studio's built application; paths the handler does not serve itself go to it. */
   app?: StudioApp | null;
 }
@@ -393,7 +435,7 @@ export function createStudioFetch(
   /** Created on the first Graph request, so other views never load the graph index. */
   let graphs: Promise<SpecGraphCache> | null = null;
   const writable = options.writable === true;
-  const policy = modePolicy(options.profile ?? "standard");
+  const policy = modePolicy(options.profile ?? "standard", { chat: options.chat === true });
   const broker = deps.factoryClient !== undefined ? deps.factoryClient : factoryClient();
   const reports = deps.reports ?? createReportStore();
   const stagesOf = deps.worksetStages ?? ((path: string) => readCompanionWorksetStages(path));
@@ -518,6 +560,143 @@ export function createStudioFetch(
     });
   };
 
+  const chatTurns = deps.chatTurns ?? new ChatTurns();
+  /** Created on the first chat request; the appliance never answers on the container's login. */
+  let chatCredentials: ChatCredentials | null = deps.chatCredentials ?? null;
+  const credentialsForChat = () =>
+    (chatCredentials ??= createChatCredentials({ appliance: options.profile === "appliance" }));
+  /** The harness backend loads on the first chat request, so Studio without it never imports it. */
+  let chatAgent: Promise<ChatAgent> | null = deps.chatAgent
+    ? Promise.resolve(deps.chatAgent)
+    : null;
+  /** The registered companion a chat request names by digest; `null` refuses it. */
+  const chatCompanion = async (digest: unknown) =>
+    typeof digest === "string" && COMPANION_DIGEST_PATTERN.test(digest)
+      ? selectedCompanion(digest, inventory)
+      : null;
+  /** One chat turn, streamed; every refusal comes before an agent starts. */
+  const chatTurn = async (request: Request, server?: StudioUpgrader): Promise<Response> => {
+    const busy = () =>
+      chatTurns.stopped
+        ? json({ reason: "Studio stopped" }, 503)
+        : json({ reason: "Studio is already answering two questions; try again shortly" }, 429);
+    // Checked first to skip reading a body that cannot be answered; `begin` below decides.
+    if (chatTurns.full) return busy();
+    const raw = await readCapped(request, CHAT_LIMITS.bodyBytes);
+    if (raw === null) return json({ reason: "the conversation exceeds the size limit" }, 413);
+    let body: {
+      companion?: unknown;
+      messages?: unknown;
+      harness?: unknown;
+      model?: unknown;
+      effort?: unknown;
+    };
+    try {
+      body = JSON.parse(raw) as typeof body;
+    } catch {
+      return json({ reason: "a chat request needs a JSON body" }, 400);
+    }
+    if (!body || typeof body !== "object" || !Array.isArray(body.messages)) {
+      return json({ reason: "a chat request needs a companion and its messages" }, 400);
+    }
+    if (body.messages.length > CHAT_LIMITS.messages) {
+      return json({ reason: `a conversation holds at most ${CHAT_LIMITS.messages} messages` }, 413);
+    }
+    const selected = await chatCompanion(body.companion);
+    if (!selected) return json({ reason: NO_COMPANION }, 400);
+    const harness = oneOf(CHAT_HARNESSES, body.harness);
+    if (harness === null)
+      return json({ reason: `the harness must be one of ${CHAT_HARNESSES.join(", ")}` }, 400);
+    const models = CHAT_MODELS[harness ?? "claude-code"].map(({ id }) => id);
+    const model = oneOf(models, body.model);
+    const effort = oneOf(CHAT_EFFORTS, body.effort);
+    if (model === null)
+      return json({ reason: `the model must be one of ${models.join(", ")}` }, 400);
+    if (effort === null)
+      return json({ reason: `the effort must be one of ${CHAT_EFFORTS.join(", ")}` }, 400);
+    const { createUIMessageStreamResponse, safeValidateUIMessages } = await import("ai");
+    const messages = await safeValidateUIMessages({ messages: body.messages });
+    if (!messages.success) return json({ reason: "the conversation is not valid" }, 400);
+    if (renderPrompt(messages.data) === null) {
+      return json({ reason: "the conversation must end with a question" }, 400);
+    }
+    // Loaded before a turn takes its place; a failed load is retried by the next request.
+    chatAgent ??= import("../../../lib/studio-chat/harness-chat-agent")
+      .then(({ createHarnessChatAgent }) => {
+        const credentials = credentialsForChat();
+        return createHarnessChatAgent({ credential: () => credentials.auth() });
+      })
+      .catch((error: unknown) => {
+        chatAgent = null;
+        throw error;
+      });
+    let agent: ChatAgent;
+    try {
+      agent = await chatAgent;
+    } catch (error) {
+      return json({ reason: `the chat agent could not load: ${errorMessage(error)}` }, 503);
+    }
+    const turn = chatTurns.begin(request.signal);
+    if (!turn) return busy();
+    let stream: ReturnType<ChatAgent["turn"]>;
+    try {
+      stream = agent.turn({
+        companionPath: selected.path,
+        messages: messages.data,
+        signal: turn.signal,
+        ...(harness ? { harness } : {}),
+        ...(model ? { model } : {}),
+        ...(effort ? { effort } : {}),
+      });
+    } catch (error) {
+      turn.abandon();
+      return json({ reason: `the chat agent did not start: ${errorMessage(error)}` }, 500);
+    }
+    // A turn may be quiet while the agent reads; the stream's keep-alives hold the connection.
+    server?.timeout?.(request, 0);
+    return createUIMessageStreamResponse({
+      stream: turn.track(stream),
+      keepAliveMs: 15_000,
+      headers: { "cache-control": "no-store" },
+    });
+  };
+
+  /** The chat credential: its status, never its value; set or cleared in Studio. */
+  const chatCredential = async (request: Request): Promise<Response> => {
+    try {
+      const credentials = credentialsForChat();
+      if (request.method === "PUT") {
+        const raw = await readCapped(request, 16_384);
+        let body: unknown = null;
+        try {
+          body = raw === null ? null : JSON.parse(raw);
+        } catch {
+          // Refused below.
+        }
+        if (!body || typeof body !== "object") {
+          return json({ reason: "a credential needs a JSON body with kind and value" }, 400);
+        }
+        const { kind, value } = body as { kind?: unknown; value?: unknown };
+        credentials.set(checkedCredential(kind, value));
+      } else if (request.method === "DELETE") {
+        credentials.clear();
+      }
+      return json(credentials.status());
+    } catch (error) {
+      if (error instanceof AgentCredentialError) return json({ reason: error.message }, 400);
+      // Never echo an unexpected error: it could carry the value.
+      return json({ reason: "the chat credential could not be stored" }, 500);
+    }
+  };
+
+  /** What a chat turn for the selected companion can use; starts no agent. */
+  const chatSessionReport = async (url: URL): Promise<Response> => {
+    if (!(await chatCompanion(url.searchParams.get(COMPANION_PARAM)))) {
+      return json({ reason: NO_COMPANION }, 400);
+    }
+    return json(chatSession());
+  };
+
   /** One document's model, with the factory and terminal state its address needs. */
   const collectPage = async (url: URL): Promise<StudioPage> => {
     const page = await collectStudioPage(url, policy, inventory, snapshots, writable);
@@ -568,6 +747,7 @@ export function createStudioFetch(
     factoryMode: broker !== null,
     keepsFolder: (companionPath) =>
       broker !== null && !deletableWithin(companionPath, companionsDir),
+    physicalPath: (companionPath) => physicalPath(path.resolve(companionPath)),
     modePolicy: policy,
     page: collectPage,
     worksetAction: async (digest, id, action, field: StudioFormField) => {
@@ -695,6 +875,21 @@ export function createStudioFetch(
       return html(TOKEN_REQUIRED_PAGE, 401);
     }
     if (route.kind === "read") return null;
+    if (route.kind === "chat") {
+      if (!policy.chat) return refused(CHAT_OFF_REASON, 404);
+      // A browser sends no Origin on a same-origin GET; its fetch metadata, when it sends any,
+      // names the page instead. A cross-site GET cannot read the answer without CORS anyway.
+      const site = request.headers.get("sec-fetch-site");
+      const fromPage =
+        (request.method === "GET" || request.method === "HEAD") && !request.headers.has("origin")
+          ? site === null || site === "same-origin"
+          : access.originMatches(request, acceptedOrigin);
+      if (!fromPage) {
+        return refused(ORIGIN_REASON.chat, 403);
+      }
+      // A turn runs an agent on the person's login, so the token is required as for the terminal.
+      return access.hasToken(request) ? null : refused(TOKEN_REASON, 401);
+    }
     if (route.kind === "terminal" && !terminal) {
       return refused("start Studio with --writable --terminal to enable the terminal", 404);
     }
@@ -741,6 +936,12 @@ export function createStudioFetch(
     if (route.kind === "session") return publishReport(request);
     const refusal = refusalFor(route, request, url, acceptedOrigin);
     if (refusal) return respond(refusal);
+    if (route.kind === "chat") {
+      if (url.pathname === CHAT_CREDENTIAL_ROUTE) return respond(await chatCredential(request));
+      return url.pathname === CHAT_SESSION_ROUTE
+        ? chatSessionReport(url)
+        : chatTurn(request, server);
+    }
 
     if (url.pathname === REPORTS_ROUTE) {
       const digest = url.searchParams.get(COMPANION_PARAM) ?? "";
@@ -880,7 +1081,7 @@ export function createStudioFetch(
   handler.services = services;
   handler.close = async () => {
     vault.stop();
-    await terminal?.stopAll();
+    await Promise.all([terminal?.stopAll(), chatTurns.stopAll()]);
   };
   return handler;
 }
@@ -1065,6 +1266,19 @@ function reportOrigin(hostname: string, port: number): string {
 }
 
 /**
+ * Studio is reachable from this machine alone: a loopback bind, no proxy origin and no other
+ * host names. Only then does the standard profile offer the Analysis chat, since its agent reads
+ * as the person running Studio; the single-tenant appliance offers it on any bind.
+ */
+export function localOnly(hostname: string, options: StudioServerOptions): boolean {
+  return (
+    isLoopbackHostname(hostname) &&
+    !options.publicOrigin &&
+    (options.allowedHosts ?? []).length === 0
+  );
+}
+
+/**
  * A bind failure propagates: the caller reports it and exits rather than
  * opening a browser at a URL nothing answers.
  */
@@ -1091,6 +1305,7 @@ export function startStudioServer(
     publicOrigin: options.publicOrigin,
     reportOrigin: () => reportOrigin(hostname, boundPort),
     terminal: options.terminal === true,
+    chat: localOnly(hostname, options),
     detachMinutes: options.detachMinutes,
     launchCompanion: options.launchCompanion,
     noGit: options.noGit,

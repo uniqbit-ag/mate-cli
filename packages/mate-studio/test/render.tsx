@@ -35,6 +35,11 @@ const contextRouter = createRouter({
 });
 await contextRouter.load();
 
+/** `element` inside a router, for mounting views whose links need one. */
+export function inRouter(element: ReactElement): ReactElement {
+  return <RouterContextProvider router={contextRouter}>{element}</RouterContextProvider>;
+}
+
 /** Static markup of `element` with a router and query client around it, synchronously. */
 export function staticMarkup(element: ReactElement): string {
   return renderToStaticMarkup(

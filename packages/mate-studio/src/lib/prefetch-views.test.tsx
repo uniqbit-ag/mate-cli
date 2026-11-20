@@ -84,7 +84,7 @@ describe("usePrefetchViews", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const root = router.createRootRoute({
       component: function Page() {
-        usePrefetchViews(search, "engineering");
+        usePrefetchViews(search, "engineering", {});
         return null;
       },
     });

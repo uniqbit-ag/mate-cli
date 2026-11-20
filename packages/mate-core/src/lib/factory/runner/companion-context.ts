@@ -141,6 +141,11 @@ export async function companionSkills(
   return [...byName.values()].toSorted((a, b) => a.name.localeCompare(b.name));
 }
 
+/** The companion's own agent instructions (`AGENTS.md`), or "" when it has none. */
+export async function companionAgentsText(companionPath: string): Promise<string> {
+  return (await textFile(path.join(companionPath, "AGENTS.md")))?.trim() ?? "";
+}
+
 /** The Workset image's PATH, with the wrapper bin first as a launch puts it. */
 const WORKSET_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
@@ -162,7 +167,7 @@ export async function companionSession(
     capabilities,
     secretGuardrails: resolveSecretPolicy(companionPath).guardrails,
   });
-  const agents = await textFile(path.join(companionPath, "AGENTS.md"));
+  const agents = await companionAgentsText(companionPath);
   const env = mateSessionEnvironment({
     repository,
     companionPath,
@@ -172,7 +177,7 @@ export async function companionSession(
   });
   const wrappers = env.MATE_WRAPPER_BIN_PATH;
   return {
-    instructions: [policy, agents?.trim()].filter(Boolean).join("\n\n"),
+    instructions: [policy, agents].filter(Boolean).join("\n\n"),
     env: { ...env, PATH: wrappers ? `${wrappers}:${WORKSET_PATH}` : WORKSET_PATH },
   };
 }

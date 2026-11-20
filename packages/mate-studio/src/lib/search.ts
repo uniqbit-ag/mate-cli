@@ -6,6 +6,7 @@ import {
   STUDIO_MODE_PARAM,
   viewsFor,
   type StudioMode,
+  type StudioOffers,
   type StudioView,
 } from "@uniqbit/mate-core/studio";
 
@@ -82,9 +83,10 @@ export function canonicalHref(
   searchStr: string,
   view: StudioView | undefined,
   studioMode: StudioMode,
+  offers: StudioOffers = {},
 ): string | null {
   const params = new URLSearchParams(searchStr);
-  const offered = view === undefined || viewsFor(studioMode).includes(view);
+  const offered = view === undefined || viewsFor(studioMode, offers).includes(view);
   if (params.get(STUDIO_MODE_PARAM) === studioMode && !params.has(LEGACY_ROLE_PARAM) && offered) {
     return null;
   }

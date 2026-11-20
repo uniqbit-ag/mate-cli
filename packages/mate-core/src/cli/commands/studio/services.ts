@@ -29,6 +29,8 @@ export interface StudioServices {
    * folders inside the factory's companions directory.
    */
   keepsFolder(companionPath: string): boolean;
+  /** The companion's path with links followed, as the chat's sandbox resolves it. */
+  physicalPath(companionPath: string): string;
   /** The startup profile's Studio modes; every page selection is resolved through it. */
   readonly modePolicy: StudioModePolicy;
   /** Everything one view is derived from, for the address that asked for it. */

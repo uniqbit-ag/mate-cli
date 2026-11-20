@@ -81,6 +81,26 @@ async function writeHubConfig(hub: string): Promise<void> {
   );
 }
 
+/**
+ * A normal command that passes the install gate and then succeeds: `report` renders a supplied
+ * document without collecting usage.
+ */
+async function reportArgs(root: string): Promise<string[]> {
+  const input = path.join(root, "report.json");
+  await fs.writeFile(
+    input,
+    JSON.stringify({
+      version: 1,
+      title: "Acme report",
+      generatedAt: "2026-11-07T12:00:00Z",
+      metadata: [],
+      summary: [],
+      sections: [{ id: "notes", title: "Notes", type: "text", content: "Acme" }],
+    }),
+  );
+  return ["report", "--input", input, "--json"];
+}
+
 async function runMate(root: string, cwd: string, args: string[]): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cliPath, ...args], {
@@ -111,7 +131,7 @@ describe("install lifecycle CLI", () => {
     const before = await runMate(entry.root, entry.root, ["report", "--json"]);
     expect(before.status).toBe(1);
     expect(before.stderr).toContain("repaired installation state");
-    expect(before.stderr).toContain("No companion found");
+    expect(before.stderr).toContain("No Companion Repository resolves for this directory");
 
     const installed = await runMate(entry.root, entry.root, ["install", "--yes"]);
     expect(installed.status).toBe(0);
@@ -186,7 +206,7 @@ describe("install lifecycle CLI", () => {
       path.join(entry.working, ".mate", "config", "registry.yaml"),
       `repository:\n  id: working\n  path: ${entry.working}\n  profile: default\ncompanions:\n  - path: ${entry.companion}\n    repositoryId: working\n    source: existing\n`,
     );
-    const result = await runMate(entry.root, entry.working, ["report", "--json"]);
+    const result = await runMate(entry.root, entry.working, await reportArgs(entry.root));
     expect(result.status).toBe(0);
     expect(result.stderr).toContain("repaired installation state");
   });
@@ -226,7 +246,7 @@ describe("install lifecycle CLI", () => {
     expect(installed.status).toBe(0);
     expect(installed.stdout).toContain("RTK: not chosen yet");
 
-    const result = await runMate(entry.root, entry.working, ["report", "--json"]);
+    const result = await runMate(entry.root, entry.working, await reportArgs(entry.root));
     expect(result.stderr).not.toContain("RTK CLI");
     expect(result.status).toBe(0);
   });
@@ -250,7 +270,7 @@ describe("install lifecycle CLI", () => {
     const state = await fs.readFile(statePath, "utf8");
     await fs.writeFile(statePath, state.replace("contractRevision: 1", "contractRevision: 0"));
 
-    const result = await runMate(entry.root, entry.working, ["report", "--json"]);
+    const result = await runMate(entry.root, entry.working, await reportArgs(entry.root));
 
     expect(result.status).toBe(0);
     expect(result.stderr).toContain("repaired installation state");

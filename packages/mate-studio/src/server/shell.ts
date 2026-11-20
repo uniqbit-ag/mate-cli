@@ -22,6 +22,12 @@ export interface ShellCompanion {
   pairings: string[];
   /** Removing it only unregisters it: the factory deletes folders only in its companions directory. */
   keepsFolder?: boolean;
+  /** Its path with links followed, when that differs; the chat's agent reports paths from it. */
+  realPath?: string;
+}
+
+function withRealPath(companion: ShellCompanion, realPath: string): ShellCompanion {
+  return realPath === companion.path ? companion : { ...companion, realPath };
 }
 
 /** What the sidebar and page header show, for every view. Digests only cross to the browser. */
@@ -38,6 +44,8 @@ export interface ShellData {
   writable: boolean;
   /** The factory broker runs: only then is the Factory view offered. */
   factoryMode: boolean;
+  /** The Analysis Chat view is offered: on a localhost-only Studio, or in the appliance. */
+  chat: boolean;
   /** The agent terminal; `null` when Studio runs without it. */
   terminal: ShellTerminal | null;
 }
@@ -73,11 +81,17 @@ export const getShell = createServerFn({ method: "GET" })
       ...(context.studio.keepsFolder(companion.path) ? { keepsFolder: true } : {}),
     }));
     const payload = page.payload;
+    const selected = page.companion
+      ? (companions.find((entry) => entry.path === page.companion!.path) ?? null)
+      : null;
+    const chat = context.studio.modePolicy.chat;
     return {
       companions,
-      selected: page.companion
-        ? (companions.find((entry) => entry.path === page.companion!.path) ?? null)
-        : null,
+      // Only the chat needs the followed path.
+      selected:
+        selected && chat
+          ? withRealPath(selected, context.studio.physicalPath(selected.path))
+          : selected,
       studioMode: page.selection.studioMode,
       enabledModes: [...context.studio.modePolicy.enabled],
       profile: context.studio.modePolicy.profile,
@@ -91,6 +105,7 @@ export const getShell = createServerFn({ method: "GET" })
         : null,
       writable: page.writable,
       factoryMode: context.studio.factoryMode,
+      chat,
       terminal: page.terminal
         ? {
             pinned: page.terminal.pinned,

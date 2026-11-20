@@ -28,6 +28,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       location.searchStr,
       viewAt(location.pathname),
       shell.studioMode,
+      { chat: shell.chat },
     );
     if (href) {
       const hash =

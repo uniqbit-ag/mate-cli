@@ -1,3 +1,4 @@
+import { AgentCredentialError } from "../agent-credential";
 import {
   checkedCredential,
   credentialKind,
@@ -160,6 +161,9 @@ export async function handleRequest(handler: BrokerHandler, request: Request): P
         { ok: false, error: error.message, ...(error.code ? { code: error.code } : {}) },
         { status: 400 },
       );
+    }
+    if (error instanceof AgentCredentialError) {
+      return Response.json({ ok: false, error: error.message }, { status: 400 });
     }
     // Never echo an unexpected error: it could carry anything, the credential included.
     process.stderr.write(

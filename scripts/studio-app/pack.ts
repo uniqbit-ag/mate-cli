@@ -33,8 +33,21 @@ const build = spawnSync("bun", ["run", "build"], {
 });
 if (build.status !== 0) process.exit(build.status ?? 1);
 
+// Vite writes each bundled package's license beside each build (`build.license`).
+const licenses = ["client", "server"].map((bundle) =>
+  path.join(STUDIO, "dist", bundle, "THIRD-PARTY-LICENSES.md"),
+);
+const exists = await Promise.all(licenses.map((file) => Bun.file(file).exists()));
+const missing = licenses.filter((_, index) => !exists[index]);
+if (missing.length > 0) {
+  console.error(`the Studio build wrote no ${missing.map((file) => path.relative(ROOT, file))}`);
+  process.exit(1);
+}
+
 await rm(TARGET, { recursive: true, force: true });
 await cp(path.join(STUDIO, "dist"), TARGET, { recursive: true });
+// The bundle carries third-party code, so it ships with their notices.
+await cp(path.join(ROOT, "THIRD-PARTY-NOTICES.md"), path.join(TARGET, "THIRD-PARTY-NOTICES.md"));
 
 const leaks: string[] = [];
 for (const file of await files(TARGET)) {

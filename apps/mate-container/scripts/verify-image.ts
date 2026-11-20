@@ -273,6 +273,26 @@ export function runChecks(
     relocated.stderr.trim(),
   );
 
+  // Studio Chat's bridge: none in a default image, whose first question installs
+  // it into the home. An image built with one starts it as the container's user,
+  // offline, without installing: a turn that had to install would fail on the
+  // read-only tree.
+  const chatBridges = probe(
+    [
+      'if [ -z "$MATE_STUDIO_CHAT_BRIDGES" ]; then ! test -e /opt/mate/chat-bridges; else',
+      '! test -w "$MATE_STUDIO_CHAT_BRIDGES/claude-code"',
+      "&& bun /opt/mate/tools/node_modules/@uniqbit/mate-core/src/lib/studio-chat/prepare-bridges.ts",
+      '--check "$MATE_STUDIO_CHAT_BRIDGES"; fi',
+      "&& echo ok",
+    ],
+    { network: false },
+  );
+  add(
+    "Studio Chat's bridge is absent, or prebuilt and starts offline without installing",
+    chatBridges.stdout.trim().endsWith("ok"),
+    chatBridges.stderr.trim(),
+  );
+
   // No credential, no operator configuration, no update state.
   const clean = probe(
     [

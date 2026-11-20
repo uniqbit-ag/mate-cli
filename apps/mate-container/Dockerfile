@@ -264,6 +264,20 @@ COPY scripts/write-bundle-manifest.ts /opt/mate/tools/startup/write-bundle-manif
 RUN bun /opt/mate/tools/startup/write-bundle-manifest.ts /opt/mate/prebuilt "${MATE_VERSION}" \
  && test -f /opt/mate/prebuilt-manifest.json
 
+# --- Studio Chat's bridge, only when asked for ------------------------------
+# The published image carries none: the first chat question installs it from
+# the harness's lockfile into ~/.mate/cache, on the mate-home volume. An image
+# built with --build-arg MATE_STUDIO_CHAT_BRIDGES=/opt/mate/chat-bridges holds
+# it installed there instead, at the harness version the installed Mate pins,
+# read-only for `mate`, so a question installs and downloads nothing.
+# local.Dockerfile runs the script again for the Mate it installs.
+ARG MATE_STUDIO_CHAT_BRIDGES=
+COPY scripts/prepare-chat-bridges.sh /usr/local/bin/mate-prepare-chat-bridges
+RUN chmod +x /usr/local/bin/mate-prepare-chat-bridges \
+ && if [ -n "${MATE_STUDIO_CHAT_BRIDGES}" ]; then \
+      mate-prepare-chat-bridges /opt/mate/tools "${MATE_STUDIO_CHAT_BRIDGES}"; \
+    fi
+
 # --- graphify, from a hash-locked requirements file ------------------------
 # `uv tool install graphifyy` would resolve transitive dependencies afresh on
 # every rebuild; installing from the compiled, hashed requirements does not.
@@ -360,6 +374,7 @@ ENV MATE_VERSION=${MATE_VERSION} \
     MATE_OPENCODE_VERSION=${OPENCODE_VERSION} \
     MATE_CLAUDE_VERSION=${CLAUDE_VERSION} \
     MATE_PREBUILT_WORKSPACE=/opt/mate/prebuilt \
+    MATE_STUDIO_CHAT_BRIDGES=${MATE_STUDIO_CHAT_BRIDGES} \
     MATE_COMPANIONS_DIR=/companions \
     MATE_UPDATE_POLICY=pinned \
     MATE_CONTEXT7_MODE=preinstalled \

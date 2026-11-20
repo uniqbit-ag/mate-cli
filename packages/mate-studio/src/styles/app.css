@@ -1337,6 +1337,24 @@
     font-size: 0.9375rem;
     line-height: 1.7;
   }
+  /* A chat answer: Streamdown renders each markdown block in its own wrapper. */
+  .chat-answer {
+    font-size: 0.9375rem;
+    line-height: 1.65;
+  }
+  .chat-answer > * > :first-child {
+    margin-top: 0;
+  }
+  .chat-answer > :last-child > :last-child {
+    margin-bottom: 0;
+  }
+  .chat-answer h1 {
+    font-size: 1.3em;
+  }
+  .chat-answer h2 {
+    margin-top: 1.6em;
+    font-size: 1.1em;
+  }
   .guide-reader .markdown-body pre,
   .guide-reader .md-table {
     max-width: 100%;

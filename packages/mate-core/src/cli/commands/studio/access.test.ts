@@ -532,6 +532,37 @@ describe("guards by request kind", () => {
     });
   });
 
+  test("a chat call needs a local-only Studio, the same origin and the token, and starts nothing when refused", async () => {
+    await withFixture(async (state) => {
+      const origin = `http://localhost:${PORT}`;
+      const post = (handler: ReturnType<typeof serve>, headers: Record<string, string>) =>
+        handler(
+          new Request(`http://localhost:${PORT}/api/chat`, {
+            method: "POST",
+            headers: { host: `localhost:${PORT}`, "content-type": "application/json", ...headers },
+            body: JSON.stringify({ companion: state.digest, messages: [] }),
+          }),
+        );
+      const off = serve(state, { access: access({ token: TOKEN }) });
+      const disabled = (await post(off, { origin, cookie: COOKIE }))!;
+      expect(disabled.status).toBe(404);
+      expect(await disabled.text()).toContain("localhost alone");
+      await off.close();
+
+      for (const invocation of ["interactive", "serve"] as const) {
+        const handler = serve(state, { chat: true, access: access({ invocation, token: TOKEN }) });
+        const foreign = await post(handler, { cookie: COOKIE, origin: "https://acme.test" });
+        expect(foreign!.status).toBe(403);
+        expect((await post(handler, { cookie: COOKIE }))!.status).toBe(403);
+        expect((await post(handler, { origin }))!.status).toBe(401);
+        const read = await handler(get("/api/chat", { cookie: COOKIE }));
+        expect(read!.status).toBe(405);
+        await handler.close();
+      }
+      expect(state.rendered).toBe(0);
+    });
+  });
+
   test("a terminal call needs the terminal token; a privileged one also the origin", async () => {
     await withFixture(async (state) => {
       const handler = serve(state, {

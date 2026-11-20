@@ -17,6 +17,7 @@ import { CompanionPicker } from "./companion-picker";
 import { shellQuery } from "../lib/studio-queries";
 import type { StudioSearch } from "../lib/search";
 import { NavigationProgress } from "./navigation-progress";
+import { ChatCredentialHost } from "../views/chat/chat-credential";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./top-bar";
 import { VIEW_DESCRIPTIONS, VIEW_TITLES } from "./views";
@@ -48,7 +49,12 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
   useStudioEvents(digest);
   useStudioClicks();
   useRailKey();
-  usePrefetchViews(shell.selected ? search : {}, shell.studioMode, shell.enabledModes);
+  usePrefetchViews(
+    shell.selected ? search : {},
+    shell.studioMode,
+    { chat: shell.chat },
+    shell.enabledModes,
+  );
   useEffect(() => {
     if (!digest) return;
     try {
@@ -91,6 +97,7 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
         {shell.terminal ? <TerminalSidebar terminal={shell.terminal} /> : null}
       </div>
       <CommandPalette shell={shell} search={search} />
+      {shell.chat ? <ChatCredentialHost apiKeyOnly={shell.profile === "appliance"} /> : null}
       <Toasts search={search} />
     </TooltipProvider>
   );

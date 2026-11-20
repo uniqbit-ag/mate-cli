@@ -4,6 +4,7 @@ import type { StudioInventory, StudioInventoryCompanion } from "./inventory";
 
 export type StudioView =
   | "dashboard"
+  | "chat"
   | "factory"
   | "workflow"
   | "getting-started"
@@ -16,6 +17,7 @@ export type StudioView =
 
 export const STUDIO_VIEWS: readonly StudioView[] = [
   "dashboard",
+  "chat",
   "factory",
   "workflow",
   "getting-started",
@@ -35,8 +37,8 @@ export const STUDIO_MODES: readonly StudioMode[] = ["engineering", "analysis"];
 /** Views only the mode is offered, in navigation order. */
 export const MODE_VIEWS: Readonly<Record<StudioMode, readonly StudioView[]>> = {
   engineering: ["dashboard", "factory", "workflow", "skills", "getting-started"],
-  // The same `dashboard` id; `Content` renders each mode's own Overview.
-  analysis: ["dashboard"],
+  // The same `dashboard` id; `Content` renders each mode's own Overview. Chat only on a local-only Studio.
+  analysis: ["dashboard", "chat"],
 };
 
 /** Views every mode is offered, in navigation order. */
@@ -48,8 +50,16 @@ export const LANDING_VIEW: Readonly<Record<StudioMode, StudioView>> = {
   analysis: "dashboard",
 };
 
-export function viewsFor(mode: StudioMode): readonly StudioView[] {
-  return [...MODE_VIEWS[mode], ...SHARED_VIEWS];
+/** Views the server offers only when started for them; never read from a request. */
+export interface StudioOffers {
+  readonly chat?: boolean;
+}
+
+export function viewsFor(mode: StudioMode, offers: StudioOffers): readonly StudioView[] {
+  return [
+    ...MODE_VIEWS[mode].filter((view) => view !== "chat" || offers.chat === true),
+    ...SHARED_VIEWS,
+  ];
 }
 
 /** How Studio was started; fixed for the server's life, never read from a request. */
@@ -62,6 +72,11 @@ export interface StudioModePolicy {
   readonly profile: StudioProfile;
   readonly enabled: readonly StudioMode[];
   readonly defaultMode: StudioMode;
+  /**
+   * The Analysis chat: under the standard profile only on a local-only Studio; always under the
+   * appliance profile, where Studio's access token and origin check guard it.
+   */
+  readonly chat: boolean;
 }
 
 const POLICIES: Readonly<Record<StudioProfile, StudioModePolicy>> = {
@@ -69,16 +84,24 @@ const POLICIES: Readonly<Record<StudioProfile, StudioModePolicy>> = {
     profile: "standard",
     enabled: Object.freeze(["engineering", "analysis"] as const),
     defaultMode: "engineering",
+    chat: false,
   }),
   appliance: Object.freeze({
     profile: "appliance",
     enabled: Object.freeze(["analysis"] as const),
     defaultMode: "analysis",
+    chat: true,
   }),
 };
 
-export function modePolicy(profile: StudioProfile = "standard"): StudioModePolicy {
-  return POLICIES[profile];
+export function modePolicy(
+  profile: StudioProfile = "standard",
+  offers: StudioOffers = {},
+): StudioModePolicy {
+  const policy = POLICIES[profile];
+  return offers.chat === true && profile === "standard"
+    ? Object.freeze({ ...policy, chat: true })
+    : policy;
 }
 
 const STANDARD_POLICY = modePolicy("standard");
@@ -194,8 +217,10 @@ export function effectiveMode(requested: StudioMode | null, policy: StudioModePo
 }
 
 /** A view the mode is not offered reads as the mode's landing view. */
-function readView(value: string | null, mode: StudioMode): StudioView {
-  return viewsFor(mode).includes(value as StudioView) ? (value as StudioView) : LANDING_VIEW[mode];
+function readView(value: string | null, mode: StudioMode, offers: StudioOffers): StudioView {
+  return viewsFor(mode, offers).includes(value as StudioView)
+    ? (value as StudioView)
+    : LANDING_VIEW[mode];
 }
 
 function readText(value: string | null): string | null {
@@ -232,7 +257,7 @@ function readVault(params: URLSearchParams, policy: StudioModePolicy): StudioVau
  */
 export function parse(url: URL, policy: StudioModePolicy = STANDARD_POLICY): StudioSelection {
   const base = readBase(url.searchParams, policy);
-  const view = readView(url.searchParams.get(VIEW_PARAM), base.studioMode);
+  const view = readView(url.searchParams.get(VIEW_PARAM), base.studioMode, policy);
   if (view === "vault") return readVault(url.searchParams, policy);
   return { ...base, view };
 }
@@ -260,8 +285,12 @@ export function switchView(selection: StudioSelection, view: StudioView): Studio
  * Keeps the view, and the vault's target with it, when the mode is offered the
  * view; otherwise lands on the mode's landing view.
  */
-export function switchMode(selection: StudioSelection, studioMode: StudioMode): StudioSelection {
-  if (viewsFor(studioMode).includes(selection.view)) {
+export function switchMode(
+  selection: StudioSelection,
+  studioMode: StudioMode,
+  offers: StudioOffers,
+): StudioSelection {
+  if (viewsFor(studioMode, offers).includes(selection.view)) {
     return { ...selection, studioMode, refresh: false };
   }
   return switchView({ ...selection, studioMode }, LANDING_VIEW[studioMode]);

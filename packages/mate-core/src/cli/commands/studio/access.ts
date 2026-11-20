@@ -74,6 +74,11 @@ function bracketed(hostname: string): string {
   return hostname.includes(":") && !hostname.startsWith("[") ? `[${hostname}]` : hostname;
 }
 
+/** A loopback host name, bracketed or not (`::1` and `[::1]` alike). */
+export function isLoopbackHostname(hostname: string): boolean {
+  return LOOPBACK_HOSTNAMES.includes(bracketed(hostname.toLowerCase()));
+}
+
 function digest(value: string): Buffer {
   return createHash("sha256").update(value).digest();
 }

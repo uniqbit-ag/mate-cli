@@ -21,6 +21,7 @@ const servicesFor = (profile: StudioProfile) =>
     writable: false,
     factoryMode: true,
     keepsFolder: () => false,
+    physicalPath: (companionPath: string) => companionPath,
     modePolicy: modePolicy(profile),
     page: async (url: URL) => ({
       ...page,

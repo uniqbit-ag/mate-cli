@@ -72,12 +72,16 @@ export {
   viewsFor,
   type StudioMode,
   type StudioModePolicy,
+  type StudioOffers,
   type StudioProfile,
   type StudioSelection,
   type StudioView,
 } from "./cli/commands/studio/selection";
 export { BRAND_SVGS } from "./brand/svg.generated";
 export {
+  CHAT_CREDENTIAL_ROUTE,
+  CHAT_ROUTE,
+  CHAT_SESSION_ROUTE,
   FACTORY_CREDENTIAL_ROUTE,
   FACTORY_GIT_TOKENS_ROUTE,
   factoryLogRoute,
@@ -90,7 +94,26 @@ export {
   TERMINAL_WASM,
   type StudioEvent,
 } from "./cli/commands/studio/routes";
-export type { CredentialKind, CredentialStatus } from "./lib/factory/credential-store";
+export {
+  CHAT_EFFORTS,
+  CHAT_HARNESS_NAMES,
+  CHAT_HARNESSES,
+  CHAT_CREDENTIAL_REJECTED,
+  CHAT_HISTORY_BUDGET,
+  CHAT_MODELS,
+  CHAT_NO_CREDENTIAL,
+  CHAT_NO_LOGIN,
+  type ChatEffort,
+  type ChatHarness,
+  type ChatModel,
+  type ChatModelChoice,
+  chatModel,
+  isCredentialFailure,
+  messageText,
+  replayedChars,
+} from "./lib/studio-chat/agent";
+export type { ChatSession } from "./lib/studio-chat/session";
+export type { CredentialKind, CredentialStatus } from "./lib/agent-credential";
 export type { GitTokenStatus } from "./lib/factory/git-credential-store";
 export { type AgentQuestion, questionsOf } from "./lib/factory/runner/questions";
 export {
