@@ -3,16 +3,13 @@
 # round. It mirrors the CI job ci-ok (.github/workflows/ci.yml): lint, format,
 # typecheck, image locks and the docs check; and adds the suites CI leaves out:
 # mate-core (unit and integration), mate-cli's unit tests and Studio's
-# typecheck, build and built-server test.
+# typecheck and tests.
 #
 # Left out on purpose:
 # - mate-cli's e2e suite drives a TTY through `expect`, which the workshop
 #   lacks.
 # - mate-container and mate-factory tests start Docker images (Sysbox for the
 #   factory), which the workshop cannot run; CI runs them when apps change.
-# - Studio's component tests (`bun test src` in packages/mate-studio): in a
-#   clean checkout they fail and the run is killed, on main too (2026-11-20);
-#   they pass in a developer's worktree. Run them there until that is fixed.
 # - knip: CI does not run it, and main carries findings of its own.
 # - mate-cli's `prepare` installs lefthook, which the workshop lacks; bun install
 #   reports it and goes on.
@@ -21,14 +18,9 @@ set -eu
 cd "$(dirname "$0")/.."
 PATH="$HOME/.bun/bin:$PATH"
 
-# The workshop's Git setup leaks into the tests' fixture repositories: the
-# system config's core.hooksPath silences their pre-receive hooks, and the
-# session's GIT_SSH_COMMAND, GIT_EDITOR and GIT_TERMINAL_PROMPT are what
-# Mate's own Git calls are tested to set. CI has neither.
-export GIT_CONFIG_NOSYSTEM=1
-unset GIT_SSH_COMMAND GIT_EDITOR GIT_TERMINAL_PROMPT
-# With the system hooks path off, the checkout's own lefthook hooks would fire
-# in tests that commit inside it; lefthook is not installed here.
+# The test runner leaves Git's system config out (the workshop's sets
+# core.hooksPath); then the checkout's own lefthook hooks would fire in a test
+# that commits inside it, and lefthook is not installed here.
 export LEFTHOOK=0
 
 echo '== bun install --frozen-lockfile'
@@ -52,32 +44,15 @@ bun run test:image-locks
 echo '== docs:check'
 bun run docs:check
 
-# Run on their own after the rest, as they fail under the parallel run in a
-# clean checkout, on main too: two files race the other workers for the run's
-# shared test HOME (its ~/.mate/runtime/claude-plugin is rebuilt under them),
-# and Studio's server test waits on file-watch events that a loaded run can
-# miss; the signal test also needs the run serial. The first ignore pattern is the one `bun run test` passes.
 echo '== mate-core tests'
-(
-	cd packages/mate-core
-	export CI=1
-	bun ../../test/run-isolated.ts \
-		'--path-ignore-patterns=claude-capability-plugins/*/tests/{autocomplete,companion-root,mention}.test.ts' \
-		'--path-ignore-patterns=src/{tools/setup/wrapped-unmanaged-session,lib/orchestrator/adapters/base-signals,cli/commands/studio/server}.test.ts'
-	echo '== mate-core tests that need the machine to themselves'
-	bun ../../test/run-isolated.ts --parallel=1 \
-		src/tools/setup/wrapped-unmanaged-session.test.ts \
-		src/lib/orchestrator/adapters/base-signals.test.ts \
-		src/cli/commands/studio/server.test.ts
-)
+(cd packages/mate-core && bun run test)
 
 echo '== mate-cli unit tests'
 (cd apps/mate-cli && bun run test:unit)
 
-echo '== mate-studio typecheck, build and built-server test'
+echo '== mate-studio typecheck and tests'
 (
 	cd packages/mate-studio
 	bun run typecheck
-	bun run build
-	bun test test/server-build.test.ts
+	bun run test
 )

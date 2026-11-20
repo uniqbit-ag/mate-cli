@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### A stop signal right after an agent starts no longer leaves it running
+
+- A launch now forwards `SIGTERM` and `SIGINT` from before it starts the agent. Before, a signal that reached the launch while the agent was starting ended the launch and left the agent running.
+
 ### Plugins can run a service next to Mate
 
 - A plugin can now declare a `service`: its own top-level command (`mate <name> …`), the connection to its background daemon (a socket path or URL from the environment), and its part of Studio: routes below `/api/plugins/<id>/` (HTTP, server-sent events or WebSocket), views in the navigation under **Services** that Studio mounts from the plugin's own browser module, Workset terminal sessions, and adding companions by Git URL. The contract is versioned (`apiVersion: 1`) and typed in `@uniqbit/mate-core/plugin-api`. See the new Service Plugins reference page.

@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 
 await import("../../test/dom");
-// Not Testing Library: the first file to import it owns its automatic cleanup, which the shell
-// tests rely on, and this file sorts before them.
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { mountPluginView, PluginView } = await import("./plugin-view");
