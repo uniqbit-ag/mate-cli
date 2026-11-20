@@ -1,14 +1,18 @@
 import fs from "node:fs";
 import os from "node:os";
 
+import type { WorksetRuntimeName } from "./config";
+
 /**
  * Factory mode's preflight: what Sysbox and the inner Docker daemon need,
  * checked before anything starts so a missing prerequisite is named with its
- * fix rather than surfacing later as a failed Workset.
+ * fix rather than surfacing later as a failed Workset. The dind Workset runtime
+ * skips Sysbox's own needs: FUSE, the kernel version, user namespaces and its volume.
  */
 
 /** Data directories that must be volumes: dockerd and Sysbox fail on overlayfs, and Worksets must survive restarts. */
 export const FACTORY_VOLUMES = ["/var/lib/docker", "/var/lib/sysbox", "/var/lib/mate-factory"];
+const SYSBOX_VOLUME = "/var/lib/sysbox";
 
 /** ID-mapped mounts plus overlayfs on them, which Sysbox uses instead of shiftfs. */
 export const MIN_KERNEL: [number, number] = [5, 19];
@@ -69,7 +73,11 @@ function fullyCapable(status: string | null, lastCap: string | null): boolean {
   return (BigInt(`0x${effective}`) & all) === all;
 }
 
-export function preflight(host: PreflightHost = defaultHost()): PreflightFailure[] {
+export function preflight(
+  host: PreflightHost = defaultHost(),
+  runtime: WorksetRuntimeName = "sysbox",
+): PreflightFailure[] {
+  const sysbox = runtime === "sysbox";
   const failures: PreflightFailure[] = [];
   const fail = (check: string, fix: string) => failures.push({ check, fix });
 
@@ -87,21 +95,22 @@ export function preflight(host: PreflightHost = defaultHost()): PreflightFailure
   if (!host.exists("/sys/fs/cgroup/cgroup.controllers")) {
     fail("cgroup v2 is mounted at /sys/fs/cgroup", "run on a host that uses cgroup v2");
   }
-  if (!host.exists("/dev/fuse")) {
+  if (sysbox && !host.exists("/dev/fuse")) {
     fail("/dev/fuse is available", "run privileged on a kernel with FUSE support");
   }
-  if (!kernelAtLeast(host.kernelRelease, MIN_KERNEL)) {
+  if (sysbox && !kernelAtLeast(host.kernelRelease, MIN_KERNEL)) {
     fail(
       `the kernel is ${MIN_KERNEL.join(".")} or newer (found ${host.kernelRelease})`,
       "update Docker Desktop or the host kernel",
     );
   }
-  if (Number(host.readFile("/proc/sys/user/max_user_namespaces")?.trim() ?? 0) < 1) {
+  if (sysbox && Number(host.readFile("/proc/sys/user/max_user_namespaces")?.trim() ?? 0) < 1) {
     fail("user namespaces are enabled", "set the host's user.max_user_namespaces above 0");
   }
 
   const mounts = mountTypes(host.readFile("/proc/self/mountinfo") ?? "");
   for (const volume of FACTORY_VOLUMES) {
+    if (!sysbox && volume === SYSBOX_VOLUME) continue;
     const type = mounts.get(volume);
     if (type === undefined) {
       fail(`${volume} is a mounted volume`, `mount a volume at ${volume}`);

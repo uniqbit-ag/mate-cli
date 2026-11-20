@@ -190,6 +190,7 @@ export function composeFile(options: { companion: string; port: number }): strin
     MATE_FACTORY_AGENT_MEMORY: null,
     MATE_FACTORY_WORKSET_PIDS: null,
     MATE_FACTORY_WORKSET_CPUS: null,
+    MATE_FACTORY_WORKSET_RUNTIME: null,
   };
   const project = {
     name: PROJECT,

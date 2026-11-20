@@ -58,7 +58,7 @@ CLI_PKG="$ROOT_DIR/apps/mate-cli/package.json"
 BASE_VERSION="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).version.split("-")[0]' "$CLI_PKG")"
 VERSION="${BASE_VERSION}-local.${LOCAL_N}"
 
-OUT_DIR="$(mktemp -d -t mate-pack-local)"
+OUT_DIR="$(mktemp -d -t mate-pack-local.XXXXXX)"
 echo "Packing @uniqbit/mate@$VERSION into $OUT_DIR"
 
 cp "$CORE_PKG" "$OUT_DIR/core.package.json.bak"
