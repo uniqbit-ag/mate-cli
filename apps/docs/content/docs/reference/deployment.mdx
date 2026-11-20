@@ -259,6 +259,11 @@ present:
   up as uncommitted changes. A restart with a matching installed tree
   reinstalls nothing.
 
+Restores and startup verification ignore
+[local plugins](/docs/reference/commands#local-plugins).
+`mate install --frozen-plugins` does not read `.mate/config/framework.local.yaml`,
+so a broken or unavailable local entry cannot stop an appliance.
+
 The registry token and `MATE_GIT_CLONE_TOKEN` exist only for startup. They are
 handed to the clone and restore processes alone, redacted from printed
 output, and removed from the environment before Studio starts, so agent

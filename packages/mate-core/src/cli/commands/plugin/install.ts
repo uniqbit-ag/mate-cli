@@ -5,7 +5,7 @@ import { resolveInstallContext } from "../../../lib/install";
 import { backfillHubAllowedAgents } from "../../../lib/orchestrator/companion-hub";
 import { ConfigStore } from "../../../lib/orchestrator/config-store";
 import type { FrameworkConfig, PluginDeclaration } from "../../../lib/orchestrator/types";
-import { applySetupCompatibilities } from "../../../tools/setup";
+import { applySetupCompatibilities, syncCompanionFiles } from "../../../tools/setup";
 import {
   describeUnknownAudience,
   readAudienceSelection,
@@ -13,6 +13,8 @@ import {
 } from "../../../tools/setup/dynamic-plugins/audiences";
 import { hydrateDynamicPlugins } from "../../../tools/setup/dynamic-plugins/hydrate";
 import type { PluginInstallDeps } from "../../../tools/setup/dynamic-plugins/install";
+import { declareLocalPlugin, isDeclaredLocally } from "../../../tools/setup/dynamic-plugins/local";
+import { LOCAL_PLUGINS_FILE_GITIGNORE_ENTRY } from "../../../tools/setup/dynamic-plugins/paths";
 import { installPluginWorkspaces } from "../../../tools/setup/dynamic-plugins/workspaces";
 import { reportPluginInstallResults, reportPluginWorkspaces } from "../install";
 
@@ -35,36 +37,47 @@ function withDeclaration(
   );
 }
 
-const INSTALL_USAGE = `usage: ${FRAMEWORK_NAME} plugin install <package>[@version]`;
+const INSTALL_USAGE = `usage: ${FRAMEWORK_NAME} plugin install [--local] <package>[@version]`;
 
 export interface PluginInstallCommandDeps {
   cwd?: string;
   installDeps?: PluginInstallDeps;
   setupHub?: (companionPath: string, config: FrameworkConfig) => Promise<void>;
+  syncCompanion?: (companionPath: string, config: FrameworkConfig) => Promise<unknown>;
+}
+
+function refuse(message: string): false {
+  process.stderr.write(`${FRAMEWORK_NAME}: ${message}\n`);
+  process.exitCode = 1;
+  return false;
 }
 
 /**
- * @command mate plugin install <package>[@version]
+ * @command mate plugin install [--local] <package>[@version]
  * @description Declares `<package>` in the companion's (or hub's) `framework.yaml`
  * `plugins:` list (adding it, or updating its version if already declared)
  * and installs it immediately into the shared workspace, the same way
  * `mate install` would on its next run: with the selected audience's
- * plugins, and without any other audience's.
+ * plugins, and without any other audience's. A successful install in a
+ * companion then syncs the companion's agent runtime settings, as
+ * `mate install` does.
+ * @flags
+ * - `--local` — declare the package in the untracked `.mate/config/framework.local.yaml` and install it into the ignored `.mate/local-plugins/`, for this machine only. No tracked file names it. Refused in a hub and for a package `framework.yaml` declares.
  */
 export async function runPluginInstallCommand(
   argv: string[],
   deps: PluginInstallCommandDeps = {},
 ): Promise<boolean> {
-  const spec = argv[0];
-  if (spec === "-h" || spec === "--help") {
+  if (argv.includes("-h") || argv.includes("--help")) {
     process.stdout.write(`${INSTALL_USAGE}\n`);
     return true;
   }
-  if (!spec || spec.startsWith("-")) {
-    const problem = spec ? `unknown option ${spec}; ` : "";
-    process.stderr.write(`${FRAMEWORK_NAME}: ${problem}${INSTALL_USAGE}\n`);
-    process.exitCode = 1;
-    return false;
+  const local = argv.includes("--local");
+  const unknownOption = argv.find((arg) => arg.startsWith("-") && arg !== "--local");
+  const spec = argv.find((arg) => !arg.startsWith("-"));
+  if (unknownOption || !spec) {
+    const problem = unknownOption ? `unknown option ${unknownOption}; ` : "";
+    return refuse(`${problem}${INSTALL_USAGE}`);
   }
   const { package: packageName, version } = parsePackageSpec(spec);
 
@@ -75,37 +88,49 @@ export async function runPluginInstallCommand(
     return false;
   }
   if ((context.kind !== "companion" && context.kind !== "hub") || !context.companionPath) {
-    process.stderr.write(
-      `${FRAMEWORK_NAME}: \`plugin install\` requires a companion or hub context; run it from inside a linked working repository or a hub root.\n`,
+    return refuse(
+      "`plugin install` requires a companion or hub context; run it from inside a linked working repository or a hub root.",
     );
-    process.exitCode = 1;
-    return false;
   }
 
   // A hub declares no audiences; the selection only applies to a companion.
   let audience: string | null = null;
   if (context.kind === "companion") {
     const resolved = resolveAudience(context.config, readAudienceSelection(process.env));
-    if (!resolved.ok) {
-      process.stderr.write(`${FRAMEWORK_NAME}: ${describeUnknownAudience(resolved)}\n`);
-      process.exitCode = 1;
-      return false;
-    }
+    if (!resolved.ok) return refuse(describeUnknownAudience(resolved));
     audience = resolved.active;
   }
 
-  const configPath = path.join(
-    context.companionPath,
-    `.${FRAMEWORK_NAME}`,
-    "config",
-    "framework.yaml",
-  );
-  const store = new ConfigStore(configPath);
-  const nextPlugins = withDeclaration(context.config.plugins ?? [], packageName, version);
-  const nextConfig = { ...context.config, plugins: nextPlugins };
-  const agentsBackfilled = context.kind === "hub" && backfillHubAllowedAgents(nextConfig);
-  if (nextPlugins !== context.config.plugins || agentsBackfilled) {
-    await store.save(nextConfig);
+  let nextConfig = context.config;
+  if (local) {
+    const problems = await declareLocalPlugin(
+      context.companionPath,
+      context.config,
+      packageName,
+      version,
+    );
+    if (problems.length > 0) {
+      return refuse(problems.map((problem) => problem.message).join("\n"));
+    }
+  } else {
+    if (await isDeclaredLocally(context.companionPath, context.config, packageName)) {
+      return refuse(
+        `plugin "${packageName}" is declared in ${LOCAL_PLUGINS_FILE_GITIGNORE_ENTRY}, so framework.yaml cannot declare it too; remove it there first.`,
+      );
+    }
+    const configPath = path.join(
+      context.companionPath,
+      `.${FRAMEWORK_NAME}`,
+      "config",
+      "framework.yaml",
+    );
+    const store = new ConfigStore(configPath);
+    const nextPlugins = withDeclaration(context.config.plugins ?? [], packageName, version);
+    nextConfig = { ...context.config, plugins: nextPlugins };
+    const agentsBackfilled = context.kind === "hub" && backfillHubAllowedAgents(nextConfig);
+    if (nextPlugins !== context.config.plugins || agentsBackfilled) {
+      await store.save(nextConfig);
+    }
   }
 
   const outcome = await installPluginWorkspaces(context.companionPath, nextConfig, audience, {
@@ -114,6 +139,9 @@ export async function runPluginInstallCommand(
   const { results } = outcome;
   reportPluginWorkspaces(outcome);
   reportPluginInstallResults(results);
+  const succeeded =
+    results.find((result) => result.package === packageName)?.status !== "failed" &&
+    !results.some((result) => result.refused);
   await hydrateDynamicPlugins({ companionPath: context.companionPath });
   if (context.kind === "hub") {
     await (
@@ -122,6 +150,9 @@ export async function runPluginInstallCommand(
         applySetupCompatibilities(companionPath, config, "sync", undefined, undefined, "hub"))
     )(context.companionPath, nextConfig);
   }
+  if (context.kind === "companion" && succeeded) {
+    await (deps.syncCompanion ?? syncCompanionFiles)(context.companionPath, nextConfig);
+  }
 
-  return results.find((result) => result.package === packageName)?.status !== "failed";
+  return succeeded;
 }

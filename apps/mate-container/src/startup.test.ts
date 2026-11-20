@@ -501,7 +501,7 @@ describe("what startup hands the supervisor", () => {
     makeCompanion(path.join(root, "acme"));
     const { run, calls } = recorder();
     prepareStartup(config(), deps({ run }));
-    expect(calls).toContainEqual(["mate", "doctor", "--json"]);
+    expect(calls).toContainEqual(["mate", "doctor", "--json", "--frozen-plugins"]);
     expect(calls.some((call) => call.includes("install") || call.includes("bash"))).toBe(false);
   });
 

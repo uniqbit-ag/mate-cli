@@ -8,7 +8,7 @@ import { parse } from "yaml";
 import { fakePluginInstallDeps } from "../../../../test/plugin-install";
 import { FrozenInstallError } from "./frozen";
 import type { NpmInstallRunner } from "./install";
-import { dynamicPluginsWorkspaceRoot, pluginPackageRoot } from "./paths";
+import { audienceOrigin, dynamicPluginsWorkspaceRoot, pluginPackageRoot } from "./paths";
 import {
   AUDIENCE_WORKSPACES_VERSION,
   describeRemovedAudience,
@@ -169,10 +169,10 @@ describe("installPluginWorkspaces", () => {
       ["@acme/reader", "installed"],
     ]);
     const shared = dynamicPluginsWorkspaceRoot(dir);
-    const ba = dynamicPluginsWorkspaceRoot(dir, "ba");
+    const ba = dynamicPluginsWorkspaceRoot(dir, audienceOrigin("ba"));
     expect(await readDependencies(shared)).toEqual({ "@acme/base": "^1.0.0" });
     expect(await readDependencies(ba)).toEqual({ "@acme/reader": "^1.0.0" });
-    expect(await exists(pluginPackageRoot(dir, "@acme/reader", "ba"))).toBe(true);
+    expect(await exists(pluginPackageRoot(dir, "@acme/reader", audienceOrigin("ba")))).toBe(true);
     expect(await exists(pluginPackageRoot(dir, "@acme/reader"))).toBe(false);
     const sharedLock = await fs.readFile(path.join(shared, "package-lock.json"), "utf8");
     const baLock = await fs.readFile(path.join(ba, "package-lock.json"), "utf8");
@@ -187,13 +187,13 @@ describe("installPluginWorkspaces", () => {
 
     await install(dir, "ba");
 
-    expect(await exists(dynamicPluginsWorkspaceRoot(dir, "qa"))).toBe(false);
+    expect(await exists(dynamicPluginsWorkspaceRoot(dir, audienceOrigin("qa")))).toBe(false);
   });
 
   test("a run without the audience leaves its manifest and lockfile byte-identical", async () => {
     const dir = await companion();
     await install(dir, "ba");
-    const ba = dynamicPluginsWorkspaceRoot(dir, "ba");
+    const ba = dynamicPluginsWorkspaceRoot(dir, audienceOrigin("ba"));
     const before = await Promise.all(
       ["package.json", "package-lock.json"].map((file) => fs.readFile(path.join(ba, file), "utf8")),
     );
@@ -220,7 +220,7 @@ describe("installPluginWorkspaces", () => {
 
     const outcome = await install(dir, null);
 
-    const ba = dynamicPluginsWorkspaceRoot(dir, "ba");
+    const ba = dynamicPluginsWorkspaceRoot(dir, audienceOrigin("ba"));
     expect(outcome.removed).toEqual(["ba"]);
     expect(describeRemovedAudience("ba")).toContain('"ba"');
     expect(describeRemovedAudience("ba")).toContain("MATE_AUDIENCE=ba mate install");
@@ -236,8 +236,8 @@ describe("installPluginWorkspaces", () => {
     const outcome = await install(dir, "qa");
 
     expect(outcome.removed).toEqual(["ba"]);
-    expect(await exists(pluginPackageRoot(dir, "@acme/reader", "ba"))).toBe(false);
-    expect(await exists(pluginPackageRoot(dir, "@acme/tester", "qa"))).toBe(true);
+    expect(await exists(pluginPackageRoot(dir, "@acme/reader", audienceOrigin("ba")))).toBe(false);
+    expect(await exists(pluginPackageRoot(dir, "@acme/tester", audienceOrigin("qa")))).toBe(true);
   });
 
   test("nothing to remove names no audience, and a frozen restore removes too", async () => {
@@ -276,8 +276,11 @@ describe("installPluginWorkspaces", () => {
 describe("removeUnselectedAudienceTrees", () => {
   test("removes the tree of an audience the companion no longer declares", async () => {
     const dir = await companion();
-    const gone = path.join(dynamicPluginsWorkspaceRoot(dir, "legacy"), "node_modules");
-    const kept = path.join(dynamicPluginsWorkspaceRoot(dir, "ba"), "node_modules");
+    const gone = path.join(
+      dynamicPluginsWorkspaceRoot(dir, audienceOrigin("legacy")),
+      "node_modules",
+    );
+    const kept = path.join(dynamicPluginsWorkspaceRoot(dir, audienceOrigin("ba")), "node_modules");
     await fs.mkdir(gone, { recursive: true });
     await fs.mkdir(kept, { recursive: true });
 
@@ -303,14 +306,14 @@ describe("the shared registry file", () => {
     await install(dir, "ba", npm);
 
     expect(npm.npmrc).toEqual([REGISTRY, REGISTRY]);
-    const link = path.join(dynamicPluginsWorkspaceRoot(dir, "ba"), ".npmrc");
+    const link = path.join(dynamicPluginsWorkspaceRoot(dir, audienceOrigin("ba")), ".npmrc");
     expect((await fs.lstat(link)).isSymbolicLink()).toBe(true);
     expect(await fs.readlink(link)).toBe(path.join("..", "..", ".npmrc"));
   });
 
   test("creates nothing without a shared file and keeps a file placed in the workspace", async () => {
     const dir = await companion();
-    const ba = dynamicPluginsWorkspaceRoot(dir, "ba");
+    const ba = dynamicPluginsWorkspaceRoot(dir, audienceOrigin("ba"));
     await linkSharedNpmrc(dir, "ba");
     expect(await exists(ba)).toBe(false);
 
@@ -324,7 +327,7 @@ describe("the shared registry file", () => {
   test("drops a dangling link and links again once the shared file is back", async () => {
     const dir = await companion();
     const shared = path.join(dynamicPluginsWorkspaceRoot(dir), ".npmrc");
-    const link = path.join(dynamicPluginsWorkspaceRoot(dir, "ba"), ".npmrc");
+    const link = path.join(dynamicPluginsWorkspaceRoot(dir, audienceOrigin("ba")), ".npmrc");
     await fs.mkdir(dynamicPluginsWorkspaceRoot(dir), { recursive: true });
     await fs.writeFile(shared, REGISTRY);
     await linkSharedNpmrc(dir, "ba");
@@ -344,7 +347,7 @@ describe("frozen restore per workspace", () => {
     const dir = await companion();
     await install(dir, "ba");
     await fs.rm(path.join(dynamicPluginsWorkspaceRoot(dir), "node_modules"), { recursive: true });
-    await fs.rm(path.join(dynamicPluginsWorkspaceRoot(dir, "ba"), "node_modules"), {
+    await fs.rm(path.join(dynamicPluginsWorkspaceRoot(dir, audienceOrigin("ba")), "node_modules"), {
       recursive: true,
     });
     const before = await trackedFiles(dir);
@@ -365,12 +368,15 @@ describe("frozen restore per workspace", () => {
     const missingManifest = await restore(dir, "ba").catch((error: unknown) => error);
     expect(missingManifest).toBeInstanceOf(FrozenInstallError);
     expect((missingManifest as Error).message).toContain(
-      path.join(dynamicPluginsWorkspaceRoot(dir, "ba"), "package.json"),
+      path.join(dynamicPluginsWorkspaceRoot(dir, audienceOrigin("ba")), "package.json"),
     );
     expect((missingManifest as Error).message).toContain("MATE_AUDIENCE=ba mate install");
 
     await install(dir, "ba");
-    const lockFile = path.join(dynamicPluginsWorkspaceRoot(dir, "ba"), "package-lock.json");
+    const lockFile = path.join(
+      dynamicPluginsWorkspaceRoot(dir, audienceOrigin("ba")),
+      "package-lock.json",
+    );
     await fs.rm(lockFile);
     const missingLock = await restore(dir, "ba").catch((error: unknown) => error);
     expect((missingLock as Error).message).toContain(lockFile);
@@ -382,7 +388,7 @@ describe("frozen restore per workspace", () => {
     await install(dir, "qa");
     await install(dir, "ba");
     await fs.writeFile(
-      path.join(dynamicPluginsWorkspaceRoot(dir, "qa"), "package-lock.json"),
+      path.join(dynamicPluginsWorkspaceRoot(dir, audienceOrigin("qa")), "package-lock.json"),
       "{ broken",
     );
 

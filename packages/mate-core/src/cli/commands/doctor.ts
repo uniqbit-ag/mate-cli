@@ -62,6 +62,8 @@ interface DoctorDeps {
   /** Returns a member checkout's HEAD commit, or null when unreadable. */
   gitHead?: (memberPath: string) => string | null;
   inspectPlugins?: (companionPath: string) => Promise<PluginInspection>;
+  /** Appliance startup: this machine's local plugins neither load nor count. */
+  committedPluginsOnly?: boolean;
   /** Loads the companion's declared plugins so their Capabilities contribute. */
   hydratePlugins?: (companionPath: string) => Promise<void>;
   inspectClaudePlugins?: (
@@ -534,7 +536,13 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
     /** Doctor reports plugin failures below; hydration supplies their contributions. */
     const hydrate =
       deps.hydratePlugins ??
-      ((companionPath) => hydrateDynamicPlugins({ companionPath, env, warn: () => {} }));
+      ((companionPath) =>
+        hydrateDynamicPlugins({
+          companionPath,
+          env,
+          warn: () => {},
+          includeLocal: !deps.committedPluginsOnly,
+        }));
     await hydrate(root.rootPath);
     const inspectClaudePlugins = deps.inspectClaudePlugins ?? inspectClaudePluginDirectories;
     const inspection = await inspectClaudePlugins(root.rootPath, root.config);
@@ -544,7 +552,9 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
 
   if (root.rootPath && root.config) {
     const inspect =
-      deps.inspectPlugins ?? ((companionPath) => inspectDeclaredPlugins(companionPath, { env }));
+      deps.inspectPlugins ??
+      ((companionPath) =>
+        inspectDeclaredPlugins(companionPath, { env, includeLocal: !deps.committedPluginsOnly }));
     const inspection = await inspect(root.rootPath);
     report.pluginFailures = inspection.failures;
     report.pluginCapabilities = inspection.capabilities;
@@ -800,7 +810,8 @@ function renderHumanReport(report: DoctorReport): void {
  * audience) are verified strictly (installed, loadable); any failure is named
  * on stderr and exits non-zero, as is an undeclared `MATE_AUDIENCE` or a
  * Capability whose runtime contributions fail to load.
- * `--json` emits the same report as one JSON document.
+ * `--json` emits the same report as one JSON document. `--frozen-plugins`
+ * ignores local plugins, for appliance startup verification.
  */
 /** One step: the checks run concurrently, so finer steps would finish in arbitrary order. */
 async function collectWithProgress(deps: DoctorDeps): Promise<DoctorReport> {
@@ -814,7 +825,8 @@ async function collectWithProgress(deps: DoctorDeps): Promise<DoctorReport> {
 
 export async function runDoctorCommand(argv: string[] = [], deps: DoctorDeps = {}): Promise<void> {
   const json = argv.includes("--json");
-  const report = json ? await collectDoctorReport(deps) : await collectWithProgress(deps);
+  const checkDeps = { ...deps, committedPluginsOnly: argv.includes("--frozen-plugins") };
+  const report = json ? await collectDoctorReport(checkDeps) : await collectWithProgress(checkDeps);
   if (json) await writeJsonStdout(report);
   else renderHumanReport(report);
 
