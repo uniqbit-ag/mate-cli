@@ -5,8 +5,11 @@ import type { Runtime } from "./sessions";
 
 /** Sidebar change actions: a skill started with a first-turn prompt. Mirrors Studio's actions. */
 
-/** Lowercase letters, digits and hyphens, so a name can never carry shell syntax or a flag. */
-export const SUBJECT_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
+/**
+ * A change name or its dated archive anchor: lowercase letters, digits and hyphens, so it
+ * can never carry shell syntax or a flag.
+ */
+export const SUBJECT_PATTERN = /^(?:\d{4}-\d{2}-\d{2}-)?[a-z0-9][a-z0-9-]{0,63}$/;
 
 export type ChangeAction = "archive" | "publish";
 

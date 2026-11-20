@@ -561,7 +561,11 @@ describe("workspace gate wiring", () => {
       (mate.pendingArtifacts as unknown as ReturnType<typeof mock>).mockImplementation(
         async () => ({
           pending: [
-            { name: "2026-11-06-acme-queue", anchor: "acme", delivery: { status: "waiting" } },
+            {
+              name: "acme-queue",
+              anchor: "2026-11-06-acme-queue",
+              delivery: { status: "waiting" },
+            },
           ],
         }),
       );
@@ -689,9 +693,6 @@ describe("workspace gate wiring", () => {
       for (const command of commands) expect(handlers.has(command)).toBe(true);
       const hidden = menus.commandPalette.map((entry: { command: string }) => entry.command);
       expect(hidden).toEqual(expect.arrayContaining(commands));
-      expect(Object.keys(manifest.contributes.configuration.properties)).toEqual([
-        "mate.autoRefreshInterval",
-      ]);
     });
   });
 

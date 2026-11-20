@@ -28,6 +28,10 @@ describe("actionPrompt", () => {
     );
   });
 
+  test("the date of an archive anchor does not count toward the name's length", () => {
+    expect(actionPrompt("publish", "claude", `2026-11-06-${"a".repeat(64)}`)).not.toBeNull();
+  });
+
   test.each(["", "Acme", "acme queue", "acme;rm", "-acme", "acme'x", "a".repeat(65)])(
     "rejects %p",
     (name) => {

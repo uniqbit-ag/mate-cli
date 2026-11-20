@@ -479,7 +479,8 @@ export function activate(context: vscode.ExtensionContext): void {
         tooltip: item.anchor,
         icon: item.waitingForMerge ? ICONS.waitingForMerge : ICONS.readyToPublish,
         contextValue: "pending",
-        data: { name: item.name } satisfies ActionTarget,
+        // A bare name is ambiguous once an older archive shares it.
+        data: { name: item.anchor } satisfies ActionTarget,
       })),
     })),
   );
