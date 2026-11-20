@@ -65,7 +65,7 @@ describe("the actions an Outcome accepts", () => {
     ["apply failed", "apply", run("failed"), ["feedback", "retry", "start"]],
     ["interrupted", "apply", run("interrupted"), ["feedback", "retry", "start"]],
     ["waiting for merge", "merge-wait", run("idle"), ["feedback", "start"]],
-    ["merged and archived", "publish", run("idle"), ["publish", "start"]],
+    ["merged and submitted", "publish", run("idle"), ["publish", "start"]],
     ["Done", "done", run("idle", { conversation: true }), []],
   ])("%s", (_name, stage, facts, expected) => {
     expect(sorted(outcomeActions(workset(stage), facts, runner))).toEqual(expected.toSorted());
@@ -118,7 +118,7 @@ describe("a refusal", () => {
       "Workset acme-login takes no feedback at at publish; start a new outcome instead",
     );
     expect(outcomeRefusal("publish", workset("merge-wait"), run("idle"), runner)).toBe(
-      "Workset acme-login is not merged and archived; it is at at merge-wait",
+      "Workset acme-login is not merged and submitted; it is at at merge-wait",
     );
   });
 

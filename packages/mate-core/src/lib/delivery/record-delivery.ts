@@ -1,3 +1,4 @@
+// oxlint-disable no-await-in-loop -- changes are recorded in order and the first refusal ends the run
 import {
   workingRepoGit,
   type ProtectionReason,
@@ -194,7 +195,6 @@ async function scopedChildren(
 ): Promise<string[]> {
   const scoped: string[] = [];
   for (const { dir } of located) {
-    // oxlint-disable-next-line no-await-in-loop -- a few small files, in order
     for (const repository of await scopedRepositories(dir)) {
       const child = children.find((entry) => sameRepository(entry, repository));
       if (child && !scoped.includes(child)) scoped.push(child);

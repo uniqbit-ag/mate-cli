@@ -44,6 +44,9 @@ class FakeEventSource {
   constructor(readonly url: string) {
     FakeEventSource.last = this;
   }
+  addEventListener(_type: "message", listener: (event: { data: string }) => void) {
+    this.onmessage = listener;
+  }
   close() {
     this.closed = true;
   }

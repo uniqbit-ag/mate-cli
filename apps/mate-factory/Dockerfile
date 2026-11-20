@@ -276,6 +276,7 @@ RUN uv python install "${GRAPHIFY_PYTHON_VERSION}" \
 #
 # Started by the appliance's inner daemon under sysbox-runc, so its root is
 # unprivileged on the host and its own dockerd can run nested containers. The
+# dind backend starts it privileged under runc instead (development and CI). The
 # agent and every command run as `mate`, whose uid matches the appliance's so
 # the bind-mounted worktree keeps its ownership. No credential is baked in;
 # Studio passes one per command.
@@ -590,7 +591,8 @@ USER root
 
 # The inner daemon's configuration lives outside /etc/docker so nothing starts
 # it by accident, and its socket is root's alone: Studio and sessions reach
-# Worksets only through the factory broker.
+# Worksets only through the factory broker. daemon-runc.json is the dind
+# backend's: no Sysbox, runc by default.
 COPY --from=fetch /out/factory/debs/ /tmp/debs/
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -612,7 +614,13 @@ RUN mkdir -p /etc/mate-factory \
       '  "runtimes": { "sysbox-runc": { "path": "/usr/bin/sysbox-runc" } },' \
       '  "default-runtime": "sysbox-runc",' \
       '  "log-level": "warn"' \
-      '}' > /etc/mate-factory/daemon.json
+      '}' > /etc/mate-factory/daemon.json \
+ && printf '%s\n' \
+      '{' \
+      '  "hosts": ["unix:///run/mate-factory/docker.sock"],' \
+      '  "group": "root",' \
+      '  "log-level": "warn"' \
+      '}' > /etc/mate-factory/daemon-runc.json
 COPY --from=workset-archive /workset-rootfs.tar.zst ${WORKSET_ARCHIVE}
 COPY --from=workset-archive /workset-image.conf /opt/mate/workset-image.conf
 

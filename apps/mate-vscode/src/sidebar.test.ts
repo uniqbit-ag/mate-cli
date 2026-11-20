@@ -299,7 +299,7 @@ describe("workspace gate wiring", () => {
       "mate.sessions",
       "mate.worktrees",
       "mate.openChanges",
-      "mate.readyToArchive",
+      "mate.readyToSubmit",
       "mate.readyToPublish",
     ]) {
       expect(await providers.get(id)!.getChildren()).toEqual([]);
@@ -346,7 +346,7 @@ describe("workspace gate wiring", () => {
     "mate.sessions",
     "mate.worktrees",
     "mate.openChanges",
-    "mate.readyToArchive",
+    "mate.readyToSubmit",
     "mate.readyToPublish",
   ];
 
@@ -388,7 +388,7 @@ describe("workspace gate wiring", () => {
       "mate.sessions": 0,
       "mate.worktrees": 1,
       "mate.openChanges": 0,
-      "mate.readyToArchive": 0,
+      "mate.readyToSubmit": 0,
       "mate.readyToPublish": 1,
     });
 
@@ -500,7 +500,7 @@ describe("workspace gate wiring", () => {
     }
   });
 
-  test("moves changes with every task checked from Open changes to Ready to archive", async () => {
+  test("moves changes with every task checked from Open changes to Ready to submit", async () => {
     const repo = await openRepository();
     const changes = path.join(repo, ".mate/companion/openspec/changes");
     const write = async (name: string, tasks?: string, branch?: string) => {
@@ -523,7 +523,7 @@ describe("workspace gate wiring", () => {
       ["acme", "1/2 tasks"],
       ["acme-draft", "0/0 tasks"],
     ]);
-    const ready = await providers.get("mate.readyToArchive")!.getChildren();
+    const ready = await providers.get("mate.readyToSubmit")!.getChildren();
     expect(ready.map((item) => [item.label, item.description])).toEqual([
       ["acme-done", "1/1 · acme-done"],
       ["acme-queue", "2/2 · acme"],
@@ -636,7 +636,7 @@ describe("workspace gate wiring", () => {
       "mate.sessions",
       "mate.worktrees",
       "mate.openChanges",
-      "mate.readyToArchive",
+      "mate.readyToSubmit",
       "mate.readyToPublish",
     ]);
     expect(

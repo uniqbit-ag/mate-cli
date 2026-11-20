@@ -242,7 +242,7 @@ export class FactoryRunner {
   }
 
   /**
-   * A person's feedback on the Outcome: revise its active changes, or, once they are archived,
+   * A person's feedback on the Outcome: revise its changes, or, once they are submitted or archived,
    * propose a follow-up change in the same conversation.
    */
   async feedback(id: string, text: string, followUp = false): Promise<void> {

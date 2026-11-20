@@ -1,3 +1,4 @@
+// oxlint-disable no-await-in-loop -- filesystem steps run in order
 import fs from "node:fs/promises";
 import path from "node:path";
 

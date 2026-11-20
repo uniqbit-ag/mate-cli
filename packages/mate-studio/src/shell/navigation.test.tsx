@@ -31,6 +31,7 @@ const shell: ShellData = {
   metrics: null,
   writable: false,
   factoryMode: false,
+  pluginViews: [],
   terminal: null,
 };
 

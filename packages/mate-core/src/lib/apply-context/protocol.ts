@@ -60,7 +60,7 @@ export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value !== null && typeof value === "object") {
     const entries = Object.keys(value as Record<string, unknown>)
-      .sort()
+      .toSorted()
       .filter((key) => (value as Record<string, unknown>)[key] !== undefined)
       .map(
         (key) => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`,
@@ -115,7 +115,7 @@ export function computeDigest(
     version: APPLY_CONTEXT_VERSION,
     identity,
     payload: staticView(payload),
-    fingerprints: [...fingerprints].sort((a, b) => a.path.localeCompare(b.path)),
+    fingerprints: fingerprints.toSorted((a, b) => a.path.localeCompare(b.path)),
   });
   return `sha256:${createHash("sha256").update(canonical).digest("hex")}`;
 }

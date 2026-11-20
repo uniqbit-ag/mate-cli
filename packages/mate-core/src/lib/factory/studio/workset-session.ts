@@ -1,13 +1,9 @@
-import { randomUUID } from "node:crypto";
-
-import { type FactoryClient, factoryClient } from "../../../lib/factory/client";
-import { type AttachStart, prepareCommand } from "../../../lib/factory/attach-client";
-import { prepareWorkset } from "../../../lib/factory/prepare";
-import { writeWorkset } from "../../../lib/workset/record";
-import { effectiveLaunchCompanion } from "./terminal-launch";
-import type { StudioInventory } from "./inventory";
-import type { WorksetSessionResolution } from "./terminal";
-import { NO_CREDENTIAL } from "../../../lib/factory/credential-store";
+import { type FactoryClient, factoryClient } from "../client";
+import { type AttachStart, prepareCommand } from "../attach-client";
+import { prepareWorkset } from "../prepare";
+import { writeWorkset } from "../../workset/record";
+import type { WorksetSessionResolution } from "../../../tools/setup/service";
+import { NO_CREDENTIAL } from "../credential-store";
 
 /**
  * Resolves a Workset session start: everything is checked and prepared on the server
@@ -16,8 +12,8 @@ import { NO_CREDENTIAL } from "../../../lib/factory/credential-store";
  */
 
 export interface WorksetResolverOptions {
-  collectInventory: () => Promise<StudioInventory>;
-  launchCompanion?: string | null;
+  /** The companion a session for `digest` runs in; `null` when none is selected. */
+  launchTarget: (digest: string | null) => Promise<string | null>;
   /** The Mate invocation prefix the attach helper runs under. */
   mateCommand: string[];
   client?: () => FactoryClient | null;
@@ -87,12 +83,9 @@ export function createWorksetResolver(
   return async (id, digest, session) => {
     const client = clientFor();
     if (!client) return { reason: "Workset sessions need the appliance's factory mode" };
-    const companion = await effectiveLaunchCompanion(
-      await options.collectInventory(),
-      options.launchCompanion,
-      digest,
-    );
-    if (!companion) return { reason: "no registered companion is selected" };
+    const target = await options.launchTarget(digest);
+    if (!target) return { reason: "no registered companion is selected" };
+    const companion = { path: target };
     try {
       if ((await client.info()).credential === null) {
         return { reason: NO_CREDENTIAL };
@@ -160,5 +153,3 @@ export function createWorksetResolver(
     }
   };
 }
-
-export const newSessionId = () => randomUUID();

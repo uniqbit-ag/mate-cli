@@ -96,7 +96,14 @@ describe("mate factory serve arguments", () => {
     });
   });
 
+  test.each(["sysbox", "dind"])("reads the Workset runtime %s", (backend) => {
+    expect(parseServeArgs([...base, "--workset-runtime", backend])).toMatchObject({
+      worksetRuntime: backend,
+    });
+  });
+
   test.each([
+    [["--workset-runtime", "kata"], "--workset-runtime needs one of sysbox, dind"],
     [["--max-worksets", "0"], "--max-worksets"],
     [["--idle-minutes", "-1"], "--idle-minutes"],
     [["--memory", "lots"], "--memory"],

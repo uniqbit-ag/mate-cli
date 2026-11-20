@@ -274,6 +274,7 @@ describe("factory mode locally", () => {
       "MATE_FACTORY_AGENT_MEMORY",
       "MATE_FACTORY_WORKSET_PIDS",
       "MATE_FACTORY_WORKSET_CPUS",
+      "MATE_FACTORY_WORKSET_RUNTIME",
     ]) {
       expect(environment[name], name).toBeNull();
     }

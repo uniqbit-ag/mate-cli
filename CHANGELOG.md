@@ -14,6 +14,23 @@
 - `mate install` and setup no longer upgrade TokenSave or RTK. When an installed TokenSave, RTK or Graphify reports another version, older or newer, Mate warns, names the pinned install command, and continues with the installed version.
 - The container and factory images install Graphify and its dependencies only after checking each archive against the hash in `graphify.requirements.txt`. The factory image now carries RTK 1.1.0, the version the container image already used.
 
+### A stop signal right after an agent starts no longer leaves it running
+
+- A launch now forwards `SIGTERM` and `SIGINT` from before it starts the agent. Before, a signal that reached the launch while the agent was starting ended the launch and left the agent running.
+
+### Plugins can run a service next to Mate
+
+- A plugin can now declare a `service`: its own top-level command (`mate <name> …`), the connection to its background daemon (a socket path or URL from the environment), and its part of Studio: routes below `/api/plugins/<id>/` (HTTP, server-sent events or WebSocket), views in the navigation under **Services** that Studio mounts from the plugin's own browser module, Workset terminal sessions, and adding companions by Git URL. The contract is versioned (`apiVersion: 1`) and typed in `@uniqbit/mate-core/plugin-api`. See the new Service Plugins reference page.
+- Studio guards a plugin route like its own: a read needs the access token where reading needs it, a write needs Studio's own page, the token and, where the route says so, `--writable`. A service whose daemon is not there is left out, views and routes included; a service that fails to start is left out with a warning, and Studio keeps serving.
+- The Mate factory is the first service plugin. `mate factory serve` and `mate factory attach` work as before. Studio's factory routes moved from `/api/factory/…` to `/api/plugins/factory/…`; the Factory view uses the new addresses.
+- For distributions built on `@uniqbit/mate-core`: the factory is no longer built in. Register it with `createFactoryPlugin()` from `@uniqbit/mate-core/factory`, as `@uniqbit/mate` does. `@uniqbit/mate-core/studio` no longer exports the factory's types and routes; they moved to `@uniqbit/mate-core/factory-studio`.
+
+### Factory: dind Workset runtime for sandboxes without Sysbox
+
+- `MATE_FACTORY_WORKSET_RUNTIME=dind` runs the factory where Sysbox cannot run, such as a development workshop or CI runner on a VM kernel without loadable modules. The supervisor starts no Sysbox, the inner Docker daemon runs runc only, and each Workset container runs privileged under runc with its own volume for its nested Docker, so agents can still build and run containers. Preflight skips Sysbox's own checks.
+- Worksets are then isolated from each other by runc alone, and the factory only by the sandbox around it: for development and CI, not for production. The default, `sysbox`, is unchanged.
+- `bun run factory:local` passes the setting through, and the factory README describes a small profile for a workshop. `pack-local.sh` now also runs with GNU `mktemp` on Linux.
+
 ### Studio issues an access token on every start (breaking)
 
 - `mate studio` now generates a token on every start, with or without `--writable` and `--terminal`, and prints and opens `http://localhost:<port>/?token=…`. Before, `mate studio --writable` without `--terminal` issued none, and a save needed only a matching `Origin` header, which any local process can set. So another user or process on the machine could create, overwrite or delete companion files.

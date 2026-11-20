@@ -60,10 +60,15 @@ export interface FactoryConfig {
   worksetPids: number;
   /** Each Workset container's CPU limit; null sets none. */
   worksetCpus: string | null;
+  /** How Workset containers run: `sysbox` (sysbox-runc) or `dind` (privileged runc, development only). */
+  worksetRuntime: WorksetRuntimeName;
   /** The author and committer of every commit the factory makes. */
   gitName: string;
   gitEmail: string;
 }
+
+export const WORKSET_RUNTIMES = ["sysbox", "dind"] as const;
+export type WorksetRuntimeName = (typeof WORKSET_RUNTIMES)[number];
 
 /** Factory commits are told apart by name; `.invalid` never reaches a real mailbox. */
 export const FACTORY_GIT_AUTHOR = { name: "Mate factory", email: "factory@mate.invalid" };
@@ -79,6 +84,7 @@ const RUNNER_DEFAULTS: FactoryRunner = {
   agentMemory: "1536m",
   worksetPids: 1024,
   worksetCpus: null,
+  worksetRuntime: "sysbox",
   gitName: FACTORY_GIT_AUTHOR.name,
   gitEmail: FACTORY_GIT_AUTHOR.email,
 };
@@ -421,6 +427,14 @@ export const SETTINGS: Setting[] = [
     required: false,
   },
   {
+    env: "MATE_FACTORY_WORKSET_RUNTIME",
+    key: "factoryWorksetRuntime",
+    meaning:
+      "Factory mode: how Workset containers run. `sysbox` runs each under sysbox-runc. `dind` starts no Sysbox and runs each privileged under runc, for a sandbox that cannot run Sysbox; Worksets are then isolated by runc alone and bounded by the outer sandbox, so use it for development and CI, not in production.",
+    default: "sysbox",
+    required: false,
+  },
+  {
     env: "MATE_FACTORY_GIT_NAME",
     key: "factoryGitName",
     meaning:
@@ -485,13 +499,13 @@ function rawValue(
 
 function port(setting: Setting, raw: unknown, fallback: number): number {
   if (raw === null || raw === undefined || raw === "") return fallback;
-  const text = String(raw);
-  if (!/^\d+$/.test(text)) {
-    throw new ConfigError(setting.env, text, "must be a whole number");
+  const input = String(raw);
+  if (!/^\d+$/.test(input)) {
+    throw new ConfigError(setting.env, input, "must be a whole number");
   }
-  const value = Number(text);
+  const value = Number(input);
   if (value < 1 || value > 65535) {
-    throw new ConfigError(setting.env, text, "must be a port between 1 and 65535");
+    throw new ConfigError(setting.env, input, "must be a port between 1 and 65535");
   }
   return value;
 }
@@ -499,9 +513,9 @@ function port(setting: Setting, raw: unknown, fallback: number): number {
 function bool(setting: Setting, raw: unknown, fallback: boolean): boolean {
   if (raw === null || raw === undefined || raw === "") return fallback;
   if (typeof raw === "boolean") return raw;
-  const text = String(raw).trim().toLowerCase();
-  if (["true", "yes", "1", "on"].includes(text)) return true;
-  if (["false", "no", "0", "off"].includes(text)) return false;
+  const input = String(raw).trim().toLowerCase();
+  if (["true", "yes", "1", "on"].includes(input)) return true;
+  if (["false", "no", "0", "off"].includes(input)) return false;
   throw new ConfigError(setting.env, String(raw), "must be true or false");
 }
 
@@ -628,6 +642,14 @@ function dockerSize(setting: Setting, raw: unknown, fallback: string): string {
     throw new ConfigError(setting.env, String(raw).trim(), "must be a size such as 4g or 512m");
   }
   return value;
+}
+
+function worksetRuntime(setting: Setting, raw: unknown): WorksetRuntimeName {
+  const value = optionalText(raw)?.toLowerCase() ?? RUNNER_DEFAULTS.worksetRuntime;
+  if (!(WORKSET_RUNTIMES as readonly string[]).includes(value)) {
+    throw new ConfigError(setting.env, value, `must be one of ${WORKSET_RUNTIMES.join(", ")}`);
+  }
+  return value as WorksetRuntimeName;
 }
 
 function positiveDecimal(setting: Setting, raw: unknown): string | null {
@@ -855,7 +877,7 @@ function gitEmail(raw: unknown): string {
   return value;
 }
 
-function setting(env: string): Setting {
+function settingFor(env: string): Setting {
   const found = SETTINGS.find((candidate) => candidate.env === env);
   if (!found) throw new Error(`no such setting: ${env}`);
   return found;
@@ -864,11 +886,15 @@ function setting(env: string): Setting {
 /** `MATE_FACTORY_PARALLEL_RUNS`, or its older name; both set must agree. */
 function parallelRuns(read: (name: string) => unknown): number {
   const current = positiveInteger(
-    setting("MATE_FACTORY_PARALLEL_RUNS"),
+    settingFor("MATE_FACTORY_PARALLEL_RUNS"),
     read("MATE_FACTORY_PARALLEL_RUNS"),
     0,
   );
-  const older = positiveInteger(setting("MATE_FACTORY_MAX_RUNS"), read("MATE_FACTORY_MAX_RUNS"), 0);
+  const older = positiveInteger(
+    settingFor("MATE_FACTORY_MAX_RUNS"),
+    read("MATE_FACTORY_MAX_RUNS"),
+    0,
+  );
   if (current && older && current !== older) {
     throw new ConfigError(
       "MATE_FACTORY_PARALLEL_RUNS",
@@ -883,28 +909,28 @@ function parallelRuns(read: (name: string) => unknown): number {
 function factoryLimits(read: (name: string) => unknown): FactoryRunner {
   const maxRuns = parallelRuns(read);
   const maxBuilds = positiveInteger(
-    setting("MATE_FACTORY_PARALLEL_BUILDS"),
+    settingFor("MATE_FACTORY_PARALLEL_BUILDS"),
     read("MATE_FACTORY_PARALLEL_BUILDS"),
     // Unset, at most the parallel runs, so a single-run factory needs no second setting.
     Math.min(RUNNER_DEFAULTS.maxBuilds, maxRuns),
   );
   const stageMinutes = positiveInteger(
-    setting("MATE_FACTORY_STAGE_MINUTES"),
+    settingFor("MATE_FACTORY_STAGE_MINUTES"),
     read("MATE_FACTORY_STAGE_MINUTES"),
     RUNNER_DEFAULTS.stageMinutes,
   );
   const maxWorksets = positiveInteger(
-    setting("MATE_FACTORY_MAX_WORKSETS"),
+    settingFor("MATE_FACTORY_MAX_WORKSETS"),
     read("MATE_FACTORY_MAX_WORKSETS"),
     maxRuns + 1,
   );
   const idleMinutes = nonNegativeInteger(
-    setting("MATE_FACTORY_IDLE_MINUTES"),
+    settingFor("MATE_FACTORY_IDLE_MINUTES"),
     read("MATE_FACTORY_IDLE_MINUTES"),
     RUNNER_DEFAULTS.idleMinutes,
   );
   const worksetMemory = dockerSize(
-    setting("MATE_FACTORY_WORKSET_MEMORY"),
+    settingFor("MATE_FACTORY_WORKSET_MEMORY"),
     read("MATE_FACTORY_WORKSET_MEMORY"),
     RUNNER_DEFAULTS.worksetMemory,
   );
@@ -916,18 +942,22 @@ function factoryLimits(read: (name: string) => unknown): FactoryRunner {
     idleMinutes,
     worksetMemory,
     agentMemory: dockerSize(
-      setting("MATE_FACTORY_AGENT_MEMORY"),
+      settingFor("MATE_FACTORY_AGENT_MEMORY"),
       read("MATE_FACTORY_AGENT_MEMORY"),
       defaultAgentMemory(worksetMemory),
     ),
     worksetPids: positiveInteger(
-      setting("MATE_FACTORY_WORKSET_PIDS"),
+      settingFor("MATE_FACTORY_WORKSET_PIDS"),
       read("MATE_FACTORY_WORKSET_PIDS"),
       RUNNER_DEFAULTS.worksetPids,
     ),
     worksetCpus: positiveDecimal(
-      setting("MATE_FACTORY_WORKSET_CPUS"),
+      settingFor("MATE_FACTORY_WORKSET_CPUS"),
       read("MATE_FACTORY_WORKSET_CPUS"),
+    ),
+    worksetRuntime: worksetRuntime(
+      settingFor("MATE_FACTORY_WORKSET_RUNTIME"),
+      read("MATE_FACTORY_WORKSET_RUNTIME"),
     ),
     gitName: optionalText(read("MATE_FACTORY_GIT_NAME")) ?? FACTORY_GIT_AUTHOR.name,
     gitEmail: gitEmail(read("MATE_FACTORY_GIT_EMAIL")),
@@ -941,41 +971,41 @@ export function resolveConfig(
   const configFile = env[CONFIG_FILE_ENV]?.trim() || DEFAULT_CONFIG_FILE;
   const file = readFile(configFile);
 
-  const read = (name: string): unknown => rawValue(setting(name), env, file)?.value ?? null;
-  const writable = bool(setting("MATE_STUDIO_WRITABLE"), read("MATE_STUDIO_WRITABLE"), true);
+  const read = (name: string): unknown => rawValue(settingFor(name), env, file)?.value ?? null;
+  const writable = bool(settingFor("MATE_STUDIO_WRITABLE"), read("MATE_STUDIO_WRITABLE"), true);
 
   return {
     companionsDir: text(read("MATE_COMPANIONS_DIR"), "/companions"),
-    companionRepos: gitLocations(setting("MATE_COMPANION_REPOS"), read("MATE_COMPANION_REPOS")),
+    companionRepos: gitLocations(settingFor("MATE_COMPANION_REPOS"), read("MATE_COMPANION_REPOS")),
     companion: optionalText(read("MATE_COMPANION")),
-    audience: audienceName(setting("MATE_AUDIENCE"), read("MATE_AUDIENCE")),
-    studioPort: port(setting("MATE_STUDIO_PORT"), read("MATE_STUDIO_PORT"), 4097),
+    audience: audienceName(settingFor("MATE_AUDIENCE"), read("MATE_AUDIENCE")),
+    studioPort: port(settingFor("MATE_STUDIO_PORT"), read("MATE_STUDIO_PORT"), 4097),
     studioHost: text(read("MATE_STUDIO_HOST"), "0.0.0.0"),
     studioWritable: writable,
     studioTerminal:
-      writable && bool(setting("MATE_STUDIO_TERMINAL"), read("MATE_STUDIO_TERMINAL"), true),
+      writable && bool(settingFor("MATE_STUDIO_TERMINAL"), read("MATE_STUDIO_TERMINAL"), true),
     studioDetachMinutes: positiveInteger(
-      setting("MATE_STUDIO_DETACH_MINUTES"),
+      settingFor("MATE_STUDIO_DETACH_MINUTES"),
       read("MATE_STUDIO_DETACH_MINUTES"),
       30,
     ),
-    studioToken: token(setting("MATE_STUDIO_TOKEN"), read("MATE_STUDIO_TOKEN")),
+    studioToken: token(settingFor("MATE_STUDIO_TOKEN"), read("MATE_STUDIO_TOKEN")),
     studioAllowedHosts: hostList(
-      setting("MATE_STUDIO_ALLOWED_HOSTS"),
+      settingFor("MATE_STUDIO_ALLOWED_HOSTS"),
       read("MATE_STUDIO_ALLOWED_HOSTS"),
     ),
     studioPublicOrigin: publicOrigin(
-      setting("MATE_STUDIO_PUBLIC_ORIGIN"),
+      settingFor("MATE_STUDIO_PUBLIC_ORIGIN"),
       read("MATE_STUDIO_PUBLIC_ORIGIN"),
     ),
-    gitSync: bool(setting("MATE_GIT_SYNC"), read("MATE_GIT_SYNC"), false),
+    gitSync: bool(settingFor("MATE_GIT_SYNC"), read("MATE_GIT_SYNC"), false),
     gitUserName: optionalText(read("MATE_GIT_USER_NAME")),
     gitUserEmail: optionalText(read("MATE_GIT_USER_EMAIL")),
-    credentials: credentials(setting("MATE_AGENT_CREDENTIALS"), read("MATE_AGENT_CREDENTIALS")),
+    credentials: credentials(settingFor("MATE_AGENT_CREDENTIALS"), read("MATE_AGENT_CREDENTIALS")),
     pluginRegistry: pluginRegistry(
-      setting("MATE_PLUGIN_REGISTRY"),
+      settingFor("MATE_PLUGIN_REGISTRY"),
       read("MATE_PLUGIN_REGISTRY"),
-      setting("MATE_PLUGIN_REGISTRY_TOKEN"),
+      settingFor("MATE_PLUGIN_REGISTRY_TOKEN"),
       read("MATE_PLUGIN_REGISTRY_TOKEN"),
     ),
     gitCloneToken: optionalText(read("MATE_GIT_CLONE_TOKEN")),
@@ -984,10 +1014,13 @@ export function resolveConfig(
       (name) => env[name] !== undefined || file[REMOVED_KEYS[name]] !== undefined,
     ),
     factory: factory(
-      bool(setting("MATE_FACTORY"), read("MATE_FACTORY"), false),
+      bool(settingFor("MATE_FACTORY"), read("MATE_FACTORY"), false),
       read("CLAUDE_CODE_OAUTH_TOKEN"),
       read("ANTHROPIC_API_KEY"),
-      factoryRepositories(setting("MATE_FACTORY_REPOSITORIES"), read("MATE_FACTORY_REPOSITORIES")),
+      factoryRepositories(
+        settingFor("MATE_FACTORY_REPOSITORIES"),
+        read("MATE_FACTORY_REPOSITORIES"),
+      ),
       factoryLimits(read),
     ),
   };

@@ -1,9 +1,11 @@
 import {
   compareRanked,
   rankOf,
-  WORKSET_STAGE_ORDER,
   type FactoryRunView,
   type Situation,
+} from "@uniqbit/mate-core/factory-studio";
+import {
+  WORKSET_STAGE_ORDER,
   type StudioWorkset,
   type WorksetStageId,
 } from "@uniqbit/mate-core/studio";

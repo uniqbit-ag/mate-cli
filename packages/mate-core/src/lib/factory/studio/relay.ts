@@ -1,4 +1,4 @@
-import { FactoryError } from "../../../lib/factory/ids";
+import { FactoryError } from "../ids";
 
 /** What the factory broker relay routes share: an uncached JSON answer and a JSON object body. */
 

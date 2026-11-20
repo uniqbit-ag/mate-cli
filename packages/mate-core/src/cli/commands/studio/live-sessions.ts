@@ -1,5 +1,7 @@
-/** Why Outcomes end a person's session; the terminal tells the person. */
-export type SessionCloseReason = "returned" | "deleted";
+import type { WorksetSessionCloseReason } from "../../../tools/setup/service";
+
+/** Why a service ends a person's session; the terminal tells the person. */
+export type SessionCloseReason = WorksetSessionCloseReason;
 
 /** Ends a companion's sessions for a Workset; resolves once they are reaped. */
 export type SessionCloser = (
@@ -10,9 +12,9 @@ export type SessionCloser = (
 
 /**
  * The Workset sessions a person has open in Studio's terminal. Created before both the
- * terminal and the factory's Outcomes, so neither needs the other: the terminal records
- * sessions here and lends its closer, the Outcomes read which Worksets are a person's, hear
- * when one ends and end one themselves.
+ * terminal and the services, so neither needs the other: the terminal records sessions here
+ * and lends its closer, a service reads which Worksets are a person's, hears when one ends
+ * and ends one itself.
  */
 export class LiveSessions {
   private readonly open = new Map<string, number>();

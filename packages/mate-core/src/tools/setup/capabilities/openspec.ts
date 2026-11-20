@@ -1,3 +1,4 @@
+// oxlint-disable no-await-in-loop -- filesystem steps run in order
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -196,7 +197,6 @@ async function removeGeneratedOpenSpecOutput(
   await Promise.all(targets.map((target) => removeRecorded(target, "openspec", recorder)));
   // Sequential: the parent directories share ancestors.
   for (const dir of new Set(targets.map((target) => path.dirname(target)))) {
-    // oxlint-disable-next-line no-await-in-loop
     await pruneEmptyAncestors(dir, companionPath);
   }
 }

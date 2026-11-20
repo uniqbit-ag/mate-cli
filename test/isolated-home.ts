@@ -59,6 +59,21 @@ export function isolatedTestEnv(
   for (const name of ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"]) {
     delete env[name];
   }
+  /**
+   * Git's system configuration and the runner's Git variables stay out too: a system
+   * `core.hooksPath` silences the fixtures' hooks, and Mate's Git calls are tested to set these.
+   */
+  env.GIT_CONFIG_NOSYSTEM = "1";
+  for (const name of [
+    "GIT_CONFIG_GLOBAL",
+    "GIT_CONFIG_SYSTEM",
+    "GIT_SSH_COMMAND",
+    "GIT_EDITOR",
+    "GIT_TERMINAL_PROMPT",
+    "GIT_ASKPASS",
+  ]) {
+    delete env[name];
+  }
   const caches: Array<[string, string]> = [
     ["BUN_INSTALL_CACHE_DIR", path.join(realHome, ".bun", "install", "cache")],
     ["npm_config_cache", path.join(realHome, ".npm")],

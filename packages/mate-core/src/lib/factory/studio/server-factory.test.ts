@@ -8,14 +8,22 @@ import path from "node:path";
 
 import { parse } from "yaml";
 
-import { brokerHandler, serveBroker } from "../../../lib/factory/broker";
-import { factoryClient, type FactoryClient } from "../../../lib/factory/client";
-import { CREDENTIAL_FILE, CredentialStore } from "../../../lib/factory/credential-store";
-import { GIT_CREDENTIAL_FILE, GitCredentialStore } from "../../../lib/factory/git-credential-store";
-import type { WorksetRuntime } from "../../../lib/factory/runtime";
-import { createStudioAccess } from "./access";
-import { companionDigest } from "./selection";
-import { createStudioFetch } from "./server";
+import { brokerHandler, serveBroker } from "../broker";
+import { factoryClient, type FactoryClient } from "../client";
+import { CREDENTIAL_FILE, CredentialStore } from "../credential-store";
+import { GIT_CREDENTIAL_FILE, GitCredentialStore } from "../git-credential-store";
+import type { WorksetRuntime } from "../runtime";
+import { createStudioAccess } from "../../../cli/commands/studio/access";
+import { companionDigest } from "../../../cli/commands/studio/selection";
+import { createStudioFetch } from "../../../cli/commands/studio/server";
+import type { PluginService } from "../../../tools/setup/service";
+import { factoryStudio } from "./contribution";
+import {
+  FACTORY_ACTION_ROUTE,
+  FACTORY_CREDENTIAL_ROUTE,
+  FACTORY_GIT_TOKENS_ROUTE,
+  FACTORY_REPOSITORIES_ROUTE,
+} from "./routes";
 
 let root: string;
 let companion: string;
@@ -48,6 +56,16 @@ afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 const ACCESS_TOKEN = "acme-interactive-access-0123456789";
 const ACCESS_COOKIE = `mate_studio_80=${ACCESS_TOKEN}`;
 
+/** The factory service without its runner; `null` leaves it unmounted, as without a broker. */
+function factoryService(client: FactoryClient | null): PluginService {
+  return {
+    apiVersion: 1,
+    id: "factory",
+    label: "Factory",
+    studio: (host) => factoryStudio(host, { client, outcomes: () => null }),
+  };
+}
+
 /** Interactive with a known token, or `serve` when the test pins its own. */
 function handlerFor(
   options: { writable?: boolean; token?: string; factory?: FactoryClient | null } = {},
@@ -57,7 +75,9 @@ function handlerFor(
       collectStudioInventory: async () => ({
         companions: [{ path: companion, health: "ready", pairings: [] }],
       }),
-      factoryClient: options.factory ?? null,
+      services: [
+        factoryService(options.factory === undefined ? ({} as FactoryClient) : options.factory),
+      ],
     },
     {
       writable: options.writable ?? true,
@@ -72,23 +92,46 @@ function handlerFor(
   );
 }
 
-/** A submitted form's fields; an absent one reads as empty, as Studio's server functions pass them. */
-const form =
-  (fields: Record<string, string>) =>
-  (name: string): string =>
-    fields[name] ?? "";
+type Handler = ReturnType<typeof handlerFor>;
 
-const create = (handler: ReturnType<typeof handlerFor>, fields: Record<string, string> = {}) =>
-  handler.services.createOutcome(
-    digest,
-    form({ text: "Acme login. Engineers sign in with SSO.", start: "later", ...fields }),
-  );
+/** A JSON call from Studio's own page, with its token. */
+const owned = (method: string, route: string, body?: unknown) =>
+  new Request(`http://localhost${route}`, {
+    method,
+    headers: {
+      origin: "http://localhost",
+      "content-type": "application/json",
+      cookie: ACCESS_COOKIE,
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+
+/** A factory route's JSON answer; a refusal throws its reason, as Studio's server functions do. */
+async function call(handler: Handler, method: string, route: string, body?: unknown) {
+  const response = (await handler(owned(method, route, body)))!;
+  const text = await response.text();
+  const answer = (text.startsWith("{") ? JSON.parse(text) : { reason: text }) as Record<
+    string,
+    unknown
+  >;
+  if (response.status >= 400) throw new Error(String(answer.reason ?? response.status));
+  return answer;
+}
+
+const act = (handler: Handler, body: Record<string, unknown>) =>
+  call(handler, "POST", FACTORY_ACTION_ROUTE, { companion: digest, ...body });
+
+const create = (handler: Handler, fields: Record<string, string> = {}) =>
+  act(handler, {
+    action: "create",
+    fields: { text: "Acme login. Engineers sign in with SSO.", start: "later", ...fields },
+  });
 
 const record = (id = "acme-login") =>
   parse(fs.readFileSync(path.join(companion, "worksets", `${id}.yaml`), "utf8"));
 
-const move = (handler: ReturnType<typeof handlerFor>, action: string, id = "acme-login") =>
-  handler.services.worksetAction(digest, id, action, form({}));
+const move = (handler: Handler, action: string, id = "acme-login") =>
+  act(handler, { action, id, fields: {} });
 
 describe("describing an outcome", () => {
   test("Save for later writes it at Clarify intent", async () => {
@@ -164,7 +207,11 @@ describe("describing an outcome", () => {
   test("refuses a companion that is not registered", async () => {
     const handler = handlerFor();
     await expect(
-      handler.services.createOutcome("0".repeat(digest.length), form({ text: "Acme login." })),
+      act(handler, {
+        companion: "0".repeat(digest.length),
+        action: "create",
+        fields: { text: "Acme login." },
+      }),
     ).rejects.toThrow("no registered companion");
     handler.close();
   });
@@ -281,11 +328,18 @@ describe("the events stream", () => {
     const reader = response.body!.getReader();
     await reader.read();
     const event = nextEvent(reader);
-    const fields: Record<string, string> = {
-      text: "Acme login. Engineers sign in with SSO.",
-      start: "later",
-    };
-    await handler.services.createOutcome(digest, (name) => fields[name] ?? "");
+    // A server function calls the service in process; Studio's own guard stood for the page.
+    const called = await handler.services.callService(
+      new Request(`http://localhost${FACTORY_ACTION_ROUTE}`, {
+        method: "POST",
+        body: JSON.stringify({
+          companion: digest,
+          action: "create",
+          fields: { text: "Acme login. Engineers sign in with SSO.", start: "later" },
+        }),
+      }),
+    );
+    expect(called.status).toBe(200);
     expect(await event).toBe(true);
     expect(record().title).toBe("Acme login");
     await reader.cancel();
@@ -320,10 +374,10 @@ describe("the Agents panel's credential routes", () => {
     call(method, route, body, { cookie: ACCESS_COOKIE });
 
   test("are not served outside factory mode", async () => {
-    const handler = handlerFor();
+    const handler = handlerFor({ factory: null });
     for (const request of [
-      owned("GET", "/api/factory/credential"),
-      owned("PUT", "/api/factory/credential", { kind: "api-key", value: KEY }),
+      owned("GET", FACTORY_CREDENTIAL_ROUTE),
+      owned("PUT", FACTORY_CREDENTIAL_ROUTE, { kind: "api-key", value: KEY }),
     ]) {
       expect((await handler(request))!.status).toBe(404);
     }
@@ -341,31 +395,31 @@ describe("the Agents panel's credential routes", () => {
       return JSON.parse(text) as Record<string, unknown>;
     };
 
-    expect(await send(owned("GET", "/api/factory/credential"))).toEqual({
+    expect(await send(owned("GET", FACTORY_CREDENTIAL_ROUTE))).toEqual({
       kind: null,
       source: null,
       setAt: null,
     });
     expect(
-      await send(owned("PUT", "/api/factory/credential", { kind: "api-key", value: KEY })),
+      await send(owned("PUT", FACTORY_CREDENTIAL_ROUTE, { kind: "api-key", value: KEY })),
     ).toMatchObject({ kind: "api-key", source: "studio" });
     expect(store.current()?.value).toBe(KEY);
     expect(
       (
         await send(
-          owned("PUT", "/api/factory/credential", { kind: "subscription", value: KEY }),
+          owned("PUT", FACTORY_CREDENTIAL_ROUTE, { kind: "subscription", value: KEY }),
           400,
         )
       ).reason,
     ).toContain("sk-ant-oat");
-    expect(await send(owned("DELETE", "/api/factory/credential"))).toEqual({
+    expect(await send(owned("DELETE", FACTORY_CREDENTIAL_ROUTE))).toEqual({
       kind: null,
       source: null,
       setAt: null,
     });
 
     expect(
-      await send(owned("PUT", "/api/factory/credential", { kind: "subscription", value: TOKEN })),
+      await send(owned("PUT", FACTORY_CREDENTIAL_ROUTE, { kind: "subscription", value: TOKEN })),
     ).toMatchObject({ kind: "subscription", source: "studio" });
     expect(store.current()?.value).toBe(TOKEN);
 
@@ -377,7 +431,7 @@ describe("the Agents panel's credential routes", () => {
 
   test("HEAD answers like GET, without a body", async () => {
     const handler = handlerFor({ factory: factory() });
-    const response = (await handler(call("HEAD", "/api/factory/credential")))!;
+    const response = (await handler(call("HEAD", FACTORY_CREDENTIAL_ROUTE)))!;
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("application/json");
     expect(await response.text()).toBe("");
@@ -387,11 +441,11 @@ describe("the Agents panel's credential routes", () => {
   test("writes need Studio's own page and its token", async () => {
     const handler = handlerFor({ factory: factory(), token: "acme-access" });
     const put = (headers: Record<string, string>) =>
-      call("PUT", "/api/factory/credential", { kind: "api-key", value: KEY }, headers);
+      call("PUT", FACTORY_CREDENTIAL_ROUTE, { kind: "api-key", value: KEY }, headers);
     const cookie = "mate_studio_80=acme-access";
     expect((await handler(put({ origin: "http://evil.test", cookie })))!.status).toBe(403);
     expect((await handler(put({})))!.status).toBe(401);
-    expect((await handler(call("GET", "/api/factory/credential")))!.status).toBe(401);
+    expect((await handler(call("GET", FACTORY_CREDENTIAL_ROUTE)))!.status).toBe(401);
     expect(store.current()).toBeNull();
     handler.close();
   });
@@ -399,7 +453,7 @@ describe("the Agents panel's credential routes", () => {
   test("a read-only Studio cannot set the credential", async () => {
     const handler = handlerFor({ factory: factory(), writable: false });
     const response = (await handler(
-      owned("PUT", "/api/factory/credential", { kind: "api-key", value: KEY }),
+      owned("PUT", FACTORY_CREDENTIAL_ROUTE, { kind: "api-key", value: KEY }),
     ))!;
     expect(response.status).toBe(403);
     expect(store.current()).toBeNull();
@@ -425,7 +479,7 @@ describe("the Git access panel's token routes", () => {
   afterEach(() => stopBroker());
 
   const call = (method: string, body?: unknown, headers = {}) =>
-    new Request("http://localhost/api/factory/git-tokens", {
+    new Request(`http://localhost${FACTORY_GIT_TOKENS_ROUTE}`, {
       method,
       headers: { origin: "http://localhost", "content-type": "application/json", ...headers },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -434,7 +488,7 @@ describe("the Git access panel's token routes", () => {
   const owned = (method: string, body?: unknown) => call(method, body, { cookie: ACCESS_COOKIE });
 
   test("are not served outside factory mode", async () => {
-    const handler = handlerFor();
+    const handler = handlerFor({ factory: null });
     expect((await handler(owned("GET")))!.status).toBe(404);
     expect((await handler(owned("PUT", { key: "git.acme.test", token: SECRET })))!.status).toBe(
       404,
@@ -516,14 +570,14 @@ describe("adding a companion", () => {
     const plain = handlerFor({ factory: null });
     expect(await plain.services.addCompanion({ kind: "url", url: URL })).toMatchObject({
       ok: false,
-      reason: expect.stringContaining("factory"),
+      reason: expect.stringContaining("service"),
     });
     plain.close();
     expect(cloned).toEqual([]);
   });
 
   test("a refused clone is an answer that names the Git token to set", async () => {
-    const { FactoryError } = await import("../../../lib/factory/ids");
+    const { FactoryError } = await import("../ids");
     const handler = handlerFor({
       factory: factory(async () => {
         throw new FactoryError(
@@ -560,6 +614,22 @@ describe("adding a repository", () => {
   const WEB = "https://git.acme.test/acme/docs.git";
   const file = () => path.join(companion, "factory.local.yaml");
 
+  /** The repository route's answer; a refusal reads as `{ ok: false, reason }`. */
+  const repositories = async (handler: Handler, method: string, body: Record<string, unknown>) => {
+    try {
+      return await call(handler, method, FACTORY_REPOSITORIES_ROUTE, {
+        companion: digest,
+        ...body,
+      });
+    } catch (error) {
+      return { ok: false, reason: (error as Error).message };
+    }
+  };
+  const addRepository = (handler: Handler, input: unknown) =>
+    repositories(handler, "POST", { input });
+  const removeRepository = (handler: Handler, identity: string) =>
+    repositories(handler, "DELETE", { identity });
+
   /** A broker whose runtime answers the reachability check as `check` says. */
   function factory(check: (url: string) => Promise<void>) {
     const socket = path.join(root, "repo-broker.sock");
@@ -572,18 +642,18 @@ describe("adding a repository", () => {
     const checked: string[] = [];
     const client = factory(async (url) => void checked.push(url));
     const readOnly = handlerFor({ factory: client, writable: false });
-    expect(await readOnly.services.addRepository(digest, { kind: "url", url: WEB })).toMatchObject({
+    expect(await addRepository(readOnly, { kind: "url", url: WEB })).toMatchObject({
       ok: false,
       reason: expect.stringContaining("--writable"),
     });
-    expect(await readOnly.services.removeRepository(digest, "acme/docs")).toMatchObject({
+    expect(await removeRepository(readOnly, "acme/docs")).toMatchObject({
       ok: false,
     });
     readOnly.close();
     const plain = handlerFor({ factory: null });
-    expect(await plain.services.addRepository(digest, { kind: "url", url: WEB })).toMatchObject({
+    expect(await addRepository(plain, { kind: "url", url: WEB })).toMatchObject({
       ok: false,
-      reason: expect.stringContaining("factory"),
+      reason: "not found",
     });
     plain.close();
     expect(checked).toEqual([]);
@@ -593,7 +663,7 @@ describe("adding a repository", () => {
   test("checks the remote through the broker, lists it, and the board offers it from the list", async () => {
     const checked: string[] = [];
     const handler = handlerFor({ factory: factory(async (url) => void checked.push(url)) });
-    expect(await handler.services.addRepository(digest, { kind: "url", url: WEB })).toEqual({
+    expect(await addRepository(handler, { kind: "url", url: WEB })).toEqual({
       ok: true,
       identity: "acme/docs",
       existing: false,
@@ -609,19 +679,19 @@ describe("adding a repository", () => {
   });
 
   test("an unreachable remote and an authentication refusal add nothing", async () => {
-    const { FactoryError } = await import("../../../lib/factory/ids");
+    const { FactoryError } = await import("../ids");
     let refusal: Error = new FactoryError("reaching acme/docs failed: repository not found");
     const handler = handlerFor({
       factory: factory(async () => {
         throw refusal;
       }),
     });
-    expect(await handler.services.addRepository(digest, { kind: "url", url: WEB })).toEqual({
+    expect(await addRepository(handler, { kind: "url", url: WEB })).toEqual({
       ok: false,
       reason: expect.stringContaining("not found"),
     });
     refusal = new FactoryError("authentication to git.acme.test/acme failed", "auth");
-    expect(await handler.services.addRepository(digest, { kind: "url", url: WEB })).toMatchObject({
+    expect(await addRepository(handler, { kind: "url", url: WEB })).toMatchObject({
       ok: false,
       tokenKey: "git.acme.test/acme",
     });
@@ -631,9 +701,9 @@ describe("adding a repository", () => {
 
   test("removes a listed repository, and refuses one the list does not hold", async () => {
     const handler = handlerFor({ factory: factory(async () => {}) });
-    await handler.services.addRepository(digest, { kind: "url", url: WEB });
-    expect(await handler.services.removeRepository(digest, "acme/docs")).toEqual({ ok: true });
-    expect(await handler.services.removeRepository(digest, "acme/docs")).toMatchObject({
+    await addRepository(handler, { kind: "url", url: WEB });
+    expect(await removeRepository(handler, "acme/docs")).toEqual({ ok: true });
+    expect(await removeRepository(handler, "acme/docs")).toMatchObject({
       ok: false,
     });
     expect(parse(fs.readFileSync(file(), "utf8"))).toEqual({ repositories: [] });
@@ -655,7 +725,10 @@ describe("Studio modes in the factory", () => {
   test("default to Engineering with both modes enabled, broker on or off", async () => {
     for (const factory of [broker(), null]) {
       const handler = handlerFor({ factory });
-      expect(handler.services.factoryMode).toBe(factory !== null);
+      await handler.ready;
+      expect(handler.services.services().some((service) => service.id === "factory")).toBe(
+        factory !== null,
+      );
       expect(handler.services.modePolicy).toMatchObject({
         profile: "standard",
         enabled: ["engineering", "analysis"],
@@ -677,7 +750,8 @@ describe("Studio modes in the factory", () => {
       new URL(`http://localhost/?companion=${digest}&studioMode=analysis&view=factory`),
     );
     expect(page.selection).toMatchObject({ studioMode: "analysis", view: "dashboard" });
-    expect(handler.services.factoryMode).toBe(true);
+    await handler.ready;
+    expect(handler.services.services().map((service) => service.id)).toEqual(["factory"]);
     await handler.close();
   });
 });

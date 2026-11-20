@@ -15,7 +15,7 @@ import { RunStore } from "../runner/state";
 import type { StageAgent } from "../runner/workflow";
 import { type FactoryOutcomes, factoryOutcomes, recordOutcomes } from "./index";
 import type { OutcomeAction } from "./actions";
-import { LiveSessions } from "./sessions";
+import { LiveSessions } from "../../../cli/commands/studio/live-sessions";
 import { compareUrlFor } from "./runs";
 
 let root: string;
@@ -67,6 +67,7 @@ function outcomes(
     }),
     sessionLive: (id) => sessions.busy().has(id),
     endSession: (id) => sessions.close(companion, id, "returned"),
+    recordFor: async (id) => ({ id, title: "Login" }),
   });
   return {
     runner,
@@ -107,6 +108,18 @@ describe("an action on an Outcome", () => {
     );
     expect(runner.isActive("acme-login")).toBe(false);
     expect(turns).toEqual([]);
+  });
+
+  test("feedback while waiting for merge proposes a follow-up change instead of revising", async () => {
+    const { outcomes: o, runner } = outcomes();
+    stage = "merge-wait";
+    await o.act("acme-login", "feedback", (name) =>
+      name === "feedback" ? "Make the first step even simpler." : "",
+    );
+    await runner.idle("acme-login");
+    expect(turns[0]).toStartWith(
+      "/mate-propose-change Propose one follow-up change for Workset acme-login (Login)",
+    );
   });
 
   test("an accepted action runs its stage", async () => {

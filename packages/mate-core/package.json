@@ -27,12 +27,15 @@
   "exports": {
     ".": "./src/index.ts",
     "./plugins": "./src/plugins.ts",
+    "./plugin-api": "./src/plugin-api.ts",
     "./runtime": "./src/runtime/index.ts",
     "./opencode": "./src/opencode/index.ts",
     "./opencode/tui": "./src/opencode/tui.tsx",
     "./tui": "./src/tui.ts",
     "./brand": "./src/brand/index.ts",
-    "./studio": "./src/studio.ts"
+    "./studio": "./src/studio.ts",
+    "./factory": "./src/lib/factory/plugin.ts",
+    "./factory-studio": "./src/lib/factory/studio/api.ts"
   },
   "publishConfig": {
     "access": "public",

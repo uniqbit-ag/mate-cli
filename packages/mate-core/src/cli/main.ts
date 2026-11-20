@@ -24,7 +24,6 @@ import { runUnwrapCommand } from "./commands/unwrap";
 import { runVscodeCommand } from "./commands/vscode/setup";
 import { parseWrapArgs, runWrapCommand } from "./commands/wrap";
 import { runWorkingCommand } from "./commands/working/working";
-import { runFactoryCommand } from "./commands/factory/factory";
 import { runInstallCommand } from "./commands/install";
 import { parseDirectLaunchArgs } from "./commands/launch/shared";
 import {
@@ -40,6 +39,7 @@ import {
 import { ensureRuntimeDirectory, refreshRuntimeDirectory } from "../lib/runtime-directory-refresh";
 import { hydrateDynamicPlugins } from "../tools/setup/dynamic-plugins/hydrate";
 import { findPluginCliCommand } from "./plugin-commands";
+import { findServiceCommand } from "../tools/setup/service-registry";
 import { usage } from "./usage";
 
 export interface GateNeeds {
@@ -318,12 +318,6 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       if (!(await gate({}))) return;
       await runWorkingCommand(subcommand, rest);
       return;
-    case "factory":
-      // The appliance's factory broker, started by its root supervisor: no
-      // companion, no installation, no prompt may block it.
-      if (!(await gate({}))) return;
-      await runFactoryCommand(subcommand, rest);
-      return;
     case "wrap": {
       // Recording the answer is the point, so a recorded one must not suppress
       // the wizard; a bad flag is reported without prompting first.
@@ -358,10 +352,19 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       if (!(await gate({}))) return;
       await runUnwrapCommand(argv.slice(3));
       return;
-    default:
+    default: {
+      // A service's own command, e.g. a daemon started by its supervisor: no
+      // companion, no installation, no prompt may block it.
+      const serviceCommand = findServiceCommand(command);
+      if (serviceCommand) {
+        if (!(await gate({}))) return;
+        await serviceCommand.run(argv.slice(3));
+        return;
+      }
       // Unknown commands fail fast: no case matched, so no gate ever ran.
       console.error(`Unknown command: ${command}`);
       console.error(usage());
       process.exitCode = 1;
+    }
   }
 }

@@ -61,6 +61,7 @@ async function hashTree(absolute: string, hash: crypto.Hash, relative: string): 
   if (stat.isDirectory()) {
     const entries = (await fs.readdir(absolute)).toSorted();
     for (const entry of entries) {
+      // oxlint-disable-next-line no-await-in-loop -- the hash depends on entry order
       await hashTree(path.join(absolute, entry), hash, path.posix.join(relative, entry));
     }
     return;
@@ -153,6 +154,7 @@ export async function snapshotChangedPaths(
 ): Promise<Map<string, string>> {
   const before = new Map<string, string>();
   for (const changed of await git.changedPaths()) {
+    // oxlint-disable-next-line no-await-in-loop -- a few paths, in order
     before.set(changed, await companionUpdateDeps.snapshotPath(companionPath, changed));
   }
   return before;

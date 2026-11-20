@@ -113,6 +113,7 @@ async function cleanupRepoLocalTokensaveArtifacts(repoPath: string): Promise<voi
   for (const basename of ["CLAUDE.md", "AGENTS.md", ".mcp.json", "opencode.json"]) {
     const bakPath = path.join(repoPath, `${basename}.bak`);
     try {
+      // oxlint-disable-next-line no-await-in-loop -- four small files
       await fs.unlink(bakPath);
     } catch {
       /* not present */
@@ -144,7 +145,7 @@ function installTokensaveAgentIntegration(agent: string, cwd: string): Tokensave
 }
 
 function installTokensaveAgentIntegrations(providers: string[], cwd: string): void {
-  const agents = providers.filter((p) => TOKENSAVE_SUPPORTED_AGENTS.has(p)).sort();
+  const agents = providers.filter((p) => TOKENSAVE_SUPPORTED_AGENTS.has(p)).toSorted();
   for (const agent of agents) {
     const result = installTokensaveAgentIntegration(agent, cwd);
     if (!result.ok) {
@@ -494,7 +495,7 @@ export function createTokensavePlugin(): CapabilityPlugin {
         },
         ...(config.allowedAgents ?? [])
           .filter((agent) => TOKENSAVE_SUPPORTED_AGENTS.has(agent))
-          .sort()
+          .toSorted()
           .map((agent): InstallRequirement => ({
             id: `capability:tokensave:${agent}`,
             label: `TokenSave ${agent} integration`,

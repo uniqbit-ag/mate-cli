@@ -24,6 +24,16 @@ or decision.
 2. Resolve the primary Working Repository from its canonical Git remote or the
    explicit Mate repository attachment. Do not use a checkout basename as its
    identity.
+
+   **Umbrella Repository.** When the Working Repository has no `.git` of its own
+   and its direct child folders are Git checkouts, it is an Umbrella Repository:
+   each child is a Working Repository of its own. Take the children from the
+   session's `umbrella-children` block; without a list there, read each child's
+   identity with `git -C <child> config --get remote.origin.url`. Resolve the
+   child the topic concerns first, then continue with that child's identity and
+   load no context of the other children. When it is unclear which child the
+   topic concerns, ask the user before loading any context.
+
 3. Convert the canonical external repository ID to its filesystem key only for
    path lookup. For example, `acme/repo` maps to `acme_repo`. Keep the canonical
    ID authoritative, and use the same normalized key everywhere; do not guess

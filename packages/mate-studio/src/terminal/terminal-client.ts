@@ -162,7 +162,7 @@ export class TerminalClient {
     this.events.reconnectable(false);
     const ws = openTerminalSocket();
     this.ws = ws;
-    ws.onopen = () => {
+    ws.addEventListener("open", () => {
       this.attempts = 0;
       this.events.state("connected");
       this.events.status("Connected.");
@@ -173,9 +173,9 @@ export class TerminalClient {
         const session = storedSession();
         if (session) this.attach(session);
       }
-    };
-    ws.onmessage = (event) => this.receive(event.data);
-    ws.onclose = () => {
+    });
+    ws.addEventListener("message", (event) => this.receive(event.data));
+    ws.addEventListener("close", () => {
       this.ws = null;
       if (this.takenOver || this.destroyed) return;
       if (this.attempts >= MAX_ATTEMPTS) {
@@ -189,7 +189,7 @@ export class TerminalClient {
       this.events.state("reconnecting");
       this.events.status(`Reconnecting (attempt ${this.attempts} of ${MAX_ATTEMPTS})…`);
       this.retry = setTimeout(() => this.connect(), delay);
-    };
+    });
   }
 
   private receive(data: unknown): void {

@@ -86,8 +86,8 @@
           "when": "mate.workspaceReady"
         },
         {
-          "id": "mate.readyToArchive",
-          "name": "Ready to archive",
+          "id": "mate.readyToSubmit",
+          "name": "Ready to submit",
           "when": "mate.workspaceReady"
         },
         {

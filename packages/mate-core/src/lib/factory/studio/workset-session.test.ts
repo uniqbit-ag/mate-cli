@@ -6,7 +6,7 @@ import path from "node:path";
 
 import { parse } from "yaml";
 
-import type { FactoryClient } from "../../../lib/factory/client";
+import type { FactoryClient } from "../client";
 import { createWorksetResolver } from "./workset-session";
 
 let root: string;
@@ -67,10 +67,7 @@ function resolver(
   extra: Partial<Parameters<typeof createWorksetResolver>[0]> = {},
 ) {
   return createWorksetResolver({
-    collectInventory: async () => ({
-      companions: [{ path: companion, health: "ready", pairings: [] }],
-    }),
-    launchCompanion: companion,
+    launchTarget: async () => companion,
     mateCommand: ["bun", "cli.mjs"],
     client: () => client,
     env: { MATE_FACTORY_REPOSITORIES: "https://git.acme.test/acme/web.git" },

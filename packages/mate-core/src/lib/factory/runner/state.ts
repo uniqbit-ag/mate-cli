@@ -17,6 +17,7 @@ export type RunStage =
   | "propose"
   | "revise"
   | "apply"
+  // Kept for run states already written; apply now ends with submit, and no stage runs as this.
   | "archive"
   | "publish";
 

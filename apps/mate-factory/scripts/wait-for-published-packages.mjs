@@ -88,6 +88,7 @@ export async function waitForPublishedPackages(
         break;
       }
 
+      // oxlint-disable-next-line no-await-in-loop -- probed in order, the first miss ends the pass
       if (await isPublished(packageName, version, { request, now, remainingMs })) {
         if (waitedFor.has(packageName)) {
           log(`Waited for ${packageName}@${version} for ${now() - startedAt}ms.`);
@@ -106,6 +107,7 @@ export async function waitForPublishedPackages(
     for (const packageName of missing) {
       log(`Waiting for ${packageName}@${version} (${now() - startedAt}ms elapsed).`);
     }
+    // oxlint-disable-next-line no-await-in-loop -- polling
     await sleep(Math.min(intervalMs, remainingMs));
   }
 
