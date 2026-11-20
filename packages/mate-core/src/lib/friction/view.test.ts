@@ -53,6 +53,18 @@ test("shows the selected companion's events within the period, each group with a
   expect(view(30).events).toBe(2);
 });
 
+test("a refusal group takes the subject type hook, a failed command group command", () => {
+  record();
+  record({ kind: "command", fingerprint: "command:artifact archive:1" });
+  const types = Object.fromEntries(
+    view(30).groups.map((group) => [group.fingerprint, group.subjectType]),
+  );
+  expect(types).toEqual({
+    "refusal:artifact:write": "hook",
+    "command:artifact archive:1": "command",
+  });
+});
+
 test("carries the switch state", () => {
   expect(view(30).recording).toBe(false);
   writeFrictionSwitch(true, home);

@@ -1,5 +1,6 @@
 import type { OutcomeAction } from "../../../lib/factory/outcomes/actions";
 import type { FrictionView, FrictionViewDays } from "../../../lib/friction/view-model";
+import type { FrictionState, MarkState } from "../../../runtime/friction-vocabulary";
 import type { UsageRequest } from "../../../lib/usage/cache";
 import type { UsageResponse } from "../../../lib/usage/types";
 import type { StudioSpecGraph } from "./graph";
@@ -82,6 +83,16 @@ export interface StudioServices {
    * settings file, never a companion, repository, registry or log.
    */
   setFrictionRecording(recording: boolean): Promise<{ recording: boolean }>;
+  /**
+   * Sets or, with `open`, clears a fingerprint's or Free Report's Friction State, as
+   * `mate friction mark` does, by `studio`. Needs no `writable`: it writes only the state file.
+   * A refusal is an answer, not an error.
+   */
+  markFriction(
+    target: string,
+    state: MarkState,
+    input: { note?: string; link?: string },
+  ): Promise<FrictionMarkResult>;
   /** One installed skill's files and one of them rendered (SKILL.md by default); read-only. */
   skillPreview(
     companionDigest: string,
@@ -117,6 +128,10 @@ export interface StudioServices {
  * mode; a refusal is an answer, and `tokenKey` names the Git token that would unlock a private one.
  */
 export type { RepositoryAddInput, RepositoryAddResult };
+
+export type FrictionMarkResult =
+  | { ok: true; state: FrictionState | null }
+  | { ok: false; reason: string };
 
 export type CompanionAddInput = { kind: "url"; url: string } | { kind: "path"; path: string };
 

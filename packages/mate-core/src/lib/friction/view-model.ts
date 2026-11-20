@@ -1,4 +1,5 @@
 import { FRICTION_RETENTION_DAYS } from "../../runtime/friction-retention";
+import type { SubjectType } from "../../runtime/friction-vocabulary";
 import type { FrictionGroup, FrictionSummary } from "./summary";
 
 export const FRICTION_VIEW_DAYS = [7, 30, FRICTION_RETENTION_DAYS] as const;
@@ -12,6 +13,8 @@ export function frictionViewDays(value: unknown): FrictionViewDays | undefined {
 export interface FrictionViewGroup extends FrictionGroup {
   /** The fingerprint as a plain sentence. */
   title: string;
+  /** The subject type a report on its events takes: `hook` for a refusal, `command` otherwise. */
+  subjectType: SubjectType;
 }
 
 /** What `mate friction list --json` carries for one companion, with sentences and the switch. */

@@ -642,6 +642,16 @@ export function createStudioFetch(
       writeFrictionSwitch(recording, deps.homeDir);
       return { recording };
     },
+    markFriction: async (target, state, { note, link }) => {
+      const { markFriction } = await import("../../../lib/friction/mark");
+      const marked = await markFriction(
+        target,
+        state,
+        { note, link, by: "studio" },
+        { homeDir: deps.homeDir },
+      );
+      return marked.ok ? { ok: true, state: marked.state } : { ok: false, reason: marked.reason };
+    },
     skillPreview: async (digest, agent, name, file) => {
       const { readSkillPreview } = await import("./skill-files");
       return readSkillPreview(await companionPathOf(digest), agent, name, file);

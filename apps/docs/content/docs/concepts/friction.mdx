@@ -168,6 +168,37 @@ plain sentence, such as "The artifact check refused a file write":
 
 All times show the date and time in your local time zone.
 
+### Filter, Sort and Mark
+
+Beside the period, four controls narrow the list. The address keeps them, so a
+reload or a shared link shows the same list:
+
+| Control      | Options                                                           | Default       |
+| ------------ | ----------------------------------------------------------------- | ------------- |
+| State        | Open, Handled, All                                                | Open          |
+| Subject type | All types, and each type in the period: `command`, `hook`, ...    | All           |
+| Kind         | All kinds, `bug`, `unclear`, `missing`; applies to Agent reports  | All           |
+| Order        | Most repeated in one session, Most recent; applies to groups only | Most repeated |
+
+Open includes reopened items. A recorded group has the subject type that a
+report on its events would have: `hook` for a refusal and `command` for a
+failed command. A `hook` filter therefore shows refusal groups and hook reports
+together. Agent reports stay newest first. When the filters hide items, the
+overview says how many and offers **Show all**.
+
+Each group and each Agent report offers **Fixed**, **Reported** and
+**Dismissed**. A handled item also offers **Reopen**. Reported takes an
+optional issue link, and Fixed and Dismissed take an optional note. A handled
+item shows its state, its note or link, who set it (a person, triage or Studio)
+and when. A reopened group says that it was fixed and then recorded again. A
+reported group shows how many events arrived since it was reported.
+
+A mark from Studio does what `mate friction mark` does: the same checks, the
+same `~/.mate/friction/states.json`, recorded as set by Studio. Like the
+recording switch, it works without `--writable` and needs Studio's own page and
+its access token. A refused mark, for example a note that holds a secret, shows
+its reason beside the item and changes nothing.
+
 The view shows whether recording is on and offers **Turn recording on** or
 **Turn recording off**. The control applies to all companions on the machine
 that runs Studio, while the overview counts only the selected companion. It sets

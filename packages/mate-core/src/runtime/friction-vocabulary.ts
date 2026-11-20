@@ -15,6 +15,12 @@ export const SUBJECT_TYPES = [
 ] as const;
 export type SubjectType = (typeof SUBJECT_TYPES)[number];
 
+/** The type a subject names before its first `:`; `null` for none of {@link SUBJECT_TYPES}. */
+export function subjectTypeOf(subject: string): SubjectType | null {
+  const type = subject.split(":", 1)[0];
+  return SUBJECT_TYPES.find((known) => known === type) ?? null;
+}
+
 /** A Friction State; a target without one is `open`. */
 export const FRICTION_STATES = ["fixed", "reported", "dismissed"] as const;
 export type FrictionStateName = (typeof FRICTION_STATES)[number];

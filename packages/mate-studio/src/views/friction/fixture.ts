@@ -1,4 +1,10 @@
-import type { FrictionReport, FrictionView, FrictionViewGroup } from "@uniqbit/mate-core/studio";
+import type {
+  FrictionFreeReport,
+  FrictionGroupState,
+  FrictionReport,
+  FrictionView,
+  FrictionViewGroup,
+} from "@uniqbit/mate-core/studio";
 
 const COMPANION = "/home/dev/.mate/companions/acme-companion";
 
@@ -22,10 +28,30 @@ export function frictionReport(fields: Partial<FrictionReport> = {}): FrictionRe
   };
 }
 
+/** A Free Report: a report on no event, unmarked unless `state` is given. */
+export function frictionFreeReport(fields: Partial<FrictionFreeReport> = {}): FrictionFreeReport {
+  return { ...frictionReport({ eventId: null }), state: null, open: true, ...fields };
+}
+
+/** A Friction State as a group carries it; `fixed` by a person, with no later event. */
+export function frictionState(fields: Partial<FrictionGroupState> = {}): FrictionGroupState {
+  return {
+    state: "fixed",
+    at: "2026-11-10T10:00:00Z",
+    by: "person",
+    note: null,
+    link: null,
+    eventsSince: 0,
+    reopened: false,
+    ...fields,
+  };
+}
+
 export function frictionGroup(fields: Partial<FrictionViewGroup> = {}): FrictionViewGroup {
   return {
     fingerprint: "refusal:artifact:write",
     title: "The artifact check refused a file write",
+    subjectType: "hook",
     events: 5,
     sessions: 2,
     maxPerSession: 3,
@@ -36,6 +62,8 @@ export function frictionGroup(fields: Partial<FrictionViewGroup> = {}): Friction
     paths: { "notes.md": 2 },
     flags: {},
     reports: [],
+    state: null,
+    open: true,
     ...fields,
   };
 }
@@ -52,6 +80,7 @@ export function frictionFixture(fields: Partial<FrictionView> = {}): FrictionVie
       frictionGroup({
         fingerprint: "command:artifact archive:1",
         title: "mate artifact archive failed with exit code 1",
+        subjectType: "command",
         events: 1,
         sessions: 1,
         maxPerSession: 1,

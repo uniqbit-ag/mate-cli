@@ -1,5 +1,6 @@
 import { readFrictionSwitch } from "../../runtime/friction-switch";
 import { describeFingerprint } from "./describe";
+import { eventSubjectType } from "./fields";
 import { readFrictionSummary, type FrictionWindow } from "./summary";
 import type { FrictionView } from "./view-model";
 
@@ -13,6 +14,7 @@ export function readFrictionView(companionPath: string, window: FrictionWindow):
     groups: summary.groups.map((group) => ({
       ...group,
       title: describeFingerprint(group.fingerprint),
+      subjectType: eventSubjectType(group),
     })),
   };
 }

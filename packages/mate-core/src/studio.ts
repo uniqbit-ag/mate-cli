@@ -5,6 +5,7 @@
 export type {
   CompanionAddInput,
   CompanionAddResult,
+  FrictionMarkResult,
   RepositoryAddInput,
   RepositoryAddResult,
   StudioFormField,
@@ -131,6 +132,23 @@ export {
   type FrictionViewGroup,
 } from "./lib/friction/view-model";
 export type { FrictionReport } from "./runtime/friction-log";
+export type { FrictionFreeReport, FrictionGroupState } from "./lib/friction/summary";
+export { selectByState } from "./lib/friction/select";
+export {
+  FRICTION_STATES,
+  MARK_STATES,
+  REPORT_KINDS,
+  STATE_FILTERS,
+  SUBJECT_TYPES,
+  subjectTypeOf,
+  type FrictionState,
+  type FrictionStateName,
+  type FrictionStateOrigin,
+  type MarkState,
+  type ReportKind,
+  type StateFilter,
+  type SubjectType,
+} from "./runtime/friction-vocabulary";
 export { FRAMEWORK_NAME } from "./runtime/framework";
 export type { UsageRequest } from "./lib/usage/cache";
 export type {

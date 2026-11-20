@@ -2,11 +2,17 @@ import { useQuery } from "@tanstack/react-query";
 import {
   FRAMEWORK_NAME,
   FRICTION_VIEW_DAYS,
+  REPORT_KINDS,
+  SUBJECT_TYPES,
+  type FrictionFreeReport,
+  type FrictionMarkResult,
   type FrictionReport,
   type FrictionView,
   type FrictionViewDays,
   type FrictionViewGroup,
+  type StateFilter,
 } from "@uniqbit/mate-core/studio";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import {
   RecordingButton,
@@ -21,23 +27,43 @@ import {
   EmptyNote,
   ListCard,
   PAGE_PAD,
+  type PillOption,
   Pills,
   ViewLoading,
 } from "../../components/view-parts";
 import { cn } from "../../lib/cn";
 import {
   frictionQuery,
+  type MarkFriction,
   type RecordingToggle,
+  useMarkFriction,
   useSetFrictionRecording,
 } from "../../lib/friction-query";
+import { type FrictionSort, oneOf } from "../../lib/search";
 import { useBrowser } from "../../lib/use-browser";
+import { ItemState, MarkActions, type MarkItem, plural } from "./mark-actions";
+import { type FrictionFilters, type FrictionShown, selectFriction } from "./select-friction";
 
 const PERIODS = FRICTION_VIEW_DAYS.map((days) => ({ value: String(days), label: `${days} days` }));
 
+const STATES: PillOption<StateFilter>[] = [
+  { value: "open", label: "Open" },
+  { value: "handled", label: "Handled" },
+  { value: "all", label: "All" },
+];
+/** The type and kind pills' value for no filter. */
+const ANY = "any";
+const KINDS = [
+  { value: ANY, label: "All kinds" },
+  ...REPORT_KINDS.map((kind) => ({ value: kind, label: kind })),
+];
+const SORTS: { value: FrictionSort; label: string }[] = [
+  { value: "repeats", label: "Most repeated in one session" },
+  { value: "recent", label: "Most recent" },
+];
+
 const RECORDED_SECTION = { id: "friction-recorded", title: "Recorded friction" };
 const REPORTS_SECTION = { id: "friction-agent-reports", title: "Agent reports" };
-
-const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
 const DATE_TIME = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
@@ -62,14 +88,48 @@ function Counted({ label, counts }: { label: string; counts: Record<string, numb
   );
 }
 
-function ReportItem({ report, subject }: { report: FrictionReport; subject?: boolean }) {
+function ItemFooter({
+  name,
+  item,
+  onMark,
+}: {
+  name: string;
+  item: Pick<FrictionViewGroup | FrictionFreeReport, "state" | "open">;
+  onMark: MarkItem;
+}) {
+  return (
+    <div className="grid gap-1.5">
+      {item.state ? (
+        <ItemState state={item.state} time={<FrictionTime at={item.state.at} />} />
+      ) : null}
+      <MarkActions name={name} handled={!item.open} onMark={onMark} />
+    </div>
+  );
+}
+
+/** With `focusKey`, the row is a mark's focus target; `children` follow the report's text. */
+function ReportItem({
+  report,
+  subject,
+  focusKey,
+  children,
+}: {
+  report: FrictionReport;
+  subject?: boolean;
+  focusKey?: string;
+  children?: ReactNode;
+}) {
   const fields = [
     ["Expected", report.expected],
     ["Evidence", report.evidence],
     ["Workaround", report.workaround],
   ] as const;
   return (
-    <li className="grid gap-1 border-t border-rule-soft py-2 first:border-t-0">
+    <li
+      className="grid gap-1 border-t border-rule-soft py-2 first:border-t-0"
+      data-friction-item={focusKey}
+      tabIndex={focusKey === undefined ? undefined : -1}
+    >
       <div className="flex flex-wrap items-baseline gap-x-2 text-xs text-muted">
         {subject ? (
           <h3 className="m-0 font-mono text-sm font-semibold text-text">{report.subject}</h3>
@@ -86,15 +146,20 @@ function ReportItem({ report, subject }: { report: FrictionReport; subject?: boo
           </p>
         ) : null,
       )}
+      {children}
     </li>
   );
 }
 
-function GroupItem({ group }: { group: FrictionViewGroup }) {
+function GroupItem({ group, onMark }: { group: FrictionViewGroup; onMark: MarkItem }) {
   const counts = [plural(group.events, "event"), plural(group.sessions, "session")];
   if (group.reports.length > 0) counts.push(plural(group.reports.length, "report"));
   return (
-    <li className="border-t border-rule-soft first:border-t-0">
+    <li
+      className="border-t border-rule-soft first:border-t-0"
+      data-friction-item={group.fingerprint}
+      tabIndex={-1}
+    >
       <details className="group/friction">
         <summary className="grid cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1 px-4 py-3 hover:bg-surface focus-visible:-outline-offset-2 [&::-webkit-details-marker]:hidden">
           <Icon
@@ -144,14 +209,40 @@ function GroupItem({ group }: { group: FrictionViewGroup }) {
           ) : null}
         </div>
       </details>
+      <div className="mr-4 mb-3 ml-9.5">
+        <ItemFooter name={group.title} item={group} onMark={onMark} />
+      </div>
     </li>
   );
 }
 
-function Overview({ view, days }: { view: FrictionView; days: FrictionViewDays }) {
+function ShowAll({ hidden, onShowAll }: { hidden: number; onShowAll: () => void }) {
+  return (
+    <Button
+      size="sm"
+      onClick={onShowAll}
+      data-show-all
+      aria-label={`Show all, including ${plural(hidden, "hidden item")}`}
+    >
+      Show all
+    </Button>
+  );
+}
+
+function Overview({
+  view,
+  shown,
+  days,
+  onShowAll,
+}: {
+  view: FrictionView;
+  shown: FrictionShown;
+  days: FrictionViewDays;
+  onShowAll: () => void;
+}) {
   const sections = [
-    [RECORDED_SECTION, view.groups.length],
-    [REPORTS_SECTION, view.freeReports.length],
+    [RECORDED_SECTION, shown.groups.length],
+    [REPORTS_SECTION, shown.freeReports.length],
   ] as const;
   return (
     <section aria-label="Overview" className="grid gap-3">
@@ -173,6 +264,12 @@ function Overview({ view, days }: { view: FrictionView; days: FrictionViewDays }
           ) : null,
         )}
       </nav>
+      {shown.hidden > 0 ? (
+        <p className="m-0 flex flex-wrap items-center gap-2 text-sm text-muted">
+          {shown.hidden === 1 ? "1 item is" : `${shown.hidden} items are`} hidden by the filters.
+          <ShowAll hidden={shown.hidden} onShowAll={onShowAll} />
+        </p>
+      ) : null}
       <div className="grid max-w-xl gap-2">
         <p className="m-0 text-sm">
           To investigate, run <code className="font-mono">{FRAMEWORK_NAME} triage</code> in your own
@@ -196,33 +293,142 @@ function Recording({ recording, toggle }: { recording: boolean; toggle: Recordin
   );
 }
 
+function Filters({
+  shown,
+  filters,
+  onFilters,
+}: {
+  shown: FrictionShown;
+  filters: FrictionFilters;
+  onFilters: (filters: FrictionFilters) => void;
+}) {
+  const types = [
+    { value: ANY, label: "All types" },
+    ...shown.types.map((type) => ({ value: type, label: type })),
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Pills
+        label="State"
+        options={STATES}
+        value={filters.state}
+        onChange={(state) => onFilters({ ...filters, state })}
+      />
+      <Pills
+        label="Subject type"
+        options={types}
+        value={shown.type ?? ANY}
+        onChange={(type) => onFilters({ ...filters, type: oneOf(SUBJECT_TYPES, type) })}
+      />
+      <Pills
+        label="Kind"
+        options={KINDS}
+        value={filters.kind ?? ANY}
+        onChange={(kind) => onFilters({ ...filters, kind: oneOf(REPORT_KINDS, kind) })}
+      />
+      <Pills
+        label="Order"
+        options={SORTS}
+        value={filters.sort}
+        onChange={(sort) => onFilters({ ...filters, sort })}
+      />
+    </div>
+  );
+}
+
 export function FrictionPanel({
   view,
   days,
   onDays,
   toggle,
+  filters,
+  onFilters,
+  mark,
 }: {
   view: FrictionView;
   days: FrictionViewDays;
   onDays: (days: FrictionViewDays) => void;
   toggle: RecordingToggle;
+  filters: FrictionFilters;
+  onFilters: (filters: FrictionFilters) => void;
+  mark: MarkFriction;
 }) {
   const recorded = view.events > 0 || view.freeReports.length > 0;
+  const shown = selectFriction(view, filters);
+  // The last mark: its announcement, and the item after it to take focus when the filter hides it.
+  const [marked, setMarked] = useState<{
+    /** Counts saves, so a repeated identical announcement still remounts and is read. */
+    id: number;
+    key: string;
+    next: string | null;
+    message: string;
+  } | null>(null);
+  const panel = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!marked) return;
+    const row = (key: string | null) =>
+      key === null
+        ? null
+        : panel.current?.querySelector<HTMLElement>(`[data-friction-item="${CSS.escape(key)}"]`);
+    // With no row left, the hidden items' Show all keeps focus in the view.
+    (
+      row(marked.key) ??
+      row(marked.next) ??
+      panel.current?.querySelector<HTMLElement>("[data-show-all]")
+    )?.focus();
+  }, [marked]);
+
+  const markItem =
+    (key: string, name: string): MarkItem =>
+    async (state, input) => {
+      const order = [
+        ...shown.groups.map((group) => group.fingerprint),
+        ...shown.freeReports.map((report) => report.id),
+      ];
+      const index = order.indexOf(key);
+      const next = order[index + 1] ?? order[index - 1] ?? null;
+      let result: FrictionMarkResult;
+      try {
+        result = await mark({ target: key, state, ...input });
+      } catch (error) {
+        return `The mark could not be saved: ${error instanceof Error ? error.message : String(error)}`;
+      }
+      if (!result.ok) return result.reason;
+      setMarked((last) => ({
+        id: (last?.id ?? 0) + 1,
+        key,
+        next,
+        message: `${name}: ${state === "open" ? "reopened" : `marked ${state}`}.`,
+      }));
+      return null;
+    };
+  const showAll = () => onFilters({ state: "all", sort: filters.sort });
+  const empty = shown.groups.length === 0 && shown.freeReports.length === 0;
+
   return (
-    <div className={cn(PAGE_PAD, "grid min-w-0 gap-4 pt-3 pb-6")}>
+    <div ref={panel} className={cn(PAGE_PAD, "grid min-w-0 gap-4 pt-3 pb-6")}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Recording recording={view.recording} toggle={toggle} />
-        <Pills
-          label="Period"
-          options={PERIODS}
-          value={String(days)}
-          onChange={(value) => onDays(Number(value) as FrictionViewDays)}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <Pills
+            label="Period"
+            options={PERIODS}
+            value={String(days)}
+            onChange={(value) => onDays(Number(value) as FrictionViewDays)}
+          />
+          {recorded ? <Filters shown={shown} filters={filters} onFilters={onFilters} /> : null}
+        </div>
       </div>
       <div aria-live="polite">
         {toggle.error ? (
           <p className="m-0 text-sm text-bad" role="alert">
             {toggle.error}
+          </p>
+        ) : null}
+        {marked ? (
+          <p key={marked.id} className="sr-only m-0">
+            {marked.message}
           </p>
         ) : null}
       </div>
@@ -234,32 +440,45 @@ export function FrictionPanel({
               on.
             </p>
           )}
-          <Overview view={view} days={days} />
-          {view.groups.length > 0 ? (
-            <ListCard {...RECORDED_SECTION} count={view.groups.length} className="wrap-anywhere">
-              <ul className="m-0 list-none p-0">
-                {view.groups.map((group) => (
-                  <GroupItem key={group.fingerprint} group={group} />
-                ))}
-              </ul>
-            </ListCard>
-          ) : null}
-          {view.freeReports.length > 0 ? (
-            <ListCard
-              {...REPORTS_SECTION}
-              count={view.freeReports.length}
-              className="wrap-anywhere"
-            >
-              <p className="m-0 border-b border-rule-soft px-4 py-2 text-xs text-muted">
-                These reports are not attached to a recorded event.
-              </p>
-              <ul className="m-0 list-none px-4 py-1">
-                {view.freeReports.map((report) => (
-                  <ReportItem key={report.id} report={report} subject />
-                ))}
-              </ul>
-            </ListCard>
-          ) : null}
+          <Overview view={view} shown={shown} days={days} onShowAll={showAll} />
+          <div className="grid gap-4">
+            {empty ? <EmptyNote>No item matches the filters.</EmptyNote> : null}
+            {shown.groups.length > 0 ? (
+              <ListCard {...RECORDED_SECTION} count={shown.groups.length} className="wrap-anywhere">
+                <ul className="m-0 list-none p-0">
+                  {shown.groups.map((group) => (
+                    <GroupItem
+                      key={group.fingerprint}
+                      group={group}
+                      onMark={markItem(group.fingerprint, group.title)}
+                    />
+                  ))}
+                </ul>
+              </ListCard>
+            ) : null}
+            {shown.freeReports.length > 0 ? (
+              <ListCard
+                {...REPORTS_SECTION}
+                count={shown.freeReports.length}
+                className="wrap-anywhere"
+              >
+                <p className="m-0 border-b border-rule-soft px-4 py-2 text-xs text-muted">
+                  These reports are not attached to a recorded event.
+                </p>
+                <ul className="m-0 list-none px-4 py-1">
+                  {shown.freeReports.map((report) => (
+                    <ReportItem key={report.id} report={report} subject focusKey={report.id}>
+                      <ItemFooter
+                        name={report.subject}
+                        item={report}
+                        onMark={markItem(report.id, report.subject)}
+                      />
+                    </ReportItem>
+                  ))}
+                </ul>
+              </ListCard>
+            ) : null}
+          </div>
         </>
       ) : (
         <EmptyNote>
@@ -276,13 +495,18 @@ export function Friction({
   companion,
   days,
   onDays,
+  filters,
+  onFilters,
 }: {
   companion: string;
   days: FrictionViewDays;
   onDays: (days: FrictionViewDays) => void;
+  filters: FrictionFilters;
+  onFilters: (filters: FrictionFilters) => void;
 }) {
   const query = useQuery({ ...frictionQuery(companion, days), enabled: useBrowser() });
   const toggle = useSetFrictionRecording();
+  const mark = useMarkFriction();
   if (!query.data && !query.isError) return <ViewLoading title="Reading the Friction Log…" />;
   const failed = query.isError ? (
     <div className={cn(PAGE_PAD, "pt-3 text-sm")} role="alert">
@@ -296,7 +520,15 @@ export function Friction({
   return (
     <>
       {failed}
-      <FrictionPanel view={query.data} days={days} onDays={onDays} toggle={toggle} />
+      <FrictionPanel
+        view={query.data}
+        days={days}
+        onDays={onDays}
+        toggle={toggle}
+        filters={filters}
+        onFilters={onFilters}
+        mark={mark}
+      />
     </>
   );
 }

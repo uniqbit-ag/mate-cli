@@ -1,10 +1,18 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import type { FrictionReport, FrictionView } from "@uniqbit/mate-core/studio";
+import type {
+  FrictionFreeReport,
+  FrictionMarkResult,
+  FrictionView,
+} from "@uniqbit/mate-core/studio";
+
+import type { FrictionMarkInput } from "../../server/friction";
+import type { FrictionFilters } from "./select-friction";
 
 await import("../../../test/dom");
 const { act, cleanup, fireEvent, render, within } = await import("@testing-library/react");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
-const { frictionFixture, frictionGroup, frictionReport } = await import("./fixture");
+const { frictionFixture, frictionFreeReport, frictionGroup, frictionReport, frictionState } =
+  await import("./fixture");
 
 /** What the server answers; tests replace them per case. */
 const server = {
@@ -12,6 +20,10 @@ const server = {
     frictionFixture(),
   readSwitch: async (): Promise<{ recording: boolean }> => ({ recording: false }),
   write: async ({ recording }: { recording: boolean }) => ({ recording }),
+  mark: async (_input: FrictionMarkInput): Promise<FrictionMarkResult> => ({
+    ok: true,
+    state: null,
+  }),
 };
 const real = await import("../../server/friction");
 mock.module("../../server/friction", () => ({
@@ -19,28 +31,57 @@ mock.module("../../server/friction", () => ({
   getFriction: ({ data }: { data: { companion: string; days: number } }) => server.read(data),
   getFrictionRecording: () => server.readSwitch(),
   setFrictionRecording: ({ data }: { data: { recording: boolean } }) => server.write(data),
+  markFriction: ({ data }: { data: FrictionMarkInput }) => server.mark(data),
 }));
 const { Friction, FrictionPanel } = await import("./friction-view");
 const { GlobalFeatures } = await import("../../shell/global-features");
 const { frictionQuery, frictionRecordingQuery } = await import("../../lib/friction-query");
+const { validateStudioSearch } = await import("../../lib/search");
+const { DEFAULT_FRICTION_FILTERS, filtersFromSearch } = await import("./select-friction");
 
 afterEach(cleanup);
 
 const idle = { pending: false, onChange() {} };
-const panel = (view: FrictionView, toggle = idle) =>
-  render(<FrictionPanel view={view} days={30} onDays={() => {}} toggle={toggle} />);
+const unmarked = async () => ({ ok: true, state: null }) as const;
+const panel = (
+  view: FrictionView,
+  toggle = idle,
+  filters = DEFAULT_FRICTION_FILTERS,
+  onFilters = (_filters: FrictionFilters) => {},
+) =>
+  render(
+    <FrictionPanel
+      view={view}
+      days={30}
+      onDays={() => {}}
+      toggle={toggle}
+      filters={filters}
+      onFilters={onFilters}
+      mark={unmarked}
+    />,
+  );
 const settle = () => act(async () => new Promise((done) => setTimeout(done, 20)));
 
-function mount(client = new QueryClient(), companion = "0123456789") {
+function mount(
+  client = new QueryClient(),
+  companion = "0123456789",
+  filters = DEFAULT_FRICTION_FILTERS,
+) {
   return render(
     <QueryClientProvider client={client}>
-      <Friction companion={companion} days={30} onDays={() => {}} />
+      <Friction
+        companion={companion}
+        days={30}
+        onDays={() => {}}
+        filters={filters}
+        onFilters={() => {}}
+      />
     </QueryClientProvider>,
   );
 }
 
 const empty = { events: 0, sessions: 0, groups: [], freeReports: [] };
-const reportsOnly = (freeReports: FrictionReport[]) =>
+const reportsOnly = (freeReports: FrictionFreeReport[]) =>
   panel(frictionFixture({ ...empty, freeReports }));
 
 const ARTIFACT_GROUP = "The artifact check refused a file write";
@@ -114,15 +155,14 @@ describe("the friction list", () => {
 });
 
 describe("the agent reports", () => {
-  const freeReport = (fields: Partial<FrictionReport> = {}) =>
-    frictionReport({
-      eventId: null,
+  const freeReport = (fields: Partial<FrictionFreeReport> = {}) =>
+    frictionFreeReport({
       kind: "unclear",
       subject: "skill:mate-apply-change",
       evidence: "step 3 names no branch",
       ...fields,
     });
-  const agentReports = (fields?: Partial<FrictionReport>) =>
+  const agentReports = (fields?: Partial<FrictionFreeReport>) =>
     reportsOnly([freeReport(fields)]).getByRole("region", { name: "Agent reports" });
 
   test("stand apart under their subject and say they have no event", () => {
@@ -163,7 +203,7 @@ describe("the agent reports", () => {
 });
 
 describe("the overview", () => {
-  const reports = ["r1", "r2", "r3", "r4"].map((id) => frictionReport({ id, eventId: null }));
+  const reports = ["r1", "r2", "r3", "r4"].map((id) => frictionFreeReport({ id }));
   const overviewOf = (page: ReturnType<typeof panel>) =>
     page.getByRole("region", { name: "Overview" });
 
@@ -281,7 +321,7 @@ describe("the next action", () => {
   });
 
   test("the overview names mate triage when only reports exist", () => {
-    expectTriage(reportsOnly([frictionReport({ eventId: null })]));
+    expectTriage(reportsOnly([frictionFreeReport()]));
   });
 });
 
@@ -294,6 +334,9 @@ describe("the period", () => {
         days={30}
         onDays={(days) => chosen.push(days)}
         toggle={idle}
+        filters={DEFAULT_FRICTION_FILTERS}
+        onFilters={() => {}}
+        mark={unmarked}
       />,
     );
     expect(page.getByRole("button", { name: "30 days" }).getAttribute("aria-pressed")).toBe("true");
@@ -426,5 +469,268 @@ describe("the recording control", () => {
     expect(page.getByRole("alert").textContent).toBe(
       "Recording could not be turned off: settings file is read-only",
     );
+  });
+});
+
+describe("the filters", () => {
+  const handledSkill = frictionFreeReport({
+    id: "r-skill",
+    subject: "skill:mate-apply-change",
+    state: { state: "fixed", at: "2026-11-10T10:00:00Z", by: "person", note: null, link: null },
+    open: false,
+  });
+  const view = frictionFixture({
+    freeReports: [handledSkill, frictionFreeReport({ id: "r-open" })],
+  });
+
+  test("a reload restores the state and the type from the address", () => {
+    const search = validateStudioSearch(
+      Object.fromEntries(new URLSearchParams("frictionState=handled&frictionType=skill")),
+    );
+    const page = panel(view, idle, filtersFromSearch(search));
+    const pressed = (group: string) =>
+      within(page.getByRole("group", { name: group }))
+        .getAllByRole("button")
+        .filter((button) => button.getAttribute("aria-pressed") === "true")
+        .map((button) => button.textContent);
+    expect(pressed("State")).toEqual(["Handled"]);
+    expect(pressed("Subject type")).toEqual(["skill"]);
+    expect(page.queryByRole("region", { name: "Recorded friction" })).toBeNull();
+    expect(
+      within(page.getByRole("region", { name: "Agent reports" }))
+        .getAllByRole("heading", { level: 3 })
+        .map((heading) => heading.textContent),
+    ).toEqual(["skill:mate-apply-change"]);
+  });
+
+  test("choosing a control hands the new filters to the address", () => {
+    const chosen: FrictionFilters[] = [];
+    const page = panel(view, idle, undefined, (filters) => chosen.push(filters));
+    fireEvent.click(page.getByRole("button", { name: "Most recent" }));
+    fireEvent.click(page.getByRole("button", { name: "bug" }));
+    expect(chosen).toEqual([
+      { state: "open", sort: "recent" },
+      { state: "open", sort: "repeats", kind: "bug" },
+    ]);
+  });
+});
+
+describe("the hidden items", () => {
+  test("the overview counts shown items and offers to show all", () => {
+    const chosen: FrictionFilters[] = [];
+    const page = panel(
+      frictionFixture({
+        groups: [
+          frictionGroup(),
+          frictionGroup({ fingerprint: "b", title: "B" }),
+          frictionGroup({
+            fingerprint: "c",
+            title: "C",
+            state: frictionState({ state: "dismissed" }),
+            open: false,
+          }),
+        ],
+      }),
+      idle,
+      undefined,
+      (filters) => chosen.push(filters),
+    );
+    const overview = page.getByRole("region", { name: "Overview" });
+    expect(within(overview).getByRole("link", { name: "Recorded friction 2" })).toBeDefined();
+    expect(overview.textContent).toContain("1 item is hidden by the filters.");
+    fireEvent.click(within(overview).getByRole("button", { name: /Show all/ }));
+    expect(chosen).toEqual([{ state: "all", sort: "repeats" }]);
+  });
+
+  test("with everything handled says no item matches, not that nothing was recorded", () => {
+    const fixed = { state: frictionState(), open: false };
+    const page = panel(
+      frictionFixture({
+        groups: [frictionGroup(fixed), frictionGroup({ fingerprint: "b", ...fixed })],
+      }),
+    );
+    expect(page.container.textContent).toContain("No item matches the filters.");
+    expect(page.container.textContent).not.toContain("No friction was recorded");
+    expect(page.getAllByRole("button", { name: /Show all/ })).toHaveLength(1);
+  });
+});
+
+describe("an item's Friction State", () => {
+  test("a reported group from triage shows the link, who, when and the events since", () => {
+    const link = "https://github.com/acme/mate/issues/7";
+    const page = panel(
+      frictionFixture({
+        groups: [
+          frictionGroup({
+            state: frictionState({ state: "reported", by: "triage", link, eventsSince: 2 }),
+            open: false,
+          }),
+        ],
+      }),
+      idle,
+      { state: "all", sort: "repeats" },
+    );
+    const row = groupRow(page).parentElement!;
+    expect(row.textContent).toContain("Reported by triage");
+    expect(row.textContent).toContain("2 events since reported");
+    expect(
+      [...row.querySelectorAll("time")].map((time) => time.getAttribute("dateTime")),
+    ).toContain("2026-11-10T10:00:00Z");
+    const anchor = within(row).getByRole("link", { name: link });
+    expect(anchor.getAttribute("href")).toBe(link);
+    expect(anchor.getAttribute("rel")).toBe("noreferrer");
+    expect(within(row).getByRole("button", { name: "Reopen" })).toBeDefined();
+  });
+
+  test("a reopened group says it was fixed and recorded again, under Open", () => {
+    const page = panel(
+      frictionFixture({
+        groups: [frictionGroup({ state: frictionState({ eventsSince: 1, reopened: true }) })],
+      }),
+    );
+    const row = groupRow(page).parentElement!;
+    expect(row.textContent).toContain("Reopened");
+    expect(row.textContent).toContain("Fixed, then recorded again");
+  });
+});
+
+describe("marking", () => {
+  const LINK = "https://github.com/acme/mate/issues/7";
+  const OTHER_GROUP = "mate artifact archive failed with exit code 1";
+  const actions = (page: ReturnType<typeof mount>, name: string) =>
+    within(page.getByRole("group", { name: `Mark ${name}` }));
+
+  test("a group marked reported leaves the Open list, is announced, and focus moves on", async () => {
+    const marks: FrictionMarkInput[] = [];
+    const reported = frictionGroup({
+      state: frictionState({ state: "reported", by: "studio", link: LINK }),
+      open: false,
+    });
+    server.read = async () => frictionFixture();
+    server.mark = async (input) => {
+      marks.push(input);
+      server.read = async () =>
+        frictionFixture({ groups: [reported, frictionFixture().groups[1]!] });
+      return { ok: true, state: reported.state };
+    };
+    const client = new QueryClient();
+    const page = mount(client);
+    await settle();
+    fireEvent.click(actions(page, ARTIFACT_GROUP).getByRole("button", { name: "Reported" }));
+    const field = page.getByLabelText("Issue link (optional)");
+    expect(document.activeElement).toBe(field);
+    fireEvent.change(field, { target: { value: LINK } });
+    fireEvent.click(page.getByRole("button", { name: "Confirm reported" }));
+    await settle();
+    expect(marks).toEqual([{ target: "refusal:artifact:write", state: "reported", link: LINK }]);
+    expect(page.queryByRole("heading", { name: ARTIFACT_GROUP })).toBeNull();
+    expect(page.container.querySelector("[aria-live=polite]")!.textContent).toContain(
+      `${ARTIFACT_GROUP}: marked reported.`,
+    );
+    expect(document.activeElement).toBe(
+      page.getByRole("heading", { name: OTHER_GROUP }).closest("li"),
+    );
+    client.clear();
+  });
+
+  test("marking the last shown item moves focus to Show all", async () => {
+    const only = frictionGroup();
+    server.read = async () => frictionFixture({ groups: [only] });
+    server.mark = async () => {
+      server.read = async () =>
+        frictionFixture({ groups: [{ ...only, state: frictionState(), open: false }] });
+      return { ok: true, state: frictionState() };
+    };
+    const client = new QueryClient();
+    const page = mount(client);
+    await settle();
+    fireEvent.click(actions(page, ARTIFACT_GROUP).getByRole("button", { name: "Fixed" }));
+    fireEvent.click(page.getByRole("button", { name: "Confirm fixed" }));
+    await settle();
+    expect(document.activeElement).toBe(page.getByRole("button", { name: /Show all/ }));
+    client.clear();
+  });
+
+  test("a dismissed Agent report reopens from Handled and is open again", async () => {
+    const dismissed = frictionFreeReport({
+      id: "r-dismissed",
+      subject: "docs:acme",
+      state: {
+        state: "dismissed",
+        at: "2026-11-10T10:00:00Z",
+        by: "person",
+        note: null,
+        link: null,
+      },
+      open: false,
+    });
+    const marks: FrictionMarkInput[] = [];
+    server.read = async () => frictionFixture({ freeReports: [dismissed] });
+    server.mark = async (input) => {
+      marks.push(input);
+      server.read = async () =>
+        frictionFixture({ freeReports: [{ ...dismissed, state: null, open: true }] });
+      return { ok: true, state: null };
+    };
+    const client = new QueryClient();
+    const page = mount(client, undefined, { state: "handled", sort: "repeats" });
+    await settle();
+    fireEvent.click(actions(page, "docs:acme").getByRole("button", { name: "Reopen" }));
+    await settle();
+    expect(marks).toEqual([{ target: "r-dismissed", state: "open" }]);
+    page.unmount();
+    const open = mount(client);
+    await settle();
+    expect(
+      within(open.getByRole("region", { name: "Agent reports" })).getByText("docs:acme"),
+    ).toBeDefined();
+    expect(actions(open, "docs:acme").getByRole("button", { name: "Fixed" })).toBeDefined();
+    client.clear();
+  });
+
+  test("a refused note shows the refusal beside the item, not the note, and keeps the state", async () => {
+    const note = "acme-note-holding-a-token";
+    server.read = async () => frictionFixture();
+    server.mark = async () => ({
+      ok: false,
+      reason: "The mark holds a secret (github-pat); nothing was recorded.",
+    });
+    const client = new QueryClient();
+    const page = mount(client);
+    await settle();
+    fireEvent.click(actions(page, ARTIFACT_GROUP).getByRole("button", { name: "Dismissed" }));
+    fireEvent.change(page.getByLabelText("Note (optional)"), { target: { value: note } });
+    fireEvent.click(page.getByRole("button", { name: "Confirm dismissed" }));
+    await settle();
+    const row = groupRow(page).parentElement!;
+    expect(within(row).getByRole("alert").textContent).toContain("holds a secret");
+    expect(within(row).getByRole("alert").textContent).not.toContain(note);
+    expect(row.textContent).not.toContain("Dismissed in Studio");
+    client.clear();
+  });
+
+  test("Fixed is reached and confirmed from the keyboard", async () => {
+    const marks: FrictionMarkInput[] = [];
+    server.read = async () => frictionFixture();
+    server.mark = async (input) => {
+      marks.push(input);
+      return { ok: true, state: null };
+    };
+    const client = new QueryClient();
+    const page = mount(client);
+    await settle();
+    const fixed = actions(page, ARTIFACT_GROUP).getByRole("button", { name: "Fixed" });
+    expect(fixed.tagName).toBe("BUTTON");
+    expect(fixed.tabIndex).toBe(0);
+    fixed.focus();
+    expect(document.activeElement).toBe(fixed);
+    // A native button turns Enter into a click; Happy DOM does not, so the click stands in.
+    fireEvent.click(fixed);
+    const field = page.getByLabelText("Note (optional)");
+    expect(document.activeElement).toBe(field);
+    fireEvent.submit(field.closest("form")!);
+    await settle();
+    expect(marks).toEqual([{ target: "refusal:artifact:write", state: "fixed", note: "" }]);
+    client.clear();
   });
 });

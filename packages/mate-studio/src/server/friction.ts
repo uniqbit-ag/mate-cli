@@ -3,9 +3,14 @@ import {
   COMPANION_DIGEST_PATTERN,
   FRICTION_VIEW_DAYS,
   frictionViewDays,
+  MARK_STATES,
+  type FrictionMarkResult,
   type FrictionView,
   type FrictionViewDays,
+  type MarkState,
 } from "@uniqbit/mate-core/studio";
+
+import { oneOf } from "../lib/search";
 
 interface FrictionInput {
   companion: string;
@@ -39,3 +44,38 @@ export const getFrictionRecording = createServerFn({ method: "GET" }).handler(
 export const setFrictionRecording = createServerFn({ method: "POST" })
   .validator(validateRecordingInput)
   .handler(({ data, context }) => context.studio.setFrictionRecording(data.recording));
+
+export interface FrictionMarkInput {
+  /** A fingerprint or a Free Report's id. */
+  target: string;
+  state: MarkState;
+  note?: string;
+  link?: string;
+}
+
+const optionalText = (value: unknown, name: string): string | undefined => {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") throw new Error(`The ${name} is text`);
+  return value;
+};
+
+/** Shape only: core checks the target, link and secrets, as `mate friction mark` does. */
+function validateMarkInput(input: FrictionMarkInput): FrictionMarkInput {
+  if (typeof input?.target !== "string" || input.target === "")
+    throw new Error("A mark names a fingerprint or a report");
+  const state = oneOf(MARK_STATES, input.state);
+  if (!state) throw new Error(`A mark sets one of ${MARK_STATES.join(", ")}`);
+  return {
+    target: input.target,
+    state,
+    note: optionalText(input.note, "note"),
+    link: optionalText(input.link, "link"),
+  };
+}
+
+/** A write by method, like the switch: Studio's own page and the token; no `--writable`. */
+export const markFriction = createServerFn({ method: "POST" })
+  .validator(validateMarkInput)
+  .handler(({ data, context }): Promise<FrictionMarkResult> =>
+    context.studio.markFriction(data.target, data.state, { note: data.note, link: data.link }),
+  );

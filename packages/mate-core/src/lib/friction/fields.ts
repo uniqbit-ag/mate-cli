@@ -6,10 +6,14 @@ export const TEXT_LIMIT = 1_000;
 
 export const cut = (text: string) => text.slice(0, TEXT_LIMIT);
 
+/** The subject type a report on the event takes: `hook` for a refusal, `command` otherwise. */
+export function eventSubjectType(event: Pick<FrictionEvent, "fingerprint">): "hook" | "command" {
+  return parseFingerprint(event.fingerprint).form === "refusal" ? "hook" : "command";
+}
+
 /** `hook:<check>` for a refusal, `command:<command words>` for a failed command. */
 export function eventSubject(event: Pick<FrictionEvent, "fingerprint">): string {
-  const { form, name } = parseFingerprint(event.fingerprint);
-  return form === "refusal" ? `hook:${name}` : `command:${name}`;
+  return `${eventSubjectType(event)}:${parseFingerprint(event.fingerprint).name}`;
 }
 
 /** A refusal is an answer to the caller, not a failure: it carries a stable code. */

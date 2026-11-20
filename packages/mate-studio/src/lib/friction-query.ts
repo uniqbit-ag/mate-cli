@@ -5,9 +5,15 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
-import type { FrictionViewDays } from "@uniqbit/mate-core/studio";
+import type { FrictionMarkResult, FrictionViewDays } from "@uniqbit/mate-core/studio";
 
-import { getFriction, getFrictionRecording, setFrictionRecording } from "../server/friction";
+import {
+  type FrictionMarkInput,
+  getFriction,
+  getFrictionRecording,
+  markFriction,
+  setFrictionRecording,
+} from "../server/friction";
 
 export const DEFAULT_FRICTION_DAYS: FrictionViewDays = 30;
 
@@ -65,4 +71,25 @@ export function useSetFrictionRecording(): RecordingToggle {
       : undefined,
     onChange: (recording) => change.mutate(recording),
   };
+}
+
+/**
+ * Marks one item; resolves once every friction query was refetched, so the caller sees the
+ * list without a marked item. A refusal resolves too and changes no query.
+ */
+export type MarkFriction = (mark: FrictionMarkInput) => Promise<FrictionMarkResult>;
+
+export function useMarkFriction(): MarkFriction {
+  const client = useQueryClient();
+  const change = useMutation({
+    mutationKey: [SCOPE, "mark"] as const,
+    mutationFn: (mark: FrictionMarkInput) => markFriction({ data: mark }),
+    onSuccess: async (result) => {
+      if (!result.ok) return;
+      // A mark is machine-wide: every companion's view and period may hold the item.
+      await client.cancelQueries({ predicate: isFrictionQuery });
+      await client.invalidateQueries({ predicate: isFrictionQuery });
+    },
+  });
+  return change.mutateAsync;
 }

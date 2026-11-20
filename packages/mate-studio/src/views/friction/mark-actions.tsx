@@ -1,0 +1,161 @@
+import {
+  FRICTION_STATES,
+  type FrictionGroupState,
+  type FrictionState,
+  type FrictionStateName,
+  type FrictionStateOrigin,
+  type MarkState,
+} from "@uniqbit/mate-core/studio";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+
+import { StatusWord, type Marker } from "../../components/view-parts";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/fields";
+
+const STATE_WORDS: Record<FrictionStateName, { label: string; marker: Marker }> = {
+  fixed: { label: "Fixed", marker: "done" },
+  reported: { label: "Reported", marker: "review" },
+  dismissed: { label: "Dismissed", marker: "idle" },
+};
+
+const BY: Record<FrictionStateOrigin, string> = {
+  person: "by a person",
+  triage: "by triage",
+  studio: "in Studio",
+};
+
+export const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+
+/** A group's state carries what later events tell; a Free Report's does not. */
+type ItemStateValue = FrictionState & Partial<Pick<FrictionGroupState, "eventsSince" | "reopened">>;
+
+export function ItemState({ state, time }: { state: ItemStateValue; time: ReactNode }) {
+  const word = STATE_WORDS[state.state];
+  return (
+    <p className="m-0 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-muted">
+      {state.reopened ? (
+        <StatusWord marker="warn">Reopened</StatusWord>
+      ) : (
+        <StatusWord marker={word.marker}>{word.label}</StatusWord>
+      )}
+      <span>
+        {state.reopened ? "Fixed, then recorded again; marked " : `${word.label} `}
+        {BY[state.by]} {time}
+      </span>
+      {state.state === "reported" && state.eventsSince !== undefined ? (
+        <span className="tabular-nums">{plural(state.eventsSince, "event")} since reported</span>
+      ) : null}
+      {state.link ? (
+        <a href={state.link} target="_blank" rel="noreferrer" className="text-text underline">
+          {state.link}
+        </a>
+      ) : null}
+      {state.note ? <span className="text-text">{state.note}</span> : null}
+    </p>
+  );
+}
+
+const NOTE = { label: "Note (optional)", key: "note", type: "text" } as const;
+const LINK = { label: "Issue link (optional)", key: "link", type: "url" } as const;
+const FIELD: Record<FrictionStateName, typeof NOTE | typeof LINK> = {
+  fixed: NOTE,
+  reported: LINK,
+  dismissed: NOTE,
+};
+
+/** Resolves to a refusal to show, or `null` once the mark is saved. */
+export type MarkItem = (
+  state: MarkState,
+  input: { note?: string; link?: string },
+) => Promise<string | null>;
+
+/** Mark actions of one item; a handled item also offers Reopen. */
+export function MarkActions({
+  name,
+  handled,
+  onMark,
+}: {
+  name: string;
+  handled: boolean;
+  onMark: MarkItem;
+}) {
+  const [draft, setDraft] = useState<FrictionStateName | null>(null);
+  const [text, setText] = useState("");
+  const [pending, setPending] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const fieldId = useId();
+  const field = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (draft) field.current?.focus();
+  }, [draft]);
+
+  const close = () => {
+    setDraft(null);
+    setText("");
+    setRefusal(null);
+  };
+
+  async function submit(state: MarkState, input: { note?: string; link?: string } = {}) {
+    setPending(true);
+    setRefusal(null);
+    const refused = await onMark(state, input);
+    setPending(false);
+    if (refused) setRefusal(refused);
+    else close();
+  }
+
+  return (
+    <div className="grid gap-1.5">
+      {draft ? (
+        <form
+          aria-label={`Mark ${name} ${STATE_WORDS[draft].label.toLowerCase()}`}
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit(draft, { [FIELD[draft].key]: text });
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") close();
+          }}
+        >
+          <label htmlFor={fieldId} className="grid gap-1 text-xs text-muted">
+            {FIELD[draft].label}
+            <Input
+              id={fieldId}
+              ref={field}
+              type={FIELD[draft].type}
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              className="h-8 w-72 max-w-full"
+            />
+          </label>
+          <Button size="sm" variant="primary" type="submit" disabled={pending}>
+            Confirm {STATE_WORDS[draft].label.toLowerCase()}
+          </Button>
+          <Button size="sm" onClick={close} disabled={pending}>
+            Cancel
+          </Button>
+        </form>
+      ) : (
+        <div role="group" aria-label={`Mark ${name}`} className="flex flex-wrap gap-2">
+          {FRICTION_STATES.map((state) => (
+            <Button key={state} size="sm" disabled={pending} onClick={() => setDraft(state)}>
+              {STATE_WORDS[state].label}
+            </Button>
+          ))}
+          {handled ? (
+            <Button size="sm" disabled={pending} onClick={() => void submit("open")}>
+              Reopen
+            </Button>
+          ) : null}
+        </div>
+      )}
+      {refusal ? (
+        <p className="m-0 max-w-[70ch] text-xs text-bad" role="alert">
+          {refusal}
+        </p>
+      ) : null}
+    </div>
+  );
+}

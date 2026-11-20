@@ -3,6 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { appendEvent, frictionLogDir } from "../../../runtime/friction-log";
+import { frictionStateFile, readFrictionStates } from "../../../runtime/friction-state";
 import { readFrictionSwitch } from "../../../runtime/friction-switch";
 import { createStudioAccess, type StudioAccess } from "./access";
 import { createStudioFetch } from "./server";
@@ -244,11 +246,31 @@ describe("friction", () => {
       .filter((entry) => entry.isFile())
       .map((entry) => path.relative(home, path.join(entry.parentPath, entry.name)));
 
-  /** An application whose every call turns recording on, like the Studio server function. */
+  const FINGERPRINT = "refusal:artifact:write";
+  const recordEvent = () =>
+    appendEvent(
+      {
+        kind: "refusal",
+        fingerprint: FINGERPRINT,
+        mateVersion: "1.0.0",
+        runtime: "claude",
+        sessionId: "s1",
+        companion: "/companions/acme",
+        repositoryPath: null,
+        detail: {},
+      },
+      { homeDir: home },
+    );
+
+  /** Like the Studio server functions: `/_serverFn/mark` dismisses, any other call turns recording on. */
   const switching = (): StudioApp => ({
     clientDir: root,
-    fetch: async (_request, { context }) =>
-      Response.json(await context.studio.setFrictionRecording(true)),
+    fetch: async (request, { context }) =>
+      Response.json(
+        new URL(request.url).pathname.endsWith("/mark")
+          ? await context.studio.markFriction(FINGERPRINT, "dismissed", {})
+          : await context.studio.setFrictionRecording(true),
+      ),
   });
 
   const studio = (withApp: StudioApp | null, access?: StudioAccess) =>
@@ -288,6 +310,42 @@ describe("friction", () => {
     ).toBe(true);
   });
 
+  test("marking without --writable writes only the state file, by studio", async () => {
+    recordEvent();
+    const logDir = frictionLogDir(home);
+    const log = () =>
+      Object.fromEntries(
+        fs
+          .readdirSync(logDir)
+          .map((name) => [name, fs.readFileSync(path.join(logDir, name), "utf8")]),
+      );
+    const before = log();
+    const handler = studio(null);
+    expect(handler.services.writable).toBe(false);
+    expect(
+      await handler.services.markFriction(FINGERPRINT, "fixed", { note: "acme fix" }),
+    ).toMatchObject({ ok: true, state: { state: "fixed", by: "studio", note: "acme fix" } });
+    const stateFile = path.relative(home, frictionStateFile(home));
+    expect(files(home).toSorted()).toEqual(
+      [
+        ...Object.keys(before).map((name) => path.relative(home, path.join(logDir, name))),
+        stateFile,
+      ].toSorted(),
+    );
+    const { [path.basename(stateFile)]: _written, ...after } = log();
+    expect(after).toEqual(before);
+  });
+
+  test("a refused mark is an answer and writes nothing", async () => {
+    const { services } = studio(null);
+    const refused = await services.markFriction("refusal:acme:unknown", "fixed", {});
+    expect(refused).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("nothing was changed"),
+    });
+    expect(fs.existsSync(frictionStateFile(home))).toBe(false);
+  });
+
   test("a server-function call sets the switch only from Studio's page with the token", async () => {
     const token = "acme-token-0123456789abcdef";
     const handler = studio(
@@ -300,22 +358,29 @@ describe("friction", () => {
         token,
       }),
     );
-    const call = (origin: string, cookie?: string) =>
+    recordEvent();
+    const call = (origin: string, cookie?: string, fn = "abc") =>
       handler(
-        new Request("http://localhost/_serverFn/abc", {
+        new Request(`http://localhost/_serverFn/${fn}`, {
           method: "POST",
           headers: { origin, ...(cookie ? { cookie } : {}) },
         }),
       );
     const tokened = `mate_studio_80=${token}`;
 
-    expect((await call("http://evil.example", tokened))?.status).toBe(403);
+    const dismissed = () => readFrictionStates(home).fingerprints[FINGERPRINT]?.state;
+
+    for (const fn of ["abc", "mark"]) {
+      expect((await call("http://evil.example", tokened, fn))?.status).toBe(403);
+      const tokenless = await call("http://localhost", undefined, fn);
+      expect(tokenless?.status).toBe(401);
+      expect(await tokenless?.text()).toContain("open the address Studio printed");
+    }
     expect(readFrictionSwitch(home)).toBe(false);
-    const tokenless = await call("http://localhost");
-    expect(tokenless?.status).toBe(401);
-    expect(await tokenless?.text()).toContain("open the address Studio printed");
-    expect(readFrictionSwitch(home)).toBe(false);
+    expect(dismissed()).toBeUndefined();
     expect((await call("http://localhost", tokened))?.status).toBe(200);
     expect(readFrictionSwitch(home)).toBe(true);
+    expect((await call("http://localhost", tokened, "mark"))?.status).toBe(200);
+    expect(dismissed()).toBe("dismissed");
   });
 });
