@@ -12,12 +12,13 @@ import {
   type SecretScan,
 } from "../../lib/friction/fields";
 import { markFriction } from "../../lib/friction/mark";
-import { selectByState } from "../../lib/friction/select";
-import {
-  readFrictionSummary,
-  type FrictionFreeReport,
-  type FrictionGroup,
-} from "../../lib/friction/summary";
+import type {
+  FrictionFreeReport,
+  FrictionGroup,
+  FrictionItemState,
+} from "../../lib/friction/view/model";
+import { readFrictionView } from "../../lib/friction/view/read";
+import { selectFriction } from "../../lib/friction/view/select";
 import {
   appendReport,
   findEvent,
@@ -33,7 +34,6 @@ import {
   REPORT_KINDS,
   STATE_FILTERS,
   SUBJECT_TYPES,
-  type FrictionState,
   type MarkState,
   type ReportCost,
   type ReportKind,
@@ -88,9 +88,7 @@ const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ?
 const minute = (at: string) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`;
 
 /** The Friction State as one line, or nothing for an unmarked item. */
-function stateLines(
-  state: (FrictionState & { reopened?: boolean; eventsSince?: number }) | null,
-): string[] {
+function stateLines(state: FrictionItemState | null): string[] {
   if (!state) return [];
   const words = [
     `${state.reopened ? "reopened: was " : ""}${state.state} by ${state.by} ${minute(state.at)}`,
@@ -110,7 +108,7 @@ function renderGroup(group: FrictionGroup, all: boolean): string {
   const named = (label: string, counts: Record<string, number>) =>
     Object.keys(counts).length > 0 ? [`    ${label}: ${counted(counts)}`] : [];
   return [
-    `  ${group.fingerprint}`,
+    `  ${group.fingerprint} · ${group.title}`,
     ...stateLines(group.state),
     `    ${plural(group.events, "event")} in ${plural(group.sessions, "session")}, at most ${group.maxPerSession} in one session`,
     `    first ${minute(group.firstSeen)}, last ${minute(group.lastSeen)}; mate ${counted(group.versions)}`,
@@ -165,13 +163,13 @@ export async function runFrictionListCommand(
     return;
   }
   const scope: FrictionScope = companion === null ? "all" : { companion };
-  const summary = readFrictionSummary(scope, {
+  const view = readFrictionView(scope, {
     days: args.days,
     homeDir: deps.homeDir,
     now: deps.now,
   });
 
-  const shown = selectByState(summary, args.state);
+  const shown = selectFriction(view, { state: args.state });
 
   if (args.json) {
     await writeJsonStdout({
@@ -180,22 +178,23 @@ export async function runFrictionListCommand(
       days: args.days,
       companion,
       state: args.state,
-      events: summary.events,
-      sessions: summary.sessions,
+      recording: view.recording,
+      events: view.events,
+      sessions: view.sessions,
       hidden: shown.hidden,
       groups: shown.groups,
       freeReports: shown.freeReports,
     });
     return;
   }
-  if (!readFrictionSwitch(deps.homeDir)) console.log(RECORDING_OFF_LINE);
-  if (summary.events === 0 && summary.freeReports.length === 0) {
+  if (!view.recording) console.log(RECORDING_OFF_LINE);
+  if (view.events === 0 && view.freeReports.length === 0) {
     console.log(`No friction recorded in the last ${args.days} days.`);
     return;
   }
   const showAll = `${FRAMEWORK_NAME} friction list --state all${args.all ? " --all" : ""}`;
   console.log(
-    `Friction in the last ${args.days} days${args.all ? " in all companions" : ""}: ${plural(summary.events, "event")} in ${plural(summary.sessions, "session")}`,
+    `Friction in the last ${args.days} days${args.all ? " in all companions" : ""}: ${plural(view.events, "event")} in ${plural(view.sessions, "session")}`,
   );
   if (shown.groups.length === 0 && shown.freeReports.length === 0) {
     console.log(

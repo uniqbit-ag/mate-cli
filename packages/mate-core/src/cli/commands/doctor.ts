@@ -6,8 +6,8 @@ import { parse as parseYaml } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { gitEnvironment } from "../../runtime/companion-git";
-import { selectByState } from "../../lib/friction/select";
-import { readFrictionSummary } from "../../lib/friction/summary";
+import { readFrictionView } from "../../lib/friction/view/read";
+import { selectFriction } from "../../lib/friction/view/select";
 import { readFrictionSwitch } from "../../runtime/friction-switch";
 import { checkoutCommonDir, checkoutAt, sameClone } from "../../runtime/git-layout";
 import { physicalPath } from "../../runtime/physical-path";
@@ -158,11 +158,11 @@ function collectFriction(
   env: Record<string, string | undefined>,
   now?: Date,
 ): DoctorFriction {
-  const summary = readFrictionSummary(
+  const view = readFrictionView(
     { companion: companionPath },
     { days: DOCTOR_FRICTION_DAYS, homeDir: env.HOME, now },
   );
-  const { groups } = selectByState(summary, "open");
+  const { groups } = selectFriction(view, { state: "open" });
   let top: DoctorFriction["top"] = null;
   for (const group of groups) {
     if (!top || group.events > top.events) {

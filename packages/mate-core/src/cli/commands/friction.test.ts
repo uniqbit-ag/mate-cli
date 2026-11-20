@@ -154,6 +154,7 @@ describe("mate friction list", () => {
     expect(text.indexOf("refusal:artifact:write")).toBeLessThan(
       text.indexOf("refusal:secret:read"),
     );
+    expect(text).toContain("  refusal:artifact:write · The artifact check refused a file write\n");
   });
 
   test("an empty window says so and exits zero", async () => {
@@ -307,14 +308,16 @@ describe("mate friction list", () => {
     ]);
   });
 
-  test("the JSON document is the same whether recording is on or off", async () => {
+  test("the JSON document differs only in recording whether recording is on or off", async () => {
     record("refusal:artifact:write", "a");
     await list(["--json"]);
     writeFrictionSwitch(false, home);
     await list(["--json"]);
 
     expect(stdout).toHaveLength(2);
-    expect(JSON.parse(stdout[1])).toEqual(JSON.parse(stdout[0]));
+    const [on, off] = stdout.map((line) => JSON.parse(line));
+    expect(on.recording).toBe(true);
+    expect(off).toEqual({ ...on, recording: false });
   });
 });
 

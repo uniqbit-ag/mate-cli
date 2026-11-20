@@ -1,7 +1,6 @@
 import {
   FRICTION_STATES,
-  type FrictionGroupState,
-  type FrictionState,
+  type FrictionItemState,
   type FrictionStateName,
   type FrictionStateOrigin,
   type MarkState,
@@ -26,10 +25,7 @@ const BY: Record<FrictionStateOrigin, string> = {
 
 export const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
-/** A group's state carries what later events tell; a Free Report's does not. */
-type ItemStateValue = FrictionState & Partial<Pick<FrictionGroupState, "eventsSince" | "reopened">>;
-
-export function ItemState({ state, time }: { state: ItemStateValue; time: ReactNode }) {
+export function ItemState({ state, time }: { state: FrictionItemState; time: ReactNode }) {
   const word = STATE_WORDS[state.state];
   return (
     <p className="m-0 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-muted">

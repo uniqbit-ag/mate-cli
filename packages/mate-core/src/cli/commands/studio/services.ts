@@ -1,5 +1,5 @@
 import type { OutcomeAction } from "../../../lib/factory/outcomes/actions";
-import type { FrictionView, FrictionViewDays } from "../../../lib/friction/view-model";
+import type { FrictionView, FrictionViewDays } from "../../../lib/friction/view/model";
 import type { FrictionState, MarkState } from "../../../runtime/friction-vocabulary";
 import type { UsageRequest } from "../../../lib/usage/cache";
 import type { UsageResponse } from "../../../lib/usage/types";

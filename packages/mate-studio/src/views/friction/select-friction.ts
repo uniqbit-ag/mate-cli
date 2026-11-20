@@ -1,22 +1,14 @@
 import {
-  selectByState,
-  SUBJECT_TYPES,
-  subjectTypeOf,
-  type FrictionFreeReport,
+  selectFriction as selectItems,
+  type FrictionFilters as ItemFilters,
+  type FrictionShown,
   type FrictionView,
-  type FrictionViewGroup,
-  type ReportKind,
-  type StateFilter,
-  type SubjectType,
 } from "@uniqbit/mate-core/studio";
 
 import type { FrictionSort, StudioSearch } from "../../lib/search";
 
 /** As the address carries them; an absent type or kind means All. */
-export interface FrictionFilters {
-  state: StateFilter;
-  type?: SubjectType;
-  kind?: ReportKind;
+export interface FrictionFilters extends ItemFilters {
   sort: FrictionSort;
 }
 
@@ -43,46 +35,14 @@ export function searchFromFilters(
   };
 }
 
-export interface FrictionShown {
-  groups: FrictionViewGroup[];
-  freeReports: FrictionFreeReport[];
-  /** Items of the period the filters leave out. */
-  hidden: number;
-  /** The subject types present in the period, in vocabulary order. */
-  types: SubjectType[];
-  /** The type filtered on; a type absent from the period reads as All. */
-  type?: SubjectType;
-}
-
+/** Core's selection in the chosen order; most repeated is the view's own order. */
 export function selectFriction(view: FrictionView, filters: FrictionFilters): FrictionShown {
-  const reportTypes = new Map(
-    view.freeReports.map((report) => [report.id, subjectTypeOf(report.subject)]),
-  );
-  const present = new Set([
-    ...view.groups.map((group) => group.subjectType),
-    ...reportTypes.values(),
-  ]);
-  const types = SUBJECT_TYPES.filter((type) => present.has(type));
-  const type = types.find((known) => known === filters.type);
-  const byState = selectByState(view, filters.state);
-  const groups = byState.groups.filter((group) => !type || group.subjectType === type);
-  const freeReports = byState.freeReports.filter(
-    (report) =>
-      (!type || reportTypes.get(report.id) === type) &&
-      (!filters.kind || report.kind === filters.kind),
-  );
-  const total = view.groups.length + view.freeReports.length;
+  const shown = selectItems(view, filters);
+  if (filters.sort !== "recent") return shown;
   return {
-    // Most repeated is the summary's own order.
-    groups:
-      filters.sort === "recent"
-        ? groups.toSorted((a, b) =>
-            a.lastSeen < b.lastSeen ? 1 : a.lastSeen > b.lastSeen ? -1 : 0,
-          )
-        : groups,
-    freeReports,
-    hidden: total - groups.length - freeReports.length,
-    types,
-    type,
+    ...shown,
+    groups: shown.groups.toSorted((a, b) =>
+      a.lastSeen < b.lastSeen ? 1 : a.lastSeen > b.lastSeen ? -1 : 0,
+    ),
   };
 }

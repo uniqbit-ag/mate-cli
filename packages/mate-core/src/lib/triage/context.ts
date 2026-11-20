@@ -3,10 +3,9 @@ import os from "node:os";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
-import { readFriction, type FrictionEvent } from "../../runtime/friction-log";
-import { readFrictionStates } from "../../runtime/friction-state";
+import type { FrictionEvent } from "../../runtime/friction-log";
 import { scanContent } from "../../runtime/secret-scan";
-import { summarizeFriction } from "../friction/summary";
+import { readFrictionRecords } from "../friction/view/read";
 import { TRIAGE_AGENT_NAMES, TRIAGE_AGENTS, type FoundAgent } from "./launch";
 
 const FRICTION_SNAPSHOT_DAYS = 30;
@@ -66,9 +65,13 @@ export async function writeFrictionSnapshot(
 ): Promise<FrictionSnapshot> {
   const { companion } = options;
   if (!companion) return { companion: null, events: 0, reports: 0, states: 0 };
-  const { events: recorded, reports } = readFriction(
+  const {
+    events: recorded,
+    reports,
+    states,
+  } = readFrictionRecords(
     { companion },
-    { sinceDays: FRICTION_SNAPSHOT_DAYS, homeDir: options.homeDir, now: options.now },
+    { days: FRICTION_SNAPSHOT_DAYS, homeDir: options.homeDir, now: options.now },
   );
   const events = await withoutFlaggedEvidence(recorded, options.scan ?? scanContent);
   const write = (name: string, records: object[]) => {
@@ -81,23 +84,9 @@ export async function writeFrictionSnapshot(
   if (events.length === 0 && reports.length === 0) {
     return { companion, events: 0, reports: 0, states: 0 };
   }
-  const summary = summarizeFriction(recorded, reports, readFrictionStates(options.homeDir));
-  const states = {
-    v: 1,
-    fingerprints: Object.fromEntries(
-      summary.groups
-        .filter((group) => group.state)
-        .map((group) => [group.fingerprint, group.state]),
-    ),
-    reports: Object.fromEntries(
-      summary.freeReports
-        .filter((report) => report.state)
-        .map((report) => [report.id, report.state]),
-    ),
-  };
   fs.writeFileSync(
     path.join(sessionDir, FRICTION_STATES_FILE),
-    `${JSON.stringify(states, null, 2)}\n`,
+    `${JSON.stringify({ v: 1, ...states }, null, 2)}\n`,
     "utf8",
   );
   return {

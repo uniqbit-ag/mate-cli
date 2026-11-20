@@ -127,13 +127,19 @@ export type { StoredReport } from "./cli/commands/studio/reports";
 export {
   FRICTION_VIEW_DAYS,
   frictionViewDays,
+  type FrictionFreeReport,
+  type FrictionGroup,
+  type FrictionGroupState,
+  type FrictionItemState,
   type FrictionView,
   type FrictionViewDays,
-  type FrictionViewGroup,
-} from "./lib/friction/view-model";
+} from "./lib/friction/view/model";
 export type { FrictionReport } from "./runtime/friction-log";
-export type { FrictionFreeReport, FrictionGroupState } from "./lib/friction/summary";
-export { selectByState } from "./lib/friction/select";
+export {
+  selectFriction,
+  type FrictionFilters,
+  type FrictionShown,
+} from "./lib/friction/view/select";
 export {
   FRICTION_STATES,
   MARK_STATES,

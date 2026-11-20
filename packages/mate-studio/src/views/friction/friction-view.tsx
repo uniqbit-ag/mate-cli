@@ -6,10 +6,11 @@ import {
   SUBJECT_TYPES,
   type FrictionFreeReport,
   type FrictionMarkResult,
+  type FrictionShown,
   type FrictionReport,
   type FrictionView,
   type FrictionViewDays,
-  type FrictionViewGroup,
+  type FrictionGroup,
   type StateFilter,
 } from "@uniqbit/mate-core/studio";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -42,7 +43,7 @@ import {
 import { type FrictionSort, oneOf } from "../../lib/search";
 import { useBrowser } from "../../lib/use-browser";
 import { ItemState, MarkActions, type MarkItem, plural } from "./mark-actions";
-import { type FrictionFilters, type FrictionShown, selectFriction } from "./select-friction";
+import { type FrictionFilters, selectFriction } from "./select-friction";
 
 const PERIODS = FRICTION_VIEW_DAYS.map((days) => ({ value: String(days), label: `${days} days` }));
 
@@ -94,7 +95,7 @@ function ItemFooter({
   onMark,
 }: {
   name: string;
-  item: Pick<FrictionViewGroup | FrictionFreeReport, "state" | "open">;
+  item: Pick<FrictionGroup | FrictionFreeReport, "state" | "open">;
   onMark: MarkItem;
 }) {
   return (
@@ -151,7 +152,7 @@ function ReportItem({
   );
 }
 
-function GroupItem({ group, onMark }: { group: FrictionViewGroup; onMark: MarkItem }) {
+function GroupItem({ group, onMark }: { group: FrictionGroup; onMark: MarkItem }) {
   const counts = [plural(group.events, "event"), plural(group.sessions, "session")];
   if (group.reports.length > 0) counts.push(plural(group.reports.length, "report"));
   return (

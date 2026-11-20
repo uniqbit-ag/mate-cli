@@ -1,9 +1,10 @@
-import type {
-  FrictionFreeReport,
-  FrictionGroupState,
-  FrictionReport,
-  FrictionView,
-  FrictionViewGroup,
+import {
+  subjectTypeOf,
+  type FrictionFreeReport,
+  type FrictionGroupState,
+  type FrictionReport,
+  type FrictionView,
+  type FrictionGroup,
 } from "@uniqbit/mate-core/studio";
 
 const COMPANION = "/home/dev/.mate/companions/acme-companion";
@@ -30,7 +31,14 @@ export function frictionReport(fields: Partial<FrictionReport> = {}): FrictionRe
 
 /** A Free Report: a report on no event, unmarked unless `state` is given. */
 export function frictionFreeReport(fields: Partial<FrictionFreeReport> = {}): FrictionFreeReport {
-  return { ...frictionReport({ eventId: null }), state: null, open: true, ...fields };
+  const report = frictionReport({ eventId: null, ...fields });
+  return {
+    subjectType: subjectTypeOf(report.subject),
+    state: null,
+    open: true,
+    ...report,
+    ...fields,
+  };
 }
 
 /** A Friction State as a group carries it; `fixed` by a person, with no later event. */
@@ -47,7 +55,7 @@ export function frictionState(fields: Partial<FrictionGroupState> = {}): Frictio
   };
 }
 
-export function frictionGroup(fields: Partial<FrictionViewGroup> = {}): FrictionViewGroup {
+export function frictionGroup(fields: Partial<FrictionGroup> = {}): FrictionGroup {
   return {
     fingerprint: "refusal:artifact:write",
     title: "The artifact check refused a file write",
