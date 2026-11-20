@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### The full OpenSpec schema is now `mate-full`
+
+- Mate's full schema (proposal, specs, design, tasks) is renamed from `mate-v1` to `mate-full`, next to `mate-minimal`. A new companion gets `schema: mate-full` in `openspec/config.yaml`, and `mate-propose-change` names `mate-full`.
+- `mate-v1` keeps working: capability sync installs `openspec/schemas/mate-full/` and keeps `openspec/schemas/mate-v1/` in every companion, generated from the same source with only the name changed. An existing `schema: mate-v1` in `openspec/config.yaml` stays, and no change, archive or artifact is rewritten. `--schema mate-v1` still works, also in a new companion.
+- `@uniqbit/mate-core/studio` keeps its exports: `SCHEMA_ARTIFACTS` gains `mate-full` and keeps `mate-v1`, and `MateSchema` accepts both. New: `SHIPPED_SCHEMAS`, `LEGACY_SCHEMA_ALIASES` and `canonicalSchema()`. `DEFAULT_SCHEMA` is now `mate-full`.
+- Everyone sharing a companion should upgrade before proposing `mate-full` changes: an older Mate shows such a change as a custom schema in Studio, and publishing it there skips the canonical frontmatter on its main specs. Until then, each sync by an older Mate rewrites `openspec/schemas/mate-v1/` back to its own copy, so the folder shows changes after every teammate's sync.
+- Copying Mate's skills and schemas into a companion replaces a symlink at a copied path instead of writing through it, so a committed symlink cannot redirect the write outside the companion.
+
 ### The Mate factory moved to its own repository (breaking)
 
 - The factory (broker, runner, Workset runtime, `mate factory`, its Studio view and the factory image) now lives in the private repository [uniqbit-ag/mate-factory](https://github.com/uniqbit-ag/mate-factory), as the service plugin `@uniqbit/mate-plugin-factory` with its own Mate distribution for the image. `@uniqbit/mate` no longer has `mate factory`, and Studio no longer has a built-in Factory view; the factory image brings both.

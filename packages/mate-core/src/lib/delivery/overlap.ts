@@ -151,9 +151,10 @@ export async function applyWarnings(
 
 /**
  * Warning for schema artifacts that `openspec status --change <change> --json` reports neither
- * done nor skipped, e.g. a design missing after a `mate-minimal` change moved to `mate-v1`.
- * Only Mate's schemas require every artifact; OpenSpec reports another schema's conditional
- * artifacts (spec-driven's design) as `ready`, so those yield no warning, as does unparsable output.
+ * done nor skipped, e.g. a design missing after a `mate-minimal` change moved to `mate-full`.
+ * Only Mate's schemas, legacy aliases included, require every artifact; OpenSpec reports another
+ * schema's conditional artifacts (spec-driven's design) as `ready`, so those yield no warning, as
+ * does unparsable output.
  */
 export function planningWarning(change: string, statusJson: string): PlanningWarning | null {
   let status: { schemaName?: unknown; artifacts?: unknown };

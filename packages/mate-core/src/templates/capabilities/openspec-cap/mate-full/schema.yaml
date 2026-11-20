@@ -1,5 +1,5 @@
-name: mate-v1
-version: 11
+name: mate-full
+version: 12
 description: Mate's complete OpenSpec workflow - proposal → specs → design → tasks
 artifacts:
   - id: proposal
@@ -88,7 +88,7 @@ artifacts:
     instruction: |
       Create the required design document that explains HOW to implement the change.
 
-      Every mate-v1 change includes design.md. Keep it short for simple changes;
+      Every mate-full change includes design.md. Keep it short for simple changes;
       expand the relevant sections when the change is cross-cutting, introduces a
       dependency or data-model change, or has security, performance, or migration risk.
 

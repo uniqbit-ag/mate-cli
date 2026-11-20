@@ -111,7 +111,7 @@ const ACME_TOPOLOGY = {
 describe("workflowPlan", () => {
   it("presents the full and minimal paths in Delivery Path order", () => {
     const plan = workflowPlan({ skills: ALL_SKILLS });
-    expect(plan.paths.map((path) => path.schema)).toEqual(["mate-v1", "mate-minimal"]);
+    expect(plan.paths.map((path) => path.schema)).toEqual(["mate-full", "mate-minimal"]);
     expect(labels(plan.paths[0])).toEqual([
       "Clarify intent",
       "Explore change",
@@ -219,6 +219,28 @@ describe("workflowPlan", () => {
     const brief = plan.paths[0].steps.find((step) => step.id === "review-brief");
     expect(brief?.what).toBe("States the outcome.");
   });
+
+  it("shows a companion serving the legacy mate-v1 name as the mate-full path", () => {
+    const plan = workflowPlan({
+      skills: ALL_SKILLS,
+      topology: {
+        ...ACME_TOPOLOGY,
+        schemaName: "mate-v1",
+        artifacts: [
+          { id: "proposal", description: "Says why.", requires: [] },
+          { id: "specs", requires: ["proposal"] },
+          { id: "design", requires: ["proposal"] },
+          { id: "tasks", requires: ["specs", "design"] },
+        ],
+      },
+    });
+    expect(plan.paths.map((path) => path.schema)).toEqual(["mate-full", "mate-minimal"]);
+    expect(plan.paths[0].tagline).toBe("full planning");
+    const proposal = plan.paths[0].steps.find((step) => step.id === "review-proposal");
+    expect(proposal?.what).toBe("Says why.");
+    const propose = plan.paths[0].steps.find((step) => step.id === "propose");
+    expect(propose?.prompt).toBe("/mate-propose-change for <change-name>");
+  });
 });
 
 describe("workflowPlan phases and map", () => {
@@ -277,7 +299,7 @@ describe("Workflow view", () => {
     const markup = render();
     expect(markup).not.toContain("OpenSpec schema");
     expect(markup).not.toContain("data-workflow-schema-root");
-    expect(markup).toContain('data-workflow-schema-panel="mate-v1"');
+    expect(markup).toContain('data-workflow-schema-panel="mate-full"');
     expect(markup).not.toContain('data-workflow-schema-panel="mate-minimal"');
     expect(markup).not.toContain("name the change after pasting");
   });
@@ -289,9 +311,9 @@ describe("Workflow view", () => {
     expect(markup).not.toContain("the whole run");
   });
 
-  /** The markup of the mate-v1 path. */
+  /** The markup of the mate-full path. */
   const fullPanel = (markup: string): string =>
-    markup.slice(markup.indexOf('data-workflow-schema-panel="mate-v1"'));
+    markup.slice(markup.indexOf('data-workflow-schema-panel="mate-full"'));
 
   const attributes = (markup: string, name: string): string[] =>
     [...markup.matchAll(new RegExp(`${name}="([^"]+)"`, "g"))].map((match) => match[1]!);
@@ -488,7 +510,7 @@ describe("Workflow view", () => {
     await choose("mate-minimal");
     expect(panel().textContent).toContain("Review specs yourself");
     expect(doc.querySelector('[data-map-stage="review-proposal"]')).toBeNull();
-    await choose("mate-v1");
+    await choose("mate-full");
     expect(panel().textContent).toContain("Review specs yourself");
     expect(doc.querySelector('[data-map-stage="review-proposal"]')).not.toBeNull();
     page.unmount();

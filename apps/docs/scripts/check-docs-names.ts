@@ -6,11 +6,13 @@
  * `{/* breaking:openspec *\/}` must cover every retired skill and removed OpenSpec skill.
  * Fenced code is checked for retired and OpenSpec names only: it also holds unrelated
  * `mate-*` names, such as directories and services.
- * Parses the source text instead of importing it, so the check needs no Mate setup.
+ * Parses the source text instead of importing it, so the check needs no Mate setup; only
+ * `stages.ts`, which imports nothing, is imported.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
+import { LEGACY_SCHEMA_ALIASES } from "../../../packages/mate-core/src/lib/delivery/stages.ts";
 import { walk } from "./lib.ts";
 
 const root = join(import.meta.dir, "..");
@@ -49,9 +51,11 @@ const capabilitySkills = subdirs(capabilitiesDir).flatMap((capability) =>
   ),
 );
 const shippedSkills = new Set([...mateSkills, ...capabilitySkills]);
-const schemas = new Set(
-  subdirs(schemasDir).filter((schema) => existsSync(join(schemasDir, schema, "schema.yaml"))),
-);
+// Legacy schema aliases are generated at sync, so they have no source folder.
+const schemas = new Set([
+  ...subdirs(schemasDir).filter((schema) => existsSync(join(schemasDir, schema, "schema.yaml"))),
+  ...Object.keys(LEGACY_SCHEMA_ALIASES),
+]);
 const retiredSkills = constArray(join(setupDir, "mate.ts"), "RETIRED_MATE_SKILLS");
 const openspecSkills = constArray(join(setupDir, "capabilities", "openspec.ts"), "OPENSPEC_SKILLS");
 const openspecCommandIds = new Set(

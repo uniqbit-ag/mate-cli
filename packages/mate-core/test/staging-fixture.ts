@@ -118,7 +118,7 @@ function runRealOpenSpec(fixture: StagingFixture, companion: string, args: strin
   }
 }
 
-/** A complete mate-v1 change with a Delivery Record, archived locally and left uncommitted. */
+/** A complete mate-full change with a Delivery Record, archived locally and left uncommitted. */
 export function archiveLocally(
   fixture: StagingFixture,
   companion: string,
@@ -135,7 +135,7 @@ export function archiveLocally(
 }
 
 /**
- * A complete mate-v1 change with a Delivery Record, left active in `openspec/changes/<name>/`
+ * A complete mate-full change with a Delivery Record, left active in `openspec/changes/<name>/`
  * as submit finds it; `state` and `specBase` go into its record when given.
  */
 export function proposeLocally(
@@ -149,7 +149,7 @@ export function proposeLocally(
   const depends = options.dependsOn ? `dependsOn: [${options.dependsOn.join(", ")}]\n` : "";
   fs.writeFileSync(
     path.join(change, "proposal.md"),
-    `---\ntype: change-proposal\nchange: ${name}\nschema: mate-v1\n${depends}${SCOPES}## Why\n\nThe acme widget needs a reason that is long enough to pass.\n\n## What Changes\n\n- Changes the widget.\n`,
+    `---\ntype: change-proposal\nchange: ${name}\nschema: mate-full\n${depends}${SCOPES}## Why\n\nThe acme widget needs a reason that is long enough to pass.\n\n## What Changes\n\n- Changes the widget.\n`,
   );
   fs.writeFileSync(
     path.join(change, "design.md"),
@@ -202,7 +202,7 @@ export function changeLocally(
   fs.mkdirSync(change, { recursive: true });
   fs.writeFileSync(
     path.join(change, "proposal.md"),
-    `---\ntype: change-proposal\nchange: ${name}\nschema: mate-v1\n${SCOPES}## Why\n\nThe acme widget changes.\n`,
+    `---\ntype: change-proposal\nchange: ${name}\nschema: mate-full\n${SCOPES}## Why\n\nThe acme widget changes.\n`,
   );
   for (const [file, text] of Object.entries(options.files ?? {})) {
     fs.mkdirSync(path.dirname(path.join(change, file)), { recursive: true });

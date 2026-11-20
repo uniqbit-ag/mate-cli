@@ -32,7 +32,7 @@ async function makeTempDir(prefix: string): Promise<string> {
 async function makeCompanion(root: string, name = "acme-companion"): Promise<string> {
   const companion = path.join(root, name);
   await fs.mkdir(path.join(companion, "openspec"), { recursive: true });
-  await fs.writeFile(path.join(companion, "openspec", "config.yaml"), "schema: mate-v1\n");
+  await fs.writeFile(path.join(companion, "openspec", "config.yaml"), "schema: mate-full\n");
   return companion;
 }
 

@@ -1,6 +1,6 @@
 ---
 name: mate-propose-change
-description: Propose a change with its schema chosen by the minimal eligibility test (mate-minimal or mate-v1) and one change per agreed slice. Builds on the OpenSpec propose workflow. Use when the user wants to turn an explored direction into a change proposal, or revise an existing change's plan.
+description: Propose a change with its schema chosen by the minimal eligibility test (mate-minimal or mate-full) and one change per agreed slice. Builds on the OpenSpec propose workflow. Use when the user wants to turn an explored direction into a change proposal, or revise an existing change's plan.
 allowed-tools: Bash(mate:*), Bash(openspec:*), Bash(git:*)
 license: MIT
 compatibility: Requires the mate CLI and the openspec capability enabled.
@@ -24,7 +24,7 @@ propose steps below.
 ## Steps
 
 1. **Choose the schema.** Use `mate-minimal` (specs and tasks only) when every
-   statement holds; otherwise use `mate-v1` (proposal, specs, design, tasks):
+   statement holds; otherwise use `mate-full` (proposal, specs, design, tasks):
 
    - Intent and scope are clear, with nothing left to explore.
    - The change stays within one Area.
@@ -90,7 +90,7 @@ propose steps below.
    never invokes.
 
    List the artifacts to review in schema order (Review proposal, Review specs, Review
-   design, Review tasks for `mate-v1`; Review specs and Review tasks for
+   design, Review tasks for `mate-full`; Review specs and Review tasks for
    `mate-minimal`), then `/mate-apply-change <change-name>` after that review. Never
    describe validation as approval.
 

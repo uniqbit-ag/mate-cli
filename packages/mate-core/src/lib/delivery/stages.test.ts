@@ -1,13 +1,21 @@
 import { describe, expect, test } from "bun:test";
 
-import { DELIVERY_STAGE_SKILLS, deliveryPath, SCHEMA_ARTIFACTS } from "./stages";
+import {
+  canonicalSchema,
+  DEFAULT_SCHEMA,
+  DELIVERY_STAGE_SKILLS,
+  deliveryPath,
+  isMateSchema,
+  SCHEMA_ARTIFACTS,
+  SHIPPED_SCHEMAS,
+} from "./stages";
 
 const labels = (artifacts: readonly string[] | undefined): string[] =>
   deliveryPath(artifacts).stages.map((stage) => stage.label);
 
 describe("deliveryPath", () => {
   test("the full schema yields one review stage per artifact in schema order", () => {
-    expect(labels(SCHEMA_ARTIFACTS["mate-v1"])).toEqual([
+    expect(labels(SCHEMA_ARTIFACTS["mate-full"])).toEqual([
       "Clarify intent",
       "Explore change",
       "Propose change",
@@ -39,7 +47,7 @@ describe("deliveryPath", () => {
   });
 
   test("each skill stage maps to its skill and every review stage maps to none", () => {
-    const stages = deliveryPath(SCHEMA_ARTIFACTS["mate-v1"]).stages;
+    const stages = deliveryPath(SCHEMA_ARTIFACTS["mate-full"]).stages;
     const skills = Object.fromEntries(stages.map((stage) => [stage.label, stage.skill]));
     expect(skills).toMatchObject({
       "Clarify intent": "mate-clarify-intent",
@@ -58,14 +66,14 @@ describe("deliveryPath", () => {
   });
 
   test("the stage label names the action and the skill is carried separately", () => {
-    const submit = deliveryPath(SCHEMA_ARTIFACTS["mate-v1"]).stages.find(
+    const submit = deliveryPath(SCHEMA_ARTIFACTS["mate-full"]).stages.find(
       (stage) => stage.id === "submit",
     );
     expect(submit).toMatchObject({ label: "Submit change", skill: "mate-submit-change" });
   });
 
   test("optional stages are independent peers and never required", () => {
-    const stages = deliveryPath(SCHEMA_ARTIFACTS["mate-v1"]).stages;
+    const stages = deliveryPath(SCHEMA_ARTIFACTS["mate-full"]).stages;
     const optional = stages.filter((stage) => stage.optional).map((stage) => stage.id);
     expect(optional).toEqual(["clarify-intent", "inspect-outcome", "refine-code"]);
     const required = stages.filter((stage) => !stage.optional).map((stage) => stage.id);
@@ -99,5 +107,27 @@ describe("deliveryPath", () => {
       "mate-submit-change",
       "mate-publish-artifact",
     ]);
+  });
+});
+
+describe("schema names", () => {
+  test("the legacy mate-v1 name yields the full Delivery Path", () => {
+    expect(labels(SCHEMA_ARTIFACTS["mate-v1"])).toEqual(labels(SCHEMA_ARTIFACTS["mate-full"]));
+  });
+
+  test("mate-v1 is a Mate schema that maps to mate-full", () => {
+    expect(isMateSchema("mate-v1")).toBe(true);
+    expect(canonicalSchema("mate-v1")).toBe("mate-full");
+    expect(canonicalSchema("mate-minimal")).toBe("mate-minimal");
+  });
+
+  test("an unknown name is no Mate schema and keeps its name", () => {
+    expect(isMateSchema("acme-flow")).toBe(false);
+    expect(canonicalSchema("acme-flow")).toBe("acme-flow");
+  });
+
+  test("the shipped list holds mate-full and mate-minimal, and mate-full is the default", () => {
+    expect(SHIPPED_SCHEMAS).toEqual(["mate-full", "mate-minimal"]);
+    expect(DEFAULT_SCHEMA).toBe("mate-full");
   });
 });
