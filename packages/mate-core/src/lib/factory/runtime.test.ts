@@ -23,6 +23,8 @@ interface FakeContainer {
   labels: Record<string, string>;
   image: string;
   volumes: string[];
+  /** `--runtime` from the create. */
+  runtime?: string;
   /** `--memory` from the last create or update, as Docker reports it in bytes. */
   memory?: number;
 }
@@ -87,7 +89,7 @@ function docker(state: Fake, args: string[]): CommandResult {
       if (args.includes("{{.HostConfig.Memory}}")) return ok(`${container.memory ?? 0}\n`);
       if (args.join(" ").includes(".Image")) {
         return ok(
-          `${container.image}\t${container.volumes.map((volume) => `${volume} `).join("")}\n`,
+          `${container.image}\t${container.volumes.map((volume) => `${volume} `).join("")}\t${container.runtime ?? ""}\n`,
         );
       }
       return ok(String(container.running));
@@ -107,11 +109,13 @@ function docker(state: Fake, args: string[]): CommandResult {
         }
       });
       const memory = args.indexOf("--memory");
+      const runtimeFlag = args.indexOf("--runtime");
       state.containers.set(args[args.indexOf("--name") + 1]!, {
         running: false,
         labels,
         image: state.imageId,
         volumes,
+        ...(runtimeFlag === -1 ? {} : { runtime: args[runtimeFlag + 1]! }),
         ...(memory === -1 ? {} : { memory: dockerSizeBytes(args[memory + 1]!)! }),
       });
       return ok();
@@ -753,6 +757,38 @@ describe("spawn", () => {
     ]);
     expect(create.join(" ")).not.toContain("docker.sock");
     expect(create.at(-1)).toBe("mate-workset:1.0.0-acme");
+  });
+
+  test("the default backend's create arguments are exactly Sysbox's", async () => {
+    await spawnAcme();
+    const worktree = path.join(root, "state", "worktrees", "acme-login");
+    const gitDir = path.join(root, "state", "repos", "acme__app", ".git");
+    expect(dockerCall("create")!.args).toEqual([
+      "create",
+      "--name",
+      "workset-acme-login",
+      "--hostname",
+      "acme-login",
+      "--runtime",
+      "sysbox-runc",
+      "--label",
+      "dev.mate.workset=acme-login",
+      "--label",
+      "dev.mate.repository=acme/app",
+      "--volume",
+      `${worktree}:${worktree}`,
+      "--volume",
+      `${gitDir}:${gitDir}`,
+      "--volume",
+      `${companion}:${companion}`,
+      "--volume",
+      "workset-home-acme-login:/home/mate",
+      "--volume",
+      "workset-bun-cache:/var/cache/bun",
+      "--workdir",
+      worktree,
+      "mate-workset:1.0.0-acme",
+    ]);
   });
 
   test.each(["Acme", "acme/login", "acme login", "../acme", "acme--x", "-acme"])(
@@ -1446,5 +1482,92 @@ describe("the home volume and the current image", () => {
     await spawnAcme();
     expect(dockerCall("rm")).toBeUndefined();
     expect(dockerCall("create")).toBeUndefined();
+  });
+});
+
+describe("the dind backend", () => {
+  beforeEach(() => {
+    runtime = new WorksetRuntime({
+      dockerHost: `unix://${root}/docker.sock`,
+      backend: "dind",
+      stateDir: path.join(root, "state"),
+      image: "mate-workset:1.0.0-acme",
+      user: "mate",
+      companionsDir: path.join(root, "companions"),
+      run: state.run,
+    });
+  });
+
+  test("an inner daemon without Sysbox is factory mode", async () => {
+    state.sysbox = false;
+    await spawnAcme();
+    expect(dockerCall("create")).toBeDefined();
+  });
+
+  test("the container is privileged runc, marked for its init, with a volume for its nested Docker", async () => {
+    await spawnAcme();
+    const create = dockerCall("create")!.args;
+    const worktree = path.join(root, "state", "worktrees", "acme-login");
+    expect(create.slice(0, 11)).toEqual([
+      "create",
+      "--name",
+      "workset-acme-login",
+      "--hostname",
+      "acme-login",
+      "--runtime",
+      "runc",
+      "--privileged",
+      "--env",
+      "MATE_WORKSET_RUNTIME=dind",
+      "--label",
+    ]);
+    expect(create).not.toContain("sysbox-runc");
+    const mounts = create.filter((_, index) => create[index - 1] === "--volume");
+    expect(mounts.slice(3)).toEqual([
+      "workset-home-acme-login:/home/mate",
+      "workset-bun-cache:/var/cache/bun",
+      "workset-docker-acme-login:/var/lib/docker",
+    ]);
+    expect(create.slice(-3)).toEqual(["--workdir", worktree, "mate-workset:1.0.0-acme"]);
+  });
+
+  test("deleting a Workset removes its home and nested Docker volumes", async () => {
+    await spawnAcme();
+    await runtime.delete("acme-login");
+    const volumes = state.calls
+      .filter((call) => call.command === "docker" && call.args[0] === "volume")
+      .map((call) => call.args.at(-1));
+    expect(volumes).toEqual(["workset-home-acme-login", "workset-docker-acme-login"]);
+  });
+
+  test("a stopped Sysbox container from before the switch is recreated under runc; its home volume stays", async () => {
+    await spawnAcme();
+    await runtime.pause("acme-login");
+    state.containers.get("workset-acme-login")!.runtime = "sysbox-runc";
+    state.calls.length = 0;
+    await spawnAcme();
+    expect(dockerCall("rm")!.args).toEqual(["rm", "--force", "workset-acme-login"]);
+    expect(dockerCall("cp")).toBeUndefined();
+    expect(state.containers.get("workset-acme-login")!.runtime).toBe("runc");
+  });
+});
+
+describe("the default backend", () => {
+  test("deleting a Workset removes only its home volume", async () => {
+    await spawnAcme();
+    await runtime.delete("acme-login");
+    const volumes = state.calls.filter(
+      (call) => call.command === "docker" && call.args[0] === "volume",
+    );
+    expect(volumes.map((call) => call.args.at(-1))).toEqual(["workset-home-acme-login"]);
+  });
+
+  test("a container under its own runtime and image is kept", async () => {
+    await spawnAcme();
+    await runtime.pause("acme-login");
+    expect(state.containers.get("workset-acme-login")!.runtime).toBe("sysbox-runc");
+    state.calls.length = 0;
+    await spawnAcme();
+    expect(dockerCall("rm")).toBeUndefined();
   });
 });

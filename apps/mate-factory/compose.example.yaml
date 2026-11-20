@@ -90,6 +90,12 @@ services:
       # Advanced: overrides the container count; at least the parallel runs.
       # MATE_FACTORY_MAX_WORKSETS: "3"
 
+      # Development and CI only: where Sysbox cannot run (e.g. a VM kernel
+      # without loadable modules), `dind` runs Workset containers privileged
+      # under runc, isolated by runc alone and bounded by this container. The
+      # factory-sysbox volume is then unused.
+      # MATE_FACTORY_WORKSET_RUNTIME: sysbox
+
     # A ceiling for the whole factory: about 1 GB for Studio, the broker and the
     # inner daemon, plus (builds + 1) times MATE_FACTORY_WORKSET_MEMORY, plus
     # (parallel runs - builds) times MATE_FACTORY_AGENT_MEMORY. 13g at the

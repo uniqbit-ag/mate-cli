@@ -82,4 +82,38 @@ describe("factory preflight", () => {
   test("mount points are read from mountinfo", () => {
     expect(mountTypes(MOUNTINFO).get("/var/lib/mate-factory")).toBe("ext4");
   });
+
+  test("the dind Workset runtime skips Sysbox's needs: FUSE, kernel, user namespaces and its volume", () => {
+    const failures = preflight(
+      host({
+        kernelRelease: "5.15.0-generic",
+        exists: (file) => file === "/sys/fs/cgroup/cgroup.controllers",
+        files: {
+          "/proc/sys/user/max_user_namespaces": "0\n",
+          "/proc/self/mountinfo": MOUNTINFO.split("\n")
+            .filter((line) => !line.includes("sysbox"))
+            .join("\n"),
+        },
+      }),
+      "dind",
+    );
+    expect(failures).toEqual([]);
+  });
+
+  test("the dind Workset runtime still needs privileges and the Docker and state volumes", () => {
+    const checks = preflight(
+      host({
+        files: {
+          "/proc/self/status": "CapEff:\t00000000a80425fb\n",
+          "/proc/self/mountinfo": MOUNTINFO.split("\n").slice(0, 1).join("\n"),
+        },
+      }),
+      "dind",
+    ).map((failure) => failure.check);
+    expect(checks).toEqual([
+      "the container is privileged",
+      "/var/lib/docker is a mounted volume",
+      "/var/lib/mate-factory is a mounted volume",
+    ]);
+  });
 });

@@ -319,6 +319,16 @@ factory starts offline like the appliance.
   outcome input offers those too. Cloning uses the Git credentials the container
   already has for its remotes.
 
+## Without Sysbox
+
+Where Sysbox cannot run, such as a VM whose kernel has no loadable modules or a
+container that is itself a Sysbox container, `MATE_FACTORY_WORKSET_RUNTIME=dind`
+starts no Sysbox and runs each Workset container privileged under runc, with a
+volume for its nested Docker data. Root inside a Workset is then the factory
+container's root: Worksets are isolated from each other by runc alone, and the
+factory is bounded only by what runs it. Use it for development and CI, not for
+a production factory; the `/var/lib/sysbox` volume is not needed.
+
 ## Factory settings
 
 These come on top of the [appliance settings](/docs/reference/deployment#configuration),
@@ -338,6 +348,7 @@ from the environment or the configuration file in the same way.
 | `MATE_FACTORY_AGENT_MEMORY`    | A Workset container's memory limit during an agent stage (clarify, explore, propose, revise, publish), swap included; builds and sessions get `MATE_FACTORY_WORKSET_MEMORY`. At most that.                                                                                                                                                                                                       | `1536m`                | no       |
 | `MATE_FACTORY_WORKSET_PIDS`    | Each Workset container's process limit.                                                                                                                                                                                                                                                                                                                                                          | `1024`                 | no       |
 | `MATE_FACTORY_WORKSET_CPUS`    | Each Workset container's CPU limit, such as `2` or `1.5`. Unset sets none.                                                                                                                                                                                                                                                                                                                       | —                      | no       |
+| `MATE_FACTORY_WORKSET_RUNTIME` | How Workset containers run. `sysbox` runs each under sysbox-runc. `dind` starts no Sysbox and runs each privileged under runc, for a sandbox that cannot run Sysbox; Worksets are then isolated by runc alone and bounded by the outer sandbox. For development and CI, not production.                                                                                                          | `sysbox`               | no       |
 | `MATE_FACTORY_GIT_NAME`        | The author and committer name of every commit the factory makes, its Workset commits and publications.                                                                                                                                                                                                                                                                                           | `Mate factory`         | no       |
 | `MATE_FACTORY_GIT_EMAIL`       | The author and committer email of every commit the factory makes.                                                                                                                                                                                                                                                                                                                                | `factory@mate.invalid` | no       |
 

@@ -60,10 +60,15 @@ export interface FactoryConfig {
   worksetPids: number;
   /** Each Workset container's CPU limit; null sets none. */
   worksetCpus: string | null;
+  /** How Workset containers run: `sysbox` (sysbox-runc) or `dind` (privileged runc, development only). */
+  worksetRuntime: WorksetRuntimeName;
   /** The author and committer of every commit the factory makes. */
   gitName: string;
   gitEmail: string;
 }
+
+export const WORKSET_RUNTIMES = ["sysbox", "dind"] as const;
+export type WorksetRuntimeName = (typeof WORKSET_RUNTIMES)[number];
 
 /** Factory commits are told apart by name; `.invalid` never reaches a real mailbox. */
 export const FACTORY_GIT_AUTHOR = { name: "Mate factory", email: "factory@mate.invalid" };
@@ -79,6 +84,7 @@ const RUNNER_DEFAULTS: FactoryRunner = {
   agentMemory: "1536m",
   worksetPids: 1024,
   worksetCpus: null,
+  worksetRuntime: "sysbox",
   gitName: FACTORY_GIT_AUTHOR.name,
   gitEmail: FACTORY_GIT_AUTHOR.email,
 };
@@ -421,6 +427,14 @@ export const SETTINGS: Setting[] = [
     required: false,
   },
   {
+    env: "MATE_FACTORY_WORKSET_RUNTIME",
+    key: "factoryWorksetRuntime",
+    meaning:
+      "Factory mode: how Workset containers run. `sysbox` runs each under sysbox-runc. `dind` starts no Sysbox and runs each privileged under runc, for a sandbox that cannot run Sysbox; Worksets are then isolated by runc alone and bounded by the outer sandbox, so use it for development and CI, not in production.",
+    default: "sysbox",
+    required: false,
+  },
+  {
     env: "MATE_FACTORY_GIT_NAME",
     key: "factoryGitName",
     meaning:
@@ -628,6 +642,14 @@ function dockerSize(setting: Setting, raw: unknown, fallback: string): string {
     throw new ConfigError(setting.env, String(raw).trim(), "must be a size such as 4g or 512m");
   }
   return value;
+}
+
+function worksetRuntime(setting: Setting, raw: unknown): WorksetRuntimeName {
+  const value = optionalText(raw)?.toLowerCase() ?? RUNNER_DEFAULTS.worksetRuntime;
+  if (!(WORKSET_RUNTIMES as readonly string[]).includes(value)) {
+    throw new ConfigError(setting.env, value, `must be one of ${WORKSET_RUNTIMES.join(", ")}`);
+  }
+  return value as WorksetRuntimeName;
 }
 
 function positiveDecimal(setting: Setting, raw: unknown): string | null {
@@ -932,6 +954,10 @@ function factoryLimits(read: (name: string) => unknown): FactoryRunner {
     worksetCpus: positiveDecimal(
       settingFor("MATE_FACTORY_WORKSET_CPUS"),
       read("MATE_FACTORY_WORKSET_CPUS"),
+    ),
+    worksetRuntime: worksetRuntime(
+      settingFor("MATE_FACTORY_WORKSET_RUNTIME"),
+      read("MATE_FACTORY_WORKSET_RUNTIME"),
     ),
     gitName: optionalText(read("MATE_FACTORY_GIT_NAME")) ?? FACTORY_GIT_AUTHOR.name,
     gitEmail: gitEmail(read("MATE_FACTORY_GIT_EMAIL")),

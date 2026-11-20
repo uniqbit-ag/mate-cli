@@ -9,6 +9,12 @@
 - The Mate factory is the first service plugin. `mate factory serve` and `mate factory attach` work as before. Studio's factory routes moved from `/api/factory/…` to `/api/plugins/factory/…`; the Factory view uses the new addresses.
 - For distributions built on `@uniqbit/mate-core`: the factory is no longer built in. Register it with `createFactoryPlugin()` from `@uniqbit/mate-core/factory`, as `@uniqbit/mate` does. `@uniqbit/mate-core/studio` no longer exports the factory's types and routes; they moved to `@uniqbit/mate-core/factory-studio`.
 
+### Factory: dind Workset runtime for sandboxes without Sysbox
+
+- `MATE_FACTORY_WORKSET_RUNTIME=dind` runs the factory where Sysbox cannot run, such as a development workshop or CI runner on a VM kernel without loadable modules. The supervisor starts no Sysbox, the inner Docker daemon runs runc only, and each Workset container runs privileged under runc with its own volume for its nested Docker, so agents can still build and run containers. Preflight skips Sysbox's own checks.
+- Worksets are then isolated from each other by runc alone, and the factory only by the sandbox around it: for development and CI, not for production. The default, `sysbox`, is unchanged.
+- `bun run factory:local` passes the setting through, and the factory README describes a small profile for a workshop. `pack-local.sh` now also runs with GNU `mktemp` on Linux.
+
 ### Studio issues an access token on every start (breaking)
 
 - `mate studio` now generates a token on every start, with or without `--writable` and `--terminal`, and prints and opens `http://localhost:<port>/?token=…`. Before, `mate studio --writable` without `--terminal` issued none, and a save needed only a matching `Origin` header, which any local process can set. So another user or process on the machine could create, overwrite or delete companion files.

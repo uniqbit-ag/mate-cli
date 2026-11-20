@@ -588,6 +588,7 @@ export function renderFactory(config: ApplianceConfig): string {
     `MATE_PLAN_FACTORY_AGENT_MEMORY=${shellQuote(config.factory.agentMemory)}`,
     `MATE_PLAN_FACTORY_WORKSET_PIDS=${shellQuote(String(config.factory.worksetPids))}`,
     `MATE_PLAN_FACTORY_WORKSET_CPUS=${shellQuote(config.factory.worksetCpus ?? "")}`,
+    `MATE_PLAN_FACTORY_WORKSET_RUNTIME=${shellQuote(config.factory.worksetRuntime)}`,
   ].join("\n");
 }
 
@@ -648,7 +649,7 @@ export function main(argv: string[] = process.argv.slice(2)): number {
       return 0;
     }
     if (argv.includes("--factory-preflight")) {
-      const failures = preflight();
+      const failures = preflight(undefined, config.factory.worksetRuntime);
       if (failures.length === 0) return 0;
       process.stderr.write(`${renderFailures(failures).replace(/^/gm, "mate-appliance: ")}\n`);
       return 1;

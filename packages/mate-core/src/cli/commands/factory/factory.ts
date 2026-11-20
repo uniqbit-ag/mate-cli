@@ -18,7 +18,11 @@ import {
   GitCredentialStore,
   takeGitStartupToken,
 } from "../../../lib/factory/git-credential-store";
-import { WorksetRuntime } from "../../../lib/factory/runtime";
+import {
+  WORKSET_BACKENDS,
+  type WorksetBackend,
+  WorksetRuntime,
+} from "../../../lib/factory/runtime";
 import { usage } from "../../usage";
 
 const SERVE_OPTIONS = [
@@ -30,7 +34,7 @@ const SERVE_OPTIONS = [
   "companions-dir",
 ] as const;
 type ServeOption = (typeof SERVE_OPTIONS)[number];
-/** Workset resource limits; each may be left out. */
+/** Workset resource limits and the Workset runtime backend; each may be left out. */
 const SERVE_LIMITS = [
   "max-worksets",
   "idle-minutes",
@@ -38,6 +42,7 @@ const SERVE_LIMITS = [
   "agent-memory",
   "pids",
   "cpus",
+  "workset-runtime",
 ] as const;
 type ServeLimit = (typeof SERVE_LIMITS)[number];
 
@@ -49,6 +54,8 @@ export interface ServeArgs extends Record<ServeOption, string> {
   agentMemory?: string;
   pids?: number;
   cpus?: string;
+  /** `sysbox` when absent. */
+  worksetRuntime?: WorksetBackend;
 }
 
 const WHOLE = /^\d+$/;
@@ -81,6 +88,10 @@ function limitValue(name: ServeLimit, value: string): Partial<ServeArgs> | { err
       return /^\d+(\.\d+)?$/.test(value) && Number(value) > 0
         ? { cpus: value }
         : { error: "--cpus needs a number above 0" };
+    case "workset-runtime":
+      return (WORKSET_BACKENDS as readonly string[]).includes(value)
+        ? { worksetRuntime: value as WorksetBackend }
+        : { error: `--workset-runtime needs one of ${WORKSET_BACKENDS.join(", ")}` };
   }
 }
 
@@ -273,6 +284,7 @@ export async function runFactoryCommand(
   );
   const runtime = new WorksetRuntime({
     dockerHost: options["docker-host"],
+    ...(options.worksetRuntime !== undefined ? { backend: options.worksetRuntime } : {}),
     gitCredentials: gitTokens,
     stateDir: options["state-dir"],
     image: options.image,
