@@ -1,6 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import path from "node:path";
 
+import { shellQuote } from "./mate";
+
 /** Pure session helpers: ids, terminal names, command lines, repository filter. */
 
 export type Runtime = "claude" | "opencode";
@@ -74,10 +76,14 @@ export function isSessionTerminal(session: Session, name: string): boolean {
 /** OpenCode runs every sidebar session as a client of its repository's Mate OpenCode server. */
 const openCodeBackground = (id: string) => `mate opencode -- --bg --session ${id}`;
 
-export function launchCommand(session: Pick<Session, "id" | "runtime">): string {
-  return session.runtime === "claude"
-    ? `mate claude -- --session-id ${session.id}`
-    : openCodeBackground(session.id);
+/** `prompt` becomes the first turn: Claude's positional, OpenCode's `--prompt`. */
+export function launchCommand(session: Pick<Session, "id" | "runtime">, prompt?: string): string {
+  if (session.runtime === "claude") {
+    const command = `mate claude -- --session-id ${session.id}`;
+    return prompt ? `${command} ${shellQuote(prompt)}` : command;
+  }
+  const command = openCodeBackground(session.id);
+  return prompt ? `${command} --prompt ${shellQuote(prompt)}` : command;
 }
 
 export function resumeCommand(session: Pick<Session, "id" | "runtime">): string {

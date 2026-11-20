@@ -171,6 +171,26 @@
         "title": "Stop",
         "category": "Mate",
         "icon": "$(debug-stop)"
+      },
+      {
+        "command": "mate.archiveChange.claude",
+        "title": "Claude",
+        "category": "Mate"
+      },
+      {
+        "command": "mate.archiveChange.opencode",
+        "title": "OpenCode",
+        "category": "Mate"
+      },
+      {
+        "command": "mate.publishArtifact.claude",
+        "title": "Claude",
+        "category": "Mate"
+      },
+      {
+        "command": "mate.publishArtifact.opencode",
+        "title": "OpenCode",
+        "category": "Mate"
       }
     ],
     "menus": {
@@ -221,6 +241,16 @@
           "command": "mate.newSession",
           "when": "view == mate.worktrees && viewItem == worktree",
           "group": "inline@1"
+        },
+        {
+          "submenu": "mate.archiveChange",
+          "when": "view == mate.readyToSubmit && viewItem == change.ready && mate.changeActionAgents",
+          "group": "mate@1"
+        },
+        {
+          "submenu": "mate.publishArtifact",
+          "when": "view == mate.readyToPublish && viewItem == pending && mate.changeActionAgents",
+          "group": "mate@1"
         }
       ],
       "commandPalette": [
@@ -243,9 +273,59 @@
         {
           "command": "mate.stopSession",
           "when": "false"
+        },
+        {
+          "command": "mate.archiveChange.claude",
+          "when": "false"
+        },
+        {
+          "command": "mate.archiveChange.opencode",
+          "when": "false"
+        },
+        {
+          "command": "mate.publishArtifact.claude",
+          "when": "false"
+        },
+        {
+          "command": "mate.publishArtifact.opencode",
+          "when": "false"
+        }
+      ],
+      "mate.archiveChange": [
+        {
+          "command": "mate.archiveChange.claude",
+          "when": "mate.changeAction.claude",
+          "group": "agents@1"
+        },
+        {
+          "command": "mate.archiveChange.opencode",
+          "when": "mate.changeAction.opencode",
+          "group": "agents@2"
+        }
+      ],
+      "mate.publishArtifact": [
+        {
+          "command": "mate.publishArtifact.claude",
+          "when": "mate.changeAction.claude",
+          "group": "agents@1"
+        },
+        {
+          "command": "mate.publishArtifact.opencode",
+          "when": "mate.changeAction.opencode",
+          "group": "agents@2"
         }
       ]
-    }
+    },
+    "submenus": [
+      {
+        "id": "mate.archiveChange",
+        "label": "Archive this"
+      },
+      {
+        "id": "mate.publishArtifact",
+        "label": "Publish this"
+      }
+    ]
   },
   "activationEvents": [],
   "icon": "media/icon.png",

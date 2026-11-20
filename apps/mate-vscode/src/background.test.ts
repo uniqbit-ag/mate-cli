@@ -85,6 +85,18 @@ describe("Claude background sessions", () => {
     expect((await startClaudeBackground("/w/acme", "old-id", run)).sessionId).toBe("aa11bb22-0000");
   });
 
+  test("passes a first-turn prompt as the last argument", async () => {
+    const { run, calls } = shell([
+      ["mate", { stdout: "backgrounded · c25175db (idle)\n{}" }],
+      [
+        "claude agents",
+        { stdout: agents([{ id: "c25175db", sessionId: "c25175db-b143", kind: "background" }]) },
+      ],
+    ]);
+    await startClaudeBackground("/w/acme", undefined, run, "/mate-archive-change acme-queue");
+    expect(calls).toContain(`${LAUNCH} '/mate-archive-change acme-queue'`);
+  });
+
   test("a failing launch reports its last error line", async () => {
     const { run } = shell([
       ["claude agents", { stdout: "[]" }],
