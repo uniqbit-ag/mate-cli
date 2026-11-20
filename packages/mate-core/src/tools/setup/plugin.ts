@@ -2,6 +2,7 @@ import type { FrameworkConfig, LinkedRepository } from "../../lib/orchestrator/t
 import type { SessionKind } from "../../runtime/session-kind";
 import type { InstallRequirement, InstallRequirementContext } from "./install-contract";
 import type { ClaudeHookGroup } from "../../runtime/claude-hook-group";
+import type { PluginService } from "./service";
 
 export type SetupScope = "companion" | "hub";
 
@@ -142,6 +143,8 @@ export interface Plugin {
   cliCommands?: PluginCliCommand[];
   /** CLI namespace for `cliCommands` under `<distribution> cap`; defaults to `id`. */
   cliNamespace?: string;
+  /** A service next to Mate: its command, daemon connection and Studio contribution. */
+  service?: PluginService;
 }
 
 /**

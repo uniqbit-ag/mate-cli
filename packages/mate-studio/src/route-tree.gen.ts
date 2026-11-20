@@ -22,6 +22,7 @@ import { Route as VaultRouteImport } from './routes/vault'
 import { Route as WorkflowRouteImport } from './routes/workflow'
 import { Route as GettingStartedIndexRouteImport } from './routes/getting-started.index'
 import { Route as GettingStartedTopicRouteImport } from './routes/getting-started.$topic'
+import { Route as PluginsServiceViewRouteImport } from './routes/plugins.$service.$view'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -88,6 +89,11 @@ const GettingStartedTopicRoute = GettingStartedTopicRouteImport.update({
   path: '/$topic',
   getParentRoute: () => GettingStartedRoute,
 } as any)
+const PluginsServiceViewRoute = PluginsServiceViewRouteImport.update({
+  id: '/plugins/$service/$view',
+  path: '/plugins/$service/$view',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -103,6 +109,7 @@ export interface FileRoutesByFullPath {
   '/workflow': typeof WorkflowRoute
   '/getting-started/$topic': typeof GettingStartedTopicRoute
   '/getting-started/': typeof GettingStartedIndexRoute
+  '/plugins/$service/$view': typeof PluginsServiceViewRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -117,6 +124,7 @@ export interface FileRoutesByTo {
   '/workflow': typeof WorkflowRoute
   '/getting-started/$topic': typeof GettingStartedTopicRoute
   '/getting-started': typeof GettingStartedIndexRoute
+  '/plugins/$service/$view': typeof PluginsServiceViewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -133,6 +141,7 @@ export interface FileRoutesById {
   '/workflow': typeof WorkflowRoute
   '/getting-started/$topic': typeof GettingStartedTopicRoute
   '/getting-started/': typeof GettingStartedIndexRoute
+  '/plugins/$service/$view': typeof PluginsServiceViewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -150,6 +159,7 @@ export interface FileRouteTypes {
     | '/workflow'
     | '/getting-started/$topic'
     | '/getting-started/'
+    | '/plugins/$service/$view'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -164,6 +174,7 @@ export interface FileRouteTypes {
     | '/workflow'
     | '/getting-started/$topic'
     | '/getting-started'
+    | '/plugins/$service/$view'
   id:
     | '__root__'
     | '/'
@@ -179,6 +190,7 @@ export interface FileRouteTypes {
     | '/workflow'
     | '/getting-started/$topic'
     | '/getting-started/'
+    | '/plugins/$service/$view'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -193,6 +205,7 @@ export interface RootRouteChildren {
   UsageRoute: typeof UsageRoute
   VaultRoute: typeof VaultRoute
   WorkflowRoute: typeof WorkflowRoute
+  PluginsServiceViewRoute: typeof PluginsServiceViewRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -288,6 +301,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GettingStartedTopicRouteImport
       parentRoute: typeof GettingStartedRoute
     }
+    '/plugins/$service/$view': {
+      id: '/plugins/$service/$view'
+      path: '/plugins/$service/$view'
+      fullPath: '/plugins/$service/$view'
+      preLoaderRoute: typeof PluginsServiceViewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -317,6 +337,7 @@ const rootRouteChildren: RootRouteChildren = {
   UsageRoute: UsageRoute,
   VaultRoute: VaultRoute,
   WorkflowRoute: WorkflowRoute,
+  PluginsServiceViewRoute: PluginsServiceViewRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

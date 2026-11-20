@@ -18,6 +18,7 @@ import {
   BUN_CACHE_VOLUME,
   containerName,
   deliveryBranch,
+  dockerVolume,
   FactoryError,
   homeVolume,
   LABEL_REPOSITORY,
@@ -27,9 +28,11 @@ import {
 } from "./ids";
 
 /**
- * The Workset runtime: one unprivileged Sysbox container per Workset, with its
- * own worktree on its Delivery Branch (default `workset/<workset>`), driven through
- * the inner Docker daemon.
+ * The Workset runtime: one container per Workset, with its own worktree on its
+ * Delivery Branch (default `workset/<workset>`), driven through the inner Docker
+ * daemon. The `sysbox` backend (default) runs each unprivileged under sysbox-runc;
+ * `dind` runs each privileged under runc, for sandboxes without Sysbox: isolated
+ * by runc alone, for development and CI only.
  *
  * Runs inside the factory broker, which alone holds the inner socket. Callers
  * name a Workset, a repository and a command; image, mounts, runtime and
@@ -82,8 +85,14 @@ export interface WorksetLimits {
   cpus: string | null;
 }
 
+/** How Workset containers run; see {@link WorksetRuntime}. */
+export type WorksetBackend = "sysbox" | "dind";
+export const WORKSET_BACKENDS: readonly WorksetBackend[] = ["sysbox", "dind"];
+
 export interface RuntimeOptions {
   dockerHost: string;
+  /** `sysbox` when unset. */
+  backend?: WorksetBackend;
   stateDir: string;
   image: string;
   /** The unprivileged user Git and Workset commands run as. */
@@ -109,6 +118,10 @@ export interface RuntimeOptions {
 }
 
 const SYSBOX_RUNTIME = "sysbox-runc";
+const RUNC_RUNTIME = "runc";
+/** Tells the Workset's init to delegate cgroups for its nested dockerd, as Sysbox would. */
+const DIND_MARKER = "MATE_WORKSET_RUNTIME=dind";
+const NESTED_DOCKER = "/var/lib/docker";
 /** The soft memory limit's share of the hard one. */
 const SOFT_MEMORY_SHARE = 0.9;
 const SIZE_UNITS: Record<string, number> = { b: 1, k: 1024, m: 1024 ** 2, g: 1024 ** 3 };
@@ -167,6 +180,7 @@ export class WorksetRuntime {
   private readonly cgroupRoot: string;
   private readonly writeFile: (file: string, data: string) => void;
   private ready = false;
+  private readonly backend: WorksetBackend;
   private readonly now: () => number;
   /** In memory: after a broker restart every container's idle clock starts at the restart. */
   private readonly activity = new Map<string, Activity>();
@@ -179,6 +193,7 @@ export class WorksetRuntime {
   private readonly sizes = new Map<string, MemorySize>();
 
   constructor(private readonly options: RuntimeOptions) {
+    this.backend = options.backend ?? "sysbox";
     this.now = options.now ?? Date.now;
     this.startedAt = this.now();
     this.run = options.run ?? runCommand;
@@ -343,7 +358,7 @@ export class WorksetRuntime {
     );
   }
 
-  /** Factory mode is the inner daemon answering with Sysbox registered. */
+  /** Factory mode is the inner daemon answering with the backend's runtime registered. */
   async assertAvailable(): Promise<void> {
     if (this.ready) return;
     const socket = this.options.dockerHost.replace(/^unix:\/\//, "");
@@ -358,9 +373,10 @@ export class WorksetRuntime {
         `the Workset runtime needs factory mode: the inner Docker daemon does not answer (${info.stderr.trim()})`,
       );
     }
-    if (!info.stdout.includes(`"${SYSBOX_RUNTIME}"`)) {
+    const runtime = this.backend === "dind" ? RUNC_RUNTIME : SYSBOX_RUNTIME;
+    if (!info.stdout.includes(`"${runtime}"`)) {
       throw new FactoryError(
-        `the Workset runtime needs factory mode: the inner Docker daemon has no ${SYSBOX_RUNTIME} runtime`,
+        `the Workset runtime needs factory mode: the inner Docker daemon has no ${runtime} runtime`,
       );
     }
     this.ready = true;
@@ -457,7 +473,7 @@ export class WorksetRuntime {
         migrateHome = stale.hasHomeVolume ? null : await this.saveHome(request.id);
         await this.must(
           this.docker(["rm", "--force", containerName(request.id)]),
-          `removing ${request.id}'s container from an earlier Workset image`,
+          `removing ${request.id}'s container from an earlier Workset image or runtime`,
         );
         state = null;
       }
@@ -471,8 +487,7 @@ export class WorksetRuntime {
           containerName(request.id),
           "--hostname",
           request.id,
-          "--runtime",
-          SYSBOX_RUNTIME,
+          ...this.backendArgs(),
           "--label",
           `${LABEL_WORKSET}=${request.id}`,
           "--label",
@@ -490,6 +505,9 @@ export class WorksetRuntime {
           `${homeVolume(request.id)}:${HOME}`,
           "--volume",
           `${BUN_CACHE_VOLUME}:${BUN_CACHE}`,
+          ...(this.backend === "dind"
+            ? ["--volume", `${dockerVolume(request.id)}:${NESTED_DOCKER}`]
+            : []),
           "--workdir",
           worktree,
           this.options.image,
@@ -501,7 +519,8 @@ export class WorksetRuntime {
     if (state === "running") await this.resize(request.id, size);
     else await this.start(request.id, state === "paused", size);
     if (migrateHome !== null) {
-      // Copied files keep the uid Sysbox stored them under, which reads as root inside.
+      // Under Sysbox copied files keep the uid it stored them under, which reads as root
+      // inside; under runc the uids match already, and the chown changes nothing.
       await this.must(
         this.docker([
           "exec",
@@ -559,6 +578,17 @@ export class WorksetRuntime {
       `creating the worktree for ${request.id}`,
     );
     return { branch, warnings: resolution.diagnostics };
+  }
+
+  /**
+   * Sysbox: unprivileged, its root mapped to a host user. dind: privileged runc, so the
+   * nested dockerd can run; root inside is the factory's root.
+   */
+  private backendArgs(): string[] {
+    if (this.backend === "dind") {
+      return ["--runtime", RUNC_RUNTIME, "--privileged", "--env", DIND_MARKER];
+    }
+    return ["--runtime", SYSBOX_RUNTIME];
   }
 
   private memoryOf(size: MemorySize): string | undefined {
@@ -767,14 +797,17 @@ export class WorksetRuntime {
     return stopped;
   }
 
-  /** A container made from another image than the current one, and whether it mounts its home volume. */
+  /**
+   * A container made from another image than the current one, or under the other backend's
+   * runtime, and whether it mounts its home volume.
+   */
   private async staleContainer(id: string): Promise<{ hasHomeVolume: boolean } | null> {
     const container = await this.must(
       this.docker([
         "container",
         "inspect",
         "--format",
-        "{{.Image}}\t{{range .Mounts}}{{.Name}} {{end}}",
+        "{{.Image}}\t{{range .Mounts}}{{.Name}} {{end}}\t{{.HostConfig.Runtime}}",
         containerName(id),
       ]),
       `reading ${id}'s container`,
@@ -783,8 +816,9 @@ export class WorksetRuntime {
       this.docker(["image", "inspect", "--format", "{{.Id}}", this.options.image]),
       `reading the Workset image ${this.options.image}`,
     );
-    const [imageId = "", mounts = ""] = container.stdout.trim().split("\t");
-    if (imageId === image.stdout.trim()) return null;
+    const [imageId = "", mounts = "", runtime = ""] = container.stdout.trim().split("\t");
+    const sameRuntime = runtime === "" || runtime === this.backendArgs()[1];
+    if (imageId === image.stdout.trim() && sameRuntime) return null;
     return { hasHomeVolume: mounts.split(/\s+/).includes(homeVolume(id)) };
   }
 
@@ -1076,6 +1110,7 @@ export class WorksetRuntime {
     }
     // Missing for a Workset whose container never ran with it.
     await this.docker(["volume", "rm", "--force", homeVolume(id)]);
+    if (this.backend === "dind") await this.docker(["volume", "rm", "--force", dockerVolume(id)]);
     this.activity.delete(id);
   }
 }

@@ -767,6 +767,51 @@ describe("plugin CLI commands", () => {
     resetActiveDistribution();
   });
 
+  test("dispatches a service's own command without gating it on a companion", async () => {
+    const received: string[][] = [];
+    const plugin = makePlugin("acme");
+    plugin.service = {
+      apiVersion: 1,
+      id: "acme",
+      label: "Acme",
+      command: {
+        name: "acme",
+        usage: ["acme serve"],
+        run: async (argv) => void received.push(argv),
+      },
+    };
+    activate(plugin);
+    let companionChecks = 0;
+    await main(["node", "mate", "acme", "serve", "--socket", "/run/acme.sock"], {
+      ...okDeps,
+      ensureUnambiguousCompanion: async () => {
+        companionChecks++;
+        return false;
+      },
+    });
+    expect(received).toEqual([["serve", "--socket", "/run/acme.sock"]]);
+    expect(companionChecks).toBe(0);
+  });
+
+  test("a built-in command wins over a service command of the same name", async () => {
+    const received: string[][] = [];
+    const plugin = makePlugin("acme");
+    plugin.service = {
+      apiVersion: 1,
+      id: "acme",
+      label: "Acme",
+      command: { name: "doctor", usage: [], run: async (argv) => void received.push(argv) },
+    };
+    activate(plugin);
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await main(["node", "mate", "doctor"], okDeps).catch(() => {});
+    } finally {
+      logSpy.mockRestore();
+    }
+    expect(received).toEqual([]);
+  });
+
   test("dispatches `<distribution> cap <pluginId> <name>` to the plugin's run with remaining argv", async () => {
     const received: string[][] = [];
     activate(

@@ -1,13 +1,21 @@
 import { createServerFn } from "@tanstack/react-start";
 import {
-  COMPANION_DIGEST_PATTERN,
-  companionDigest,
+  FACTORY_ACTION_ROUTE,
+  FACTORY_BOARD_ROUTE,
+  FACTORY_REPOSITORIES_ROUTE,
+  FACTORY_SERVICE_ID,
+  type FactoryRunView,
   OUTCOME_ACTIONS,
   type OutcomeAction,
   type RepositoryAddInput,
   type RepositoryAddResult,
+} from "@uniqbit/mate-core/factory-studio";
+import {
+  COMPANION_DIGEST_PATTERN,
+  companionDigest,
   type StudioChange,
   type StudioCompanionPayload,
+  type StudioServices,
 } from "@uniqbit/mate-core/studio";
 
 /** What the Factory reads from the companion payload; nothing else crosses to the browser. */
@@ -56,16 +64,44 @@ function validate(input: FactoryActionInput): FactoryActionInput {
   return { companion: input.companion, action: input.action, id: input.id, fields };
 }
 
-/** One Outcome action, checked by core's services exactly as the old form posts were. */
+/**
+ * Calls one of the factory service's routes in process; this server function's own guard stood
+ * for origin and token. A refusal's reason is thrown, as the services' errors were.
+ */
+async function callFactory<T>(
+  studio: StudioServices,
+  method: string,
+  route: string,
+  body?: unknown,
+): Promise<T> {
+  const response = await studio.callService(
+    new Request(`http://studio.local${route}`, {
+      method,
+      ...(body === undefined
+        ? {}
+        : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+    }),
+  );
+  const text = await response.text();
+  const answer = (text.startsWith("{") ? JSON.parse(text) : { reason: text }) as T & {
+    reason?: string;
+  };
+  if (!response.ok) throw new Error(answer.reason ?? `the factory answered ${response.status}`);
+  return answer;
+}
+
+/** Whether the factory service runs in this Studio: only then is the Factory view offered. */
+export const factoryModeOf = (studio: StudioServices): boolean =>
+  studio.services().some((service) => service.id === FACTORY_SERVICE_ID);
+
+/** One Outcome action, checked by the factory service exactly as the old form posts were. */
 export const runFactoryAction = createServerFn({ method: "POST" })
   .validator(validate)
   .handler(async ({ data, context }) => {
     if (!context.studio.writable) {
       throw new Error("start Studio with --writable to create or start Worksets");
     }
-    const field = (name: string) => data.fields[name] ?? "";
-    if (data.action === "create") await context.studio.createOutcome(data.companion, field);
-    else await context.studio.worksetAction(data.companion, data.id!, data.action, field);
+    await callFactory(context.studio, "POST", FACTORY_ACTION_ROUTE, data);
     return { ok: true as const };
   });
 
@@ -89,6 +125,17 @@ export const getFactory = createServerFn({ method: "GET" })
       throw new Error("no registered companion was selected");
     }
     const payload = page.payload;
+    const factoryMode = factoryModeOf(context.studio);
+    const board = factoryMode
+      ? await callFactory<{
+          runs: Record<string, FactoryRunView> | null;
+          sessions: Record<string, string> | null;
+        }>(
+          context.studio,
+          "GET",
+          `${FACTORY_BOARD_ROUTE}?companion=${encodeURIComponent(data.companion)}`,
+        )
+      : { runs: null, sessions: null };
     return {
       payload: payload
         ? ({
@@ -107,10 +154,10 @@ export const getFactory = createServerFn({ method: "GET" })
           } satisfies FactoryPayload)
         : null,
       error: page.error?.reason ?? null,
-      runs: page.factoryRuns ?? null,
-      sessions: page.worksetSessions ?? null,
+      runs: board.runs,
+      sessions: board.sessions,
       writable: page.writable,
-      factoryMode: context.studio.factoryMode,
+      factoryMode,
       renderedAt: page.renderedAt ?? Date.now(),
     };
   });
@@ -136,7 +183,7 @@ export const addRepository = createServerFn({ method: "POST" })
     throw new Error("name a Git URL or a path");
   })
   .handler(({ data, context }): Promise<RepositoryAddResult> =>
-    context.studio.addRepository(data.companion, data.input),
+    repositories<RepositoryAddResult>(context.studio, "POST", data),
   );
 
 /** Removes an entry the companion's list holds. */
@@ -145,4 +192,15 @@ export const removeRepository = createServerFn({ method: "POST" })
     if (typeof input?.identity !== "string") throw new Error("name the repository to remove");
     return { companion: checkedCompanion(input.companion), identity: input.identity };
   })
-  .handler(({ data, context }) => context.studio.removeRepository(data.companion, data.identity));
+  .handler(({ data, context }) =>
+    repositories<{ ok: true } | { ok: false; reason: string }>(context.studio, "DELETE", data),
+  );
+
+/** The repository route's answer; a refusal, also of a read-only Studio, is an answer. */
+async function repositories<T>(studio: StudioServices, method: string, body: unknown): Promise<T> {
+  try {
+    return await callFactory<T>(studio, method, FACTORY_REPOSITORIES_ROUTE, body);
+  } catch (error) {
+    return { ok: false, reason: (error as Error).message } as T;
+  }
+}

@@ -4,7 +4,7 @@ import { workingRepoGit } from "../delivery/branches";
 import { repositoryPath } from "../delivery/remote";
 import { readCompanionRegistry } from "../orchestrator/repository-link";
 import { linkedCheckoutsOf } from "../orchestrator/umbrella-checkouts";
-import { gitTokenKeyOf } from "../factory/git-credential-store";
+import { gitTokenKeyOf } from "../git-key";
 import { readLocalRepositories, repositoryIdentityOf } from "./factory-local";
 
 /** Factory mode's configured clone URLs, comma-separated, as the appliance hands them to Studio. */

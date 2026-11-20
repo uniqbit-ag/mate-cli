@@ -1,7 +1,7 @@
-import type { FactoryClient } from "../../../lib/factory/client";
-import type { CredentialKind } from "../../../lib/factory/credential-store";
-import { FactoryError } from "../../../lib/factory/ids";
-import { answer, body } from "./factory-relay";
+import type { FactoryClient } from "../client";
+import type { CredentialKind } from "../credential-store";
+import { FactoryError } from "../ids";
+import { answer, body } from "./relay";
 
 /**
  * The Agents panel's route: relays to the factory broker, which holds the Workset

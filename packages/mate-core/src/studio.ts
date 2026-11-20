@@ -6,12 +6,14 @@ export type {
   CompanionAddInput,
   CompanionAddResult,
   FrictionMarkResult,
-  RepositoryAddInput,
-  RepositoryAddResult,
-  StudioFormField,
   StudioRequestContext,
   StudioServices,
 } from "./cli/commands/studio/services";
+export type {
+  StudioServiceSummary,
+  StudioServiceViewSummary,
+} from "./cli/commands/studio/service-host";
+export type { StudioViewMount, StudioViewMountContext } from "./tools/setup/service";
 export {
   formatCollectedAt,
   healthNote,
@@ -28,7 +30,6 @@ export type {
   StudioSubmittedChange,
   StudioWorkset,
 } from "./cli/commands/studio/payload";
-export type { FactoryRunView } from "./lib/factory/outcomes/runs";
 export {
   archivedArtifactPath,
   canonicalSpecPath,
@@ -80,11 +81,9 @@ export {
 } from "./cli/commands/studio/selection";
 export { BRAND_SVGS } from "./brand/svg.generated";
 export {
-  FACTORY_CREDENTIAL_ROUTE,
-  FACTORY_GIT_TOKENS_ROUTE,
-  factoryLogRoute,
-  factoryLogStreamRoute,
   REPORT_VIEW_PREFIX,
+  SERVICE_ASSET_PREFIX,
+  SERVICE_ROUTE_PREFIX,
   STUDIO_EVENTS_ROUTE,
   TERMINAL_SESSIONS_END_ROUTE,
   TERMINAL_SESSIONS_ROUTE,
@@ -92,19 +91,6 @@ export {
   TERMINAL_WASM,
   type StudioEvent,
 } from "./cli/commands/studio/routes";
-export type { CredentialKind, CredentialStatus } from "./lib/factory/credential-store";
-export type { GitTokenStatus } from "./lib/factory/git-credential-store";
-export { type AgentQuestion, questionsOf } from "./lib/factory/runner/questions";
-export {
-  isOutcomeAction,
-  OUTCOME_ACTIONS,
-  outcomeActions,
-  outcomeRefusal,
-  type OutcomeAction,
-  type OutcomeCompanionFacts,
-  type OutcomeFacts,
-  type OutcomeRunFacts,
-} from "./lib/factory/outcomes/actions";
 export type { TerminalAgent } from "./cli/commands/studio/terminal";
 export type {
   VaultEntry,
@@ -176,8 +162,6 @@ export {
   specActionOffers,
   type SpecActionOffer,
 } from "./cli/commands/studio/actions";
-export { compareRanked, rankOf } from "./lib/factory/runner/rank";
-export type { Situation } from "./lib/factory/runner/state";
 export { WORKSET_STAGE_ORDER, type WorksetStageId } from "./lib/workset/stage";
 export {
   DEFAULT_SCHEMA,

@@ -61,6 +61,8 @@ export const deliveryBranch = defaultDeliveryBranch;
 export const containerName = (id: string) => `workset-${id}`;
 /** The inner daemon's volume holding a Workset's `/home/mate`, which outlives its container. */
 export const homeVolume = (id: string) => `workset-home-${id}`;
+/** The dind backend's volume for a Workset's nested `/var/lib/docker`: overlay on overlay fails. */
+export const dockerVolume = (id: string) => `workset-docker-${id}`;
 /** The Bun install cache every Workset container shares. */
 export const BUN_CACHE_VOLUME = "workset-bun-cache";
 

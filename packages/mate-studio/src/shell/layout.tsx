@@ -44,6 +44,14 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
     useMatches({
       select: (matches) => matches.findLast((match) => match.staticData.view)?.staticData.view,
     }) ?? "dashboard";
+  const pluginParams = useMatches({
+    select: (matches) => matches.findLast((match) => match.staticData.pluginView)?.params,
+  }) as { service?: string; view?: string } | undefined;
+  const pluginView = pluginParams
+    ? shell.pluginViews.find(
+        (entry) => entry.service === pluginParams.service && entry.view === pluginParams.view,
+      )
+    : undefined;
   const digest = shell.selected?.digest;
   useStudioEvents(digest);
   useStudioClicks();
@@ -73,8 +81,12 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
           {shell.selected ? (
             <>
               <PageHeader
-                title={VIEW_TITLES[view]}
-                description={VIEW_DESCRIPTIONS[shell.studioMode][view]}
+                title={pluginView ? pluginView.label : VIEW_TITLES[view]}
+                description={
+                  pluginView
+                    ? (pluginView.description ?? "")
+                    : VIEW_DESCRIPTIONS[shell.studioMode][view]
+                }
               />
               <div className="flex min-h-0 flex-1 flex-col pt-3">
                 <Outlet />
@@ -99,6 +111,8 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
 declare module "@tanstack/react-router" {
   interface StaticDataRouteOption {
     view?: StudioView;
+    /** A plugin service's view, mounted from its own module. */
+    pluginView?: boolean;
   }
 }
 

@@ -109,7 +109,10 @@ describe("parseSessionPrepareArgs", () => {
 describe("runSessionPrepareCommand", () => {
   test("refuses a repository wrapped for neither runtime and writes nothing", async () => {
     const { repoPath } = await linkedRepo();
-    const before = await fs.readdir(repoLocalDirPath(repoPath), { recursive: true });
+    /** Sorted: a recursive listing comes back in no fixed order. */
+    const listing = async () =>
+      (await fs.readdir(repoLocalDirPath(repoPath), { recursive: true })).toSorted();
+    const before = await listing();
     const prepare = mock(async () => ({}) as never);
     sessionPrepareCommandDeps.prepareSession = prepare;
     const io = capture();
@@ -123,7 +126,7 @@ describe("runSessionPrepareCommand", () => {
     expect(process.exitCode).toBe(1);
     expect(io.err.join("\n")).toContain("mate wrap");
     expect(prepare).not.toHaveBeenCalled();
-    expect(await fs.readdir(repoLocalDirPath(repoPath), { recursive: true })).toEqual(before);
+    expect(await listing()).toEqual(before);
   });
 
   test("prints the step outcomes as JSON for a wrapped repository", async () => {

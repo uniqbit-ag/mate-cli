@@ -3,7 +3,8 @@
 # container's own Docker daemon on the first connection, kept until stop.
 #
 # Runs as the container's root, which sysbox-runc maps to an unprivileged host
-# user. The agent never runs here; Studio starts it per command with
+# user; under the dind backend (runc, privileged) it is the factory's root. The
+# agent never runs here; Studio starts it per command with
 # `docker exec --user mate`. A daemon that fails to start is logged and the
 # container stays up, so the worktree remains reachable.
 set -uo pipefail
@@ -11,6 +12,17 @@ set -uo pipefail
 PUBLIC_SOCKET="${MATE_DOCKER_SOCKET:-/var/run/docker.sock}"
 DOCKERD_PIDFILE="${MATE_DOCKERD_PIDFILE:-/var/run/docker.pid}"
 RELAY_SECONDS=2592000
+CGROUP_ROOT="${MATE_CGROUP_ROOT:-/sys/fs/cgroup}"
+
+# dind backend: cgroup v2 delegates controllers only from a cgroup without
+# processes, so move ours aside before the nested dockerd needs them, as
+# Docker's dind script does. Sysbox does this for its containers itself.
+if [[ "${MATE_WORKSET_RUNTIME:-}" == dind && -f "$CGROUP_ROOT/cgroup.controllers" ]]; then
+  mkdir -p "$CGROUP_ROOT/init"
+  xargs -rn1 < "$CGROUP_ROOT/cgroup.procs" > "$CGROUP_ROOT/init/cgroup.procs" 2>/dev/null || :
+  sed -e 's/ / +/g' -e 's/^/+/' < "$CGROUP_ROOT/cgroup.controllers" > "$CGROUP_ROOT/cgroup.subtree_control" \
+    || echo "mate-workset-init: cgroup controllers could not be delegated; nested containers may fail" >&2
+fi
 
 # /run survives a container restart; a pid left from the last run names nothing of ours.
 rm -f "$DOCKERD_PIDFILE"

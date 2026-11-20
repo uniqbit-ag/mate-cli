@@ -69,6 +69,7 @@ const shell = (overrides: Partial<ShellData> = {}): ShellData => ({
   metrics: null,
   writable: false,
   factoryMode: false,
+  pluginViews: [],
   terminal: null,
   ...overrides,
 });

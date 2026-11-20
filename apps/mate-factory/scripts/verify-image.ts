@@ -332,6 +332,8 @@ export function runChecks(
     [
       'grep -q \'"default-runtime": "sysbox-runc"\' /etc/mate-factory/daemon.json',
       '&& grep -q \'"group": "root"\' /etc/mate-factory/daemon.json',
+      '&& grep -q \'"group": "root"\' /etc/mate-factory/daemon-runc.json',
+      "&& ! grep -q sysbox /etc/mate-factory/daemon-runc.json",
       "&& test -x /usr/local/bin/mate-factory-supervisor",
       "&& ! test -e /etc/docker/daemon.json",
       "&& echo ok",
@@ -339,7 +341,7 @@ export function runChecks(
     { network: false },
   );
   add(
-    "factory mode: the inner daemon defaults to sysbox-runc and its socket is root's alone",
+    "factory mode: the inner daemon defaults to sysbox-runc (runc for dind) and its socket is root's alone",
     daemon.stdout.includes("ok"),
     daemon.stderr.trim(),
   );

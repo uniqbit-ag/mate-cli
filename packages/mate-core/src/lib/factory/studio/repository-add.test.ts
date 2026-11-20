@@ -3,8 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { FactoryError } from "../../../lib/factory/ids";
-import { readLocalRepositories } from "../../../lib/workset/factory-local";
+import { FactoryError } from "../ids";
+import { readLocalRepositories } from "../../workset/factory-local";
 import { addRepository, removeRepository } from "./repository-add";
 
 const WEB = "https://git.acme.test/acme/web.git";

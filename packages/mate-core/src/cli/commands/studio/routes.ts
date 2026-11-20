@@ -9,30 +9,11 @@ export const REPORTS_ROUTE = "/api/reports";
 /** A hosted report's HTML is served at this prefix plus its id. */
 export const REPORT_VIEW_PREFIX = "/studio/reports/";
 
-/** Prefix of a Workset's run log routes. */
-export const FACTORY_WORKSETS_ROUTE = "/api/factory/worksets";
+/** A service plugin's routes: `/api/plugins/<service id>/…`. */
+export const SERVICE_ROUTE_PREFIX = "/api/plugins/";
 
-/**
- * The Agents panel: `GET` the Workset agent credential's status, `PUT` `{kind, value}`
- * to set it, `DELETE` to clear one set in Studio. Factory mode only.
- */
-export const FACTORY_CREDENTIAL_ROUTE = "/api/factory/credential";
-
-/**
- * The Git access panel: `GET` the Git tokens' keys with their source and date, `PUT`
- * `{key, token}` to set one, `DELETE` `{key}` to clear one set in Studio. Factory mode only.
- */
-export const FACTORY_GIT_TOKENS_ROUTE = "/api/factory/git-tokens";
-
-/** `GET` a Workset's bounded run log as text. */
-export function factoryLogRoute(id: string): string {
-  return `${FACTORY_WORKSETS_ROUTE}/${encodeURIComponent(id)}/log`;
-}
-
-/** Server-sent events: a Workset's run log replayed, then followed live. */
-export function factoryLogStreamRoute(id: string): string {
-  return `${factoryLogRoute(id)}/stream`;
-}
+/** A service plugin's view modules: `/studio/plugins/<service id>/<view id>/<file>`. */
+export const SERVICE_ASSET_PREFIX = "/studio/plugins/";
 
 /** One event stream per page: board, reports and markdown tree changes for a companion. */
 export const STUDIO_EVENTS_ROUTE = "/api/events";
