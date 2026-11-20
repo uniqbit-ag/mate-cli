@@ -1,7 +1,15 @@
 import { runOpenSpec, type RunOpenSpec } from "../openspec-cli";
 import type { SecretFinding } from "../../runtime/secret-scan";
+import { agentRuntime, formatInvocation } from "../../runtime/skill-prefix";
 import type { DeliveryEnvironment } from "./environment";
-import { openTasks, planningWarning, submitWarnings, type SubmitWarning } from "./overlap";
+import {
+  openTasks,
+  planningWarning,
+  submitWarnings,
+  type CountedWarning,
+  type StageWarning,
+  type SubmitWarning,
+} from "./overlap";
 import {
   settleDelivery,
   type DeliveryRecord,
@@ -20,6 +28,7 @@ import type { BranchOutcome } from "./refresh";
 import { repositoryAccessFor } from "./repository-access";
 import { sourceDir, type ArtifactType } from "./staging/artifact-type";
 import { openspecArtifactType } from "./staging/openspec-type";
+import { loadSubmitWorkflow } from "./staging/registry";
 import {
   dropSubmitted,
   groupOfChange,
@@ -31,6 +40,9 @@ import {
   type PendingFailure,
   type SubmitDeps,
 } from "./staging/submit";
+import { readChangeInput } from "../workflow/change-progress";
+import type { Workflow } from "../workflow/declaration";
+import { pathPosition } from "../workflow/position";
 
 /**
  * - `submitted`: the group's folders are on the pending branch (`pushed` tells whether this run
@@ -108,6 +120,51 @@ type Prepared = Omit<
   "status" | "group" | "waitingFor" | "pushed" | "commit" | "pendingBranch" | "state" | "message"
 > & { group: string; failure?: string };
 
+/**
+ * What submitting leaves unfinished for the change in `changeDir`, as warnings: `stage-open` for
+ * the first required skill stage before `submit` whose plan is open, and `step-counted` naming
+ * every other step before `mate-submit-change` that is neither recorded nor covered, which
+ * submitting counts. Optional and review stages are passed over. Never blocks: a recorded step
+ * shows it was reported, not that its work is done.
+ */
+async function stageWarnings(
+  companionPath: string,
+  workflow: Workflow,
+  changeDir: string,
+  change: string,
+): Promise<Array<StageWarning | CountedWarning>> {
+  const { progress } = await readChangeInput(companionPath, workflow, changeDir, change);
+  // As the change will be once submitted: what is still open then, the plan holds open.
+  const { unfinished, counted } = pathPosition(workflow, { ...progress, state: "submitted" });
+  const warnings: Array<StageWarning | CountedWarning> = [];
+  const runtime = agentRuntime(process.env);
+  if (unfinished[0]) {
+    const { stage: first, open } = unfinished[0];
+    warnings.push({
+      kind: "stage-open",
+      change,
+      stage: first.id,
+      message: `submitting ${change} leaves ${first.id} unfinished (${open}); to finish it, run ${formatInvocation(runtime, first.entry, change)} and submit again.`,
+    });
+  }
+  // A stage the plan holds open is named by `stage-open`, not counted.
+  const steps = Object.fromEntries(
+    Object.entries(counted).filter(([id]) => !unfinished.some((entry) => entry.stage.id === id)),
+  );
+  const named = Object.values(steps).flatMap((skills) =>
+    skills.map((skill) => formatInvocation(runtime, skill)),
+  );
+  if (named.length > 0) {
+    warnings.push({
+      kind: "step-counted",
+      change,
+      steps,
+      message: `submitting ${change} counts ${named.join(", ")} as done, never reported; if one did not run, run it for ${change} and submit again.`,
+    });
+  }
+  return warnings;
+}
+
 /** The delivery `change` records, as `artifact link` would. */
 function deliveryRequest(request: SubmitRequest, change: string): DeliveryRequest {
   return {
@@ -123,6 +180,7 @@ async function prepare(
   request: SubmitRequest,
   change: string,
   type: ArtifactType,
+  workflow: Workflow,
   deps: SubmitChangeDeps,
 ): Promise<{ refusal: DeliveryRefusal } | { result: SubmitResult } | { prepared: Prepared }> {
   const outcome = await recordDelivery(
@@ -174,6 +232,7 @@ async function prepare(
   const [{ record, settlement, outcomes, defaultBranch, diagnostics }] = outcome.results;
   const named = await groupOfChange(cwd, change, type);
   if (named.warning) warnings.push({ kind: "group", change, message: named.warning });
+  warnings.push(...(await stageWarnings(cwd, workflow, sourceDir(cwd, type, change), change)));
   deps.onWarnings?.(change, warnings, settlement.unscoped);
 
   const fields = { defaultBranch, diagnostics, record, settlement, outcomes, warnings };
@@ -227,7 +286,8 @@ async function readySiblings(
 /**
  * The Submit change stage for `request.changes` and their Worksets: each named change's delivery
  * is recorded and refreshed, with warnings about overlapping requirements, unsubmitted
- * dependencies, incomplete planning and its Delivery Group, and the type's `check` runs. The
+ * dependencies, incomplete planning, an unfinished required stage of the Delivery Path and its
+ * Delivery Group, and the type's `check` runs. The
  * other active changes of its Delivery Group join when every task of theirs is checked and they
  * pass the same steps. A group is then pushed whole, in one commit that sets its changes
  * `submitted`, or not at all: while a member has open tasks or fails its check, the group waits
@@ -247,6 +307,7 @@ export async function submitChanges(
   const type =
     deps.artifactType ?? environment.artifactType ?? openspecArtifactType(deps.runOpenSpec);
   const cwd = environment.companionPath;
+  const workflow = environment.workflow ?? (await loadSubmitWorkflow(cwd)).workflow;
   // Every change is refused or accepted before any record is written, so a refused later one
   // leaves no earlier record changed. The merge check runs here too: a delivery Git would settle
   // while its work tree holds uncommitted work is refused before that merge is recorded.
@@ -269,7 +330,7 @@ export async function submitChanges(
   const steps: ({ result: SubmitResult } | { prepared: Prepared })[] = [];
   for (const change of request.changes) {
     // oxlint-disable-next-line no-await-in-loop -- warnings reach stderr change by change
-    const step = await prepare(environment, request, change, type, deps);
+    const step = await prepare(environment, request, change, type, workflow, deps);
     if ("refusal" in step) return step;
     steps.push(step);
   }
@@ -288,6 +349,7 @@ export async function submitChanges(
       { changes: [change], ...(request.fetch ? { fetch: true } : {}) },
       change,
       type,
+      workflow,
       deps,
     );
     // One that cannot be prepared stays active, so its group waits for it.

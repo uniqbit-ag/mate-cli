@@ -180,6 +180,12 @@ submitted or locally active dependency counts as satisfied. For a change with
 `dependsOn`, read the specs it builds on with `mate artifact project "<change-name>" --json`:
 its requirements are not in the canonical specs until the chain is published.
 
+**Earlier steps.** Run `mate workflow next "<change-name>"`. A step of an earlier
+stage it names, as an action or counted, that the request or the user says ran: record
+it with `mate workflow done <skill> "<change-name>"`; otherwise name it above the hand-off.
+Being asked to apply settles what comes before it: a review or earlier step the command
+names never stops this skill and is never recorded to get past it; continue at Step 3.
+
 ## Step 3: Apply
 
 Read [references/openspec-apply-change.md](references/openspec-apply-change.md) and
@@ -188,12 +194,24 @@ Retrieve its instructions the ordinary way. Only when the user explicitly asks f
 apply, also read [references/mate-compact-apply.md](references/mate-compact-apply.md) and
 use its transport.
 
-## Step 4: Hand off
+## Step 4: Close the stage
 
-End the response with a final `## Next steps` section: numbered required actions in
-execution order, with exact commands and known change names, prerequisites first.
-Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
-follows it. Listing an action never invokes it. Never offer the user an optional command, in or above the section; optional work appears above it only as a skill invocation labelled optional.
+At the end of every run of this skill, also with tasks still open or after a blocker,
+run:
+
+```bash
+mate workflow done mate-apply-change "<change-name>"
+```
+
+It prints the next actions for the change. End the response with a final `## Next steps`
+section: numbered required actions in execution order, with exact commands and known
+change names, prerequisites first: required work of this run that is still open, then
+the actions the command printed, in its order. Summaries, evidence, warnings, optional
+work, and deferred context go above it; nothing follows it. Listing an action never
+invokes it. Never offer the user an optional command, in or above the section; optional
+work appears above it only as a skill invocation labelled optional, as the command's
+`optional:` line names it. If the command fails, report its problems and end without a
+`Next steps` section.
 
 **Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
 and Cursor and the fallback. When the current runtime uses another syntax, swap only
@@ -202,21 +220,14 @@ user's statement or the harness's own identity sets the runtime, never a skill's
 folder or an older example. Arguments, commands, paths, and order stay, and naming
 never invokes.
 
-- Above the section, label `/mate-show-me` and `/mate-simplify-code` as optional, in
-  any order; they are not prerequisites for submit.
-- In the section, list `/mate-submit-change <change-name>`, after any required work
-  still open (a failing check, an unanswered question). Name the submit action only
-  there: omit the reference's completion sentence that also points to
-  `/mate-submit-change`.
-- Several changes on one branch: list their submits in dependency order, and say above
-  the section that this order avoids an advisory submit warning; it is not a gate.
+Add only this skill's own required actions to the section:
 
-```text
-Optional, any order: /mate-show-me acme-queue, /mate-simplify-code.
+- Required work still open (a failing check, an unanswered question) comes first.
+- Several changes on one branch: run the command for each, list their actions in
+  dependency order, and say above the section that this order avoids an advisory submit
+  warning; it is not a gate.
 
-## Next steps
-1. /mate-submit-change acme-queue
-```
+Omit the reference's completion sentence.
 
 ## Guardrails
 

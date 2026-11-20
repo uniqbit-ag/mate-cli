@@ -8,6 +8,7 @@ import {
   type WorkflowStage,
 } from "@uniqbit/mate-core/studio";
 
+import { positioned } from "../../../test/positioned";
 import { changeStep } from "../overview/change-group";
 import { workflowGraph } from "./graph";
 import { buildPath, type WorkflowPath } from "./steps";
@@ -43,7 +44,7 @@ function review(id: string, label: string, artifacts: "schema" | string[]): Work
   return { id, label, kind: "review", optional: false, source: "declared", review: artifacts };
 }
 
-function declared(stages: WorkflowStage[], submitArtifact: string | null = null): DeliveryWorkflow {
+function declared(stages: WorkflowStage[], submitArtifact = "openspec"): DeliveryWorkflow {
   return {
     file: ".mate/config/workflow.yaml",
     stages,
@@ -232,13 +233,13 @@ describe("a path of custom stages only", () => {
 });
 
 describe("changes on a declared path", () => {
-  const change = (name: string, done: number, extra: Partial<StudioChange> = {}): StudioChange => ({
-    name,
-    completedTasks: done,
-    totalTasks: 4,
-    artifacts: [],
-    ...extra,
-  });
+  const change = (
+    name: string,
+    done: number,
+    extra: Partial<StudioChange> = {},
+    workflow: DeliveryWorkflow = WITH_SECURITY_REVIEW,
+  ): StudioChange =>
+    positioned({ name, completedTasks: done, totalTasks: 4, artifacts: [], ...extra }, workflow);
 
   it("a change waits at a custom stage until it is recorded", () => {
     expect(changeStep(change("acme-login", 0), WITH_SECURITY_REVIEW)).toMatchObject({
@@ -255,10 +256,50 @@ describe("changes on a declared path", () => {
     });
     expect(
       changeStep(
-        change("acme-login", 1, { stagesDone: ["security-review"] }),
+        change("acme-login", 1, { steps: { "security-review": ["acme-security-review"] } }),
         WITH_SECURITY_REVIEW,
       ),
     ).toMatchObject({ stage: "Apply change", prompt: "/mate-apply-change acme-login" });
+  });
+
+  it("a change at a custom stage once its tasks are done", () => {
+    expect(changeStep(change("acme-login", 4), WITH_SECURITY_REVIEW)).toMatchObject({
+      stage: "Security review",
+      situation: "acme-security-review not recorded",
+      prompt: "/acme-security-review acme-login",
+    });
+  });
+
+  it("open tasks, as `mate workflow next` names them", () => {
+    const fix = change("acme-fix", 2, {}, defaultWorkflow());
+    expect(changeStep(fix)).toMatchObject({
+      stage: "Apply change",
+      situation: "2 tasks open",
+      prompt: "/mate-apply-change acme-fix",
+    });
+  });
+
+  it("a step after the Mate skill", () => {
+    const chained = declared([
+      skill("apply", "Apply change", ["mate-apply-change", "acme-verify"]),
+      SUBMIT,
+      PUBLISH,
+    ]);
+    expect(changeStep(change("acme-fix", 4, {}, chained), chained)).toMatchObject({
+      stage: "Apply change",
+      situation: "acme-verify not recorded",
+      next: "Run acme-verify",
+      prompt: "/acme-verify acme-fix",
+    });
+  });
+
+  it("a plan that does not validate", () => {
+    const invalid = change("acme-fix", 4, { valid: false }, defaultWorkflow());
+    expect(changeStep(invalid)).toMatchObject({
+      stage: "Propose change",
+      situation: "the change does not validate",
+      prompt: "/mate-propose-change acme-fix",
+    });
   });
 
   it("the Workflow view counts it at that stage", () => {

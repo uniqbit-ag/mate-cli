@@ -144,6 +144,7 @@ export {
 } from "./lib/delivery/stages";
 // The workflow model imports nothing, so the browser bundle can resolve a path with it.
 export {
+  BUILTIN_ARTIFACT_TYPE,
   defaultWorkflow,
   nextStage,
   WORKFLOW_FILE,
@@ -155,7 +156,15 @@ export {
   type WorkflowStage,
   type WorkflowStep,
 } from "./runtime/workflow/workflow";
-export { changeStage, type ChangeFacts } from "./lib/workflow/progress";
+export {
+  pathPosition,
+  stagesBeforeWork,
+  stepStage,
+  type PathPosition,
+  type PathProgress,
+  type PathSubject,
+} from "./lib/workflow/position";
+export type { Handoff, HandoffAction, SkillAction, TextAction } from "./lib/workflow/handoff";
 export type { WorkflowTopology } from "./cli/commands/studio/topology";
 export {
   contrastRatio,

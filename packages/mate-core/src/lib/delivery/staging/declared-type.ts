@@ -6,17 +6,12 @@ import { companionGit, nulPaths } from "../../../runtime/companion-git";
 import { changeNameOf, parseAnchor } from "../../change-layout";
 import { pathIsDirectory } from "../../fs-utils";
 import type { DeclaredArtifactType, WorkflowHook } from "../../workflow/declaration";
-import { folderPattern, matchesPattern } from "../../../runtime/workflow/globs";
+import { folderPattern, matchesPattern, templateRoot } from "../../../runtime/workflow/globs";
 import { DELIVERY_FILE } from "../record";
 import type { ArtifactType } from "./artifact-type";
 
 /** Bound on one `run:` command, so a hung one ends as that hook's failure. */
 const RUN_TIMEOUT_MS = 120_000;
-
-/** The folder a template such as `notes/{name}/` keeps its entries in: `notes`. */
-function rootOf(template: string): string {
-  return path.posix.dirname(template.replace(/\/$/, ""));
-}
 
 /** `value` as one POSIX shell word. */
 function shellQuote(value: string): string {
@@ -105,8 +100,8 @@ export function declaredArtifactType(
   declared: DeclaredArtifactType,
   options: DeclaredTypeOptions = {},
 ): ArtifactType {
-  const source = rootOf(declared.change);
-  const archiveRoot = declared.archive === undefined ? undefined : rootOf(declared.archive);
+  const source = templateRoot(declared.change);
+  const archiveRoot = declared.archive === undefined ? undefined : templateRoot(declared.archive);
   const owned = [
     folderPattern(declared.change),
     ...(declared.archive === undefined ? [] : [folderPattern(declared.archive)]),

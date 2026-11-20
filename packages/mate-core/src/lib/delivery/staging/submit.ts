@@ -29,6 +29,7 @@ import {
   readDeliveryRecord,
   readOrUnlinkedRecord,
   upsertDelivery,
+  withoutStage,
   writeDeliveryRecord,
   type DeliveryRecord,
   type SubmissionState,
@@ -225,8 +226,8 @@ export interface GroupPush extends PendingCommit {
 }
 
 /**
- * The Delivery Record change `name` is pushed with: `state: submitted`, an earlier block
- * cleared, and a delta base the default branch holds, so publication can tell a requirement
+ * The Delivery Record change `name` is pushed with: `state: submitted`, an earlier block and
+ * its recorded `submit` steps cleared, and a delta base the default branch holds, so publication can tell a requirement
  * changed since: the recorded one, or where it left the default branch when it is a local
  * commit, else `tip`, the fetched default tip. Written locally only once the push succeeded, so
  * a failed push leaves the record, its state included, as it was. Throws on a damaged record.
@@ -246,7 +247,8 @@ async function preparedRecord(
   }
   const next: DeliveryRecord = { ...record, state: "submitted", ...(specBase ? { specBase } : {}) };
   delete next.blocked;
-  return next;
+  // A resubmission runs the steps before `mate-submit-change` again.
+  return withoutStage(next, "submit");
 }
 
 /**

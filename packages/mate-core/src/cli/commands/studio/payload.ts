@@ -9,15 +9,17 @@ import {
   SPECS_RELATIVE_DIR,
 } from "../../../lib/change-layout";
 import { companionTicketFormat, type TicketFormat } from "../../../lib/delivery/branches";
-import { readDeliveryRecord } from "../../../lib/delivery/record";
 import { hasUnsubmittedWork } from "../../../lib/delivery/staging/submit";
+import { readChangeInput, type ChangeInput } from "../../../lib/workflow/change-progress";
 import {
+  defaultWorkflow,
   loadWorkflow,
   WORKFLOW_FILE,
   type Workflow,
   type WorkflowProblem,
   type WorkflowVerdict,
 } from "../../../lib/workflow/declaration";
+import { pathPosition, type PathPosition } from "../../../lib/workflow/position";
 import {
   type LinkedRepositoryCatalog,
   linkedRepositoryCatalog,
@@ -70,10 +72,15 @@ export interface StudioChange {
    * another change of that name, or edits made since it was submitted.
    */
   unsubmitted?: true;
-  /** The Delivery Path stages its Delivery Record holds as done, by id. */
-  stagesDone?: string[];
+  /** The steps its Delivery Record holds, by stage id; where it is on the path is computed from them. */
+  steps?: Record<string, string[]>;
   /** Its Delivery Record says it was withdrawn: it is at no stage. */
   dropped?: true;
+  /**
+   * Where it stands on the Delivery Path and what follows, as `mate workflow next` computes it,
+   * with its validation deciding whether its plan is valid.
+   */
+  position?: PathPosition;
 }
 
 /** One repository/Area pair a spec binds; at least one of the two is set. */
@@ -459,23 +466,39 @@ export async function assembleCompanionPayload(
   const planningRoot =
     (status.value.changes ?? []).find((entry) => entry.planningHome?.root)?.planningHome?.root ??
     companionPath;
+  // An invalid declaration shows the built-in path, so changes are placed on it.
+  const workflow = verdict.ok ? verdict.workflow : defaultWorkflow();
   // Recorded progress; a record that cannot be read leaves the change to inference.
-  const records = new Map(
+  const inputs = new Map(
     await Promise.all(
-      (changeList.value.changes ?? []).map(
-        async ({ name }) =>
-          [
-            name,
-            await readDeliveryRecord(path.join(changesDirOf(planningRoot), name)).catch(() => null),
-          ] as const,
-      ),
+      (changeList.value.changes ?? []).map(async (change): Promise<[string, ChangeInput]> => {
+        const { valid } = validationOf(validationItems, change.name, "change");
+        const input = await readChangeInput(
+          companionPath,
+          workflow,
+          path.join(changesDirOf(planningRoot), change.name),
+          change.name,
+          { valid: valid !== false },
+        ).catch((): ChangeInput => ({
+          progress: {
+            steps: {},
+            plan: {
+              valid: valid !== false,
+              totalTasks: change.totalTasks ?? 0,
+              completedTasks: change.completedTasks ?? 0,
+            },
+          },
+          subject: { name: change.name },
+        }));
+        return [change.name, input];
+      }),
     ),
   );
 
   const changes: StudioChange[] = (changeList.value.changes ?? []).map((change) => {
     const changeStatus = statusByChange.get(change.name);
-    const record = records.get(change.name);
-    const stagesDone = Object.keys(record?.stages ?? {});
+    const { progress, subject } = inputs.get(change.name)!;
+    const { steps } = progress;
     return {
       name: change.name,
       ...(change.completedTasks === undefined ? {} : { completedTasks: change.completedTasks }),
@@ -489,8 +512,9 @@ export async function assembleCompanionPayload(
       })),
       ...validationOf(validationItems, change.name, "change"),
       ...(unsubmitted.has(change.name) ? { unsubmitted: true as const } : {}),
-      ...(stagesDone.length > 0 ? { stagesDone } : {}),
-      ...(record?.state === "dropped" ? { dropped: true as const } : {}),
+      ...(Object.keys(steps).length > 0 ? { steps: steps as Record<string, string[]> } : {}),
+      ...(progress.state === "dropped" ? { dropped: true as const } : {}),
+      position: pathPosition(workflow, progress, subject),
     };
   });
 

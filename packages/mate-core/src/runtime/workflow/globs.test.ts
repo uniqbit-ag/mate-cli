@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { folderPattern, matchesPattern, patternsOverlap } from "./globs";
+import { folderPattern, matchesPattern, patternsOverlap, templateRoot } from "./globs";
 
 describe("matchesPattern", () => {
   test.each([
@@ -21,6 +21,13 @@ describe("matchesPattern", () => {
     expect(matchesPattern(pattern, "notes/acme-glossary/brief.md")).toBe(true);
     expect(matchesPattern(pattern, "notes/acme-glossary/sub/plan.md")).toBe(true);
     expect(matchesPattern(pattern, "notes/index.md")).toBe(false);
+  });
+});
+
+describe("templateRoot", () => {
+  test("the folder a template keeps its entries in", () => {
+    expect(templateRoot("notes/{name}/")).toBe("notes");
+    expect(templateRoot("acme/notes/{name}")).toBe("acme/notes");
   });
 });
 

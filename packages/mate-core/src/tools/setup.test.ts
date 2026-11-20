@@ -1060,7 +1060,7 @@ describe("executeSetup", () => {
     const declaration = path.join(root, ".mate", "config", "workflow.yaml");
     // Written by the owner, with a comment and spacing no rewrite would keep.
     const source =
-      "version: 1\n\n# acme's path\nstages:\n  - id: submit\n    steps: [ { skill: mate-submit-change } ]\n  - id: publish\n    steps: [ { skill: mate-publish-artifact } ]\n";
+      "version: 1\n\n# acme's path\nstages:\n  - id: submit\n    artifact: openspec\n    steps: [ { skill: mate-submit-change } ]\n  - id: publish\n    steps: [ { skill: mate-publish-artifact } ]\n";
     await fs.mkdir(path.dirname(declaration), { recursive: true });
     await fs.writeFile(declaration, source, "utf8");
     const config = { allowedAgents: ["claude" as const], capabilities: [{ name: "openspec" }] };

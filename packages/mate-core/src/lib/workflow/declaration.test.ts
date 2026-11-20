@@ -13,7 +13,8 @@ import {
   type WorkflowProblem,
 } from "./declaration";
 
-const SUBMIT = "  - id: submit\n    steps: [{ skill: mate-submit-change }]\n";
+const SUBMIT =
+  "  - id: submit\n    artifact: openspec\n    steps: [{ skill: mate-submit-change }]\n";
 const PUBLISH = "  - id: publish\n    steps: [{ skill: mate-publish-artifact }]\n";
 const TAIL = SUBMIT + PUBLISH;
 
@@ -52,8 +53,9 @@ function problemAt(source: string, at: string): string {
 
 const stagesOf = (body: string): string => `version: 1\nstages:\n${body}`;
 
-/** One artifact type `acme-notes` with `body` as its keys, two spaces deep per level. */
-const typeOf = (body: string): string => `version: 1\nartifacts:\n  acme-notes:\n${body}`;
+/** One artifact type `acme-notes` with `body` as its keys, two spaces deep, on the shortest path. */
+const typeOf = (body: string): string =>
+  `version: 1\nartifacts:\n  acme-notes:\n${body}stages:\n${TAIL}`;
 
 const APPLY = '    publish:\n      apply: { run: "acme-notes merge {change}" }\n';
 
@@ -61,7 +63,7 @@ describe("the default workflow", () => {
   test("is today's path, each skill stage running its Mate stage skill alone", () => {
     const { stages, file, submitArtifact } = defaultWorkflow();
     expect(file).toBeNull();
-    expect(submitArtifact).toBeNull();
+    expect(submitArtifact).toBe("openspec");
     expect(stages.map((stage) => [stage.id, stage.optional])).toEqual([
       ["clarify-intent", true],
       ["explore", false],
@@ -81,11 +83,10 @@ describe("the default workflow", () => {
     });
   });
 
-  test("a file with only artifact types keeps the default stages", () => {
-    const workflow = workflowOf(`version: 1\n${NOTES}`);
-    expect(workflow.stages).toEqual(defaultWorkflow().stages);
-    expect(workflow.artifacts.map((type) => type.name)).toEqual(["acme-notes"]);
-    expect(workflow.file).toBe(WORKFLOW_FILE);
+  test("a file with only artifact types is refused: a custom workflow declares its stages", () => {
+    expect(problemsOf(`version: 1\n${NOTES}`)).toEqual([
+      { path: "stages", message: "a custom workflow declares its `stages`" },
+    ]);
   });
 });
 
@@ -146,6 +147,7 @@ ${TAIL}`),
   test("steps may run before and after submit's Mate skill", () => {
     const workflow = workflowOf(
       stagesOf(`  - id: submit
+    artifact: openspec
     steps: [{ skill: acme-pr-check }, { skill: mate-submit-change }]
 ${PUBLISH}`),
     );
@@ -224,19 +226,21 @@ describe("stage validation", () => {
     expect(problemAt(source, "stages[0].steps[0].skill")).toContain("never a step");
   });
 
-  test("a skill starts one stage only", () => {
+  test("a skill is one step of the Delivery Path", () => {
     const source = stagesOf(
       `  - id: plan\n    steps: [{ skill: acme-check }]\n  - id: build\n    steps: [{ skill: acme-check }, { skill: acme-build }]\n${TAIL}`,
     );
     expect(problemsOf(source).map((problem) => problem.path)).toEqual(["stages[1].steps[0].skill"]);
-    expect(problemAt(source, "stages[1].steps[0].skill")).toContain("already starts `plan`");
+    expect(problemAt(source, "stages[1].steps[0].skill")).toContain(
+      "`acme-check` is already a step of `plan`",
+    );
   });
 
-  test("a skill may start one stage and follow in another", () => {
+  test("a skill following in another stage is refused too", () => {
     const source = stagesOf(
       `  - id: plan\n    steps: [{ skill: acme-check }]\n  - id: build\n    steps: [{ skill: acme-build }, { skill: acme-check }]\n${TAIL}`,
     );
-    expect(parseWorkflow(source).ok).toBe(true);
+    expect(problemAt(source, "stages[1].steps[1].skill")).toContain("already a step of `plan`");
   });
 
   test("a Mate stage skill in another stage names its own", () => {
@@ -249,6 +253,14 @@ describe("stage validation", () => {
       `  - id: apply\n    steps: [{ skill: mate-apply-change }, { skill: mate-apply-change }]\n${TAIL}`,
     );
     expect(problemAt(source, "stages[0].steps[1].skill")).toContain("twice");
+  });
+
+  test("any skill twice in one stage is refused at the second", () => {
+    const source = stagesOf(
+      `  - id: build\n    steps: [{ skill: acme-check }, { skill: acme-build }, { skill: acme-check }]\n${TAIL}`,
+    );
+    expect(problemsOf(source).map((problem) => problem.path)).toEqual(["stages[0].steps[2].skill"]);
+    expect(problemAt(source, "stages[0].steps[2].skill")).toContain("twice");
   });
 
   test("publish without its Mate skill says what the chain needs", () => {
@@ -268,7 +280,7 @@ describe("stage validation", () => {
 
   test("submit and publish are never optional", () => {
     const source = stagesOf(
-      `  - id: submit\n    optional: true\n    steps: [{ skill: mate-submit-change }]\n${PUBLISH}`,
+      `  - id: submit\n    artifact: openspec\n    optional: true\n    steps: [{ skill: mate-submit-change }]\n${PUBLISH}`,
     );
     expect(problemAt(source, "stages[0].optional")).toContain("never optional");
   });
@@ -334,7 +346,7 @@ describe("strict reading", () => {
 
 describe("artifact types", () => {
   test("a custom type with every key", () => {
-    const [type] = workflowOf(`version: 1\n${NOTES}`).artifacts;
+    const [type] = workflowOf(`version: 1\n${NOTES}stages:\n${TAIL}`).artifacts;
     expect(type).toEqual({
       name: "acme-notes",
       change: "notes/{name}/",
@@ -473,8 +485,17 @@ describe("submit names its artifact type", () => {
     expect(problemAt(submitWith("acme-missing"), "stages[0].artifact")).toContain("unknown");
   });
 
-  test("the built-in type's name is refused", () => {
-    expect(problemAt(submitWith("openspec"), "stages[0].artifact")).toContain("built-in");
+  test("the built-in type", () => {
+    const workflow = workflowOf(submitWith("openspec"));
+    expect(workflow.submitArtifact).toBe("openspec");
+    expect(workflow.artifacts.map((type) => type.name)).toEqual(["acme-notes"]);
+  });
+
+  test("a submit without a type is refused: no fallback to the built-in type", () => {
+    const source = stagesOf(
+      "  - id: submit\n    steps: [{ skill: mate-submit-change }]\n" + PUBLISH,
+    );
+    expect(problemAt(source, "stages[0].artifact")).toContain("names the artifact type");
   });
 
   test("no other stage sets artifact", () => {
@@ -525,8 +546,25 @@ describe("loadWorkflow", () => {
     );
     const verdict = await loadWorkflow(dir);
     if (!verdict.ok) throw new Error("expected a valid declaration");
+    // The skill that is a file is found.
     expect(verdict.workflow.warnings.map((warning) => warning.split(" ")[0])).toEqual([
       "acme-apply",
     ]);
+  });
+
+  test("a companion's own skill without any Mate line gives no warning", async () => {
+    const dir = await companion(
+      stagesOf(
+        `  - id: security-review\n    steps: [{ skill: acme-security-review }]\n  - id: apply\n    steps: [{ skill: mate-apply-change }, { skill: acme-verify }]\n${TAIL}`,
+      ),
+    );
+    for (const name of ["acme-verify", "acme-security-review"]) {
+      await fs.mkdir(path.join(dir, ".claude", "skills", name), { recursive: true });
+      await fs.writeFile(path.join(dir, ".claude", "skills", name, "SKILL.md"), `# ${name}\n`);
+    }
+
+    const verdict = await loadWorkflow(dir);
+    if (!verdict.ok) throw new Error("expected a valid declaration");
+    expect(verdict.workflow.warnings).toEqual([]);
   });
 });

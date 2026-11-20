@@ -111,19 +111,28 @@ stages:
   - id: apply
     steps: [{ skill: mate-apply-change }, { skill: acme-verify }]
   - id: submit
+    artifact: openspec
     steps: [{ skill: acme-pr-check }, { skill: mate-submit-change }]
   - id: publish
     steps: [{ skill: mate-publish-artifact }]
 ```
 
+A declaration is a custom workflow: it lists every stage and takes nothing from
+the default path. Without the file, the default path applies.
+
 **Stages** are listed in path order. Each has a unique `id`, an optional
 `label` and `optional: true`, and either `steps` or `review`. You may add,
 remove, and reorder stages, but `submit` then `publish` end every path, are
 never optional, and keep their Mate skills, because they push and publish the
-change. Leave `stages` out to keep the default path.
+change.
 
-**Steps** are always `{ skill: <name> }` and run in order in one session. When
-a step fails, the stage stops and is not recorded. Each Mate stage skill may
+**`submit` names its artifact type** with `artifact:`: `openspec` for OpenSpec
+changes, as above, or a type you declare, as in
+[a fully custom path](#a-fully-custom-path). It is required; a custom workflow
+never falls back to OpenSpec.
+
+**Steps** are always `{ skill: <name> }` and run in order, each started by you.
+Each Mate stage skill may
 appear only in its own stage, once:
 
 | Stage             | Mate stage skill        |
@@ -141,31 +150,93 @@ appear only in its own stage, once:
 `/<skill> <change>`: above, `/mate-apply-change acme-login` starts `apply`,
 `/acme-security-review acme-login` starts `security-review`, and
 `/acme-pr-check acme-login` starts `submit`. There is no wrapper skill, and the
-default path is run exactly as before. A skill may be the first step of one
-stage only, so the skill you run identifies its stage.
+default path is run exactly as before. A skill is one step of the whole
+Delivery Path, so the skill you run identifies its stage.
 
-When the companion declares `stages`, Mate adds one rule to the session's
-guidance that lists each stage with its entry skill. Following it, the session
-resolves the stage with `mate workflow steps`, runs the remaining steps in
-order, records the stage with `mate workflow done`, and hands off to the next
-stage. The rule is guidance, not a gate: a stage whose later steps were skipped
-is not recorded and stays open in Studio.
+**Steps are started by you.** Every step of a stage is run by the developer, one
+at a time, like the stages themselves. Each Mate stage skill ends by running
+`mate workflow done <skill> <change>`. The command records that step and
+prints the hand-off: the next step of the stage while one is left, or the stage
+the change is then at. Above, `/mate-apply-change acme-login` ends with
+`/acme-verify acme-login` as its next step; nothing runs it for you. The default
+path uses the same command.
+
+**Your skills need no Mate line.** Declare a skill you already have as a step,
+and leave it as it is. Mate adds one rule to the session's guidance: after
+running one of your skills for a change, the session runs
+`mate workflow done <skill> <change>` and ends with the hand-off it prints.
+When a session misses that, the step still counts: once a later step of the
+Delivery Path is recorded for the change, or the change is submitted, every
+earlier step nobody reported counts as done. Starting the next step is you
+saying the earlier one is finished. A counted step is never an action again; the
+hand-off names it in one line above its section,
+`Counted, not reported: /acme-security-review acme-login. Not an action below; run it if it did not run.`,
+and submit names it in a `step-counted` warning. Tell `/mate-apply-change` or
+`/mate-submit-change` that an earlier step ran, and it records it. A skill whose
+author ends it with `mate workflow done` anyway is recorded like any report.
+
+**In Claude Code, a turn hook checks the end of each step**, in a session Mate
+launches and in one you start with `claude` in a wrapped repository. It notes
+the step a turn starts and whether the session reported it. When the session
+reported a step but its response has no `## Next steps` section, or a section
+that leaves out an action `mate workflow next` prints or adds a later step of
+the change it does not print, the hook sends it back once with the actions to
+list. When the turn started a skill of your
+own and the session never reported it, the hook asks once to report it if the
+skill has finished. The hook records nothing itself, never sends a turn back
+twice, and stays silent in a turn that starts no step. Set `MATE_TURN_HOOKS=off`
+to turn it off.
+
+**In OpenCode, Mate's plugin runs the same check.** When a turn ends
+successfully and the hook would send it back, the plugin adds one message marked
+"Mate hand-off check" with the same request, and the session continues. A
+failed or interrupted turn, a subagent's turn, and a turn after which you have
+already typed the next prompt get none. `MATE_TURN_HOOKS=off` in the
+environment OpenCode runs in turns it off. Other runtimes rely on the guidance
+rule and counting alone.
+
+A skill appears at most once in the Delivery Path's `steps`.
 
 **A step skill** receives the user's request and the change name, and the chosen
-schema in `propose`. It does its work and stops: the stage records itself and
-names the next stage, so a hand-off the step proposes is ignored.
+schema in `propose`. It does its work and stops: the command names what follows,
+so a hand-off the step proposes is ignored.
 
 **Review stages** set `review: schema` to review every planning artifact of the
 change's schema, or list artifact ids such as `review: [proposal, specs, tasks]`.
 An artifact the change does not have is skipped. A review stage has no steps:
 people review.
 
-**Progress.** When a stage finishes, Mate records `stages.<id>: done` in the
-change's `delivery.yaml`. A change is at its first stage that is neither
-optional nor done. Built-in stages of an OpenSpec change are still read from
-its validation and tasks, so existing changes keep their place; a stage you
-added is done only once it is recorded. Studio draws the declared path and
-places each change on it.
+**Progress.** Each finished step is recorded in the change's `delivery.yaml`,
+as a list per stage:
+
+```yaml
+stages:
+  security-review: [acme-security-review]
+  apply: [mate-apply-change, acme-verify]
+```
+
+A stage is done when every step it declares is done and, for `propose` and
+`apply` of an OpenSpec change, its plan agrees: the change has tasks, and for
+`apply` every task is checked. A step of your own is done once it is recorded,
+or counted because a later step is recorded. A Mate stage skill's step is done
+once the plan says its work is done, recorded or not, so a session that ended
+without reporting it blocks nothing, and changes begun earlier keep their
+place. A step reported out of order is still recorded, and the steps before it
+count. A step you add later
+reopens the stage until it is recorded; a step you remove is ignored. A change
+is at its first stage that is neither optional nor done, and Studio places it
+there. You never run these commands yourself: the skills run them, and each
+skill's response ends with the next actions.
+
+**Submit warns about an unfinished change.** `mate artifact submit` adds a
+`stage-open` warning while the plan leaves a required stage before `submit`
+open (open tasks, or none), naming the stage, what is open, and the skill to
+run. Submitting counts every other step before `mate-submit-change` nobody
+reported, and names them in a `step-counted` warning. The change is still
+submitted.
+Mark a stage `optional: true` when a change may skip it, or when it ends before
+the change folder exists and so cannot be recorded. The recorded steps stay in
+the change's `delivery.yaml` when it is published, as a trace of what was run.
 
 **Validation** is strict: unknown keys, duplicate keys, anchors, and aliases are
 errors, and an invalid file stops every stage instead of falling back to the

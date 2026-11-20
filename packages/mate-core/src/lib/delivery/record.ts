@@ -87,10 +87,11 @@ export interface DeliveryRecord {
    */
   specBase?: string;
   /**
-   * The Delivery Path stages finished for the change, by stage id. Written only by
-   * {@link recordStageDone}; every other write carries it over.
+   * The finished steps of the change's Delivery Path stages: per stage id, the steps' skills in
+   * the order they were recorded. Appended to only by {@link recordStep}; every other write
+   * carries it over.
    */
-  stages?: Record<string, "done">;
+  stages?: Record<string, string[]>;
 }
 
 const JIRA_KEY = /^[A-Za-z][A-Za-z0-9]+-\d+$/;
@@ -374,14 +375,19 @@ export async function readDeliveryRecord(changeDir: string): Promise<DeliveryRec
   };
 }
 
-function stagesOf(value: unknown, file: string): { stages?: Record<string, "done"> } {
+function stagesOf(value: unknown, file: string): { stages?: Record<string, string[]> } {
   if (value === undefined || value === null) return {};
   if (typeof value !== "object" || Array.isArray(value)) {
     throw malformed(file, "stages must be a mapping");
   }
-  // Only `done` is recorded; another value reads as not done.
-  const done = Object.entries(value).filter(([, state]) => state === "done");
-  return done.length > 0 ? { stages: Object.fromEntries(done.map(([id]) => [id, "done"])) } : {};
+  // A value that is no list of skills reads as no steps.
+  const stages: Record<string, string[]> = {};
+  for (const [id, steps] of Object.entries(value)) {
+    if (!Array.isArray(steps)) continue;
+    const skills = steps.filter((step): step is string => typeof step === "string");
+    if (skills.length > 0) stages[id] = skills;
+  }
+  return Object.keys(stages).length > 0 ? { stages } : {};
 }
 
 function stateOf(value: unknown, file: string): { state?: SubmissionState } {
@@ -502,27 +508,39 @@ export async function writeDeliveryRecord(
 }
 
 /**
- * Records stage `stage` as done for the change in `changeDir`: a write limited to the
- * `stages.<stage>` entry, which leaves the rest of the file as it is. A change without a record
- * gets an unlinked one. Throws on a record that cannot be read.
+ * Records `skill` as a finished step of `stage` for the change in `changeDir`: a write limited
+ * to the `stages.<stage>` entry, which leaves the rest of the file as it is. A skill already
+ * recorded changes nothing. A change without a record gets an unlinked one. Throws on a record
+ * that cannot be read.
  */
-export async function recordStageDone(
+export async function recordStep(
   changeDir: string,
   change: string,
   stage: string,
+  skill: string,
 ): Promise<void> {
   const file = path.join(changeDir, DELIVERY_FILE);
   // Read first: a damaged record is reported, never rewritten.
-  if ((await readDeliveryRecord(changeDir)) === null) {
+  const record = await readDeliveryRecord(changeDir);
+  if (record === null) {
     await writeDeliveryRecord(changeDir, {
       ...unlinkedRecord(changeNameOf(change)),
-      stages: { [stage]: "done" },
+      stages: { [stage]: [skill] },
     });
     return;
   }
+  const steps = record.stages?.[stage] ?? [];
+  if (steps.includes(skill)) return;
   const document = parseDocument(await fs.readFile(file, "utf8"));
-  if (document.getIn(["stages", stage]) === "done") return;
   if (!isMap(document.get("stages", true))) document.delete("stages");
-  document.setIn(["stages", stage], "done");
+  document.setIn(["stages", stage], document.createNode([...steps, skill]));
   await fs.writeFile(file, document.toString(), "utf8");
+}
+
+/** The record without the recorded steps of `stage`. */
+export function withoutStage(record: DeliveryRecord, stage: string): DeliveryRecord {
+  if (!record.stages || !(stage in record.stages)) return record;
+  const { [stage]: _dropped, ...stages } = record.stages;
+  const { stages: _all, ...rest } = record;
+  return Object.keys(stages).length > 0 ? { ...rest, stages } : rest;
 }

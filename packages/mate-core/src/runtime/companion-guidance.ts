@@ -3,7 +3,7 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "./framework";
 import { GUIDANCE_FILE_VERSION, type MateGuidanceFile } from "./guidance";
 import { readWorkflow } from "./workflow/declaration";
-import type { DeclaredArtifactType, WorkflowSkillStage } from "./workflow/workflow";
+import type { DeclaredArtifactType } from "./workflow/workflow";
 
 /**
  * The guidance builders, on the session-runtime side of core.
@@ -46,8 +46,13 @@ export type GuidanceArtifactType = Pick<
   "name" | "change" | "published" | "archive"
 >;
 
-/** A declared skill stage with the skill that starts it. */
-export type GuidanceStage = Pick<WorkflowSkillStage, "id" | "entry">;
+/** A declared stage as the rule names it: its id, its skills in order, or that people review. */
+export interface GuidanceStage {
+  id: string;
+  steps: string[];
+  review?: true;
+  optional?: true;
+}
 
 export interface DeclaredGuidance {
   artifactTypes: GuidanceArtifactType[];
@@ -55,27 +60,42 @@ export interface DeclaredGuidance {
 }
 
 /**
- * What `companionPath`'s workflow adds to the guidance: its artifact types, and its skill stages
- * when it declares `stages`. An invalid declaration adds nothing, which keeps the built-in rules
- * alone; the session banner names its problems.
+ * What `companionPath`'s workflow adds to the guidance: its artifact types, and its declared
+ * stages when one runs a skill of the companion's own; Mate's stage skills report themselves, so
+ * a path of those alone needs no rule. An invalid declaration adds nothing, which keeps the
+ * built-in rules alone; the session banner names its problems.
  */
 export function declaredGuidance(companionPath: string): DeclaredGuidance {
   const verdict = readWorkflow(companionPath);
   if (!verdict.ok) return { artifactTypes: [] };
   const { artifacts, stages } = verdict.workflow;
-  const declared = stages.filter(
-    (stage): stage is WorkflowSkillStage => stage.kind === "skill" && stage.source === "declared",
+  const ownSkills = stages.some(
+    (stage) => stage.kind === "skill" && stage.steps.some((step) => !step.own),
   );
+  if (!ownSkills) return { artifactTypes: artifacts };
   return {
     artifactTypes: artifacts,
-    ...(declared.length > 0 ? { stages: declared.map(({ id, entry }) => ({ id, entry })) } : {}),
+    stages: stages.map((stage) => ({
+      id: stage.id,
+      steps: stage.kind === "skill" ? stage.steps.map((step) => step.skill) : [],
+      ...(stage.kind === "review" ? { review: true as const } : {}),
+      ...(stage.optional ? { optional: true as const } : {}),
+    })),
   };
 }
 
-/** Tells the session to run a declared stage's whole chain: no skill template knows it. */
+/**
+ * The declared Delivery Path, and the one thing a skill its author wrote does not do: report
+ * itself. Everything else, change or none, comes from what `workflow done` prints.
+ */
 function stagesRule(stages: readonly GuidanceStage[]): string {
-  const entries = stages.map((stage) => `${stage.id} (${stage.entry})`).join(", ");
-  return `    <rule id="workflow-stages" severity="critical">This companion declares its Delivery Path; each stage is started with its entry skill: ${entries}. When you run one of these skills for a change, run ${FRAMEWORK_NAME} workflow steps "<stage>" --json first. After the skill, run the stage's remaining steps in order in this session, each for the same change; when a step cannot be loaded or fails, stop and name it. Then run ${FRAMEWORK_NAME} workflow done "<stage>" "<change>" and hand off to the stage in next, in place of the one the skill names.</rule>`;
+  const order = stages
+    .map((stage) => {
+      const what = stage.review ? "reviewed by people" : stage.steps.join(", then ");
+      return `${stage.id} (${what}${stage.optional ? ", optional" : ""})`;
+    })
+    .join("; ");
+  return `    <rule id="workflow-stages" severity="critical">This companion's Delivery Path, declared in .mate/config/workflow.yaml, in order: ${order}. When one of these skills finishes without running ${FRAMEWORK_NAME} workflow done itself, run ${FRAMEWORK_NAME} workflow done "<skill>", adding the change name when there is one, and end your response with a final "## Next steps" section listing the actions it prints, running none of them.</rule>`;
 }
 
 /** `notes/{name}/` → `notes/`. */

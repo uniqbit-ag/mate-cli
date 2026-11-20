@@ -9,7 +9,6 @@ import {
   BUILTIN_ARTIFACT_TYPE,
   BUILTIN_BY_ID,
   BUILTIN_BY_SKILL,
-  defaultStages,
   defaultWorkflow,
   mateStageSkill,
   skillStageOf,
@@ -352,6 +351,7 @@ function parseSteps(
   stage: string | undefined,
   at: string,
   problems: Problems,
+  owners: Map<string, string>,
 ): string[] {
   if (!Array.isArray(value) || value.length === 0) {
     problems.add(at, "`steps` lists at least one `{ skill: <name> }`");
@@ -384,10 +384,20 @@ function parseSteps(
       problems.add(skillAt, `\`${skill}\` belongs to \`${owner.id}\``);
       return;
     }
-    if (owner && skills.includes(skill)) {
+    // A skill names its stage, and a recorded skill identifies one step.
+    if (skills.includes(skill)) {
       problems.add(skillAt, `\`${skill}\` appears twice in its stage`);
       return;
     }
+    const other = owners.get(skill);
+    if (other !== undefined) {
+      problems.add(
+        skillAt,
+        `\`${skill}\` is already a step of \`${other}\`; a skill is one step of the Delivery Path`,
+      );
+      return;
+    }
+    owners.set(skill, stage ?? at);
     skills.push(skill);
   });
   return skills;
@@ -416,7 +426,7 @@ const STAGE_KEYS = ["id", "label", "optional", "steps", "review", "artifact"] as
 
 interface ParsedStages {
   stages: WorkflowStage[];
-  submitArtifact: string | null;
+  submitArtifact: string;
 }
 
 function parseStages(
@@ -424,15 +434,19 @@ function parseStages(
   types: readonly DeclaredArtifactType[],
   problems: Problems,
 ): ParsedStages {
-  const result: ParsedStages = { stages: [], submitArtifact: null };
+  const result: ParsedStages = { stages: [], submitArtifact: BUILTIN_ARTIFACT_TYPE };
+  if (value === undefined) {
+    problems.add("stages", "a custom workflow declares its `stages`");
+    return result;
+  }
   if (!Array.isArray(value) || value.length === 0) {
     problems.add("stages", "`stages` is a list ending with `submit` then `publish`");
     return result;
   }
   const ids: Array<string | undefined> = [];
   const reviewed = new Set<string>();
-  /** First-step skill → the stage it starts. */
-  const entries = new Map<string, string>();
+  /** Skill → the stage it is a step of. */
+  const owners = new Map<string, string>();
   value.forEach((entry, index) => {
     const at = `stages[${index}]`;
     if (!isRecord(entry)) {
@@ -471,12 +485,10 @@ function parseStages(
       const artifactAt = keyAt(at, "artifact");
       if (id !== "submit") {
         problems.add(artifactAt, "only `submit` sets `artifact`");
-      } else if (entry.artifact === BUILTIN_ARTIFACT_TYPE) {
-        problems.add(
-          artifactAt,
-          `\`${BUILTIN_ARTIFACT_TYPE}\` is the built-in type and is never named`,
-        );
-      } else if (!types.some((type) => type.name === entry.artifact)) {
+      } else if (
+        entry.artifact !== BUILTIN_ARTIFACT_TYPE &&
+        !types.some((type) => type.name === entry.artifact)
+      ) {
         problems.add(artifactAt, `unknown artifact type \`${String(entry.artifact)}\``);
       } else {
         result.submitArtifact = entry.artifact as string;
@@ -508,20 +520,7 @@ function parseStages(
       }
       return;
     }
-    const skills = parseSteps(entry.steps, id, keyAt(at, "steps"), problems);
-    // The skill a developer runs identifies its stage.
-    const [head] = Array.isArray(entry.steps) ? entry.steps : [];
-    const first = isRecord(head) ? head.skill : undefined;
-    if (typeof first === "string" && first === skills[0]) {
-      if (entries.has(first)) {
-        problems.add(
-          `${at}.steps[0].skill`,
-          `\`${first}\` already starts \`${entries.get(first)}\`; a skill starts one stage only`,
-        );
-      } else {
-        entries.set(first, id ?? at);
-      }
-    }
+    const skills = parseSteps(entry.steps, id, keyAt(at, "steps"), problems, owners);
     if (id !== undefined) result.stages.push(skillStageOf(id, label, optional, skills, "declared"));
   });
 
@@ -539,6 +538,12 @@ function parseStages(
     const at = `stages[${index}]`;
     const skill = mateStageSkill(id)!;
     if (entry.optional === true) problems.add(keyAt(at, "optional"), `\`${id}\` is never optional`);
+    if (id === "submit" && entry.artifact === undefined) {
+      problems.add(
+        keyAt(at, "artifact"),
+        "a custom workflow names the artifact type submit handles: a declared one or `openspec`",
+      );
+    }
     const steps = Array.isArray(entry.steps) ? entry.steps : [];
     if (!steps.some((step) => isRecord(step) && step.skill === skill)) {
       problems.add(keyAt(at, "steps"), `the chain needs \`{ skill: ${skill} }\``);
@@ -583,10 +588,7 @@ export function parseWorkflow(source: string, file: string = WORKFLOW_FILE): Wor
   problems.unknownKeys(value, ["version", "stages", "artifacts"], "");
 
   const artifacts = parseArtifacts(value.artifacts, problems);
-  const parsed =
-    value.stages === undefined
-      ? { stages: defaultStages(), submitArtifact: null }
-      : parseStages(value.stages, artifacts, problems);
+  const parsed = parseStages(value.stages, artifacts, problems);
   if (problems.list.length > 0) return { ok: false, file, problems: problems.list };
   return { ok: true, workflow: { file, ...parsed, artifacts, warnings: [] } };
 }
@@ -625,7 +627,8 @@ async function missingSkills(companionPath: string, workflow: Workflow): Promise
 
 /**
  * The companion's workflow: the default without a declaration, the declared one when it is
- * valid, its problems otherwise.
+ * valid, its problems otherwise. A companion's own skill is never read for a Mate line: its
+ * steps are reported through session guidance, or count once a later step is recorded.
  */
 export async function loadWorkflow(companionPath: string): Promise<WorkflowVerdict> {
   let source: string;

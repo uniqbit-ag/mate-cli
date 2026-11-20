@@ -111,6 +111,7 @@ function declared(source: string): Workflow {
 
 const TAIL = `
   - id: submit
+    artifact: openspec
     steps: [{ skill: mate-submit-change }]
   - id: publish
     steps: [{ skill: mate-publish-artifact }]

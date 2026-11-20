@@ -45,6 +45,12 @@ ${archive ? "    archive: notes-history/{id}/\n" : ""}    submit:
     publish:
       apply: { run: ${JSON.stringify(apply ?? "cat {change}/note.md >> notes/index.md")} }
       validate: { run: "grep -q acme {files}" }
+stages:
+  - id: submit
+    artifact: acme-notes
+    steps: [{ skill: mate-submit-change }]
+  - id: publish
+    steps: [{ skill: mate-publish-artifact }]
 `);
   if (!verdict.ok) throw new Error(JSON.stringify(verdict.problems));
   return declaredArtifactType(verdict.workflow.artifacts[0]!, { date: () => "2026-11-15" });

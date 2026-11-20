@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import type { StudioChange, StudioCompanionPayload } from "@uniqbit/mate-core/studio";
 
+import { positioned } from "../../../test/positioned";
+
 await import("../../../test/dom");
 const { act, render } = await import("@testing-library/react");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
@@ -14,13 +16,14 @@ const change = (
   done: number | undefined,
   total: number | undefined,
   extra: Partial<StudioChange> = {},
-): StudioChange => ({
-  name,
-  completedTasks: done,
-  totalTasks: total,
-  artifacts: [],
-  ...extra,
-});
+): StudioChange =>
+  positioned({
+    name,
+    completedTasks: done,
+    totalTasks: total,
+    artifacts: [],
+    ...extra,
+  });
 
 const changes = [
   change("acme-review", 0, 16),
@@ -180,7 +183,7 @@ describe("Dashboard", () => {
     expect(markup).toContain(">Needs you</h2>");
   });
 
-  it("puts a change with a validation issue under Needs you, naming the issue count", () => {
+  it("puts a change with a validation issue under Needs you, saying it does not validate", () => {
     const markup = staticMarkup(
       <Dashboard
         payload={payload([change("acme-broken", 7, 7, { valid: false, issueCount: 2 })])}
@@ -188,7 +191,7 @@ describe("Dashboard", () => {
     );
     expect(markup).toContain(">Needs you</h2>");
     expect(markup).not.toContain(">Ready to submit</h2>");
-    expect(markup).toContain("2 validation issues");
+    expect(markup).toContain("the change does not validate");
     expect(markup).toContain("Invalid");
   });
 

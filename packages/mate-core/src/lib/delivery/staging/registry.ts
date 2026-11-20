@@ -51,8 +51,18 @@ export function describeWorkflowProblems(problems: readonly WorkflowProblem[]): 
  * submit or publish the wrong files.
  */
 export async function declaredSubmitType(companionPath: string): Promise<ArtifactType | undefined> {
+  return (await loadSubmitWorkflow(companionPath)).artifactType;
+}
+
+/** The companion's valid workflow and the declared type its submit handles; throws as above. */
+export async function loadSubmitWorkflow(
+  companionPath: string,
+): Promise<{ workflow: Workflow; artifactType?: ArtifactType }> {
   const verdict = await loadWorkflow(companionPath);
   if (!verdict.ok) throw new Error(describeWorkflowProblems(verdict.problems));
   const declared = submitType(verdict.workflow);
-  return declared ? declaredArtifactType(declared) : undefined;
+  return {
+    workflow: verdict.workflow,
+    ...(declared ? { artifactType: declaredArtifactType(declared) } : {}),
+  };
 }

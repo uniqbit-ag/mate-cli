@@ -33,6 +33,12 @@ artifacts:
     archive: notes-history/{id}/
     publish:
       apply: { run: "acme-notes merge {change}" }
+stages:
+  - id: submit
+    artifact: acme-notes
+    steps: [{ skill: mate-submit-change }]
+  - id: publish
+    steps: [{ skill: mate-publish-artifact }]
 `;
 
 const context = (companionPath: string) => ({
@@ -77,7 +83,14 @@ describe("guidance per artifact type", () => {
     ]);
   });
 
-  test("declared stages get one rule naming each skill stage with its entry skill", () => {
+  const TAIL = `  - id: submit
+    artifact: openspec
+    steps: [{ skill: mate-submit-change }]
+  - id: publish
+    steps: [{ skill: mate-publish-artifact }]
+`;
+
+  test("one rule names the declared path in order, and only how to report a step", () => {
     const dir = companion(`version: 1
 stages:
   - id: apply
@@ -86,23 +99,30 @@ stages:
     review: schema
   - id: security-review
     steps: [{ skill: acme-security-review }]
-  - id: submit
-    steps: [{ skill: mate-submit-change }]
-  - id: publish
-    steps: [{ skill: mate-publish-artifact }]
-`);
+${TAIL}`);
     const guidance = buildCompanionGuidance(context(dir));
 
     expect(guidance.match(/<rule id="workflow-stages"/g)).toHaveLength(1);
     expect(guidance).toContain(
-      "apply (mate-apply-change), security-review (acme-security-review), submit (mate-submit-change), publish (mate-publish-artifact).",
+      "in order: apply (mate-apply-change, then acme-verify); review (reviewed by people); security-review (acme-security-review); submit (mate-submit-change); publish (mate-publish-artifact).",
     );
-    expect(guidance).toContain('mate workflow steps "<stage>" --json');
-    expect(guidance).toContain('mate workflow done "<stage>" "<change>"');
+    expect(guidance).toContain('run mate workflow done "<skill>", adding the change name');
+    expect(guidance).not.toContain("mate workflow steps");
+    expect(guidance.match(/<rule id="workflow-stages".*<\/rule>/)?.[0]).not.toContain("folder");
     expect(guidance.replace(/\n {4}<rule id="workflow-stages".*<\/rule>/, "")).toBe(builtIn(dir));
   });
 
-  test("a declaration without stages adds no stage rule", () => {
+  test("stages that run only Mate stage skills add no rule", () => {
+    const dir = companion(`version: 1
+stages:
+  - id: apply
+    steps: [{ skill: mate-apply-change }]
+${TAIL}`);
+
+    expect(buildCompanionGuidance(context(dir))).toBe(builtIn(dir));
+  });
+
+  test("artifact types on the shortest path add no stage rule", () => {
     expect(buildCompanionGuidance(context(companion(NOTES)))).not.toContain("workflow-stages");
   });
 

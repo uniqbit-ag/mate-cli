@@ -5,6 +5,11 @@
 
 const segmentsOf = (pattern: string): string[] => pattern.split("/").filter(Boolean);
 
+/** The folder a template such as `notes/{name}/` keeps its entries in: `notes`. */
+export function templateRoot(template: string): string {
+  return segmentsOf(template).slice(0, -1).join("/") || ".";
+}
+
 /** The pattern of every file inside the folders `template` names, its placeholder as `*`. */
 export function folderPattern(template: string): string {
   return [...segmentsOf(template.replace(/\{[a-z]+\}/g, "*")), "*", "**"].join("/");

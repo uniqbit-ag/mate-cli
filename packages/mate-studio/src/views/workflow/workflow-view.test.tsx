@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { type StudioChange, type StudioCompanionPayload } from "@uniqbit/mate-core/studio";
 
+import { positioned } from "../../../test/positioned";
 import type { WorkflowMapNode, WorkflowPath } from "./steps";
 
 await import("../../../test/dom");
@@ -42,12 +43,13 @@ function render(data: StudioCompanionPayload = payload(), changes: StudioChange[
   return staticMarkup(<Workflow payload={data} changes={changes} />);
 }
 
-const change = (name: string, done: number, total: number): StudioChange => ({
-  name,
-  completedTasks: done,
-  totalTasks: total,
-  artifacts: [],
-});
+const change = (
+  name: string,
+  done: number,
+  total: number,
+  extra: Partial<StudioChange> = {},
+): StudioChange =>
+  positioned({ name, completedTasks: done, totalTasks: total, artifacts: [], ...extra });
 
 /** The Workflow view in a browser, for the stage panel. */
 async function mount(changes: StudioChange[] = []) {
@@ -435,7 +437,7 @@ describe("Workflow view", () => {
 
   it("places invalid and taskless changes at Propose change, as the Overview names them", () => {
     const changes = [
-      { ...change("acme-invalid", 0, 4), valid: false },
+      change("acme-invalid", 0, 4, { valid: false }),
       change("acme-empty", 0, 0),
       change("acme-review", 0, 4),
     ];

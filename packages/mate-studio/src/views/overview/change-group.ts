@@ -1,11 +1,12 @@
 import {
-  changeStage,
   defaultWorkflow,
-  nextStage,
+  stagesBeforeWork,
+  stepStage,
+  type HandoffAction,
+  type SkillAction,
   type StudioChange,
   type StudioSubmittedChange,
   type Workflow,
-  type WorkflowSkillStage,
   type WorkflowStage,
 } from "@uniqbit/mate-core/studio";
 
@@ -61,39 +62,42 @@ export interface ChangeStep {
 
 const DEFAULT_WORKFLOW = defaultWorkflow();
 
-/** The prompt that starts a skill stage for a change: its first step's skill. */
-export function stagePrompt(stage: WorkflowSkillStage, change: string): string {
-  return `/${stage.entry} ${change}`;
-}
-
-/** Stages a change of the built-in type has always passed once it exists. */
-const BEFORE_A_CHANGE: ReadonlySet<string> = new Set(["clarify-intent", "explore"]);
-
 /** The stages a change walks: the required ones up to submit, as its panel lists them. */
 export function changePath(workflow: Workflow = DEFAULT_WORKFLOW): WorkflowStage[] {
+  const passed = stagesBeforeWork(workflow);
   return workflow.stages.filter(
-    (stage) =>
-      !stage.optional &&
-      stage.id !== "publish" &&
-      !(workflow.submitArtifact === null && BEFORE_A_CHANGE.has(stage.id)),
+    (stage) => !stage.optional && stage.id !== "publish" && !passed.includes(stage),
   );
 }
 
+/** The prompt of a skill action in the fallback `/name` syntax. */
+const promptOf = (action: SkillAction): string =>
+  `/${action.skill}${action.change ? ` ${action.change}` : ""}`;
+
+/** The artifact id of a review action (`Review specs: <path>`); null for another text. */
+const reviewedId = (action: HandoffAction): string | null =>
+  action.kind === "text" ? (/^Review ([^:]+):/.exec(action.text)?.[1] ?? null) : null;
+
+const NOT_PLACED: ChangeStep = {
+  stage: "Not placed",
+  stageId: null,
+  review: false,
+  situation: "Its position is not known",
+  next: "Reload Studio",
+  prompt: "",
+};
+
 /**
- * Where the change is on the companion's Delivery Path and what comes next. Recorded stages
- * count as done; the built-in stages of a change are inferred from its validation and tasks.
+ * Where the change is on the companion's Delivery Path and what comes next, as its payload
+ * position says: what `mate workflow next` computes for it.
  */
 export function changeStep(
   change: StudioChange,
   workflow: Workflow = DEFAULT_WORKFLOW,
 ): ChangeStep {
-  const total = change.totalTasks ?? 0;
-  const done = change.completedTasks ?? 0;
-  const stage = changeStage(workflow, {
-    recorded: change.stagesDone ?? [],
-    ...(change.dropped ? { state: "dropped" as const } : {}),
-    plan: { valid: change.valid !== false, totalTasks: total, completedTasks: done },
-  });
+  const { position } = change;
+  if (!position) return NOT_PLACED;
+  const { stage } = position;
   if (!stage) {
     return {
       stage: "Dropped",
@@ -104,44 +108,22 @@ export function changeStep(
       prompt: "",
     };
   }
-  const at = { stage: stage.label, stageId: stage.id };
+  const { actions } = position.handoff;
+  const action = actions.find((entry): entry is SkillAction => entry.kind === "skill");
+  const at = { stage: stage.label, stageId: stage.id, prompt: action ? promptOf(action) : "" };
   if (stage.kind === "review") {
-    const next = nextStage(workflow, stage.id);
-    const follows = workflow.stages.find((entry) => entry.id === next?.id);
+    const reviews = actions.map(reviewedId).filter((id): id is string => id !== null);
+    const follows = action ? stepStage(workflow, action.skill)?.label : undefined;
     return {
       ...at,
       review: true,
       situation: "Plan ready for review",
-      next:
-        follows?.id === "apply"
-          ? "Review the plan, then apply it"
-          : `Review the plan, then run ${follows?.label ?? "the next stage"}`,
-      prompt: follows?.kind === "skill" ? stagePrompt(follows, change.name) : "",
+      next: `Review ${reviews.length > 0 ? reviews.join(", ") : "the plan"}, then run ${follows ?? "the next stage"}`,
     };
   }
-  const step = { ...at, review: false, prompt: stagePrompt(stage, change.name) };
-  if (stage.id === "propose" && change.valid === false) {
-    const issues = change.issueCount ?? 0;
-    return {
-      ...step,
-      situation: `${issues} validation ${issues === 1 ? "issue" : "issues"}`,
-      next: "Fix the plan so it validates",
-    };
-  }
-  if (stage.id === "propose") {
-    return { ...step, situation: "No tasks yet", next: "Finish the plan" };
-  }
-  if (stage.id === "apply" && done < total) {
-    return {
-      ...step,
-      situation: `${total - done} ${total - done === 1 ? "task" : "tasks"} left`,
-      next: "Continue the build",
-    };
-  }
-  if (stage.id === "submit") {
-    return { ...step, situation: "All tasks done", next: "Submit the change" };
-  }
-  return { ...step, situation: `${stage.label} is not done yet`, next: `Run ${stage.label}` };
+  // A later step of the stage is named by its skill.
+  const runs = !action || action.skill === stage.entry ? stage.label : action.skill;
+  return { ...at, review: false, situation: position.open ?? "Ready", next: `Run ${runs}` };
 }
 
 export interface ChangeProgress {

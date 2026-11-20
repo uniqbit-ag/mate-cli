@@ -1,4 +1,5 @@
 import {
+  BUILTIN_ARTIFACT_TYPE,
   CHANGE_PLACEHOLDER,
   DEFAULT_SCHEMA,
   defaultWorkflow,
@@ -188,7 +189,7 @@ const OPENSPEC_SKILLS: ReadonlySet<string> = new Set([
 
 /** A stage runs OpenSpec while its chain holds such a skill, or submits the built-in type. */
 function runsOpenSpec(stage: SkillStage, workflow: Workflow): boolean {
-  if (stage.id === "submit") return workflow.submitArtifact === null;
+  if (stage.id === "submit") return workflow.submitArtifact === BUILTIN_ARTIFACT_TYPE;
   return stage.steps.some((step) => OPENSPEC_SKILLS.has(step.skill));
 }
 

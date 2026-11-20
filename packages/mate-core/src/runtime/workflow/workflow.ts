@@ -128,8 +128,8 @@ export interface Workflow {
   file: string | null;
   stages: WorkflowStage[];
   artifacts: DeclaredArtifactType[];
-  /** The declared type submit handles; null for the built-in type. */
-  submitArtifact: string | null;
+  /** The type submit handles: a declared one or {@link BUILTIN_ARTIFACT_TYPE}. */
+  submitArtifact: string;
   warnings: string[];
 }
 
@@ -177,7 +177,13 @@ export function defaultStages(): WorkflowStage[] {
 
 /** The workflow of a companion without a declaration. */
 export function defaultWorkflow(): Workflow {
-  return { file: null, stages: defaultStages(), artifacts: [], submitArtifact: null, warnings: [] };
+  return {
+    file: null,
+    stages: defaultStages(),
+    artifacts: [],
+    submitArtifact: BUILTIN_ARTIFACT_TYPE,
+    warnings: [],
+  };
 }
 
 /** The declared type submit handles; undefined for the built-in type. */

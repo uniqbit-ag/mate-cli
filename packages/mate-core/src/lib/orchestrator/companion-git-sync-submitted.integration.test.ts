@@ -495,6 +495,12 @@ artifacts:
     published: [notes-index.md]
 ${archive}    publish:
       apply: { run: "true" }
+stages:
+  - id: submit
+    artifact: acme-notes
+    steps: [{ skill: mate-submit-change }]
+  - id: publish
+    steps: [{ skill: mate-publish-artifact }]
 `;
 
 /**
