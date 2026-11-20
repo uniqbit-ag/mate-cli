@@ -1,7 +1,7 @@
-import type { CapabilityPlugin } from "@uniqbit/mate-core";
+import { toolVersion, type CapabilityPlugin } from "@uniqbit/mate-core";
 
-/** Exact version for the workstation npx entry; must match the container image lock. */
-export const CONTEXT7_MCP_VERSION = "4.2.0";
+/** Exact version for the workstation npx entry, from mate-core's tool manifest. */
+export const CONTEXT7_MCP_VERSION = toolVersion("context7");
 export const CONTEXT7_MCP_COMMAND = "context7-mcp";
 const CONTEXT7_MODE_ENV = "MATE_CONTEXT7_MODE";
 

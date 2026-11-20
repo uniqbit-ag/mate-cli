@@ -108,6 +108,7 @@ describe("bundled OpenCode plugin in packed @uniqbit/mate-core", () => {
       expect(entries).toContain(`package/opencode-plugin/${file}`);
     }
     expect(entries.filter((entry) => entry.includes(".test."))).toEqual([]);
+    expect(list.stdout.split("\n")).toContain("package/tool-manifest.yaml");
   });
 
   test("loads the TUI entry with the host's OpenTUI and the server entry without OpenTUI, by path", async () => {

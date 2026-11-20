@@ -1,5 +1,5 @@
 // oxlint-disable no-await-in-loop
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -40,6 +40,15 @@ export async function pruneEmptyAncestors(dir: string, stopAt: string): Promise<
 }
 
 export { isCommandOnPath } from "../../lib/fs-utils";
+
+/** What `binary --version` prints, or null when it cannot run. Async, so probes overlap. */
+export function installedVersionOutput(binary: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(binary, ["--version"], { encoding: "utf8", timeout: 5_000 }, (error, stdout) =>
+      resolve(error ? null : stdout),
+    );
+  });
+}
 
 export function resolveCommandOnPath(command: string, pathValue: string): string | undefined {
   if (!pathValue) return undefined;

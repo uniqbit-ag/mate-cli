@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### `mate companion update` runs a pinned `skills` CLI
+
+- Mate pins one exact `skills` version for `skills-lock.json` refreshes instead of running `npx skills`. A new version arrives with a Mate release.
+- Mate now requires Node.js 22.20.0 or newer to install its dependencies.
+
+### One tool manifest pins the shared tool versions
+
+- `packages/mate-core/tool-manifest.yaml` names the exact version of OpenSpec, `skills`, React Doctor, Context7, Graphify, RTK and TokenSave. Setup, the Context7 launch and both images read it, so one bump reaches all of them.
+- TokenSave, RTK and Graphify install at the manifest's version: `cargo install --locked tokensave --version <version>`, RTK's installer from the release tag with `RTK_VERSION` set, and `uv tool install graphifyy==<version>`. Homebrew and Scoop stay available and install their formula's current version.
+- `mate install` and setup no longer upgrade TokenSave or RTK. When an installed TokenSave, RTK or Graphify reports another version, older or newer, Mate warns, names the pinned install command, and continues with the installed version.
+- The container and factory images install Graphify and its dependencies only after checking each archive against the hash in `graphify.requirements.txt`. The factory image now carries RTK 1.1.0, the version the container image already used.
+
 ### A stop signal right after an agent starts no longer leaves it running
 
 - A launch now forwards `SIGTERM` and `SIGINT` from before it starts the agent. Before, a signal that reached the launch while the agent was starting ended the launch and left the agent running.
