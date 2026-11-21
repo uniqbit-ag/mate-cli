@@ -9,6 +9,7 @@
  * `MATE_AGENT_E2E_MODEL` overrides it.
  */
 import { spawn, spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -31,8 +32,14 @@ const { reportedSteps } = (await import(
 const { buildCompanionGuidance } = (await import(
   path.join(CORE, "src/playbooks/companion-guidance.ts")
 )) as typeof GuidanceModule;
-/** The plugin's turn-hook groups from its `hooks.json`, with the plugin root filled in. */
-async function turnHookGroups(pluginRoot: string): Promise<Record<string, unknown[]>> {
+/**
+ * The plugin's turn-hook groups from its `hooks.json`, with the plugin root filled in, each run
+ * under `home`, the fixture's `mate` home.
+ */
+async function turnHookGroups(
+  pluginRoot: string,
+  home: string,
+): Promise<Record<string, unknown[]>> {
   const wiring = JSON.parse(await fs.readFile(path.join(pluginRoot, "hooks/hooks.json"), "utf8"))
     .hooks as Record<string, unknown[]>;
   const groups = Object.entries(wiring).flatMap(([event, entries]) => {
@@ -40,7 +47,12 @@ async function turnHookGroups(pluginRoot: string): Promise<Record<string, unknow
     return turn.length > 0 ? [[event, turn] as const] : [];
   });
   return JSON.parse(
-    JSON.stringify(Object.fromEntries(groups)).replaceAll("${CLAUDE_PLUGIN_ROOT}", pluginRoot),
+    JSON.stringify(Object.fromEntries(groups))
+      .replaceAll("${CLAUDE_PLUGIN_ROOT}", pluginRoot)
+      .replaceAll(
+        '"command":"node ',
+        `"command":${JSON.stringify(`HOME="${home}" node `).slice(0, -1)}`,
+      ),
   ) as Record<string, unknown[]>;
 }
 /** The turn hook a Mate launch loads; `MATE_AGENT_E2E_TURN_HOOKS=off` leaves it out to compare. */
@@ -110,6 +122,30 @@ interface Fixture {
 /** The change's folder in `companion`. */
 function changeDir(scenario: Scenario, companion: string): string {
   return path.join(companion, scenario.folder?.path ?? `openspec/changes/${CHANGE}`);
+}
+
+/** Where the fixture's `mate` logs each `workflow done` it ran that succeeded, its arguments. */
+function reportLog(root: string): string {
+  return path.join(root, "reported");
+}
+
+/** The reports the fixture's `mate` recorded, in order: as the turn hook counts them. */
+function recordedReports(fixture: Fixture): { skill: string; change: string }[] {
+  let log = "";
+  try {
+    log = readFileSync(reportLog(fixture.root), "utf8");
+  } catch {
+    // No report recorded.
+  }
+  return log
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [, , skill = "", change = ""] = line
+        .split(/\s+/)
+        .filter((word) => !word.startsWith("-"));
+      return { skill, change };
+    });
 }
 
 /** The environment a session and the checks run `mate` in. */
@@ -191,7 +227,7 @@ async function createFixture(scenario: Scenario): Promise<Fixture> {
       // oxlint-disable-next-line no-await-in-loop -- two small files
       await write(
         path.join(home, skillsDir, skill, "SKILL.md"),
-        customSkill(skill, scenario.closes?.[skill]),
+        customSkill(skill, scenario.closes?.[skill], scenario.loop),
       );
     }
   }
@@ -199,7 +235,7 @@ async function createFixture(scenario: Scenario): Promise<Fixture> {
   if (TURN_HOOKS) {
     await write(
       path.join(repo, ".claude/settings.json"),
-      `${JSON.stringify({ hooks: await turnHookGroups(path.join(CORE, "claude-plugin")) }, null, 2)}\n`,
+      `${JSON.stringify({ hooks: await turnHookGroups(path.join(CORE, "claude-plugin"), path.join(root, "home")) }, null, 2)}\n`,
     );
   }
   // Without `mate wrap`, a config of its own keeps the OpenSpec wrapper on the companion quietly.
@@ -217,11 +253,20 @@ async function createFixture(scenario: Scenario): Promise<Fixture> {
   }
 
   // `mate` refreshes its runtime directory under HOME on every run; a home of its own keeps this
-  // checkout's build from re-pointing the developer's installed runtime.
+  // checkout's build from re-pointing the developer's installed runtime. The turn hooks keep their
+  // state under the same home, so the steps `mate workflow done` notes reach them. Each recorded
+  // report is also logged, as the hook counts it.
   await fs.mkdir(path.join(root, "home"), { recursive: true });
   await write(
     path.join(bin, "mate"),
-    `#!/bin/sh\nHOME="${path.join(root, "home")}" exec node "${MATE_BIN}" "$@"\n`,
+    [
+      "#!/bin/sh",
+      `HOME="${path.join(root, "home")}" node "${MATE_BIN}" "$@"`,
+      "status=$?",
+      `if [ "$status" -eq 0 ] && [ "$1" = workflow ] && [ "$2" = done ]; then printf '%s\\n' "$*" >> "${reportLog(root)}"; fi`,
+      'exit "$status"',
+      "",
+    ].join("\n"),
   );
   await fs.chmod(path.join(bin, "mate"), 0o755);
   // What a companion's own skill runs: a marker per step, outside both repositories.
@@ -304,7 +349,10 @@ function handoffProblems(label: string, handoff: string, scenario: Scenario): st
  */
 function hookProblems(scenario: Scenario, fixture: Fixture, session: Session): string[] {
   const problems: string[] = [];
-  const last = session.commands.flatMap(reportedSteps).findLast((report) => report.change);
+  // What `mate workflow done` recorded, else, as the hook falls back, the commands' text.
+  const recorded = recordedReports(fixture);
+  const reports = recorded.length > 0 ? recorded : session.commands.flatMap(reportedSteps);
+  const last = reports.findLast((report) => report.change);
   if (last) {
     const next = spawnSync(
       path.join(fixture.bin, "mate"),
@@ -445,6 +493,8 @@ export default {
       companionPath: ${JSON.stringify(fixture.companion)},
       nextHandoff: spawnNextHandoff(${JSON.stringify(path.join(fixture.bin, "mate"))}, process.env),
       env: process.env,
+      // The fixture's \`mate\` notes its steps under its own home.
+      stateDir: ${JSON.stringify(path.join(fixture.root, "home", ".mate", "turn-hooks"))},
     });
   },
 };

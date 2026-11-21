@@ -552,6 +552,110 @@ ${TAIL}`);
   });
 });
 
+describe("mate workflow done notes the turn", () => {
+  const SESSION = "acme/session";
+  const home = () => path.join(companion, "home");
+  const stateDir = () => path.join(home(), ".mate", "turn-hooks");
+  const stateFile = () => path.join(stateDir(), "acme_session.json");
+  const inSession = (env: Record<string, string> = {}) =>
+    deps({ HOME: home(), CLAUDE_CODE_SESSION_ID: SESSION, ...env });
+  const notes = async () =>
+    (await fs.readFile(stateFile(), "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as unknown);
+
+  test("a recorded step, appended to the session's state file in a private folder", async () => {
+    await change("acme-fix", "xx");
+
+    await runWorkflowCommand("done", ["mate-apply-change", "acme-fix"], inSession());
+    await runWorkflowCommand("done", ["--json", "mate-apply-change", "acme-fix"], inSession());
+
+    expect(await notes()).toEqual([
+      { recorded: [{ skill: "mate-apply-change", change: "acme-fix" }] },
+      { recorded: [{ skill: "mate-apply-change", change: "acme-fix" }] },
+    ]);
+    expect((await fs.stat(stateDir())).mode & 0o777).toBe(0o700);
+    expect((await fs.stat(stateFile())).mode & 0o777).toBe(0o600);
+  });
+
+  test("in OpenCode, by its session id", async () => {
+    await change("acme-fix", "xx");
+
+    await runWorkflowCommand(
+      "done",
+      ["mate-apply-change", "acme-fix"],
+      deps({ HOME: home(), OPENCODE_SESSION_ID: "ses_acme" }),
+    );
+
+    const file = path.join(stateDir(), "ses_acme.json");
+    expect(await fs.readFile(file, "utf8")).toBe(
+      `${JSON.stringify({ recorded: [{ skill: "mate-apply-change", change: "acme-fix" }] })}\n`,
+    );
+  });
+
+  test("a step that records nothing, and a run without a change", async () => {
+    await change("acme-fix", "xx");
+
+    await runWorkflowCommand("done", ["mate-submit-change", "acme-fix"], inSession());
+    await runWorkflowCommand("done", ["mate-explore-change"], inSession());
+
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(await notes()).toEqual([
+      { recorded: [{ skill: "mate-submit-change", change: "acme-fix" }] },
+      { recorded: [{ skill: "mate-explore-change", change: "" }] },
+    ]);
+  });
+
+  test("a refused skill, no session id, or hooks off: no state file", async () => {
+    await change("acme-fix", "xx");
+
+    await runWorkflowCommand("done", ["acme-typo", "acme-fix"], inSession());
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+    await runWorkflowCommand("done", ["mate-apply-change", "acme-fix"], deps({ HOME: home() }));
+    await runWorkflowCommand(
+      "done",
+      ["mate-apply-change", "acme-fix"],
+      inSession({ MATE_TURN_HOOKS: "off" }),
+    );
+
+    expect(await fs.stat(stateDir()).catch(() => null)).toBeNull();
+    // The step itself is still recorded.
+    expect(
+      await fs.readFile(path.join(companion, "openspec/changes/acme-fix/delivery.yaml"), "utf8"),
+    ).toContain("mate-apply-change");
+  });
+
+  test("a planted state-file link: the step is recorded, nothing written through it", async () => {
+    await change("acme-fix", "xx");
+    await fs.mkdir(stateDir(), { recursive: true, mode: 0o700 });
+    const target = path.join(companion, "acme-target");
+    await fs.writeFile(target, "");
+    await fs.symlink(target, stateFile());
+
+    await runWorkflowCommand("done", ["mate-apply-change", "acme-fix"], inSession());
+
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(await fs.readFile(target, "utf8")).toBe("");
+    expect(
+      await fs.readFile(path.join(companion, "openspec/changes/acme-fix/delivery.yaml"), "utf8"),
+    ).toContain("mate-apply-change");
+  });
+
+  test("a state folder open to others: the step is recorded, no note written", async () => {
+    await change("acme-fix", "xx");
+    await fs.mkdir(stateDir(), { recursive: true });
+    await fs.chmod(stateDir(), 0o755);
+
+    await runWorkflowCommand("done", ["mate-apply-change", "acme-fix"], inSession());
+
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(out[0]).toStartWith("next: ");
+    expect(await fs.readdir(stateDir())).toEqual([]);
+  });
+});
+
 describe("mate workflow next", () => {
   async function next(...args: string[]): Promise<ChangeNext | WorkflowFailure> {
     out = [];

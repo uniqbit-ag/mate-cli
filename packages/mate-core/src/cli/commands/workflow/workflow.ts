@@ -1,3 +1,4 @@
+import path from "node:path";
 import readline from "node:readline/promises";
 
 import { isChangeName } from "../../../lib/change-layout";
@@ -32,7 +33,15 @@ import { noStep, reportStep } from "../../../lib/workflow/report";
 import { openWork } from "../../../lib/workflow/work";
 import { errorMessage } from "../../../runtime/error-message";
 import { FRAMEWORK_NAME } from "../../../runtime/framework";
+import { mateHome } from "../../../runtime/runtime-directory";
 import { agentRuntime } from "../../../runtime/skill-prefix";
+import {
+  appendTurnNote,
+  sessionFileName,
+  turnSession,
+  turnStateDir,
+} from "../../../runtime/turn-state.mjs";
+import { turnHooksEnabled } from "../../../runtime/workflow/turn";
 import { type BooleanFlagSet, parseFlags, positionalArgs, stringFlag } from "../../parse-flags";
 import { usage } from "../../usage";
 import { commandOutput, type CommandOutput } from "../artifact/delivery/output";
@@ -261,6 +270,7 @@ async function runDone(argv: string[], run: Run, deps: WorkflowCommandDeps): Pro
   try {
     const reported = await reportStep(openWork(companionPath, workflow), workflow, skill, name);
     if ("problem" in reported) return fail(run, [{ path: "", message: reported.problem }]);
+    await noteForTurn(deps.env ?? process.env, skill, name ?? "");
     const { handoff, ...done } = reported;
     const result: StepDone = {
       ok: true,
@@ -277,6 +287,22 @@ async function runDone(argv: string[], run: Run, deps: WorkflowCommandDeps): Pro
     // A Delivery Record that cannot be read.
     fail(run, [{ path: "", message: errorMessage(error) }]);
   }
+}
+
+/**
+ * Appends the reported step to the turn state of the agent session the command runs in, so the
+ * turn hook counts it however the shell named it. Nothing outside a session or with turn hooks
+ * off; a note that cannot be written never fails the command.
+ */
+async function noteForTurn(
+  env: Record<string, string | undefined>,
+  skill: string,
+  change: string,
+): Promise<void> {
+  const session = turnSession(env);
+  if (!session || !turnHooksEnabled(env)) return;
+  const file = path.join(turnStateDir(mateHome(env.HOME)), sessionFileName(session));
+  await appendTurnNote(file, { recorded: [{ skill, change }] }).catch(() => {});
 }
 
 /** What `mate workflow next --json` prints. */

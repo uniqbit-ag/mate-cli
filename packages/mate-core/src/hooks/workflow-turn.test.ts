@@ -8,6 +8,7 @@ import hooksJson from "../../claude-plugin/hooks/hooks.json";
 import { defaultMateBin, parseNextHandoff } from "../runtime/workflow/next-handoff-process";
 import type { PrintedHandoff } from "../runtime/workflow/turn";
 import { mateHome } from "../runtime/runtime-directory";
+import { appendTurnNote } from "../runtime/turn-state.mjs";
 import { handleTurnEvent, type TurnDeps } from "./workflow-turn";
 
 const DECLARED = `version: 1
@@ -167,6 +168,48 @@ describe("a reported turn", () => {
 
     expect(output(await stop("## Next steps\n1. /acme-announce acme-fix"))).toBeNull();
     expect(asked).toEqual([{ change: "acme-fix", after: "mate-submit-change" }]);
+  });
+
+  test("a shell loop's reports, as mate workflow done recorded them, win over the text", async () => {
+    const asked: unknown[] = [];
+    deps.nextHandoff = async (change, _folder, after) => {
+      asked.push({ change, after });
+      return change === "acme-fix" ? HANDOFF : null;
+    };
+    // A plain prompt: the state file only exists once the CLI notes a step.
+    await prompt("Publish them.");
+    await bash("mate workflow done mate-apply-change acme-fix");
+    await bash(
+      'for c in acme-fix acme-gone; do mate workflow done mate-publish-artifact "$c"; done',
+    );
+    const file = path.join(deps.stateDir!, "s1.json");
+    for (const change of ["acme-fix", "acme-gone"]) {
+      await appendTurnNote(file, { recorded: [{ skill: "mate-publish-artifact", change }] });
+    }
+
+    expect(output(await stop("## Next steps\n1. /mate-submit-change acme-fix"))).toBeNull();
+    expect(asked).toEqual([
+      { change: "acme-fix", after: "mate-publish-artifact" },
+      { change: "acme-gone", after: "mate-publish-artifact" },
+    ]);
+    // Cleared at Stop, as the turn's own notes are.
+    expect(await fs.readdir(deps.stateDir!)).toEqual([]);
+  });
+
+  test("a prompt clears what mate workflow done recorded in an earlier turn", async () => {
+    const asked: string[] = [];
+    deps.nextHandoff = (change) => {
+      asked.push(change);
+      return HANDOFF;
+    };
+    const file = path.join(deps.stateDir!, "s1.json");
+    await appendTurnNote(file, { recorded: [{ skill: "mate-apply-change", change: "acme-fix" }] });
+    await prompt("What does apply do?");
+    expect(output(await stop("Prose."))).toBeNull();
+    await appendTurnNote(file, { recorded: [{ skill: "mate-apply-change", change: "acme-fix" }] });
+    await prompt("/mate-apply-change acme-fix");
+    expect(output(await stop("It implements tasks."))).toBeNull();
+    expect(asked).toEqual([]);
   });
 
   test("a state file that is not a turn's reads as no turn", async () => {

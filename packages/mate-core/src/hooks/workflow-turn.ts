@@ -5,7 +5,6 @@
  * in a private state file between them.
  */
 import { randomUUID } from "node:crypto";
-import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -17,6 +16,7 @@ import {
 import {
   finishTurn,
   hasNotes,
+  noteRecorded,
   noteShell,
   noteSkill,
   startTurn,
@@ -30,7 +30,12 @@ import { record, text } from "../runtime/json-fields";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
 import { resolveProjection } from "../runtime/projection";
 import { mateHome } from "../runtime/runtime-directory";
-import { isPrivateDir, sessionFileName, turnStateDir } from "../runtime/turn-state.mjs";
+import {
+  appendTurnNote,
+  privateTurnDir,
+  sessionFileName,
+  turnStateDir,
+} from "../runtime/turn-state.mjs";
 import { hookFolder, hookOutcome, runHook, type HookEnv, type HookOutcome } from "./hook-io";
 
 export interface TurnDeps {
@@ -43,21 +48,12 @@ export interface TurnDeps {
 }
 
 /**
- * The default state folder: under Mate's home, not a shared tmpdir another user could create
- * first; created private, and refused unless it is a directory this user owns that no one else
- * can enter. The Claude plugin's shim checks the same folder through the same module.
+ * The state file: under Mate's home by default, not a shared tmpdir another user could create
+ * first; its folder created private, and refused unless it is a directory this user owns that no
+ * one else can enter. The Claude plugin's shim and `mate workflow done` use the same folder.
  */
-async function privateStateDir(): Promise<string> {
-  const dir = turnStateDir(mateHome());
-  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-  if (!isPrivateDir(await fs.lstat(dir), process.getuid?.())) {
-    throw new Error(`${dir} is not a private directory`);
-  }
-  return dir;
-}
-
 async function stateFile(deps: TurnDeps, session: string): Promise<string> {
-  const dir = deps.stateDir ?? (await privateStateDir());
+  const dir = deps.stateDir ?? (await privateTurnDir(turnStateDir(mateHome())));
   return path.join(dir, sessionFileName(session));
 }
 
@@ -66,11 +62,15 @@ function asStep(value: unknown): Step | undefined {
   return typeof skill === "string" && typeof change === "string" ? { skill, change } : undefined;
 }
 
-/** The turn noted in `file`, one JSON note per line: a later step replaces an earlier one. */
+/**
+ * The turn noted in `file`, one JSON note per line: a later step replaces an earlier one, and
+ * `recorded` notes are those `mate workflow done` appended.
+ */
 async function readState(file: string): Promise<Turn> {
   const content = await fs.readFile(file, "utf8").catch(() => "");
   let step: Step | undefined;
   const reports: Step[] = [];
+  const recorded: unknown[] = [];
   for (const line of content.split("\n")) {
     let note: Record<string, unknown>;
     try {
@@ -79,10 +79,11 @@ async function readState(file: string): Promise<Turn> {
       continue;
     }
     step = asStep(note.step) ?? step;
+    if (Array.isArray(note.recorded)) recorded.push(...note.recorded);
     if (!Array.isArray(note.reports)) continue;
     for (const report of note.reports.map(asStep)) if (report) reports.push(report);
   }
-  return { ...(step ? { step } : {}), reports };
+  return noteRecorded({ ...(step ? { step } : {}), reports }, recorded);
 }
 
 /** Written beside the file and renamed over it, which replaces a planted link, never follows it. */
@@ -91,21 +92,6 @@ async function writeState(file: string, state: Turn): Promise<void> {
   const temporary = `${file}.${randomUUID()}.tmp`;
   await fs.writeFile(temporary, `${JSON.stringify(state)}\n`, { flag: "wx", mode: 0o600 });
   await fs.rename(temporary, file);
-}
-
-/**
- * Appends one note in a single write, so parallel tool calls of a turn each keep theirs; never
- * follows a planted link.
- */
-async function appendNote(file: string, note: Partial<Turn>): Promise<void> {
-  await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-  const { O_APPEND, O_CREAT, O_NOFOLLOW, O_WRONLY } = fsConstants;
-  const handle = await fs.open(file, O_WRONLY | O_APPEND | O_CREAT | (O_NOFOLLOW ?? 0), 0o600);
-  try {
-    await handle.write(`${JSON.stringify(note)}\n`);
-  } finally {
-    await handle.close();
-  }
 }
 
 /** The text of the turn's last response: assistant text after the last user entry. */
@@ -178,10 +164,10 @@ export async function handleTurnEvent(
         const skill = text(tool.skill).split(":").at(-1) ?? "";
         const change = text(tool.args).trim().split(/\s+/)[0] ?? "";
         const { step } = noteSkill(empty, skill, change);
-        if (step) await appendNote(file, { step });
+        if (step) await appendTurnNote(file, { step });
       } else if (input.tool_name === "Bash") {
         const { reports } = noteShell(empty, text(tool.command));
-        if (reports.length > 0) await appendNote(file, { reports });
+        if (reports.length > 0) await appendTurnNote(file, { reports });
       }
       return hookOutcome(null);
     }
