@@ -61,10 +61,12 @@ function renderHuman(result: SubmitResult): string[] {
  * warnings to stderr, and runs the artifact type's check (`openspec validate <change>
  * --strict`). The other active changes of its Delivery Group (`<repository>/<delivery-branch>`,
  * or `change/<change>` without a branch) in this checkout join when all their tasks are
- * checked. The group is then pushed whole, in one secret-scanned commit that sets
- * `state: submitted` in each `delivery.yaml` and carries a `Mate-Transaction` trailer, to the
- * pending branch, the inbox `mate/inbox`. While a member has open tasks or fails its check the
- * group answers `waiting`, naming it, and nothing is pushed or changed. The commit is built in a
+ * checked, and its `submitted` members edited since this checkout submitted or took them go
+ * through the same steps and get a result entry. The group is then pushed whole, in one
+ * secret-scanned commit that sets `state: submitted` in each `delivery.yaml` and carries a
+ * `Mate-Transaction` trailer, to the pending branch, the inbox `mate/inbox`. While a member has
+ * open tasks or fails its check the group answers `waiting`, naming it, and nothing is pushed or
+ * changed. The commit is built in a
  * temporary worktree, pushed without force and rebuilt up to three times; the checkout is not
  * touched.
  * Nothing is archived and no canonical spec is written; publication does that after the merge.

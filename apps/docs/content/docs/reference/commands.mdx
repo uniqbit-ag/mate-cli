@@ -1078,7 +1078,10 @@ Submitting counts every other step before `mate-submit-change` not reported
 with `mate workflow done`, and names them in a warning of kind `step-counted`.
 Like every warning, neither blocks. A failed check or push fails the submit and changes no state;
 run it again, and an unchanged resubmit adds no commit. A change already
-submitted is pushed again only when you edited it since; one you dropped comes
+submitted is pushed again only when you edited it since. Submit then treats it
+like the other changes of the group, even when you did not name it: it refreshes
+its delivery, runs its check, and lists it in the result. While it fails, the
+group waits and nothing is pushed. One you dropped comes
 back when you name it. Submit never replaces a folder a teammate resolved or
 revised on the pending branch since your submit: it fails and names
 `mate artifact take`. `--drop <change>`
