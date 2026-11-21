@@ -13,7 +13,8 @@ import {
   type AgentRuntime,
   type Invocation,
 } from "../skill-prefix";
-import type { Workflow } from "./workflow";
+import { readWorkflow } from "./declaration";
+import type { Workflow, WorkflowVerdict } from "./workflow";
 
 /** A step and the change it ran for; a report without a change has `change: ""`. */
 export type Step = Invocation;
@@ -47,13 +48,20 @@ export interface HandoffQuery {
 }
 
 export interface FinishOptions {
-  workflow: Workflow;
+  /** The Session Companion whose workflow the turn is judged by. */
+  companionPath: string;
   /** The turn was already sent back once, so it only gets a notice. */
   again: boolean;
   runtime: AgentRuntime;
   /** The turn's last response; read only when a hand-off holds it to a section. */
   response: () => Promise<string>;
   fetchHandoff: (query: HandoffQuery) => Promise<PrintedHandoff | null>;
+  /** Whether the runtime has the turn judged at all; asked once the workflow reads valid. */
+  judges?: () => Promise<boolean>;
+}
+
+export interface FinishDeps {
+  readWorkflow?: (companionPath: string) => WorkflowVerdict;
 }
 
 const SKILL = "[a-z0-9][a-z0-9-]*";
@@ -103,13 +111,29 @@ export function reportedSteps(command: string): Step[] {
   }));
 }
 
-/** The decision at the end of a turn: fetches the hand-offs it reads, then judges the response. */
-export async function finishTurn(turn: Turn, options: FinishOptions): Promise<TurnVerdict> {
+/** Whether the turn started a step or reported one; a turn without either always passes. */
+export function hasNotes(turn: Turn): boolean {
+  return turn.step !== undefined || turn.reports.length > 0;
+}
+
+/**
+ * The decision at the end of a turn: reads the companion's workflow, fetches the hand-offs the
+ * turn reads, then judges the response. Passes without reading anything when the turn noted
+ * nothing, and without fetching when the workflow declaration is invalid or `judges` declines.
+ */
+export async function finishTurn(
+  turn: Turn,
+  options: FinishOptions,
+  deps: FinishDeps = {},
+): Promise<TurnVerdict> {
+  if (!hasNotes(turn)) return PASS;
+  const read = (deps.readWorkflow ?? readWorkflow)(options.companionPath);
+  if (!read.ok || (options.judges && !(await options.judges()))) return PASS;
   const handoffs = await fetchHandoffs(
-    handoffQueries(turn, options.workflow, options.again),
+    handoffQueries(turn, read.workflow, options.again),
     options.fetchHandoff,
   );
-  return turnVerdict(turn, (change) => handoffs.get(change) ?? null, options);
+  return turnVerdict(turn, read.workflow, (change) => handoffs.get(change) ?? null, options);
 }
 
 /** Whether `skill` is a step of the Delivery Path that is not a Mate stage skill. */
@@ -175,7 +199,12 @@ function extraActions(
   written: string,
 ): Step[] {
   const key = (action: Step) => `${action.skill} ${action.change}`;
-  const printed = new Set(sections.flatMap((section) => section.printed.actions.map(key)));
+  // An action printed without a change, such as publish's, also covers it written with one.
+  const printed = new Set(
+    sections.flatMap(({ change, printed: handoff }) =>
+      handoff.actions.map((action) => key(action.change ? action : { ...action, change })),
+    ),
+  );
   const changes = new Set(sections.map(({ change }) => change));
   return parseInvocations(written).filter(
     (action) =>
@@ -186,10 +215,24 @@ function extraActions(
 /** The verdict over the fetched hand-offs; `next` holds those `handoffQueries` names. */
 async function turnVerdict(
   turn: Turn,
+  workflow: Workflow,
   next: (change: string) => PrintedHandoff | null,
-  { workflow, again, runtime, response }: FinishOptions,
+  { again, runtime, response }: FinishOptions,
 ): Promise<TurnVerdict> {
   if (turn.reports.length > 0) {
+    // The turn's step reported without its change: nothing was recorded for it.
+    const step = turn.step;
+    const unnamed =
+      step?.change &&
+      turn.reports.some((report) => report.skill === step.skill && !report.change) &&
+      !turn.reports.some((report) => report.skill === step.skill && report.change === step.change);
+    if (unnamed && step) {
+      if (again) return PASS;
+      return {
+        kind: "sendBack",
+        reason: `\`mate workflow done ${step.skill}\` named no change, so nothing was recorded for ${step.change}. Run \`mate workflow done ${step.skill} "${step.change}"\` and end your response with a final \`## Next steps\` section listing the actions it prints, running none of them.`,
+      };
+    }
     // A report without a change has no hand-off to hold the section to.
     const changes = [...new Set(turn.reports.map((report) => report.change))].filter(Boolean);
     const sections = changes.flatMap((change) => {

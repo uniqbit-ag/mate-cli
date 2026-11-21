@@ -14,6 +14,7 @@ import os from "node:os";
 import path from "node:path";
 
 import type * as GuidanceModule from "../../packages/mate-core/src/playbooks/companion-guidance";
+import type * as TurnModule from "../../packages/mate-core/src/runtime/workflow/turn";
 import { CHANGE, customSkill, DEFAULT_TASKS, SCENARIOS, type Scenario } from "./scenarios";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
@@ -23,6 +24,10 @@ const ROOT = path.resolve(import.meta.dirname, "../..");
  * test a packed install instead of the source tree.
  */
 const CORE = process.env.MATE_AGENT_E2E_CORE ?? path.join(ROOT, "packages/mate-core");
+/** How the turn hook reads a turn's reports from its shell commands. */
+const { reportedSteps } = (await import(
+  path.join(CORE, "src/runtime/workflow/turn.ts")
+)) as typeof TurnModule;
 const { buildCompanionGuidance } = (await import(
   path.join(CORE, "src/playbooks/companion-guidance.ts")
 )) as typeof GuidanceModule;
@@ -155,21 +160,30 @@ async function createFixture(scenario: Scenario): Promise<Fixture> {
   }
 
   await write(path.join(repo, "README.md"), "# Acme App\n");
-  for (const [file, content] of Object.entries(scenario.files ?? {})) {
-    await write(path.join(repo, file), content);
+  // A delivery scenario commits them on the delivery branch instead.
+  if (!scenario.delivery) {
+    for (const [file, content] of Object.entries(scenario.files ?? {})) {
+      // oxlint-disable-next-line no-await-in-loop -- a few small files
+      await write(path.join(repo, file), content);
+    }
   }
-  // The stage skill as a launch installs it, and the companion's own skills beside it.
-  await fs.cp(
-    path.join(SKILLS, "mate-apply-change"),
-    path.join(repo, ".claude/skills/mate-apply-change"),
-    { recursive: true },
-  );
-  if (RUNTIME === "opencode") {
-    await fs.cp(
-      path.join(TEMPLATES, "mate-skills/agents/mate-apply-change"),
-      path.join(repo, ".agents/skills/mate-apply-change"),
-      { recursive: true },
-    );
+  // The stage skills as a launch installs them, and the companion's own skills beside them.
+  const stageSkills = scenario.delivery
+    ? ["mate-apply-change", "mate-submit-change"]
+    : ["mate-apply-change"];
+  for (const skill of stageSkills) {
+    // oxlint-disable-next-line no-await-in-loop -- a few skill folders
+    await fs.cp(path.join(SKILLS, skill), path.join(repo, ".claude/skills", skill), {
+      recursive: true,
+    });
+    if (RUNTIME === "opencode") {
+      // oxlint-disable-next-line no-await-in-loop
+      await fs.cp(
+        path.join(TEMPLATES, "mate-skills/agents", skill),
+        path.join(repo, ".agents/skills", skill),
+        { recursive: true },
+      );
+    }
   }
   const skillsDir = RUNTIME === "opencode" ? ".agents/skills" : ".claude/skills";
   for (const skill of scenario.skills ?? []) {
@@ -192,12 +206,15 @@ async function createFixture(scenario: Scenario): Promise<Fixture> {
   await write(path.join(repo, "openspec/config.yml"), "");
   await write(path.join(repo, ".gitignore"), ".claude/\n.agents/\nAGENTS.md\nopenspec/\n");
   git(repo, "init", "-q", "-b", "main");
+  identify(repo);
   git(repo, "add", "-A");
-  git(repo, "-c", "user.name=Acme", "-c", "user.email=acme@example.com", "commit", "-qm", "init");
-  git(repo, "remote", "add", "origin", `https://github.com/${REPOSITORY}.git`);
-  git(repo, "update-ref", "refs/remotes/origin/main", "HEAD");
-  git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
-  git(repo, "switch", "-qc", BRANCH);
+  git(repo, "commit", "-qm", "init");
+  if (!scenario.delivery) {
+    git(repo, "remote", "add", "origin", `https://github.com/${REPOSITORY}.git`);
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD");
+    git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+    git(repo, "switch", "-qc", BRANCH);
+  }
 
   // `mate` refreshes its runtime directory under HOME on every run; a home of its own keeps this
   // checkout's build from re-pointing the developer's installed runtime.
@@ -213,7 +230,118 @@ async function createFixture(scenario: Scenario): Promise<Fixture> {
     `#!/bin/sh\nmkdir -p "${path.join(root, "steps")}" && printf '%s\\n' "$2" >> "${path.join(root, "steps")}/$1"\n`,
   );
   await fs.chmod(path.join(bin, "acme-step"), 0o755);
-  return { root, companion, repo, bin };
+  const fixture = { root, companion, repo, bin };
+  if (scenario.delivery) await addRemotes(scenario, fixture);
+  return fixture;
+}
+
+/** Commits as Acme, so no real name reaches a fixture's history. */
+function identify(cwd: string): void {
+  git(cwd, "config", "user.name", "Acme");
+  git(cwd, "config", "user.email", "acme@example.com");
+}
+
+/** The companion's bare remote, where submit pushes its inbox. */
+const companionRemote = (fixture: Fixture): string => path.join(fixture.root, "companion.git");
+
+/**
+ * Bare remotes for a delivery scenario: the companion's, and the app's under `remotes/`, reached
+ * as `git@github.com:acme/acme-app.git` through an SSH stub so its identity still parses. The
+ * delivery branch holds the scenario's files, pushed.
+ */
+async function addRemotes(scenario: Scenario, fixture: Fixture): Promise<void> {
+  const { root, companion, repo } = fixture;
+  const remotes = path.join(root, "remotes");
+  git(root, "init", "-q", "--bare", "-b", "main", path.join(remotes, `${REPOSITORY}.git`));
+  const stub = path.join(root, "ssh-stub");
+  await write(stub, `#!/bin/sh\nfor last; do :; done\ncd "${remotes}" && exec sh -c "$last"\n`);
+  await fs.chmod(stub, 0o755);
+  git(repo, "config", "core.sshCommand", stub);
+  git(repo, "remote", "add", "origin", `git@github.com:${REPOSITORY}.git`);
+  git(repo, "push", "-q", "-u", "origin", "main");
+  git(repo, "remote", "set-head", "origin", "main");
+  git(repo, "switch", "-qc", BRANCH);
+  for (const [file, content] of Object.entries(scenario.files ?? {})) {
+    // oxlint-disable-next-line no-await-in-loop -- a few small files
+    await write(path.join(repo, file), content);
+  }
+  git(repo, "add", "-A");
+  git(repo, "commit", "-qm", "greet");
+  git(repo, "push", "-q", "-u", "origin", BRANCH);
+
+  // Everything but the change, which reaches the remote only by being submitted.
+  git(root, "init", "-q", "--bare", "-b", "main", companionRemote(fixture));
+  git(companion, "init", "-q", "-b", "main");
+  identify(companion);
+  const changePath = path.relative(companion, changeDir(scenario, companion));
+  git(companion, "add", "-A", "--", ".", `:(exclude)${changePath}`);
+  git(companion, "commit", "-qm", "init");
+  git(companion, "remote", "add", "origin", companionRemote(fixture));
+  git(companion, "push", "-q", "-u", "origin", "main");
+  git(companion, "remote", "set-head", "origin", "main");
+}
+
+/** Whether `text` names `item` in the CLI's `/` prefix or the runtime's. */
+const names = (text: string, item: string): boolean =>
+  text.includes(item) || text.includes(inSyntax(item));
+
+/** Where `handoff` departs from the scenario's expected hand-off; `label` names whose it is. */
+function handoffProblems(label: string, handoff: string, scenario: Scenario): string[] {
+  return [
+    ...scenario.expect.handoff
+      .filter((item) => !names(handoff, item))
+      .map((item) => `${label} lacks ${item}`),
+    ...(scenario.expect.notHandoff ?? [])
+      .filter((item) => names(handoff, item))
+      .map((item) => `${label} names ${item}`),
+  ];
+}
+
+/**
+ * The turn hook's hand-offs against the expected one: the one it holds the response to at
+ * `Stop`, asked of Mate as the hook asks, after the turn's last report; and each it sent back or
+ * showed. A send-back calling an expected action extra is a false one.
+ */
+function hookProblems(scenario: Scenario, fixture: Fixture, session: Session): string[] {
+  const problems: string[] = [];
+  const last = session.commands.flatMap(reportedSteps).findLast((report) => report.change);
+  if (last) {
+    const next = spawnSync(
+      path.join(fixture.bin, "mate"),
+      ["workflow", "next", last.change, "--json", "--after", last.skill],
+      { cwd: fixture.repo, encoding: "utf8", env: mateEnv(fixture) },
+    );
+    const json = next.stdout.split("\n").findLast((line) => line.startsWith("{")) ?? "{}";
+    const printed = JSON.parse(json) as { ok?: boolean; handoff?: string };
+    const handoff = printed.ok ? (printed.handoff ?? "") : "";
+    problems.push(...handoffProblems("the hook's hand-off", handoff, scenario));
+  }
+  for (const reason of session.sendBacks) {
+    // A send-back asking for the report holds no hand-off, only its section's name.
+    const at = reason.indexOf("\n\n## Next steps\n");
+    if (at >= 0) problems.push(...handoffProblems("a send-back", reason.slice(at), scenario));
+    const extra = /lists (.+?), which Mate did not print/.exec(reason)?.[1] ?? "";
+    for (const item of scenario.expect.handoff.filter((action) => names(extra, action))) {
+      problems.push(`a send-back calls ${item} extra`);
+    }
+  }
+  for (const notice of session.notices) {
+    problems.push(...handoffProblems("a hook notice", notice, scenario));
+  }
+  return problems;
+}
+
+/** Whether the companion's remote lacks a change expected submitted. */
+function remoteProblems(scenario: Scenario, fixture: Fixture): string[] {
+  const bare = companionRemote(fixture);
+  const changePath = path.relative(fixture.companion, changeDir(scenario, fixture.companion));
+  const inbox = spawnSync(
+    "git",
+    ["--git-dir", bare, "show", `mate/inbox:${changePath}/delivery.yaml`],
+    { encoding: "utf8" },
+  );
+  const inInbox = inbox.status === 0 && /^state: submitted$/m.test(inbox.stdout);
+  return scenario.expect.submitted && !inInbox ? ["the inbox holds no submitted change"] : [];
 }
 
 interface Session {
@@ -224,6 +352,9 @@ interface Session {
   turns: number;
   cost: number;
   error?: string;
+  /** What the turn hook sent back, each its reason, and the hand-offs it only showed. */
+  sendBacks: string[];
+  notices: string[];
 }
 
 /** `text` with each `/skill` invocation in the runtime's syntax. */
@@ -267,7 +398,14 @@ async function runOpenCodeSession(
   clearTimeout(timer);
   await write(path.join(fixture.root, "session.jsonl"), stdout);
 
-  const session: Session = { result: "", commands: [], turns: 0, cost: 0 };
+  const session: Session = {
+    result: "",
+    commands: [],
+    turns: 0,
+    cost: 0,
+    sendBacks: [],
+    notices: [],
+  };
   // The response is the text after the last tool call.
   let texts: string[] = [];
   for (const line of stdout.split("\n")) {
@@ -331,6 +469,9 @@ function opencode(args: string[], env: NodeJS.ProcessEnv, cwd: string) {
 
 interface ExportedMessage {
   type?: string;
+  /** A synthetic message's text and the plugin's label for it. */
+  text?: string;
+  description?: string;
   content?: Array<{ type?: string; text?: unknown; name?: string; state?: { input?: unknown } }>;
 }
 
@@ -350,7 +491,14 @@ async function runOpenCodeServed(scenario: Scenario, fixture: Fixture): Promise<
     env,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  const session: Session = { result: "", commands: [], turns: 0, cost: 0 };
+  const session: Session = {
+    result: "",
+    commands: [],
+    turns: 0,
+    cost: 0,
+    sendBacks: [],
+    notices: [],
+  };
   try {
     const url = await new Promise<string>((resolve, reject) => {
       let out = "";
@@ -401,6 +549,9 @@ async function runOpenCodeServed(scenario: Scenario, fixture: Fixture): Promise<
     const messages = exported.messages ?? [];
     const start = messages.findLastIndex((m) => m.type === "user" || m.type === "synthetic");
     for (const [index, message] of messages.entries()) {
+      if (message.type === "synthetic" && message.description === "Mate hand-off check") {
+        session.sendBacks.push(String(message.text ?? ""));
+      }
       if (message.type !== "assistant") continue;
       session.turns += 1;
       for (const part of message.content ?? []) {
@@ -461,6 +612,8 @@ function buildGuidance(fixture: Fixture): string {
   );
 }
 
+const STOP_FEEDBACK = "Stop hook feedback:\n";
+
 async function runClaudeSession(fixture: Fixture, args: string[]): Promise<Session> {
   const child = spawn("claude", args, {
     cwd: fixture.repo,
@@ -476,7 +629,14 @@ async function runClaudeSession(fixture: Fixture, args: string[]): Promise<Sessi
   clearTimeout(timer);
   await write(path.join(fixture.root, "session.jsonl"), stdout);
 
-  const session: Session = { result: "", commands: [], turns: 0, cost: 0 };
+  const session: Session = {
+    result: "",
+    commands: [],
+    turns: 0,
+    cost: 0,
+    sendBacks: [],
+    notices: [],
+  };
   for (const line of stdout.split("\n")) {
     if (!line.trim()) continue;
     let event: Record<string, unknown>;
@@ -494,6 +654,15 @@ async function runClaudeSession(fixture: Fixture, args: string[]): Promise<Sessi
         }
       }
     }
+    // A blocking `Stop` hook resumes the session with its reason; a notice is shown beside it.
+    const content = (event.message as { content?: unknown[] } | undefined)?.content ?? [];
+    for (const block of content as Array<Record<string, unknown>>) {
+      const said = typeof block.text === "string" ? block.text : "";
+      if (event.type === "user" && said.startsWith(STOP_FEEDBACK)) {
+        session.sendBacks.push(said.slice(STOP_FEEDBACK.length));
+      }
+    }
+    if (event.type === "system" && line.includes("Mate hand-off:")) session.notices.push(line);
     if (event.type === "result") {
       session.result = typeof event.result === "string" ? event.result : "";
       session.turns = Number(event.num_turns ?? 0);
@@ -586,6 +755,9 @@ async function check(scenario: Scenario, fixture: Fixture, session: Session): Pr
     problems.push(`own steps ran: [${order.join(", ")}], expected [${expected.join(", ")}]`);
   }
 
+  problems.push(...remoteProblems(scenario, fixture));
+  problems.push(...hookProblems(scenario, fixture, session));
+
   if (!session.commands.some((command) => /\bmate workflow done\b/.test(command))) {
     problems.push("the session never ran mate workflow done");
   }
@@ -629,13 +801,39 @@ async function runScenario(scenario: Scenario): Promise<Outcome> {
     const problems = await check(scenario, fixture, session);
     const seconds = Math.round((Date.now() - started) / 1000);
     const mark = problems.length === 0 ? "pass" : attempt < ATTEMPTS ? "miss" : "FAIL";
-    const note = attempt > 1 ? `, attempt ${attempt}` : "";
+    const hooked = session.sendBacks.length + session.notices.length;
+    const note =
+      (hooked > 0
+        ? `, hook: ${session.sendBacks.length} sent back, ${session.notices.length} shown`
+        : "") + (attempt > 1 ? `, attempt ${attempt}` : "");
     console.log(`${mark}  ${scenario.id}  (${seconds}s, ${session.turns} turns${note})`);
     if (mark === "miss") console.log(`      ${problems.join("; ")}`);
     outcome = { scenario, fixture, session, problems, seconds };
     if (problems.length === 0) break;
   }
   return outcome!;
+}
+
+type Kind = "default" | "mixed" | "custom";
+
+/** No workflow; one mixing Mate's stage skills with the companion's; or the companion's alone. */
+function kindOf(scenario: Scenario): Kind {
+  if (!scenario.workflow) return "default";
+  return /skill: mate-(?!submit-change|publish-artifact)/.test(scenario.workflow)
+    ? "mixed"
+    : "custom";
+}
+
+/** `kind=n,…` as n runs per kind, spread evenly over its scenarios, delivery scenarios first. */
+function mixed(spec: string): Scenario[] {
+  return spec.split(",").flatMap((part) => {
+    const [kind, count] = part.split("=");
+    const pool = SCENARIOS.filter((scenario) => kindOf(scenario) === kind).toSorted(
+      (a, b) => Number(Boolean(b.delivery)) - Number(Boolean(a.delivery)),
+    );
+    if (pool.length === 0) throw new Error(`no ${kind} scenario`);
+    return Array.from({ length: Number(count) }, (_, index) => pool[index % pool.length]!);
+  });
 }
 
 async function main(): Promise<void> {
@@ -645,13 +843,17 @@ async function main(): Promise<void> {
   const ids = only?.split(",");
   // `--repeat <n>` runs each selected scenario n times, to measure how often a session misses.
   const repeat = argv.includes("--repeat") ? Number(argv[argv.indexOf("--repeat") + 1]) : 1;
-  const selected = SCENARIOS.filter((scenario) =>
-    ids
-      ? ids.includes(scenario.id)
-      : argv.includes("--default")
-        ? scenario.workflow === undefined
-        : argv.includes("--all") || scenario.core,
-  ).flatMap((scenario) => Array.from({ length: repeat }, () => scenario));
+  // `--mix default=50,mixed=25,custom=25` spreads that many runs over each kind's scenarios.
+  const mix = argv.includes("--mix") ? argv[argv.indexOf("--mix") + 1] : undefined;
+  const selected = mix
+    ? mixed(mix)
+    : SCENARIOS.filter((scenario) =>
+        ids
+          ? ids.includes(scenario.id)
+          : argv.includes("--default")
+            ? scenario.workflow === undefined
+            : argv.includes("--all") || scenario.core,
+      ).flatMap((scenario) => Array.from({ length: repeat }, () => scenario));
   if (selected.length === 0) throw new Error(`no scenario matches ${only ?? "the selection"}`);
   console.log(`Running ${selected.length} agent scenarios with ${RUNTIME} model ${MODEL}`);
 
@@ -676,6 +878,19 @@ async function main(): Promise<void> {
     if (outcome.problems.length === 0 && !process.env.MATE_AGENT_E2E_KEEP) {
       // oxlint-disable-next-line no-await-in-loop -- a few folders
       await fs.rm(outcome.fixture.root, { recursive: true, force: true });
+    }
+  }
+  if (outcomes.length > SCENARIOS.length) {
+    console.log("");
+    for (const scenario of SCENARIOS) {
+      const runs = outcomes.filter((outcome) => outcome.scenario.id === scenario.id);
+      if (runs.length === 0) continue;
+      const passed = runs.filter((outcome) => outcome.problems.length === 0).length;
+      const sent = runs.reduce((sum, outcome) => sum + outcome.session.sendBacks.length, 0);
+      const shown = runs.reduce((sum, outcome) => sum + outcome.session.notices.length, 0);
+      console.log(
+        `${kindOf(scenario).padEnd(7)}  ${scenario.id}: ${passed}/${runs.length} passed, hook sent back ${sent}, showed ${shown}`,
+      );
     }
   }
   const cost = outcomes.reduce((sum, outcome) => sum + outcome.session.cost, 0);

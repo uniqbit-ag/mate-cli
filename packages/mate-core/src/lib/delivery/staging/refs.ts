@@ -9,7 +9,11 @@ import {
   type CompanionGit,
   type NetworkGitResult,
 } from "../../../runtime/companion-git";
-import { ARTIFACT_TRAILER, TRANSACTION_TRAILER } from "../../artifact-trailer";
+import { TRANSACTION_TRAILER } from "../../artifact-trailer";
+import {
+  trailerRecordsAt as readTrailerRecords,
+  type TrailerRecord,
+} from "../../../runtime/artifact-trailers";
 import { INBOX_BRANCH } from "../../../runtime/pending-records";
 import type { ArtifactType } from "./artifact-type";
 import { WITHOUT_HOOKS } from "./worktree";
@@ -164,41 +168,31 @@ export async function mapLimited<T, R>(
   return results;
 }
 
-/** A record published at `ref`, with its publication commit's time in seconds. */
-export interface TrailerRecord {
-  id: string;
-  at: number;
-}
-
-/** Commits read for the trailers of a type without an archive. */
-const TRAILER_RECORDS_READ = 2000;
+export type { TrailerRecord };
 
 /**
  * The records of `type` published on `ref`, newest first, from the `Mate-Artifact` trailers of
- * its history: how a type that keeps no archive knows a change is published. One bounded read.
+ * its history: how a type that keeps no archive knows a change is published.
  */
-export async function trailerRecordsAt(
+export function trailerRecordsAt(
   git: CompanionGit,
   ref: string,
   type: Pick<ArtifactType, "name" | "isRecordId">,
 ): Promise<TrailerRecord[]> {
-  const prefix = `${type.name}/`;
-  const log = await git.run([
-    "log",
-    `-n${TRAILER_RECORDS_READ}`,
-    "--fixed-strings",
-    `--grep=${ARTIFACT_TRAILER}: ${prefix}`,
-    `--format=%ct%x09%(trailers:key=${ARTIFACT_TRAILER},valueonly,separator=%x09)`,
-    "--end-of-options",
-    ref,
-  ]);
-  if (log.status !== 0) return [];
-  return outputLines(log.stdout).flatMap((line) => {
-    const [at, ...values] = line.split("\t");
-    return values
-      .filter((value) => value.startsWith(prefix) && type.isRecordId(value.slice(prefix.length)))
-      .map((value) => ({ id: value.slice(prefix.length), at: Number(at) }));
-  });
+  return readTrailerRecords(git, ref, type.name, type.isRecordId);
+}
+
+/**
+ * Records present at `ref`, as {@link anchorsAt}; for a type without an archive with the inbox
+ * commit each was published from.
+ */
+export async function recordsAt(
+  git: CompanionGit,
+  ref: string,
+  type: ArtifactType,
+): Promise<TrailerRecord[]> {
+  if (type.archiveRoot === undefined) return trailerRecordsAt(git, ref, type);
+  return (await anchorsAt(git, ref, type)).map((id) => ({ id, inbox: null }));
 }
 
 /**

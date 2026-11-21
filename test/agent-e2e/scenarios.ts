@@ -31,6 +31,8 @@ export interface Scenario {
   folder?: { path: string; files: Record<string, string> };
   /** Files the Working Repository starts with. */
   files?: Record<string, string>;
+  /** Bare remotes for the companion and the app, with the files committed and pushed on the delivery branch. */
+  delivery?: true;
   prompt: string;
   expect: {
     /** `stages` of the change's Delivery Record, exactly. */
@@ -45,6 +47,8 @@ export interface Scenario {
     handoff: string[];
     /** Text the section does not hold. */
     notHandoff?: string[];
+    /** The companion remote's inbox holds the change, submitted. */
+    submitted?: true;
   };
 }
 
@@ -67,8 +71,17 @@ const APPLY_ALONE = "  - id: apply\n    steps: [{ skill: mate-apply-change }]\n"
 const SECURITY_REVIEW = "  - id: security-review\n    steps: [{ skill: acme-security-review }]\n";
 
 const SUBMIT = `/mate-submit-change ${CHANGE}`;
+const PUBLISH = "/mate-publish-artifact";
 const APPLY = `/mate-apply-change ${CHANGE}`;
 const VERIFY = `/acme-verify ${CHANGE}`;
+
+/** A Delivery Path whose stages before submit are all the companion's own skills. */
+const FULL_CUSTOM = workflow(
+  "  - id: explore\n    steps: [{ skill: acme-explore }]\n" +
+    "  - id: propose\n    steps: [{ skill: acme-propose }]\n" +
+    "  - id: apply\n    steps: [{ skill: acme-build }, { skill: acme-verify }]\n",
+);
+const FULL_CUSTOM_SKILLS = ["acme-explore", "acme-propose", "acme-build", "acme-verify"];
 
 export const SCENARIOS: Scenario[] = [
   {
@@ -318,19 +331,65 @@ stages:
     },
   },
   ...fullCustom(),
+  submitted("default", undefined, { apply: ["mate-apply-change"] }),
+  submitted(
+    "mixed",
+    workflow(SECURITY_REVIEW + APPLY_ALONE),
+    {
+      "security-review": ["acme-security-review"],
+      apply: ["mate-apply-change"],
+    },
+    ["acme-security-review"],
+  ),
+  submitted(
+    "custom",
+    FULL_CUSTOM,
+    {
+      explore: ["acme-explore"],
+      propose: ["acme-propose"],
+      apply: ["acme-build", "acme-verify"],
+    },
+    FULL_CUSTOM_SKILLS,
+  ),
 ];
+
+/**
+ * Submit of a change whose earlier stages are all recorded, against bare remotes: it pushes the
+ * change to the inbox and hands off to the merge and publish.
+ */
+function submitted(
+  kind: string,
+  declared: string | undefined,
+  recorded: Record<string, string[]>,
+  skills: string[] = [],
+): Scenario {
+  return {
+    id: `${kind}-submit`,
+    title: `${kind} path: submit pushes the change to the inbox and hands off to publish`,
+    ...(declared ? { workflow: declared } : {}),
+    skills,
+    tasks: TASKS.replaceAll("- [ ]", "- [x]"),
+    files: { "greeting.txt": "hello acme\ngoodbye acme\n" },
+    recorded,
+    delivery: true,
+    prompt: SUBMIT,
+    expect: {
+      stages: recorded,
+      at: "publish",
+      submitted: true,
+      handoff: [`workset/${CHANGE}`, PUBLISH],
+      notHandoff: [SUBMIT],
+    },
+  };
+}
 
 /**
  * A Delivery Path whose stages before submit are all the companion's own skills, walked one
  * step per session, and once from a cold start at its last step.
  */
 function fullCustom(): Scenario[] {
-  const declared = workflow(
-    "  - id: explore\n    steps: [{ skill: acme-explore }]\n" +
-      "  - id: propose\n    steps: [{ skill: acme-propose }]\n" +
-      "  - id: apply\n    steps: [{ skill: acme-build }, { skill: acme-verify }]\n",
-  );
-  const skills = ["acme-explore", "acme-propose", "acme-build", "acme-verify"];
+  const declared = FULL_CUSTOM;
+  const skills = FULL_CUSTOM_SKILLS;
   // The apply stage stays open while tasks are; acme-build only leaves a marker, so its tasks
   // start done, as if it had implemented them.
   const built = {

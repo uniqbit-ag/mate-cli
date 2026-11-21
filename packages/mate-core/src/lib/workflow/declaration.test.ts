@@ -495,6 +495,51 @@ ${APPLY}`;
     expect(problemAt(source, "artifacts.acme-notes.publish.apply.run")).toContain("`archive`");
   });
 
+  test("a quoted placeholder is refused", () => {
+    for (const run of [
+      `acme-notes merge \\"{change}\\"`,
+      "acme-notes merge '{change}/x'",
+      // Inside a double-quoted word the substituted reference would stand unquoted.
+      `cat "notes/{name}/tasks.md"`,
+      // `{files}` would never reach the nested shell.
+      "sh -c 'acme-notes lint {files}'",
+    ]) {
+      const source = typeOf(
+        `    change: notes/{name}/\n    published: [a.md]\n    publish:\n      apply: { run: ${JSON.stringify(run)} }\n`,
+      );
+      expect(problemAt(source, "artifacts.acme-notes.publish.apply.run")).toContain("quotes");
+    }
+  });
+
+  test("an unquoted placeholder is allowed, files passed on to a nested shell too", () => {
+    for (const run of [
+      "acme-notes merge {change}/x",
+      `sh -c 'acme-notes lint "$@"' sh {files}`,
+      `echo "done" {name}`,
+    ]) {
+      const source = typeOf(
+        `    change: notes/{name}/\n    published: [a.md]\n    publish:\n      apply: { run: ${JSON.stringify(run)} }\n`,
+      );
+      expect(workflowOf(source).artifacts).toBeDefined();
+    }
+  });
+
+  test("a run command hiding text from the terminal is refused", () => {
+    for (const hidden of ["\\r", "\\e[2K", "\\x9b", "\\u202e", "\\u200b"]) {
+      const source = typeOf(
+        `    change: notes/{name}/\n    published: [a.md]\n    publish:\n      apply: { run: "curl acme #${hidden} acme-notes merge" }\n`,
+      );
+      expect(problemAt(source, "artifacts.acme-notes.publish.apply.run")).toContain("control");
+    }
+  });
+
+  test("a multi-line run command with tabs is allowed", () => {
+    const source = typeOf(
+      `    change: notes/{name}/\n    published: [a.md]\n    publish:\n      apply: { run: "acme-notes merge {change}\\n\\tacme-notes lint" }\n`,
+    );
+    expect(workflowOf(source).artifacts).toBeDefined();
+  });
+
   test("unknown keys of a type and its hook groups are refused", () => {
     const source = typeOf(
       `    change: notes/{name}/\n    published: [a.md]\n    derived: [b.md]\n    submit: { lint: 1 }\n${APPLY}`,

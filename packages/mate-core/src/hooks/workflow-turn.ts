@@ -16,6 +16,7 @@ import {
 } from "../runtime/workflow/next-handoff-process";
 import {
   finishTurn,
+  hasNotes,
   noteShell,
   noteSkill,
   startTurn,
@@ -29,7 +30,7 @@ import { record, text } from "../runtime/json-fields";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
 import { resolveProjection } from "../runtime/projection";
 import { mateHome } from "../runtime/runtime-directory";
-import { readWorkflow } from "../runtime/workflow/declaration";
+import { isPrivateDir, sessionFileName, turnStateDir } from "../runtime/turn-state.mjs";
 import { hookFolder, hookOutcome, runHook, type HookEnv, type HookOutcome } from "./hook-io";
 
 export interface TurnDeps {
@@ -44,21 +45,20 @@ export interface TurnDeps {
 /**
  * The default state folder: under Mate's home, not a shared tmpdir another user could create
  * first; created private, and refused unless it is a directory this user owns that no one else
- * can enter. The Claude plugin's shim names the same folder.
+ * can enter. The Claude plugin's shim checks the same folder through the same module.
  */
 async function privateStateDir(): Promise<string> {
-  const uid = process.getuid?.();
-  const dir = path.join(mateHome(), "turn-hooks");
+  const dir = turnStateDir(mateHome());
   await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-  const stat = await fs.lstat(dir);
-  const foreign = uid !== undefined && (stat.uid !== uid || (stat.mode & 0o077) !== 0);
-  if (!stat.isDirectory() || foreign) throw new Error(`${dir} is not a private directory`);
+  if (!isPrivateDir(await fs.lstat(dir), process.getuid?.())) {
+    throw new Error(`${dir} is not a private directory`);
+  }
   return dir;
 }
 
 async function stateFile(deps: TurnDeps, session: string): Promise<string> {
   const dir = deps.stateDir ?? (await privateStateDir());
-  return path.join(dir, `${session.replace(/[^A-Za-z0-9_-]/g, "_")}.json`);
+  return path.join(dir, sessionFileName(session));
 }
 
 function asStep(value: unknown): Step | undefined {
@@ -187,7 +187,8 @@ export async function handleTurnEvent(
     }
     case "Stop": {
       const state = await readState(file);
-      if (!state.step && state.reports.length === 0) {
+      // Nothing noted: no companion to resolve.
+      if (!hasNotes(state)) {
         await fs.rm(file, { force: true });
         return hookOutcome(null);
       }
@@ -195,18 +196,14 @@ export async function handleTurnEvent(
       const companionPath = await (
         deps.resolveCompanion ?? ((at: string) => defaultResolveCompanion(env, at))
       )(folder);
-      const declared = readWorkflow(companionPath);
-      let verdict: TurnVerdict = { kind: "pass" };
-      if (declared.ok) {
-        const fetch = deps.nextHandoff ?? spawnNextHandoff(defaultMateBin(env), env);
-        verdict = await finishTurn(state, {
-          workflow: declared.workflow,
-          again: input.stop_hook_active === true,
-          runtime: "claude",
-          response: () => lastResponse(input),
-          fetchHandoff: async (query) => fetch(query.change, folder, query.after),
-        });
-      }
+      const fetch = deps.nextHandoff ?? spawnNextHandoff(defaultMateBin(env), env);
+      const verdict = await finishTurn(state, {
+        companionPath,
+        again: input.stop_hook_active === true,
+        runtime: "claude",
+        response: () => lastResponse(input),
+        fetchHandoff: async (query) => fetch(query.change, folder, query.after),
+      });
       // A turn not sent back is over; the next prompt starts afresh either way.
       if (verdict.kind !== "sendBack") await fs.rm(file, { force: true });
       return stopOutcome(verdict);

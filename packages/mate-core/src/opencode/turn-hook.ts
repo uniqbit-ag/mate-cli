@@ -6,7 +6,7 @@
  */
 import type { Context } from "@opencode/plugin/promise/plugin";
 
-import { openWork } from "../lib/workflow/work";
+import { changeFolderNames, changeFolders } from "../runtime/workflow/change-folders";
 import type { NextHandoff } from "../runtime/workflow/next-handoff-process";
 import {
   finishTurn,
@@ -17,7 +17,11 @@ import {
   type Turn,
 } from "../runtime/workflow/turn";
 import { record, text } from "../runtime/json-fields";
-import { defaultWorkflow, readWorkflow, type Workflow } from "../runtime/workflow/declaration";
+import {
+  defaultWorkflow,
+  readWorkflow,
+  type WorkflowVerdict,
+} from "../runtime/workflow/declaration";
 
 // The plugin entry reaches mate-core only through `runtime/` and `opencode/`.
 export { spawnNextHandoff } from "../runtime/workflow/next-handoff-process";
@@ -27,8 +31,8 @@ export const HANDOFF_CHECK = "Mate hand-off check";
 export interface TurnHookDeps {
   companionPath: string;
   nextHandoff: NextHandoff;
-  workflow?: (companionPath: string) => Workflow | null;
-  /** The names of the companion's existing work; as `mate workflow next` finds it by default. */
+  readWorkflow?: (companionPath: string) => WorkflowVerdict;
+  /** The names of the companion's change folders; as `mate workflow next` finds them by default. */
   workNames?: () => Promise<string[]>;
   env?: Record<string, string | undefined>;
 }
@@ -40,6 +44,8 @@ interface SessionTurn {
   sentBack: boolean;
   /** The tool notes still being taken; a note that fails is dropped. */
   noting: Promise<void>;
+  /** The workflow declaration, read once per turn when first needed; a send-back reads it again. */
+  declared?: WorkflowVerdict;
 }
 
 interface TurnEvent {
@@ -82,15 +88,14 @@ export async function registerTurnHook(api: Context, deps: TurnHookDeps): Promis
   const env = deps.env ?? process.env;
   if (!turnHooksEnabled(env)) return () => {};
   const directory = api.location.directory;
-  const workflow =
-    deps.workflow ??
-    ((companion: string) => {
-      const read = readWorkflow(companion);
-      return read.ok ? read.workflow : null;
-    });
-  const workNames =
-    deps.workNames ??
-    (() => openWork(deps.companionPath, workflow(deps.companionPath) ?? defaultWorkflow()).names());
+  const read = deps.readWorkflow ?? readWorkflow;
+  const declaredFor = (entry: SessionTurn) => (entry.declared ??= read(deps.companionPath));
+  const workNames = (entry: SessionTurn): Promise<string[]> => {
+    if (deps.workNames) return deps.workNames();
+    const declared = declaredFor(entry);
+    const folders = changeFolders(declared.ok ? declared.workflow : defaultWorkflow());
+    return changeFolderNames(deps.companionPath, folders);
+  };
 
   const turns = new Map<string, SessionTurn>();
   /** Undelivered user prompts per session. */
@@ -107,9 +112,9 @@ export async function registerTurnHook(api: Context, deps: TurnHookDeps): Promis
   });
 
   /** The first word of `prompt` naming existing work; empty when none does. */
-  const changeIn = async (prompt: string): Promise<string> => {
-    const names = new Set(await workNames());
-    return prompt.split(/[\s"'`]+/).find((word) => word && names.has(word)) ?? "";
+  const changeIn = async (entry: SessionTurn): Promise<string> => {
+    const names = new Set(await workNames(entry));
+    return entry.prompt.split(/[\s"'`]+/).find((word) => word && names.has(word)) ?? "";
   };
 
   await api.tool.hook("execute.after", async (event) => {
@@ -124,7 +129,7 @@ export async function registerTurnHook(api: Context, deps: TurnHookDeps): Promis
         } else if (event.tool === "skill") {
           // The tool takes no arguments: the change is the prompt's first word naming one.
           const skill = text(input.id).split(":").at(-1) ?? "";
-          entry.turn = noteSkill(entry.turn, skill, await changeIn(entry.prompt));
+          entry.turn = noteSkill(entry.turn, skill, await changeIn(entry));
         }
       })
       .catch(() => {});
@@ -139,24 +144,28 @@ export async function registerTurnHook(api: Context, deps: TurnHookDeps): Promis
       if (turns.get(sessionID) === entry) turns.delete(sessionID);
     };
     await entry.noting;
-    const { turn } = entry;
-    const declared = workflow(deps.companionPath);
-    if (!declared || (!turn.step && turn.reports.length === 0)) return finish();
-    // One plugin instance per session, never a subagent's.
-    const session = await api.session.get({ sessionID });
-    if (session.parentID || session.location?.directory !== directory) return finish();
-    const verdict = await finishTurn(turn, {
-      workflow: declared,
-      again: entry.sentBack,
-      runtime: "opencode",
-      response: async () =>
-        turnResponse((await api.session.context({ sessionID })) as unknown as ContextMessage[]),
-      fetchHandoff: async (query) => deps.nextHandoff(query.change, directory, query.after),
-    });
+    const verdict = await finishTurn(
+      entry.turn,
+      {
+        companionPath: deps.companionPath,
+        again: entry.sentBack,
+        runtime: "opencode",
+        response: async () =>
+          turnResponse((await api.session.context({ sessionID })) as unknown as ContextMessage[]),
+        fetchHandoff: async (query) => deps.nextHandoff(query.change, directory, query.after),
+        // One plugin instance per session, never a subagent's.
+        judges: async () => {
+          const session = await api.session.get({ sessionID });
+          return !session.parentID && session.location?.directory === directory;
+        },
+      },
+      { readWorkflow: () => declaredFor(entry) },
+    );
     if (verdict.kind !== "sendBack") return finish();
     // Read now, not when the turn ended: the check runs beside the event loop.
     if ((queued.get(sessionID)?.size ?? 0) > 0 || turns.get(sessionID) !== entry) return;
     entry.sentBack = true;
+    entry.declared = undefined;
     await api.session.synthetic({
       sessionID,
       text: verdict.reason,

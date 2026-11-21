@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { readWorkflow } from "../runtime/workflow/declaration";
 import type { PrintedHandoff } from "../runtime/workflow/turn";
 import { HANDOFF_CHECK, registerTurnHook, turnResponse, type TurnHookDeps } from "./turn-hook";
 
@@ -36,11 +37,14 @@ function fakeApi(directory: string) {
   const hooks = new Map<string, (event: never) => void>();
   const sessions = new Map<string, Session>();
   const sent: { sessionID: string; text: string; description?: string; resume?: boolean }[] = [];
+  /** The sessions asked for, in order. */
+  const gets: string[] = [];
   const api = {
     location: { directory },
     session: {
       hook: async (name: string, handler: (event: never) => void) => void hooks.set(name, handler),
       get: async ({ sessionID }: { sessionID: string }) => {
+        gets.push(sessionID);
         const session = sessions.get(sessionID)!;
         return { parentID: session.parentID, location: { directory: session.directory } };
       },
@@ -94,7 +98,7 @@ function fakeApi(directory: string) {
       );
     await emit({ type: `session.execution.${type}`, data: { sessionID } });
   };
-  return { api: api as never, emit, session, prompt, tool, finish, sent };
+  return { api: api as never, emit, session, prompt, tool, finish, sent, gets };
 }
 
 let root: string;
@@ -172,6 +176,33 @@ describe("OpenCode turn hook", () => {
     cleanup();
   });
 
+  test("a Mate stage skill without a report waits for the user, without asking mate", async () => {
+    const { prompt, finish, sent, cleanup } = await setup();
+    prompt("ses_1", "@mate-apply-change acme-fix");
+    await finish("ses_1", "Which branch should I use?");
+    expect(sent).toHaveLength(0);
+    expect(asked).toEqual([]);
+    cleanup();
+  });
+
+  test("an invalid declaration passes without asking for the session, read once per turn", async () => {
+    let reads = 0;
+    deps.readWorkflow = () => {
+      reads += 1;
+      return { ok: false, file: "workflow.yaml", problems: [] };
+    };
+    const { prompt, tool, finish, sent, gets, cleanup } = await setup();
+    prompt("ses_1", "run the security review for acme-login please");
+    tool("ses_1", "skill", { id: "acme-security-review" });
+    tool("ses_1", "shell", { command: "mate workflow done mate-apply-change acme-fix" });
+    await finish("ses_1", "Done.");
+    expect(sent).toHaveLength(0);
+    expect(gets).toEqual([]);
+    expect(asked).toEqual([]);
+    expect(reads).toBe(1);
+    cleanup();
+  });
+
   test("an unreported companion step from the skill tool is sent back with its report", async () => {
     const { prompt, tool, finish, sent, cleanup } = await setup();
     prompt("ses_1", "run the security review for acme-login please");
@@ -180,15 +211,6 @@ describe("OpenCode turn hook", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]!.text).toContain("@acme-security-review is a step");
     expect(sent[0]!.text).toContain('mate workflow done acme-security-review "acme-login"');
-    cleanup();
-  });
-
-  test("a Mate stage skill without a report waits for the user, without asking mate", async () => {
-    const { prompt, finish, sent, cleanup } = await setup();
-    prompt("ses_1", "@mate-apply-change acme-fix");
-    await finish("ses_1", "Which branch should I use?");
-    expect(sent).toHaveLength(0);
-    expect(asked).toEqual([]);
     cleanup();
   });
 
@@ -282,6 +304,25 @@ stages:
       await finish(id, "Prose.");
     }
     expect(sent).toHaveLength(0);
+    cleanup();
+  });
+
+  test("a sent-back turn reads the declaration again when it ends", async () => {
+    const read = deps.readWorkflow;
+    let reads = 0;
+    deps.readWorkflow = (companionPath) => {
+      reads += 1;
+      return (read ?? readWorkflow)(companionPath);
+    };
+    const { prompt, tool, finish, sent, cleanup } = await setup();
+    prompt("ses_1", "@mate-apply-change acme-fix");
+    tool("ses_1", "shell", { command: "mate workflow done mate-apply-change acme-fix" });
+    await finish("ses_1", "Prose.");
+    expect(sent).toHaveLength(1);
+    expect(reads).toBe(1);
+    // The developer may have fixed or changed the declaration while the session resumes.
+    await finish("ses_1", "Prose again.");
+    expect(reads).toBe(2);
     cleanup();
   });
 

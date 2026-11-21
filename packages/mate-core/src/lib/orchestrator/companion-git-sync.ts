@@ -165,18 +165,12 @@ export class CompanionGitSync {
     }
 
     const localGit = companionGit(companionPath, { prompt: "never", env: this.options.env });
-    const plans: SubmittedArrivals[] = [];
-    for (const layout of await submittedLayouts(companionPath)) {
-      plans.push(
-        await planSubmittedArrivals(
-          localGit,
-          companionPath,
-          target.ref,
-          layout,
-          this.options.stateHome,
-        ),
-      );
-    }
+    // Read-only plans, one per type: read together.
+    const plans = await Promise.all(
+      (await submittedLayouts(companionPath)).map((layout) =>
+        planSubmittedArrivals(localGit, companionPath, target.ref, layout, this.options.stateHome),
+      ),
+    );
     const arrivals = mergeArrivals(plans);
     const discarded = await discardSubmittedArrivals(
       localGit,

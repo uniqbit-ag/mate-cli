@@ -6,9 +6,8 @@ import path from "node:path";
 
 import hooksJson from "../../claude-plugin/hooks/hooks.json";
 import { defaultMateBin, parseNextHandoff } from "../runtime/workflow/next-handoff-process";
-import { reportedSteps, type PrintedHandoff } from "../runtime/workflow/turn";
+import type { PrintedHandoff } from "../runtime/workflow/turn";
 import { mateHome } from "../runtime/runtime-directory";
-import { invokedSkill } from "../runtime/skill-prefix";
 import { handleTurnEvent, type TurnDeps } from "./workflow-turn";
 
 const DECLARED = `version: 1
@@ -80,19 +79,7 @@ const output = (outcome: { stdout: string }) =>
   outcome.stdout ? (JSON.parse(outcome.stdout) as Record<string, string>) : null;
 
 describe("parsing", () => {
-  test("a step invoked in any runtime's syntax", () => {
-    for (const text of [
-      "/acme-security-review acme-login",
-      "@acme-security-review acme-login",
-      "$acme-security-review acme-login",
-      "/skill:acme-security-review acme-login",
-    ]) {
-      expect(invokedSkill(text)).toEqual({ skill: "acme-security-review", change: "acme-login" });
-    }
-    expect(invokedSkill("please run /acme-security-review acme-login")).toBeUndefined();
-  });
-
-  test("the printed hand-off: its section and the skill actions naming a change", () => {
+  test("the printed hand-off: its section and its skill actions, a change-less one with an empty change", () => {
     const json = JSON.stringify({
       ok: true,
       handoff: "## Next steps\n1. Merge workset/acme-fix\n2. /mate-publish-artifact",
@@ -105,7 +92,10 @@ describe("parsing", () => {
 
     expect(parseNextHandoff(`Acme was repaired\n${json}\n`)).toEqual({
       handoff: "## Next steps\n1. Merge workset/acme-fix\n2. /mate-publish-artifact",
-      actions: [{ skill: "acme-announce", change: "acme-fix" }],
+      actions: [
+        { skill: "mate-publish-artifact", change: "" },
+        { skill: "acme-announce", change: "acme-fix" },
+      ],
     });
     // An older CLI prints no actions: nothing to check.
     const old = JSON.stringify({ ok: true, handoff: "## Next steps\n1. /acme-x acme-fix" });
@@ -115,31 +105,6 @@ describe("parsing", () => {
     });
     expect(parseNextHandoff(JSON.stringify({ ok: true, handoff: "" }))).toBeNull();
     expect(parseNextHandoff("not json")).toBeNull();
-  });
-
-  test("each report in a shell command", () => {
-    expect(reportedSteps('git status && mate workflow done mate-apply-change "acme-fix"')).toEqual([
-      { skill: "mate-apply-change", change: "acme-fix" },
-    ]);
-    expect(reportedSteps(`mate workflow done "acme-security-review" 'acme-fix'`)).toEqual([
-      { skill: "acme-security-review", change: "acme-fix" },
-    ]);
-    expect(reportedSteps("mate workflow next acme-fix")).toEqual([]);
-  });
-
-  test("a report with flags, without a change, or redirected", () => {
-    expect(reportedSteps("mate workflow done --json acme-lint acme-fix | jq .handoff")).toEqual([
-      { skill: "acme-lint", change: "acme-fix" },
-    ]);
-    expect(reportedSteps("/opt/acme/bin/mate workflow done acme-lint acme-fix --json")).toEqual([
-      { skill: "acme-lint", change: "acme-fix" },
-    ]);
-    expect(reportedSteps("mate workflow done mate-explore-change 2>&1")).toEqual([
-      { skill: "mate-explore-change", change: "" },
-    ]);
-    expect(reportedSteps("mate workflow done mate-explore-change\nls acme")).toEqual([
-      { skill: "mate-explore-change", change: "" },
-    ]);
   });
 });
 
@@ -166,66 +131,6 @@ describe("a reported turn", () => {
       output(await stop("Done.\n\n## Next steps\n1. /mate-submit-change acme-fix")),
     ).toBeNull();
     // The state is gone: a later stop in the same session says nothing.
-    expect(output(await stop("Prose."))).toBeNull();
-  });
-
-  test("a section without the printed action is sent back once", async () => {
-    await prompt("/mate-apply-change acme-fix");
-    await bash('mate workflow done mate-apply-change "acme-fix"');
-
-    const first = output(await stop("Done.\n\n## Next steps\n1. Answer the open question."));
-    expect(first?.decision).toBe("block");
-    expect(first?.reason).toContain("lacks /mate-submit-change acme-fix");
-    expect(
-      output(await stop("Done.\n\n## Next steps\n1. Answer it.", true))?.systemMessage,
-    ).toContain("/mate-submit-change acme-fix");
-  });
-
-  test("a section adding a later step for the change is sent back once", async () => {
-    await bash("mate workflow done mate-apply-change acme-fix");
-    const first = output(
-      await stop(
-        "## Next steps\n1. /mate-submit-change acme-fix\n2. /mate-publish-artifact acme-fix",
-      ),
-    );
-    expect(first?.decision).toBe("block");
-    expect(first?.reason).toContain(
-      "lists /mate-publish-artifact acme-fix, which Mate did not print",
-    );
-    expect(first?.reason).not.toContain("lacks");
-  });
-
-  test("other changes' actions and skills off the path pass", async () => {
-    await bash("mate workflow done mate-apply-change acme-fix");
-    const response = [
-      "## Next steps",
-      "1. /mate-propose-change acme-slice-2",
-      "2. /mate-submit-change acme-fix",
-      "3. /acme-unlisted acme-fix",
-    ].join("\n");
-    expect(output(await stop(response))).toBeNull();
-  });
-
-  test("the action in another runtime's prefix, quoted, passes", async () => {
-    await bash("mate workflow done mate-apply-change acme-fix");
-    expect(output(await stop('## Next steps\n1. `$mate-submit-change "acme-fix"`.'))).toBeNull();
-    await bash("mate workflow done mate-apply-change acme-fix");
-    expect(output(await stop("## Next steps\n1. /mate-submit-change acme-fix-2"))?.decision).toBe(
-      "block",
-    );
-  });
-
-  test("the actions are checked, whatever wording the printed section uses", async () => {
-    deps.nextHandoff = () => ({
-      handoff: "## Next steps\n1. /acme-renamed acme-fix",
-      actions: [{ skill: "mate-submit-change", change: "acme-fix" }],
-    });
-    await bash("mate workflow done mate-apply-change acme-fix");
-    expect(output(await stop("## Next steps\n1. /mate-submit-change acme-fix"))).toBeNull();
-  });
-
-  test("a report for a change without a folder gives nothing", async () => {
-    await bash("mate workflow done mate-apply-change acme-gone");
     expect(output(await stop("Prose."))).toBeNull();
   });
 
@@ -264,13 +169,6 @@ describe("a reported turn", () => {
     expect(asked).toEqual([{ change: "acme-fix", after: "mate-submit-change" }]);
   });
 
-  test("a report without a change counts as reported, with no section to hold", async () => {
-    await declare(DECLARED);
-    await prompt("/acme-security-review acme-fix");
-    await bash("mate workflow done mate-explore-change");
-    expect(output(await stop("Prose."))).toBeNull();
-  });
-
   test("a state file that is not a turn's reads as no turn", async () => {
     await fs.mkdir(deps.stateDir!, { recursive: true });
     await fs.writeFile(
@@ -282,17 +180,6 @@ describe("a reported turn", () => {
 });
 
 describe("a turn without a report", () => {
-  test("a companion's own step is asked for once", async () => {
-    await declare(DECLARED);
-    await prompt("/acme-security-review acme-fix");
-
-    const first = output(await stop("The review found nothing."));
-    expect(first?.decision).toBe("block");
-    expect(first?.reason).toContain('mate workflow done acme-security-review "acme-fix"');
-    expect(first?.reason).toContain("If it is waiting for the user, stop as you are.");
-    expect(output(await stop("The review found nothing.", true))).toBeNull();
-  });
-
   test("a step started through the Skill tool counts too", async () => {
     await declare(DECLARED);
     await prompt("review it please");
@@ -332,27 +219,6 @@ describe("a turn without a report", () => {
     await prompt("/mate-apply-change acme-fix");
     expect(output(await stop("It implements tasks."))).toBeNull();
     expect(await fs.readdir(deps.stateDir!)).toEqual([]);
-  });
-
-  test("a Mate stage skill waiting for an answer passes", async () => {
-    await prompt("/mate-propose-change acme-fix");
-    expect(output(await stop("Which schema should it use?"))).toBeNull();
-  });
-
-  test("a skill that is no step, a missing change and an ordinary question pass", async () => {
-    await declare(DECLARED);
-    await prompt("/acme-unknown acme-fix");
-    expect(output(await stop("Done."))).toBeNull();
-    await prompt("/acme-security-review acme-gone");
-    expect(output(await stop("Done."))).toBeNull();
-    await prompt("What does apply do?");
-    expect(output(await stop("It implements tasks."))).toBeNull();
-  });
-
-  test("an invalid declaration passes", async () => {
-    await declare("version: 2\n");
-    await prompt("/acme-security-review acme-fix");
-    expect(output(await stop("Done."))).toBeNull();
   });
 });
 
@@ -437,27 +303,6 @@ describe("the switch and the plugin", () => {
     expect(await fs.stat(state).catch(() => null)).toBeNull();
     expect(send(stopPayload)).toMatchObject({ status: 0, stdout: "", stderr: "" });
     await fs.rm(state, { force: true });
-  });
-
-  test("the shim never works through a state folder that is a link", async () => {
-    const shim = path.join(import.meta.dirname, "../../claude-plugin/hooks/workflow-turn.mjs");
-    const home = path.join(root, "home");
-    const elsewhere = path.join(root, "elsewhere");
-    await fs.mkdir(path.join(home, ".mate"), { recursive: true });
-    await fs.mkdir(elsewhere, { mode: 0o700 });
-    await fs.symlink(elsewhere, path.join(home, ".mate", "turn-hooks"));
-    const planted = path.join(elsewhere, "acme-session.json");
-    await fs.writeFile(planted, "{}\n");
-    const send = (payload: Record<string, unknown>) =>
-      spawnSync("node", [shim], {
-        input: JSON.stringify({ session_id: "acme-session", ...payload }),
-        encoding: "utf8",
-        env: { ...process.env, HOME: home, MATE_TURN_HOOKS: "" },
-      });
-
-    expect(send({ hook_event_name: "UserPromptSubmit", prompt: "What next?" }).status).toBe(0);
-    expect(await fs.stat(planted).then(() => true)).toBe(true);
-    expect(send({ hook_event_name: "Stop" })).toMatchObject({ status: 0, stdout: "" });
   });
 
   test("a relative PATH entry is never the mate the hook runs", async () => {

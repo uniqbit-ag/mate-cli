@@ -13,6 +13,7 @@ import path from "node:path";
 
 import { parse } from "yaml";
 
+import { trailerRecordsAt } from "./artifact-trailers";
 import { LITERAL_PATHSPECS, nulPaths, type CompanionGit } from "./companion-git";
 import { readSubmittedFolders, updateSubmittedFolders } from "./companion-git-state";
 import { errorMessage } from "./error-message";
@@ -187,32 +188,6 @@ async function holdsExactly(
   return local.every((file, index) => ids[index] === incoming.get(file));
 }
 
-/** Commits read for the trailers of a type without an archive. */
-const TRAILER_RECORDS_READ = 2000;
-
-/** Record ids the `Mate-Artifact` trailers of `ref`'s history name for type `trailer`. */
-export async function trailerRecordIds(
-  git: CompanionGit,
-  ref: string,
-  trailer: string,
-): Promise<string[]> {
-  const prefix = `${trailer}/`;
-  const log = await git.run([
-    "log",
-    `-n${TRAILER_RECORDS_READ}`,
-    "--fixed-strings",
-    `--grep=Mate-Artifact: ${prefix}`,
-    "--format=%(trailers:key=Mate-Artifact,valueonly,separator=%x0a)",
-    "--end-of-options",
-    ref,
-  ]);
-  if (log.status !== 0) return [];
-  return log.stdout
-    .split("\n")
-    .filter((value) => value.startsWith(prefix))
-    .map((value) => value.slice(prefix.length));
-}
-
 /**
  * Archived record ids at `ref`, by change name: the folders below `layout.archiveRoot`, or for a
  * type without an archive the records its history published.
@@ -226,7 +201,7 @@ async function archivedRecords(
     layout.archiveRoot === undefined
       ? layout.trailer === undefined
         ? []
-        : await trailerRecordIds(git, ref, layout.trailer)
+        : (await trailerRecordsAt(git, ref, layout.trailer)).map((record) => record.id)
       : await lines(git, [
           "ls-tree",
           "-z",

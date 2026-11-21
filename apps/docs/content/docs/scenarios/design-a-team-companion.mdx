@@ -285,13 +285,18 @@ stages:
 - `reviews` names the files a review stage can list.
 - `submit.check`, `publish.apply` (required), and `publish.validate` are
   commands run with `sh -c` in the companion. `{name}`, `{id}`, `{change}`,
-  `{archive}`, and `{files}` are replaced by shell-quoted values, and a
-  non-zero exit fails the step. `publish.apply` may change only `published`
+  `{archive}`, and `{files}` are replaced by quoted variable references, so a
+  value is never read as shell code; write them outside any quotes. To hand
+  `{files}` to a nested shell, pass them as its arguments:
+  `sh -c 'acme-notes lint "$@"' sh {files}`. A non-zero exit
+  fails the step. `publish.apply` may change only `published`
   files; Mate moves or deletes the change folder itself.
 - Each developer approves these commands once on their machine with
   `mate workflow trust`, in a terminal. Until then submit and publication
   refuse to run them, since anyone who can push to the companion can change
-  them. An edited command needs approving again.
+  them. An edited command, or the same command in another companion, needs
+  approving again. A script the command calls is trusted with it, so review
+  scripts a push changes.
 
 The paths must stay inside the companion, outside `.mate/`, and must not
 overlap each other or OpenSpec's folders. With no Mate apply skill on the path,

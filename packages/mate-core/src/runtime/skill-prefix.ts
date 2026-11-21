@@ -64,8 +64,12 @@ export function parseInvocations(text: string): Invocation[] {
   }));
 }
 
-/** Whether `text` names `skill change` after any runtime's prefix, the change ending its word. */
+/**
+ * Whether `text` names `skill change` after any runtime's prefix, the change ending its word;
+ * with no change, the skill alone, followed by anything.
+ */
 export function namesInvocation(text: string, { skill, change }: Invocation): boolean {
   const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`${PREFIX}${escape(skill)}\\s+${escape(change)}(?![\\w-])`).test(text);
+  const tail = change ? `\\s+${escape(change)}` : "";
+  return new RegExp(`${PREFIX}${escape(skill)}${tail}(?![\\w-])`).test(text);
 }

@@ -73,8 +73,9 @@ describe("invokedSkill", () => {
       skill: "acme-verify",
       change: "acme-fix",
     });
-    expect(invokedSkill("$acme-verify acme-fix")?.skill).toBe("acme-verify");
-    expect(invokedSkill("/skill:acme-verify acme-fix")?.skill).toBe("acme-verify");
+    for (const prompt of ["$acme-verify acme-fix", "/skill:acme-verify acme-fix"]) {
+      expect(invokedSkill(prompt)).toEqual({ skill: "acme-verify", change: "acme-fix" });
+    }
     expect(invokedSkill("/acme-verify")).toBeUndefined();
     expect(invokedSkill("run /acme-verify acme-fix")).toBeUndefined();
   });

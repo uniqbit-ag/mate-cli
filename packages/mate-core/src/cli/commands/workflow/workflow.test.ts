@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { WORKFLOW_FILE } from "../../../lib/workflow/declaration";
-import { isCommandTrusted } from "../../../lib/workflow/hook-trust";
+import { companionIdentity, isCommandTrusted } from "../../../lib/workflow/hook-trust";
 import {
   runWorkflowCommand,
   type ChangeNext,
@@ -711,8 +711,15 @@ test("--help prints the workflow usage, also after a subcommand", async () => {
 });
 
 describe("mate workflow trust", () => {
-  const run = `acme-notes merge {change} # ${process.pid}-${Date.now()}`;
-  const declared = () => declare(NOTES.replace("acme-notes merge {change}", run));
+  const run = "acme-notes merge {change}";
+  const declared = () => declare(NOTES);
+  const trusted = async (text = run) =>
+    isCommandTrusted({
+      type: "acme-notes",
+      hook: "apply",
+      run: text,
+      companion: await companionIdentity(companion),
+    });
 
   test("--json lists each command and approves nothing", async () => {
     await declared();
@@ -723,7 +730,17 @@ describe("mate workflow trust", () => {
       ok: true,
       commands: [{ type: "acme-notes", hook: "apply", run, trusted: false }],
     });
-    expect(await isCommandTrusted(run)).toBe(false);
+    expect(await trusted()).toBe(false);
+  });
+
+  test("inside an agent session it approves nothing", async () => {
+    await declared();
+
+    await runWorkflowCommand("trust", [], deps({ CLAUDECODE: "1" }));
+
+    expect(err.join("\n")).toContain("outside an agent session");
+    expect(process.exitCode).toBe(1);
+    expect(await trusted()).toBe(false);
   });
 
   test("outside a terminal it approves nothing and exits 1", async () => {
@@ -734,17 +751,25 @@ describe("mate workflow trust", () => {
     expect(out).toContain(`  acme-notes apply: ${run}`);
     expect(err.join("\n")).toContain("needs a terminal");
     expect(process.exitCode).toBe(1);
-    expect(await isCommandTrusted(run)).toBe(false);
+    expect(await trusted()).toBe(false);
+  });
+
+  test("indents a multi-line command's later lines", async () => {
+    await declare(NOTES.replace(run, `${run}\\nacme-notes lint`));
+
+    await runWorkflowCommand("trust", [], { ...deps(), confirm: async () => null });
+
+    expect(out).toContain(`  acme-notes apply: ${run}\n      acme-notes lint`);
   });
 
   test("a no keeps the command untrusted; a yes approves it", async () => {
     await declared();
 
     await runWorkflowCommand("trust", [], { ...deps(), confirm: async () => false });
-    expect(await isCommandTrusted(run)).toBe(false);
+    expect(await trusted()).toBe(false);
 
     await runWorkflowCommand("trust", [], { ...deps(), confirm: async () => true });
-    expect(await isCommandTrusted(run)).toBe(true);
+    expect(await trusted()).toBe(true);
     expect(out.at(-1)).toBe("Approved 1 command.");
 
     out = [];

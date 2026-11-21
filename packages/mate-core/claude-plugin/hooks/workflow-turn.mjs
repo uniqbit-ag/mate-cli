@@ -9,6 +9,14 @@ import { existsSync, lstatSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import {
+  isPrivateDir,
+  mayReportStep,
+  mayStartStep,
+  sessionFileName,
+  turnStateDir,
+} from "../../src/runtime/turn-state.mjs";
+
 async function readInput() {
   if (process.stdin.isTTY) return null;
   const chunks = [];
@@ -20,21 +28,16 @@ async function readInput() {
   }
 }
 
-/**
- * The session's state file, as stateFile() in src/hooks/workflow-turn.ts names it; null unless
- * its folder is a directory this user owns that no one else can enter, as privateStateDir() checks.
- */
+/** The session's state file; null unless its folder is private. Checks only, never creates it. */
 function stateFile(session) {
-  const dir = path.join(process.env.HOME || os.homedir(), ".mate", "turn-hooks");
+  // mateHome() without TypeScript; turn-state.test.ts pins the two together.
+  const dir = turnStateDir(path.join(process.env.HOME || os.homedir(), ".mate"));
   try {
-    const stat = lstatSync(dir);
-    const uid = process.getuid?.();
-    const foreign = uid !== undefined && (stat.uid !== uid || (stat.mode & 0o077) !== 0);
-    if (!stat.isDirectory() || foreign) return null;
+    if (!isPrivateDir(lstatSync(dir), process.getuid?.())) return null;
   } catch {
     return null;
   }
-  return path.join(dir, `${session.replace(/[^A-Za-z0-9_-]/g, "_")}.json`);
+  return path.join(dir, sessionFileName(session));
 }
 
 const input = await readInput();
@@ -44,10 +47,10 @@ const command = input?.tool_input?.command;
 const prompt = input?.prompt;
 let load = true;
 if (event === "PostToolUse" && input.tool_name === "Bash") {
-  load = typeof command === "string" && /\bworkflow\s+done\b/.test(command);
+  load = typeof command === "string" && mayReportStep(command);
 } else if (session && event === "UserPromptSubmit" && typeof prompt === "string") {
   // Any runtime's skill prefix; a prompt without one starts no step and clears the last turn.
-  load = /^\s*[/@$]/.test(prompt);
+  load = mayStartStep(prompt);
   try {
     const file = load ? null : stateFile(session);
     if (file) rmSync(file, { force: true });

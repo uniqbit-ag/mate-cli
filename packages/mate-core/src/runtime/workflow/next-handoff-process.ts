@@ -88,9 +88,8 @@ export function parseNextHandoff(stdout: string): PrintedHandoff | null {
     if (parsed.ok !== true || !handoff) return null;
     const actions = (Array.isArray(parsed.actions) ? parsed.actions : []).flatMap((entry) => {
       const { kind, skill, change } = record(entry);
-      return kind === "skill" && text(skill) && text(change)
-        ? [{ skill: text(skill), change: text(change) }]
-        : [];
+      // A skill that takes no change, such as publish, keeps an empty one.
+      return kind === "skill" && text(skill) ? [{ skill: text(skill), change: text(change) }] : [];
     });
     return { handoff, actions };
   } catch {

@@ -167,6 +167,10 @@ describe("packed Claude plugin", () => {
       expect(stat.isFile()).toBe(true);
       expect(stat.mode & 0o111).toBeGreaterThan(0);
     }
+    // The turn shim's state folder module, loaded without ts-loader.
+    expect(
+      (await fs.stat(path.join(pluginRoot, "..", "src", "runtime", "turn-state.mjs"))).isFile(),
+    ).toBe(true);
 
     await expect(
       fs.stat(path.join(pluginRoot, "hooks", "artifact-finish-nudge.mjs")),

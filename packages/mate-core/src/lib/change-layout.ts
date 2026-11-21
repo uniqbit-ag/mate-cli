@@ -1,6 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import {
+  changeFolderNames,
+  isChangeFolderName,
+  OPENSPEC_CHANGE_FOLDERS,
+  type ChangeFolders,
+} from "../runtime/workflow/change-folders";
 import { pathIsDirectory } from "./fs-utils";
 
 /**
@@ -10,17 +16,9 @@ import { pathIsDirectory } from "./fs-utils";
  */
 
 /** Companion-relative POSIX paths. */
-export const CHANGES_RELATIVE_DIR = "openspec/changes";
-export const ARCHIVE_RELATIVE_DIR = "openspec/changes/archive";
+export const CHANGES_RELATIVE_DIR = OPENSPEC_CHANGE_FOLDERS.source;
+export const ARCHIVE_RELATIVE_DIR = OPENSPEC_CHANGE_FOLDERS.archiveRoot;
 export const SPECS_RELATIVE_DIR = "openspec/specs";
-
-const ARCHIVE_DIR_NAME = "archive";
-
-/**
- * One path segment: no separator, NUL, or leading dot (so never `.`, `..`, or hidden).
- * Wider than OpenSpec's kebab-case, so archives made under older rules still resolve.
- */
-const SEGMENT = /^[^./\\\0][^/\\\0]*$/;
 
 /** The `YYYY-MM-DD-<name>` anchor `openspec archive` gives an archived change. */
 const ANCHOR = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
@@ -35,7 +33,7 @@ export function archiveDirOf(companionPath: string): string {
 
 /** A change name or archive anchor: one path segment that is not the archive directory. */
 export function isChangeName(candidate: string): boolean {
-  return SEGMENT.test(candidate) && candidate !== ARCHIVE_DIR_NAME;
+  return isChangeFolderName(OPENSPEC_CHANGE_FOLDERS, candidate);
 }
 
 export interface Anchor {
@@ -68,11 +66,7 @@ async function directoryNames(dir: string): Promise<string[]> {
  * Where an artifact type keeps its change folders and archived records; every `ArtifactType` is
  * one. Lives here, not with the type, so this module imports nothing of delivery.
  */
-export interface ChangeLayout {
-  /** Companion-relative directory holding one folder per change. */
-  source: string;
-  /** Companion-relative directory holding one folder per archived record; absent when none is kept. */
-  archiveRoot?: string;
+export interface ChangeLayout extends ChangeFolders {
   /** True for a directory name below {@link archiveRoot} that is a record. */
   isRecordId: (id: string) => boolean;
   /** The change name record `id` was archived from. */
@@ -89,16 +83,9 @@ export const OPENSPEC_CHANGE_LAYOUT: ChangeLayout = {
 
 const below = (root: string, relative: string): string => path.join(root, ...relative.split("/"));
 
-/** A change folder name of `layout`: one path segment that is not its archive directory. */
-function isFolderName(layout: ChangeLayout, candidate: string): boolean {
-  return SEGMENT.test(candidate) && `${layout.source}/${candidate}` !== layout.archiveRoot;
-}
-
 /** The names of `layout`'s changes below `root` that have a folder, sorted. */
-export async function changeNames(root: string, layout: ChangeLayout): Promise<string[]> {
-  return (await directoryNames(below(root, layout.source)))
-    .filter((name) => isFolderName(layout, name))
-    .toSorted();
+export function changeNames(root: string, layout: ChangeLayout): Promise<string[]> {
+  return changeFolderNames(root, layout);
 }
 
 /**
@@ -111,7 +98,7 @@ export async function locate(
   layout: ChangeLayout,
   target: string,
 ): Promise<ChangeLocation | { missing: string } | null> {
-  if (!isFolderName(layout, target)) return null;
+  if (!isChangeFolderName(layout, target)) return null;
   const archive = layout.archiveRoot === undefined ? null : below(root, layout.archiveRoot);
   if (archive && layout.isRecordId(target) && (await pathIsDirectory(path.join(archive, target)))) {
     return { dir: path.join(archive, target), archived: true };

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -15,6 +16,7 @@ import { parseWorkflow } from "../../workflow/declaration";
 import { locateTypedChange } from "../record-delivery";
 import { sourceDir, type ArtifactType } from "./artifact-type";
 import { declaredArtifactType } from "./declared-type";
+import { publishedAs } from "./pending";
 import { publishSubmitted } from "./publish";
 import { trailerRecordsAt } from "./refs";
 import { submitGroups, takeSubmitted, writeSubmissionState } from "./submit";
@@ -159,6 +161,40 @@ describe("a declared artifact type", () => {
         type,
       );
       expect(records.map((record) => record.id)).toEqual(["2026-11-15-acme-release"]);
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "without an archive a later change of the same name is unpublished, whatever its date",
+    async () => {
+      const type = notesType({ archive: false });
+      const { fixture, dir } = await companionWith(type);
+      await submit(fixture, dir, type);
+      const remote = companionGit(fixture.remote, { prompt: "never" });
+      // The submission the publication read: published.
+      const submitted = git(fixture.remote, "rev-parse", INBOX).trim();
+      expect(
+        await publishSubmitted(dir, "acme-release", { artifactType: type, tmpRoot: fixture.root }),
+      ).toMatchObject({ status: "ok" });
+      expect(await publishedAs(remote, "main", submitted, type, "acme-release")).toBe(
+        "2026-11-15-acme-release",
+      );
+
+      // Submitted again from a machine whose clock runs a year behind the publisher's.
+      const again = fixture.clone("acme-again");
+      git(again, "fetch", "-q", "origin", INBOX);
+      git(again, "checkout", "-q", "-B", "acme-inbox", "FETCH_HEAD");
+      fs.mkdirSync(path.join(again, "notes", "acme-release"), { recursive: true });
+      fs.writeFileSync(path.join(again, "notes", "acme-release", "note.md"), "- acme again\n");
+      git(again, "add", "notes");
+      execFileSync("git", ["commit", "-qm", "acme again"], {
+        cwd: again,
+        env: { ...process.env, GIT_COMMITTER_DATE: "2025-01-01T00:00:00Z" },
+      });
+      git(again, "push", "-q", "origin", `HEAD:refs/heads/${INBOX}`);
+
+      expect(await publishedAs(remote, "main", INBOX, type, "acme-release")).toBeNull();
     },
     TIMEOUT,
   );

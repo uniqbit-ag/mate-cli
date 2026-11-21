@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { isAlias, isMap, isNode, isScalar, isSeq, parseDocument } from "yaml";
 
+import { OPENSPEC_CHANGE_FOLDERS } from "./change-folders";
 import { folderPattern, patternsOverlap } from "./globs";
 import {
   BUILTIN_ARTIFACT_TYPE,
@@ -31,8 +32,7 @@ export * from "./workflow";
  * session guidance and the session banner read it without a launch.
  */
 
-/** The built-in type's folders, as `lib/change-layout` names them; `runtime/` may not import it. */
-const CHANGES_RELATIVE_DIR = "openspec/changes";
+/** The built-in type's specs, as `lib/change-layout` names them; `runtime/` may not import it. */
 const SPECS_RELATIVE_DIR = "openspec/specs";
 
 /** Never a step: the deprecated alias of submit. */
@@ -111,12 +111,51 @@ function templateProblem(value: unknown, placeholder: string): string | null {
   return null;
 }
 
+/**
+ * Characters that hide or rewrite text in a terminal: controls other than tab and newline, and
+ * invisible or bidi formatting. A `run:` command holding one could show `mate workflow trust`
+ * other text than it runs.
+ */
+// oxlint-disable-next-line no-control-regex -- matching control characters is the point
+const HIDDEN = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f​-‏‪-‮⁠-⁩﻿]/;
+
 /** The hooks Mate ships for declared types, by where they run; none yet. */
 const BUILTIN_HOOKS: Record<string, readonly string[]> = {
   "submit.check": [],
   "publish.apply": [],
   "publish.validate": [],
 };
+
+const PLACEHOLDER = /^\{(?:name|id|change|archive|files)\}/;
+
+const isQuote = (char: string | undefined): char is "'" | '"' => char === "'" || char === '"';
+
+/**
+ * Whether a placeholder in `run` stands inside quotes or next to one. Mate substitutes a quoted
+ * reference, so inside double quotes it would end up unquoted, and inside single quotes `{files}`
+ * would never reach a nested shell. A heredoc body counts as unquoted.
+ */
+function quotedPlaceholder(run: string): boolean {
+  let quote: "'" | '"' | null = null;
+  for (let index = 0; index < run.length; index += 1) {
+    const char = run[index]!;
+    if (char === "\\" && quote !== "'") {
+      index += 1;
+    } else if (char === quote) {
+      quote = null;
+    } else if (quote === null && isQuote(char)) {
+      quote = char;
+    } else if (char === "{") {
+      const placeholder = PLACEHOLDER.exec(run.slice(index))?.[0];
+      if (placeholder === undefined) continue;
+      if (quote !== null || isQuote(run[index - 1]) || isQuote(run[index + placeholder.length])) {
+        return true;
+      }
+      index += placeholder.length - 1;
+    }
+  }
+  return false;
+}
 
 function parseHook(
   value: unknown,
@@ -142,6 +181,16 @@ function parseHook(
       return undefined;
     }
     return { builtin: text };
+  }
+  if (HIDDEN.test(text)) {
+    problems.add(keyAt(at, key), "`run` holds a control or invisible character");
+    return undefined;
+  }
+  if (quotedPlaceholder(text)) {
+    problems.add(
+      keyAt(at, key),
+      "Mate quotes a placeholder itself; write it outside any quotes, and pass `{files}` to a nested shell as arguments: `sh -c '… \"$@\"' sh {files}`",
+    );
   }
   if (text.includes("{archive}") && type.archive === undefined) {
     problems.add(keyAt(at, key), "`{archive}` needs the type to declare `archive`");
@@ -284,7 +333,10 @@ interface OwnedPattern {
 
 /** The paths no declared type may overlap: the built-in type's and Mate's own folder. */
 const RESERVED_PATTERNS: readonly OwnedPattern[] = [
-  { pattern: `${CHANGES_RELATIVE_DIR}/**`, owner: "overlaps the built-in type's changes" },
+  {
+    pattern: `${OPENSPEC_CHANGE_FOLDERS.source}/**`,
+    owner: "overlaps the built-in type's changes",
+  },
   { pattern: `${SPECS_RELATIVE_DIR}/**`, owner: "overlaps the built-in type's specs" },
   { pattern: ".mate/**", owner: "`.mate/` is Mate's" },
 ].map((entry) => ({ at: null, type: "", published: false, ...entry }));

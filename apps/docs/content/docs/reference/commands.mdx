@@ -1035,9 +1035,10 @@ declares for its artifact types and asks you to approve the ones this machine
 has not. Submit and publication run no such command until you approve it,
 since anyone who can push to the companion can change it; they fail naming
 the command instead. Approvals are kept per user in `~/.mate/trusted-hooks.json`,
-per command text, so an edited command needs approving again; a script the
-command calls is trusted with it. The command asks only in a terminal, so a
-session cannot approve a command for you. With `--json` it prints `ok` and
+per companion checkout, type, hook and command text, so an edited command, or
+the same text in another companion, needs approving again; a script the
+command calls is trusted with it. The command asks only in a terminal outside
+an agent session, so a session cannot approve a command for you. With `--json` it prints `ok` and
 `commands` (each `type`, `hook`, `run` and `trusted`) and approves nothing.
 
 **Submit.** A finished change is submitted before its delivery branch merges.

@@ -21,9 +21,10 @@ import {
   type SkillAction,
 } from "../../../lib/workflow/handoff";
 import {
+  companionIdentity,
   declaredCommands,
-  isCommandTrusted,
   trustCommands,
+  trustedCommands,
   type DeclaredCommand,
 } from "../../../lib/workflow/hook-trust";
 import { pathPosition, stepStage } from "../../../lib/workflow/position";
@@ -43,7 +44,10 @@ export interface WorkflowCommandDeps {
   stderr?: (line: string) => void;
   /** Names the Agent Runtime whose skill syntax a hand-off uses; `process.env` by default. */
   env?: Record<string, string | undefined>;
-  /** Asks the developer `question`; null outside a terminal. A terminal prompt by default. */
+  /**
+   * Asks the developer `question`; null outside a terminal or inside an agent session. A terminal
+   * prompt by default.
+   */
   confirm?: (question: string) => Promise<boolean | null>;
 }
 
@@ -358,19 +362,22 @@ export interface CommandsTrust {
  * artifact types and, in a terminal, asks the developer to approve the ones this machine has
  * not: submit and publication run no command until it is approved, since anyone who can push to
  * the companion can change it. Approvals are kept per user in `~/.mate/trusted-hooks.json`, per
- * command text, so an edited command needs approving again.
+ * companion checkout, type, hook and command text, so an edited command, or the same text in
+ * another companion, needs approving again.
  * @flags
  * - `--json` — emit a {@link CommandsTrust} and approve nothing.
- * @remarks Exits 1 on an invalid declaration, or outside a terminal while a command is not
- * approved: an agent cannot approve one.
+ * @remarks Exits 1 on an invalid declaration, or outside a terminal or inside an agent session
+ * while a command is not approved: an agent cannot approve one.
  */
 async function runTrust(run: Run, deps: WorkflowCommandDeps): Promise<void> {
   const resolved = await resolveWorkflow(run, deps);
   if (!resolved) return;
-  const declared = declaredCommands(resolved.workflow);
-  const commands = await Promise.all(
-    declared.map(async (command) => ({ ...command, trusted: await isCommandTrusted(command.run) })),
-  );
+  const companion = await companionIdentity(resolved.companionPath);
+  const isTrusted = await trustedCommands();
+  const commands = declaredCommands(resolved.workflow).map((command) => ({
+    ...command,
+    trusted: isTrusted({ ...command, companion }),
+  }));
   if (run.json) {
     return run.emitOut(JSON.stringify({ ok: true, commands } satisfies CommandsTrust));
   }
@@ -383,15 +390,19 @@ async function runTrust(run: Run, deps: WorkflowCommandDeps): Promise<void> {
     );
     return;
   }
-  run.emitOut(`${WORKFLOW_FILE} declares commands submit and publication run:`);
+  run.emitOut(
+    `${WORKFLOW_FILE} declares commands submit and publication run; a script one calls runs with it:`,
+  );
   for (const command of untrusted) {
-    run.emitOut(`  ${command.type} ${command.hook}: ${command.run}`);
+    // Later lines indented deeper, so a multi-line command cannot pass as another entry.
+    run.emitOut(`  ${command.type} ${command.hook}: ${command.run.replaceAll("\n", "\n      ")}`);
   }
-  const approve = deps.confirm ?? confirmInTerminal;
+  const env = deps.env ?? process.env;
+  const approve = deps.confirm ?? ((question: string) => confirmInTerminal(question, env));
   const answer = await approve("Run these commands on this machine? [y/N] ");
   if (answer === null) {
     run.emitErr(
-      `mate: approving commands needs a terminal; run \`${FRAMEWORK_NAME} workflow trust\` yourself.`,
+      `mate: approving commands needs a terminal outside an agent session; run \`${FRAMEWORK_NAME} workflow trust\` yourself.`,
     );
     process.exitCode = 1;
     return;
@@ -400,12 +411,24 @@ async function runTrust(run: Run, deps: WorkflowCommandDeps): Promise<void> {
     run.emitOut("Nothing approved.");
     return;
   }
-  await trustCommands(untrusted.map((command) => command.run));
+  await trustCommands(
+    untrusted.map(({ type, hook, run: text }) => ({ type, hook, run: text, companion })),
+  );
   run.emitOut(`Approved ${untrusted.length} command${untrusted.length === 1 ? "" : "s"}.`);
 }
 
-/** The developer's yes or no; null outside a terminal. */
-async function confirmInTerminal(question: string): Promise<boolean | null> {
+/**
+ * Set in the shells of the agent runtimes Mate launches. Best effort: an agent that fakes a
+ * terminal and unsets them, or writes the approval file itself, still gets through.
+ */
+const AGENT_ENV = ["CLAUDECODE", "OPENCODE"] as const;
+
+/** The developer's yes or no; null outside a terminal or inside an agent's shell. */
+async function confirmInTerminal(
+  question: string,
+  env: Record<string, string | undefined>,
+): Promise<boolean | null> {
+  if (AGENT_ENV.some((name) => env[name])) return null;
   if (!process.stdin.isTTY || !process.stdout.isTTY) return null;
   const prompt = readline.createInterface({ input: process.stdin, output: process.stdout });
   try {

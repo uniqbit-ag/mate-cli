@@ -44,3 +44,15 @@ describe("patternsOverlap", () => {
     expect(patternsOverlap(b, a)).toBe(expected);
   });
 });
+
+describe("many `**`", () => {
+  test("a pattern with many of them on a deep path that does not match stays fast", () => {
+    const pattern = Array.from({ length: 12 }, () => "**").join("/") + "/x";
+    const file = Array.from({ length: 40 }, (_, index) => `d${index}`).join("/");
+    const started = performance.now();
+
+    expect(matchesPattern(pattern, file)).toBe(false);
+    expect(patternsOverlap(pattern, `${file}/y`)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+});
