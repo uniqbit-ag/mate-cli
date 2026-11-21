@@ -357,6 +357,14 @@ export async function readDeliveryRecord(changeDir: string): Promise<DeliveryRec
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
   }
+  return parseDeliveryRecord(source, file, path.basename(changeDir));
+}
+
+/**
+ * Parses the text of a `delivery.yaml` read from `file`, of the change folder `folder`
+ * (a name or archive anchor). Throws on a record it cannot understand.
+ */
+export function parseDeliveryRecord(source: string, file: string, folder: string): DeliveryRecord {
   let parsed: unknown;
   try {
     parsed = parse(source);
@@ -370,8 +378,7 @@ export async function readDeliveryRecord(changeDir: string): Promise<DeliveryRec
   // Canary records may carry `ticket` or `skipped`; both are ignored and dropped on write.
   return {
     version: 1,
-    change:
-      optionalString(document.change, file, "change") ?? changeNameOf(path.basename(changeDir)),
+    change: optionalString(document.change, file, "change") ?? changeNameOf(folder),
     deliveries: deliveries.map((entry) => parseDelivery(entry, file)),
     ...stateOf(document.state, file),
     ...blockedOf(document.blocked, file),
