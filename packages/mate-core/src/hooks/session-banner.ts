@@ -16,7 +16,27 @@ import { mateVersion } from "../runtime/install";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
 import { pendingSubmittedLine } from "../runtime/pending-records";
 import { projectionCheckout } from "../runtime/projection";
+import { readWorkflow } from "../runtime/workflow/declaration";
 import { hookFolder, hookOutcome, runHook, type HookEnv, type HookOutcome } from "./hook-io";
+
+/** Problems of an invalid declaration named in the banner; the rest are counted. */
+const WORKFLOW_PROBLEMS_SHOWN = 5;
+
+/**
+ * An invalid workflow declaration, by problem: its stages do not run and guidance keeps the
+ * built-in reading rule until it is fixed. Empty for a valid or absent one.
+ */
+export function workflowProblemLines(companionPath: string): string[] {
+  const verdict = readWorkflow(companionPath);
+  if (verdict.ok) return [];
+  const shown = verdict.problems.slice(0, WORKFLOW_PROBLEMS_SHOWN);
+  const more = verdict.problems.length - shown.length;
+  return [
+    `workflow: ${verdict.file} is invalid; its stages do not run until it is fixed`,
+    ...shown.map((problem) => `  ${problem.path ? `${problem.path}: ` : ""}${problem.message}`),
+    ...(more > 0 ? [`  and ${more} more`] : []),
+  ];
+}
 
 /**
  * Resolves in-process from either source — no subprocess in either branch.
@@ -71,6 +91,7 @@ export async function buildBanner(
   /** Read after the synchronization above, with bounded local Git only. */
   const pending = await pendingSubmittedLine(context.companionPath, syncOptions.homeDir);
   if (pending) lines.push(`  ${pending}`);
+  for (const note of workflowProblemLines(context.companionPath)) lines.push(`  ${note}`);
 
   return hookOutcome({ systemMessage: lines.join("\n") });
 }

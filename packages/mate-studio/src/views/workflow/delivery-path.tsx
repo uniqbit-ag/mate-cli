@@ -14,7 +14,7 @@ import {
   workflowGraph,
   type WorkflowGraph,
 } from "./graph";
-import { PHASE_LABELS, type WorkflowPath, workflowPlan, type WorkflowStep } from "./steps";
+import { nodeOf, PHASE_LABELS, type WorkflowPath, workflowPlan, type WorkflowStep } from "./steps";
 
 /** Changes at a graph node: `reviews` for the review group, else a stage id. */
 export type StageCounts = Partial<Record<string, number>>;
@@ -33,7 +33,8 @@ export function DeliveryPathView({
   counts = NO_COUNTS,
   changesByStage = NO_STAGES,
 }: {
-  payload: Pick<StudioCompanionPayload, "skills" | "topology">;
+  payload: Pick<StudioCompanionPayload, "skills" | "topology"> &
+    Partial<Pick<StudioCompanionPayload, "workflow">>;
   counts?: StageCounts;
   /** The companion's changes at each node, listed beside the graph. */
   changesByStage?: StageChanges[];
@@ -41,6 +42,7 @@ export function DeliveryPathView({
   const plan = workflowPlan({
     skills: payload.skills && payload.skills.length > 0 ? payload.skills : undefined,
     topology: payload.topology,
+    workflow: payload.workflow,
   });
   const [schema, setSchema] = useState(plan.paths[0]!.schema);
   const path = plan.paths.find((entry) => entry.schema === schema) ?? plan.paths[0]!;
@@ -60,8 +62,6 @@ export function DeliveryPathView({
     </section>
   );
 }
-
-const nodeOf = (step: WorkflowStep): string => (step.kind === "human" ? "reviews" : step.id);
 
 /** The graph on the page; one stage's detail opens in the slide-over panel. */
 function PathBody({
@@ -146,6 +146,7 @@ function PathBody({
         {step ? (
           <StageDetail
             step={step}
+            stepsKnown={path.stepsKnown}
             changes={changesByStage.find((group) => group.node === nodeOf(step))?.changes ?? []}
           >
             {step.kind === "human" ? (
@@ -174,12 +175,11 @@ function PathBody({
 
 const overviewId = (path: WorkflowPath): string => `workflow-${path.schema}-overview`;
 
-const COUNT_NAMES: Record<string, (count: number) => string> = {
-  reviews: (count) => `${count} ${count === 1 ? "change waits" : "changes wait"} for review`,
-};
-
+/** A review group is named for what its changes wait for; any other node for its stage. */
 const countName = (node: string, label: string, count: number): string =>
-  COUNT_NAMES[node]?.(count) ?? `${count} ${count === 1 ? "change" : "changes"} at ${label}`;
+  node.startsWith("reviews")
+    ? `${count} ${count === 1 ? "change waits" : "changes wait"} for review`
+    : `${count} ${count === 1 ? "change" : "changes"} at ${label}`;
 
 /** How many of the companion's changes are at a node; named for assistive technology. */
 function CountBadge({ count, name }: { count: number | undefined; name: string }) {
@@ -287,14 +287,14 @@ function WorkflowGraphView({
                   }
                 >
                   {plain ? (
-                    <span className="workflow-graph-group-label">Human review</span>
+                    <span className="workflow-graph-group-label">{groupLabel(node.steps)}</span>
                   ) : (
                     <button
                       type="button"
                       className="workflow-graph-group-label cursor-pointer rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                       onClick={() => onSelect?.(node.steps[0]!.id)}
                     >
-                      Human review
+                      {groupLabel(node.steps)}
                     </button>
                   )}
                   <ol>
@@ -311,8 +311,8 @@ function WorkflowGraphView({
                   </ol>
                   {plain ? null : (
                     <CountBadge
-                      count={counts.reviews}
-                      name={countName("reviews", "Human review", counts.reviews ?? 0)}
+                      count={counts[node.id]}
+                      name={countName(node.id, groupLabel(node.steps), counts[node.id] ?? 0)}
                     />
                   )}
                 </div>
@@ -323,6 +323,12 @@ function WorkflowGraphView({
       </ol>
     </nav>
   );
+}
+
+/** The label of the review stage a group's reviews belong to. */
+function groupLabel(steps: readonly WorkflowStep[]): string {
+  const [first] = steps;
+  return first?.kind === "human" ? first.groupLabel : "Human review";
 }
 
 /** Explains the graph's visual marks; the panel states the same facts per stage. */
@@ -443,10 +449,13 @@ function NodeLink({
 /** One stage in the panel: what it does, how it runs, and the changes at it. */
 function StageDetail({
   step,
+  stepsKnown,
   changes,
   children,
 }: {
   step: WorkflowStep;
+  /** False when the declaration is invalid, so the stage's steps are not listed. */
+  stepsKnown: boolean;
   changes: string[];
   children?: ReactNode;
 }) {
@@ -494,6 +503,19 @@ function StageDetail({
           </p>
         ) : null}
       </PanelSection>
+      {step.kind === "skill" && stepsKnown ? (
+        <PanelSection title="Steps" aside={step.source}>
+          <ol className="workflow-stage-steps m-0 grid list-decimal gap-1 pl-5 text-sm">
+            {step.steps.map((entry, index) => (
+              // A chain may name one skill twice.
+              // oxlint-disable-next-line react/no-array-index-key
+              <li key={`${index}-${entry.skill}`}>
+                <code className="font-mono">{entry.skill}</code>
+              </li>
+            ))}
+          </ol>
+        </PanelSection>
+      ) : null}
       <PanelSection title="What">
         <p className="m-0 text-sm leading-relaxed">{step.what}</p>
       </PanelSection>

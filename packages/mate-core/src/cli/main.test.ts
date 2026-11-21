@@ -20,6 +20,7 @@ import * as sessionCmd from "./commands/session/prepare";
 import * as sessionContextCmd from "./commands/session/context";
 import * as studioCmd from "./commands/studio";
 import * as updateCmd from "./commands/update";
+import * as workflowCmd from "./commands/workflow/workflow";
 import * as workingCmd from "./commands/working/working";
 import * as unwrapCmd from "./commands/unwrap";
 import * as wrapCmd from "./commands/wrap";
@@ -29,6 +30,7 @@ const BUILT_IN_COMMANDS = [
   "install",
   "plugin",
   "artifact",
+  "workflow",
   "companion",
   "hub",
   "claude",
@@ -70,6 +72,7 @@ describe("command gating", () => {
       spyOn(claudeCmd, "runLaunchClaudeCommand").mockImplementation(record("claude")),
       spyOn(opencodeCmd, "runLaunchOpenCodeCommand").mockImplementation(record("opencode")),
       spyOn(artifactCmd, "runArtifactCommand").mockImplementation(record("artifact")),
+      spyOn(workflowCmd, "runWorkflowCommand").mockImplementation(record("workflow")),
       spyOn(capCmd, "runCapCommand").mockImplementation(record("cap")),
       spyOn(workingCmd, "runWorkingCommand").mockImplementation(record("working")),
       spyOn(wrapCmd, "runWrapCommand").mockImplementation(record("wrap")),
@@ -204,6 +207,30 @@ describe("command gating", () => {
     expect(dispatched).toEqual(["report"]);
     expect(updateChecker.scheduleBackgroundCheck).not.toHaveBeenCalled();
     expect(updateChecker.enforceUpdateIfRequired).toHaveBeenCalled();
+  });
+
+  test("workflow skips the background update check; done keeps update enforcement", async () => {
+    const { deps } = recordingDeps();
+
+    await main(["node", "mate", "workflow", "done", "acme-build", "acme-fix"], deps);
+
+    expect(dispatched).toEqual(["workflow"]);
+    expect(updateChecker.scheduleBackgroundCheck).not.toHaveBeenCalled();
+    expect(updateChecker.enforceUpdateIfRequired).toHaveBeenCalled();
+  });
+
+  test("workflow next runs while an update is required, for the turn hooks", async () => {
+    const enforce = spyOn(updateChecker, "enforceUpdateIfRequired").mockImplementation(
+      async () => true,
+    );
+    spies.push(enforce);
+    const { deps } = recordingDeps();
+
+    await main(["node", "mate", "workflow", "next", "acme-fix", "--json"], deps);
+
+    expect(dispatched).toEqual(["workflow"]);
+    expect(enforce).not.toHaveBeenCalled();
+    expect(updateChecker.scheduleBackgroundCheck).not.toHaveBeenCalled();
   });
 
   test("session context runs before the runtime refresh, plugin loading and update checks", async () => {
@@ -430,6 +457,27 @@ describe("command gating", () => {
         expect(process.exitCode).toBe(1);
       }
       expect(dispatched).toEqual([]);
+    } finally {
+      process.exitCode = originalExitCode ?? 0;
+    }
+  });
+
+  test("workflow carries the gates of artifact", async () => {
+    const { gateCalls, deps } = recordingDeps();
+    await main(["node", "mate", "workflow", "steps", "apply", "--json"], deps);
+    expect(gateCalls).toEqual(["companion", "install"]);
+    expect(dispatched).toEqual(["workflow"]);
+  });
+
+  test("an ambiguous companion blocks workflow before it resolves a stage", async () => {
+    const originalExitCode = process.exitCode;
+    try {
+      const { gateCalls, deps } = recordingDeps({ companion: false });
+      process.exitCode = 0;
+      await main(["node", "mate", "workflow", "done", "apply", "acme-fix"], deps);
+      expect(gateCalls).toEqual(["companion"]);
+      expect(dispatched).toEqual([]);
+      expect(process.exitCode).toBe(1);
     } finally {
       process.exitCode = originalExitCode ?? 0;
     }

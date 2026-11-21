@@ -24,6 +24,7 @@ import { runUnwrapCommand } from "./commands/unwrap";
 import { runVscodeCommand } from "./commands/vscode/setup";
 import { parseWrapArgs, runWrapCommand } from "./commands/wrap";
 import { runWorkingCommand } from "./commands/working/working";
+import { runWorkflowCommand } from "./commands/workflow/workflow";
 import { runInstallCommand } from "./commands/install";
 import { parseDirectLaunchArgs } from "./commands/launch/shared";
 import {
@@ -122,9 +123,10 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
   // scheduleBackgroundCheck() has been observed to race a large final stdout
   // write against process exit, truncating it.
   const ownsStdout = isPluginCommand;
-  // `report` prints one large JSON contract, so it skips the background check
-  // too but keeps update enforcement and its stderr banner.
-  const skipsBackgroundCheck = ownsStdout || command === "report";
+  // `report` and `workflow` print JSON contracts other processes parse (the
+  // turn hooks parse `workflow next`), so they skip the background check too
+  // but keep their stderr banner.
+  const skipsBackgroundCheck = ownsStdout || command === "report" || command === "workflow";
 
   // Every dispatch case opens with a gate() call declaring what the command
   // needs before it may run. Declared gates run in fixed order — update
@@ -208,6 +210,15 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     case "artifact":
       if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;
       await runArtifactCommand(subcommand, rest);
+      return;
+    case "workflow":
+      // The gates of `artifact`: a stage skill resolves and records in its Session Companion.
+      // `next` writes nothing and the turn hooks run it, so a required update cannot switch
+      // their hand-off check off.
+      if (!(await gate({ updateGuard: subcommand !== "next", companion: true, install: true }))) {
+        return;
+      }
+      await runWorkflowCommand(subcommand, rest);
       return;
     case "companion":
       switch (subcommand) {

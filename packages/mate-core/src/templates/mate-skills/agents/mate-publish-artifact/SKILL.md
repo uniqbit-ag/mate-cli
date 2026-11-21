@@ -244,6 +244,8 @@ A drifted spec is published in its own right. It is never shipped by republishin
 
    When a publication was deferred, the only next step for it and the selections after it is re-invoking `/mate-publish-artifact`, which re-runs the deferred publication first.
 
+   For each change that was published, run `mate workflow done mate-publish-artifact "<change-name>"`. It prints nothing unless the companion declares a step after this skill; then end the response with a final `## Next steps` section listing the actions it printed, in its order; listing an action never invokes it.
+
    When work remains (an unmerged branch, a conflict, a failed step, a deferral): End the response with a final `## Next steps` section: numbered required actions in execution order, with exact commands and known change names, prerequisites first. Summaries, evidence, warnings, optional work, and deferred context go above it; nothing follows it. Listing an action never invokes it. Never offer the user an optional command, in or above the section; optional work appears above it only as a skill invocation labelled optional. For example, merging `workset/acme-queue` before `/mate-publish-artifact`. A kept worktree is reported above the section, never a step in it. When everything selected is published and nothing remains, report completion and stop: no `Next steps` section, no invented command.
 
    **Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code

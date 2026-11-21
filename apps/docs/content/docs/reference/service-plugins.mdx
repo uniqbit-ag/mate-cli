@@ -5,8 +5,7 @@ description: "Run a service next to Mate from a plugin: its own command, a backg
 
 A Mate plugin usually adds content to agent sessions: capabilities, hooks,
 subagents. A **service plugin** also runs something next to Mate: a daemon
-that Studio talks to, with its own command and its own part of Studio. The
-Mate factory is built this way.
+that Studio talks to, with its own command and its own part of Studio.
 
 A plugin declares its service in `service` on the plugin object it returns.
 Import the types from `@uniqbit/mate-core/plugin-api`, as types only: a
@@ -168,5 +167,4 @@ runs for them.
 
 Declare the plugin package in the companion's `framework.yaml` under
 `plugins:` and install it with `mate plugin install`, like any plugin. A
-distribution can also register it in `createMate`, as the Mate CLI does with
-the factory.
+distribution can also register it in `createMate`.

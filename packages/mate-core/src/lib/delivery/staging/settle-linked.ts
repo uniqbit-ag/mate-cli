@@ -136,7 +136,7 @@ async function settle(
   if (!configured) return { recorded: [], warning: null };
   const fetched = await fetchPendingBranches(git, configured);
   if ("error" in fetched) return { recorded: [], warning: `settling merges: ${fetched.error}` };
-  const type = deps.artifactType ?? defaultArtifactType();
+  const type = deps.artifactType ?? environment.artifactType ?? defaultArtifactType();
 
   const found = await findMerges(environment, git, fetched, type, deps);
   if (found.size === 0 || deps.signal?.aborted) return { recorded: [], warning: null };

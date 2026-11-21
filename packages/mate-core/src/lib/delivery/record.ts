@@ -1,8 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { parse, stringify } from "yaml";
+import { type Document, isMap, isScalar, type Pair, parse, parseDocument, stringify } from "yaml";
+import { withPathLock } from "../../runtime/companion-lock";
 import { errorMessage } from "../../runtime/error-message";
+import { FRAMEWORK_NAME } from "../../runtime/framework";
 import { changeNameOf } from "../change-layout";
 import { scopedRepositories } from "../openspec-scopes";
 import {
@@ -15,6 +17,9 @@ import {
 import { DELIVERY_FILE } from "../../runtime/pending-records";
 
 export { DELIVERY_FILE };
+
+/** Lock namespace for a Delivery Record's read-modify-write. */
+const RECORD_LOCK_NAMESPACE = "delivery-record";
 
 /** A merge result: `open` is "not yet merged", `closed-unmerged` is "dropped". */
 export type MergeState = "merged" | "open" | "closed-unmerged";
@@ -86,6 +91,12 @@ export interface DeliveryRecord {
    * changed after the delta was written conflicts instead of being overwritten.
    */
   specBase?: string;
+  /**
+   * The finished steps of the change's Delivery Path stages: per stage id, the steps' skills in
+   * the order they were recorded. Appended to only by {@link recordStep}; every other write
+   * carries it over.
+   */
+  stages?: Record<string, string[]>;
 }
 
 const JIRA_KEY = /^[A-Za-z][A-Za-z0-9]+-\d+$/;
@@ -365,7 +376,23 @@ export async function readDeliveryRecord(changeDir: string): Promise<DeliveryRec
     ...stateOf(document.state, file),
     ...blockedOf(document.blocked, file),
     ...specBaseOf(document.specBase, file),
+    ...stagesOf(document.stages, file),
   };
+}
+
+function stagesOf(value: unknown, file: string): { stages?: Record<string, string[]> } {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw malformed(file, "stages must be a mapping");
+  }
+  // A value that is no list of skills reads as no steps.
+  const stages: Record<string, string[]> = {};
+  for (const [id, steps] of Object.entries(value)) {
+    if (!Array.isArray(steps)) continue;
+    const skills = steps.filter((step): step is string => typeof step === "string");
+    if (skills.length > 0) stages[id] = skills;
+  }
+  return Object.keys(stages).length > 0 ? { stages } : {};
 }
 
 function stateOf(value: unknown, file: string): { state?: SubmissionState } {
@@ -418,7 +445,7 @@ export async function canaryTicketOf(changeDir: string): Promise<string | null> 
   }
 }
 
-/** Keys in file order: `version, change, state, blocked, specBase, deliveries`. */
+/** Keys in file order: `version, change, state, blocked, specBase, stages, deliveries`. */
 function orderedRecord(record: DeliveryRecord): DeliveryRecord {
   return {
     version: record.version,
@@ -426,6 +453,7 @@ function orderedRecord(record: DeliveryRecord): DeliveryRecord {
     ...(record.state ? { state: record.state } : {}),
     ...(record.blocked ? { blocked: record.blocked } : {}),
     ...(record.specBase ? { specBase: record.specBase } : {}),
+    ...(record.stages ? { stages: record.stages } : {}),
     deliveries: record.deliveries,
   };
 }
@@ -482,4 +510,63 @@ export async function writeDeliveryRecord(
   record: DeliveryRecord,
 ): Promise<void> {
   await fs.writeFile(path.join(changeDir, DELIVERY_FILE), stringify(orderedRecord(record)), "utf8");
+}
+
+/**
+ * Records `skill` as a finished step of `stage` for the change in `changeDir`: a write limited
+ * to the `stages.<stage>` entry, which leaves the rest of the file as it is. A skill already
+ * recorded changes nothing. A change without a record gets an unlinked one. Throws on a record
+ * that cannot be read.
+ */
+export async function recordStep(
+  changeDir: string,
+  change: string,
+  stage: string,
+  skill: string,
+): Promise<void> {
+  const file = path.join(changeDir, DELIVERY_FILE);
+  // Concurrent `mate workflow done` runs would each rewrite the list they read.
+  const locked = await withPathLock(RECORD_LOCK_NAMESPACE, file, {}, async () => {
+    // Read first: a damaged record is reported, never rewritten.
+    const record = await readDeliveryRecord(changeDir);
+    if (record === null) {
+      await writeDeliveryRecord(changeDir, {
+        ...unlinkedRecord(changeNameOf(change)),
+        stages: { [stage]: [skill] },
+      });
+      return;
+    }
+    const steps = record.stages?.[stage] ?? [];
+    if (steps.includes(skill)) return;
+    const document = parseDocument(await fs.readFile(file, "utf8"));
+    if (isMap(document.get("stages", true))) {
+      document.setIn(["stages", stage], document.createNode([...steps, skill]));
+    } else {
+      document.delete("stages");
+      insertBeforeDeliveries(document, document.createPair("stages", { [stage]: [skill] }));
+    }
+    await fs.writeFile(file, document.toString(), "utf8");
+  });
+  if (!locked.acquired) {
+    throw new Error(`another ${FRAMEWORK_NAME} process is still writing ${file}; try again.`);
+  }
+}
+
+/** Adds `pair` where {@link orderedRecord} puts `stages`: before `deliveries`, else last. */
+function insertBeforeDeliveries(document: Document, pair: Pair): void {
+  const root = document.contents;
+  if (!isMap(root)) return void document.add(pair);
+  const index = root.items.findIndex(
+    (item) => isScalar(item.key) && item.key.value === "deliveries",
+  );
+  if (index < 0) root.items.push(pair);
+  else root.items.splice(index, 0, pair);
+}
+
+/** The record without the recorded steps of `stage`. */
+export function withoutStage(record: DeliveryRecord, stage: string): DeliveryRecord {
+  if (!record.stages || !(stage in record.stages)) return record;
+  const { [stage]: _dropped, ...stages } = record.stages;
+  const { stages: _all, ...rest } = record;
+  return Object.keys(stages).length > 0 ? { ...rest, stages } : rest;
 }

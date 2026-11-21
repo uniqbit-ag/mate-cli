@@ -76,11 +76,23 @@ propose steps below.
    against that text, not against the canonical specs. A failing projection reports
    publication's reason; relay it.
 
-4. **Hand off to human review.** Reviews are done by people, not by a skill.
-   End the response with a final `## Next steps` section: numbered required actions in
-   execution order, with exact commands and known change names, prerequisites first.
-   Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
-   follows it. Listing an action never invokes it. Never offer the user an optional command, in or above the section; optional work appears above it only as a skill invocation labelled optional.
+4. **Close the stage.** Reviews are done by people, not by a skill, and validation is
+   never approval. At the end of every run of this skill, for each change it proposed,
+   run:
+
+   ```bash
+   mate workflow done mate-propose-change "<change-name>"
+   ```
+
+   It prints the next actions for the change. End the response with a final `## Next
+   steps` section: numbered required actions in execution order, with exact commands and
+   known change names, prerequisites first: required work of this run that is still
+   open, then the actions the command printed, in its order. Summaries, evidence,
+   warnings, optional work, and deferred context go above it; nothing follows it.
+   Listing an action never invokes it. Never offer the user an optional command, in or
+   above the section; optional work appears above it only as a skill invocation labelled
+   optional, as the command's `optional:` line names it. If the command fails, report its
+   problems and end without a `Next steps` section.
 
    **Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
    and Cursor and the fallback. When the current runtime uses another syntax, swap only
@@ -89,28 +101,16 @@ propose steps below.
    folder or an older example. Arguments, commands, paths, and order stay, and naming
    never invokes.
 
-   List the artifacts to review in schema order (Review proposal, Review specs, Review
-   design, Review tasks for `mate-full`; Review specs and Review tasks for
-   `mate-minimal`), then `/mate-apply-change <change-name>` after that review. Never
-   describe validation as approval.
+   Add only this skill's own required actions to the section:
 
    - **Remaining slices:** when recommending them next, list
      `/mate-propose-change <slice>` per slice in dependency order; otherwise name them
      above the section as deferred.
    - **Dependencies:** a `dependsOn` change with unfinished work (open tasks or an
-     outstanding check) gets its named action listed before applying this change. A
+     outstanding check) gets its named action listed before the printed ones. A
      dependency that is implemented but unsubmitted does not block apply: say above
      the section that submitting it first, with `/mate-submit-change`, avoids a submit
      warning.
-
-   ```text
-   Validation passed; validation is not approval.
-
-   ## Next steps
-   1. Review specs: openspec/changes/acme-queue/specs/
-   2. Review tasks: openspec/changes/acme-queue/tasks.md
-   3. After your review: /mate-apply-change acme-queue
-   ```
 
 ## Revise mode
 

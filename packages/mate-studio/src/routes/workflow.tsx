@@ -30,6 +30,7 @@ export const Route = createFileRoute("/workflow")({
               skills: data.skills ?? [],
               topology: data.topology ?? null,
               warnings: data.warnings,
+              workflow: data.workflow,
             }}
             changes={activeChanges(overview.data?.changes ?? [], overview.data?.submitted ?? [])}
           />

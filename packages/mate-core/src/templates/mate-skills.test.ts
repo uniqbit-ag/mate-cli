@@ -1167,55 +1167,119 @@ describe("bundled Delivery Path stage skills", () => {
     }
   });
 
-  test("Delivery Path handoffs end with an ordered Next steps section", async () => {
+  /**
+   * A stage skill closes through the CLI, which prints the hand-off: `mate workflow done` names
+   * the next step or the `Next steps` section. This wording is the one the agent end-to-end runs
+   * (`test/agent-e2e`) follow, and the one the docs give a companion for its own skills.
+   */
+  test("stage skills close their stage through mate workflow done", async () => {
     const flat = (source: string) => source.replace(/\s+/g, " ");
-    const closingRule =
-      "End the response with a final `## Next steps` section: numbered required actions in execution order, with exact commands and known change names, prerequisites first. Summaries, evidence, warnings, optional work, and deferred context go above it; nothing follows it. Listing an action never invokes it. Never offer the user an optional command, in or above the section; optional work appears above it only as a skill invocation labelled optional.";
-    const stages = {
-      "mate-clarify-intent": ["1. /mate-explore-change"],
-      "mate-explore-change": [
-        "one `/mate-propose-change <slice>` per agreed slice in dependency order",
-        "A slice deferred for later is context above the section, not an action in it.",
-      ],
-      "mate-propose-change": [
-        "then `/mate-apply-change <change-name>` after that review",
-        "Never describe validation as approval.",
-        "list `/mate-propose-change <slice>` per slice in dependency order",
-        "A dependency that is implemented but unsubmitted does not block apply",
-        'mate artifact project "<change-name>" --json',
-        "A `dependsOn` change that is submitted or active in this checkout counts as satisfied",
-        "3. After your review: /mate-apply-change acme-queue",
-      ],
-      "mate-apply-change": [
-        "label `/mate-show-me` and `/mate-simplify-code` as optional",
-        "they are not prerequisites for submit",
-        "list `/mate-submit-change <change-name>`",
-        "this order avoids an advisory submit warning; it is not a gate",
-        "implemented but unsubmitted is no such warning; it only affects submit order",
-        "A submitted or locally active dependency counts as satisfied.",
-      ],
-      "mate-show-me": ["`/mate-simplify-code` above it as optional"],
-      "mate-simplify-code": ["`/mate-show-me` above it as optional"],
-      "mate-submit-change": [
-        "list merging it before `/mate-publish-artifact`",
-        "publication, not submit, waits for the merge",
-        "Never commit, push, open a PR, or merge for the user.",
-        "An open or unknown merge is information, not a failure and not an action: never offer to record it",
-      ],
-      "mate-publish-artifact": [
-        "no `Next steps` section, no invented command",
-        "merging `workset/acme-queue` before `/mate-publish-artifact`",
-      ],
+    const closing =
+      "It prints the next actions for the change. End the response with a final `## Next steps` section: numbered required actions in execution order, with exact commands and known change names, prerequisites first: required work of this run that is still open, then the actions the command printed, in its order.";
+    // Apply and submit record an earlier step the developer vouches for; a companion's own skill
+    // is left as its author wrote it.
+    const earlierSteps =
+      'that the request or the user says ran: record it with `mate workflow done <skill> "<change-name>"`; otherwise name it above the hand-off.';
+    /** Per skill: its `done` commands, what it keeps of its own, and what the CLI prints now. */
+    const stages: Record<string, { commands: string[]; keeps: string[]; gone: string[] }> = {
+      "mate-clarify-intent": {
+        commands: ["mate workflow done mate-clarify-intent"],
+        keeps: ["PRE-EXPLORE HANDOFF (skip)", "Next: /mate-explore-change"],
+        gone: ["1. /mate-explore-change"],
+      },
+      "mate-explore-change": {
+        commands: [
+          "mate workflow done mate-explore-change",
+          'mate workflow done mate-explore-change "<change-name>"',
+        ],
+        keeps: [
+          "that action once per agreed slice in dependency order",
+          "A slice deferred for later is context above the section, not an action in it.",
+        ],
+        gone: ["List `/mate-propose-change <change-name>`"],
+      },
+      "mate-propose-change": {
+        commands: ['mate workflow done mate-propose-change "<change-name>"'],
+        keeps: [
+          "validation is never approval",
+          "list `/mate-propose-change <slice>` per slice in dependency order",
+          "A dependency that is implemented but unsubmitted does not block apply",
+          'mate artifact project "<change-name>" --json',
+          "A `dependsOn` change that is submitted or active in this checkout counts as satisfied",
+        ],
+        gone: ["then `/mate-apply-change <change-name>` after that review", "After your review:"],
+      },
+      "mate-apply-change": {
+        commands: ['mate workflow done mate-apply-change "<change-name>"'],
+        keeps: [
+          "also with tasks still open or after a blocker",
+          "Required work still open (a failing check, an unanswered question) comes first.",
+          "this order avoids an advisory submit warning; it is not a gate",
+          "implemented but unsubmitted is no such warning; it only affects submit order",
+          "A submitted or locally active dependency counts as satisfied.",
+          earlierSteps,
+        ],
+        gone: ["list `/mate-submit-change <change-name>`", "label `/mate-show-me`"],
+      },
+      "mate-show-me": {
+        commands: ['mate workflow done mate-show-me "<change-name>"'],
+        keeps: ["When reviewing an applied change, close the stage"],
+        gone: ["/mate-simplify-code", "/mate-submit-change"],
+      },
+      "mate-simplify-code": {
+        commands: ['mate workflow done mate-simplify-code "<change-name>"'],
+        keeps: ["When the pass ran on an applied change, close the stage"],
+        gone: ["/mate-show-me", "/mate-submit-change"],
+      },
+      "mate-submit-change": {
+        commands: ['mate workflow done mate-submit-change "<change-name>"'],
+        keeps: [
+          "whatever the `status`",
+          "finishing each change of `waitingFor` comes before the printed ones",
+          "publication, not submit, waits for the merge",
+          "Never commit, push, open a PR, or merge for the user.",
+          "An open or unknown merge is information, not a failure and not an action: never offer to record it",
+          "`stage-open`, naming what is open and the skill to run",
+          "`step-counted`, naming each",
+          earlierSteps,
+        ],
+        gone: ["/mate-publish-artifact", "1. Merge workset/acme-queue"],
+      },
     };
-    for (const [skill, phrases] of Object.entries(stages)) {
+    let bytes = 0;
+    for (const [skill, { commands, keeps, gone }] of Object.entries(stages)) {
       const [claude, agents] = await Promise.all(
         bothRoots.map((root) => readSkillFrom(root, skill)),
       );
       expect(agents).toBe(claude);
-      const source = flat(claude);
-      expect(source).toContain(closingRule);
-      for (const phrase of phrases) expect(source).toContain(phrase);
+      bytes += Buffer.byteLength(claude!);
+      const source = flat(claude!);
+      expect(source, skill).toContain(closing);
+      expect(source, skill).toContain(skillInvocationBlock);
+      for (const phrase of [...commands, ...keeps]) expect(source, skill).toContain(phrase);
+      for (const phrase of gone) expect(source, skill).not.toContain(phrase);
     }
+
+    // Publication ends the path: its skill reports each published change and keeps its own
+    // hand-off for work that remains.
+    const [publish, agentsPublish] = await Promise.all(
+      bothRoots.map((root) => readSkillFrom(root, "mate-publish-artifact")),
+    );
+    expect(agentsPublish).toBe(publish);
+    bytes += Buffer.byteLength(publish!);
+    const source = flat(publish!);
+    for (const phrase of [
+      'mate workflow done mate-publish-artifact "<change-name>"',
+      "It prints nothing unless the companion declares a step after this skill",
+      "no `Next steps` section, no invented command",
+      "merging `workset/acme-queue` before `/mate-publish-artifact`",
+    ]) {
+      expect(source).toContain(phrase);
+    }
+    // Main's closing rule is kept word for word, since sessions follow it best (60 of 60 on the
+    // smallest model); with the command and the earlier-steps paragraph of apply and submit it
+    // costs about 2.5% over main's 121440 bytes.
+    expect(bytes).toBeLessThan(124_500);
   });
 
   test("no Next steps example offers a mate command", async () => {
@@ -1382,9 +1446,7 @@ describe("bundled Delivery Path stage skills", () => {
       "`defaultBranch`, which is the change's resolved delivery branch (e.g. `workset/<id>` under the default branch template)",
     );
     expect(source).toContain("never the repository's default branch");
-    expect(source).toContain(
-      "Name the submit action only there: omit the reference's completion sentence that also points to `/mate-submit-change`.",
-    );
+    expect(source).toContain("Omit the reference's completion sentence.");
   });
 
   test("propose, revise, submit, and publish never ask for or record a ticket", async () => {

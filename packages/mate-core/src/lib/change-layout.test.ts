@@ -7,10 +7,13 @@ import {
   activeChanges,
   archiveAnchors,
   changeNameOf,
+  changeNames,
   deltaSpecs,
   isChangeName,
+  locate,
   locateChange,
   parseAnchor,
+  type ChangeLayout,
 } from "./change-layout";
 
 let companion: string;
@@ -124,6 +127,59 @@ describe("locateChange", () => {
     for (const target of ["../acme", "archive", "..", ".", "a/b", ""]) {
       expect(await locateChange(companion, target)).toBeNull();
     }
+  });
+});
+
+describe("locate over a declared layout", () => {
+  const notes = (archiveRoot?: string): ChangeLayout => ({
+    source: "notes",
+    ...(archiveRoot === undefined ? {} : { archiveRoot }),
+    isRecordId: (id) => parseAnchor(id) !== null,
+    recordName: changeNameOf,
+  });
+
+  test("finds an active folder and lists names without the archive inside the source", async () => {
+    await fs.mkdir(path.join(companion, "notes", "acme-glossary"), { recursive: true });
+    await fs.mkdir(path.join(companion, "notes", "archive", "2026-01-02-acme-old"), {
+      recursive: true,
+    });
+    const layout = notes("notes/archive");
+    expect(await locate(companion, layout, "acme-glossary")).toEqual({
+      dir: path.join(companion, "notes", "acme-glossary"),
+      archived: false,
+    });
+    expect(await changeNames(companion, layout)).toEqual(["acme-glossary"]);
+  });
+
+  test("a missing folder names the path it is expected at", async () => {
+    expect(await locate(companion, notes(), "acme-glossary")).toEqual({
+      missing: "notes/acme-glossary/",
+    });
+    expect(await locate(companion, notes(), "../acme")).toBeNull();
+  });
+
+  test("an archive id resolves when the type declares an archive", async () => {
+    const record = path.join(companion, "notes-history", "2026-01-02-acme-glossary");
+    await fs.mkdir(record, { recursive: true });
+    const layout = notes("notes-history");
+    expect(await locate(companion, layout, "2026-01-02-acme-glossary")).toEqual({
+      dir: record,
+      archived: true,
+    });
+    // The name alone finds its newest record.
+    expect(await locate(companion, layout, "acme-glossary")).toEqual({
+      dir: record,
+      archived: true,
+    });
+  });
+
+  test("an archive id is no change of a type without an archive", async () => {
+    await fs.mkdir(path.join(companion, "notes-history", "2026-01-02-acme-glossary"), {
+      recursive: true,
+    });
+    expect(await locate(companion, notes(), "2026-01-02-acme-glossary")).toEqual({
+      missing: "notes/2026-01-02-acme-glossary/",
+    });
   });
 });
 

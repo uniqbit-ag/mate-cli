@@ -138,10 +138,37 @@ export {
   LEGACY_SCHEMA_ALIASES,
   SCHEMA_ARTIFACTS,
   SHIPPED_SCHEMAS,
+  type DeliveryPath,
   type DeliveryStage,
   type MateSchema,
+  type ReviewStage,
+  type SkillStage,
   type SkillStageId,
 } from "./lib/delivery/stages";
+// The workflow model imports nothing, so the browser bundle can resolve a path with it.
+export {
+  BUILTIN_ARTIFACT_TYPE,
+  defaultWorkflow,
+  nextStage,
+  WORKFLOW_FILE,
+  type Milestone,
+  type NextStage,
+  type Workflow,
+  type WorkflowProblem,
+  type WorkflowReviewStage,
+  type WorkflowSkillStage,
+  type WorkflowStage,
+  type WorkflowStep,
+} from "./runtime/workflow/workflow";
+export {
+  pathPosition,
+  stagesBeforeWork,
+  stepStage,
+  type PathPosition,
+  type PathProgress,
+  type PathSubject,
+} from "./lib/workflow/position";
+export type { Handoff, HandoffAction, SkillAction, TextAction } from "./lib/workflow/handoff";
 export type { WorkflowTopology } from "./cli/commands/studio/topology";
 export {
   contrastRatio,

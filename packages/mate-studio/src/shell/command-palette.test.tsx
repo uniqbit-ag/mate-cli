@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { StudioMode } from "@uniqbit/mate-core/studio";
 
+import { positioned } from "../../test/positioned";
 import type { CompanionViewData } from "../server/views";
 import type { ShellData } from "../server/shell";
 
@@ -50,8 +51,13 @@ async function mount(studioMode: StudioMode = "engineering") {
     error: null,
     studioMode,
     changes: [
-      { name: "archive-spec-drift-check", completedTasks: 0, totalTasks: 13, artifacts: [] },
-      { name: "acme-build", completedTasks: 2, totalTasks: 5, artifacts: [] },
+      positioned({
+        name: "archive-spec-drift-check",
+        completedTasks: 0,
+        totalTasks: 13,
+        artifacts: [],
+      }),
+      positioned({ name: "acme-build", completedTasks: 2, totalTasks: 5, artifacts: [] }),
     ],
     warnings: [],
   } satisfies CompanionViewData);
