@@ -13,16 +13,21 @@ import {
   type AgentRuntime,
   type Invocation,
 } from "../skill-prefix";
+import { record } from "../json-fields";
 import { readWorkflow } from "./declaration";
 import type { Workflow, WorkflowVerdict } from "./workflow";
 
 /** A step and the change it ran for; a report without a change has `change: ""`. */
 export type Step = Invocation;
 
-/** What one turn of a session started and reported. */
+/**
+ * What one turn of a session started and reported: `reports` as read from its commands' text,
+ * `recorded` as `mate workflow done` noted them, which win when the turn has any.
+ */
 export interface Turn {
   step?: Step;
   reports: Step[];
+  recorded?: Step[];
 }
 
 /**
@@ -111,9 +116,34 @@ export function reportedSteps(command: string): Step[] {
   }));
 }
 
+const SKILL_WORD = new RegExp(`^${SKILL}$`);
+
+/**
+ * The turn with the steps `mate workflow done` recorded, `recorded` as it noted them; an entry
+ * that names no step or a change that is no change name is dropped.
+ */
+export function noteRecorded(turn: Turn, recorded: unknown): Turn {
+  const steps = (Array.isArray(recorded) ? recorded : []).flatMap((value: unknown) => {
+    const { skill, change } = record(value);
+    const valid =
+      typeof skill === "string" &&
+      SKILL_WORD.test(skill) &&
+      typeof change === "string" &&
+      (change === "" || isInvocationChange(change));
+    return valid ? [{ skill, change }] : [];
+  });
+  return steps.length === 0 ? turn : { ...turn, recorded: [...(turn.recorded ?? []), ...steps] };
+}
+
+/** The turn as judged: its recorded steps as its reports when it has any. */
+function judgedTurn(turn: Turn): Turn {
+  const { recorded, ...rest } = turn;
+  return recorded && recorded.length > 0 ? { ...rest, reports: recorded } : rest;
+}
+
 /** Whether the turn started a step or reported one; a turn without either always passes. */
 export function hasNotes(turn: Turn): boolean {
-  return turn.step !== undefined || turn.reports.length > 0;
+  return turn.step !== undefined || turn.reports.length > 0 || (turn.recorded?.length ?? 0) > 0;
 }
 
 /**
@@ -122,11 +152,12 @@ export function hasNotes(turn: Turn): boolean {
  * nothing, and without fetching when the workflow declaration is invalid or `judges` declines.
  */
 export async function finishTurn(
-  turn: Turn,
+  noted: Turn,
   options: FinishOptions,
   deps: FinishDeps = {},
 ): Promise<TurnVerdict> {
-  if (!hasNotes(turn)) return PASS;
+  if (!hasNotes(noted)) return PASS;
+  const turn = judgedTurn(noted);
   const read = (deps.readWorkflow ?? readWorkflow)(options.companionPath);
   if (!read.ok || (options.judges && !(await options.judges()))) return PASS;
   const handoffs = await fetchHandoffs(

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { readWorkflow } from "../runtime/workflow/declaration";
+import { appendTurnNote } from "../runtime/turn-state.mjs";
 import type { PrintedHandoff } from "../runtime/workflow/turn";
 import { HANDOFF_CHECK, registerTurnHook, turnResponse, type TurnHookDeps } from "./turn-hook";
 
@@ -118,6 +119,7 @@ beforeEach(async () => {
   deps = {
     companionPath: companion,
     env: {},
+    stateDir: path.join(root, "state"),
     nextHandoff: async (change) => {
       asked.push(change);
       return change === "acme-fix" || change === "acme-login" ? HANDOFF : null;
@@ -135,6 +137,39 @@ async function setup(directory = "/w/acme") {
   fake.session("ses_1");
   return { ...fake, cleanup };
 }
+
+describe("OpenCode turn hook and what mate workflow done recorded", () => {
+  const note = (change: string) =>
+    appendTurnNote(path.join(deps.stateDir!, "ses_1.json"), {
+      recorded: [{ skill: "mate-publish-artifact", change }],
+    });
+
+  test("a shell loop's report is checked against its own hand-off", async () => {
+    const { prompt, tool, finish, sent, cleanup } = await setup();
+    await prompt("ses_1", "Publish it.");
+    tool("ses_1", "shell", {
+      command: 'for c in acme-login; do mate workflow done mate-publish-artifact "$c"; done',
+    });
+    await note("acme-login");
+    await finish("ses_1", "Published.");
+    expect(asked).toEqual(["acme-login"]);
+    expect(sent).toHaveLength(1);
+    cleanup();
+  });
+
+  test("an earlier turn's record is ignored", async () => {
+    const { prompt, finish, sent, cleanup } = await setup();
+    await prompt("ses_1", "Publish it.");
+    await note("acme-login");
+    await finish("ses_1", "## Next steps\n1. @mate-submit-change acme-fix");
+    expect(asked).toEqual(["acme-login"]);
+    await prompt("ses_1", "What now?");
+    await finish("ses_1", "Nothing.");
+    expect(asked).toEqual(["acme-login"]);
+    expect(sent).toEqual([]);
+    cleanup();
+  });
+});
 
 describe("OpenCode turn hook", () => {
   test("sends a prose hand-off back once, marked and resumed", async () => {

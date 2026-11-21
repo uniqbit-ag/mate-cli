@@ -4,12 +4,16 @@
  * `Stop` hook does. Where that hook blocks, it sends the session one synthetic message and
  * resumes it. Records nothing; any failure leaves the session alone.
  */
+import fs from "node:fs/promises";
+import path from "node:path";
+
 import type { Context } from "@opencode/plugin/promise/plugin";
 
 import { changeFolderNames, changeFolders } from "../runtime/workflow/change-folders";
 import type { NextHandoff } from "../runtime/workflow/next-handoff-process";
 import {
   finishTurn,
+  noteRecorded,
   noteShell,
   noteSkill,
   startTurn,
@@ -17,6 +21,13 @@ import {
   type Turn,
 } from "../runtime/workflow/turn";
 import { record, text } from "../runtime/json-fields";
+import { mateHome } from "../runtime/runtime-directory";
+import {
+  isPrivateDir,
+  readTurnNotes,
+  sessionFileName,
+  turnStateDir,
+} from "../runtime/turn-state.mjs";
 import {
   defaultWorkflow,
   readWorkflow,
@@ -35,6 +46,8 @@ export interface TurnHookDeps {
   /** The names of the companion's change folders; as `mate workflow next` finds them by default. */
   workNames?: () => Promise<string[]>;
   env?: Record<string, string | undefined>;
+  /** Where `mate workflow done` notes a session's steps; `<mate home>/turn-hooks` by default. */
+  stateDir?: string;
 }
 
 /** A session's turn; a new prompt replaces it, which is how a running check sees one. */
@@ -97,18 +110,29 @@ export async function registerTurnHook(api: Context, deps: TurnHookDeps): Promis
     return changeFolderNames(deps.companionPath, folders);
   };
 
+  const stateDir = deps.stateDir ?? turnStateDir(mateHome());
+  const stateFile = (sessionID: string) => path.join(stateDir, sessionFileName(sessionID));
+  /** Drops an earlier turn's notes; only in a private folder, as the Claude shim does. */
+  const clearNotes = async (sessionID: string) => {
+    if (!isPrivateDir(await fs.lstat(stateDir), process.getuid?.())) return;
+    await fs.rm(stateFile(sessionID), { force: true });
+  };
+
   const turns = new Map<string, SessionTurn>();
   /** Undelivered user prompts per session. */
   const queued = new Map<string, Set<string>>();
 
-  await api.session.hook("prompt", (event) => {
+  await api.session.hook("prompt", async (event) => {
     const prompt = promptText(event.prompt);
-    turns.set(event.sessionID, {
+    const entry: SessionTurn = {
       turn: startTurn(prompt),
       prompt,
       sentBack: false,
-      noting: Promise.resolve(),
-    });
+      // Before the turn runs a tool, so no note of this turn is dropped; its check waits too.
+      noting: clearNotes(event.sessionID).catch(() => {}),
+    };
+    turns.set(event.sessionID, entry);
+    await entry.noting;
   });
 
   /** The first word of `prompt` naming existing work; empty when none does. */
@@ -144,8 +168,13 @@ export async function registerTurnHook(api: Context, deps: TurnHookDeps): Promis
       if (turns.get(sessionID) === entry) turns.delete(sessionID);
     };
     await entry.noting;
+    // Read afresh at each check, so a send-back's second check counts each record once.
+    let turn: Turn = { ...entry.turn, recorded: [] };
+    for (const note of await readTurnNotes(stateFile(sessionID))) {
+      turn = noteRecorded(turn, note.recorded);
+    }
     const verdict = await finishTurn(
-      entry.turn,
+      turn,
       {
         companionPath: deps.companionPath,
         again: entry.sentBack,

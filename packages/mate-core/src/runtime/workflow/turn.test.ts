@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { parseWorkflow, type Workflow, type WorkflowVerdict } from "./declaration";
 import {
   finishTurn,
+  noteRecorded,
   noteShell,
   noteSkill,
   reportedSteps,
@@ -361,6 +362,82 @@ describe("finishTurn", () => {
       .verdict;
     expect(missing.kind === "sendBack" && missing.reason).toContain(
       "lacks @mate-submit-change acme-fix",
+    );
+  });
+});
+
+describe("reports mate workflow done recorded", () => {
+  const LOOP =
+    'for c in acme-login acme-logout; do mate workflow done mate-publish-artifact "$c"; done';
+
+  test("only valid steps and change names are noted, in order", () => {
+    const turn = noteRecorded(startTurn(""), [
+      { skill: "mate-apply-change", change: "acme-fix" },
+      { skill: "acme-explore", change: "" },
+      { skill: "Acme Bad", change: "acme-fix" },
+      { skill: "mate-apply-change", change: "$(rm -rf ~)" },
+      { skill: "mate-apply-change" },
+      "mate-apply-change",
+    ]);
+    expect(turn.recorded).toEqual([
+      { skill: "mate-apply-change", change: "acme-fix" },
+      { skill: "acme-explore", change: "" },
+    ]);
+    expect(noteRecorded(turn, "nothing")).toBe(turn);
+    expect(
+      hasNotes(noteRecorded(startTurn(""), [{ skill: "acme-lint", change: "acme-fix" }])),
+    ).toBe(true);
+  });
+
+  test("a shell loop's reports are checked against their own hand-offs", async () => {
+    // The text alone reads one report without a change, an older report's hand-off held.
+    const parsed = noteShell(
+      noteShell(startTurn(""), "mate workflow done mate-submit-change acme-login"),
+      LOOP,
+    );
+    const turn = noteRecorded(parsed, [
+      { skill: "mate-publish-artifact", change: "acme-login" },
+      { skill: "mate-publish-artifact", change: "acme-logout" },
+    ]);
+    const { verdict, queries } = finish(turn, "Published.");
+    await verdict;
+    expect(queries).toEqual([
+      { change: "acme-login", after: "mate-publish-artifact" },
+      { change: "acme-logout", after: "mate-publish-artifact" },
+    ]);
+  });
+
+  test("a refused report, which records nothing, is ignored beside recorded ones", async () => {
+    const parsed = noteShell(
+      startTurn(""),
+      "mate workflow done mate-apply-change acme-fix; mate workflow done acme-typo acme-fix",
+    );
+    const turn = noteRecorded(parsed, [{ skill: "mate-apply-change", change: "acme-fix" }]);
+    const { verdict, queries } = finish(turn, "## Next steps\n1. /mate-submit-change acme-fix");
+    expect(await verdict).toEqual({ kind: "pass" });
+    expect(queries).toEqual([{ change: "acme-fix", after: "mate-apply-change" }]);
+  });
+
+  test("without a record, the reports come from the command text", async () => {
+    const { queries, verdict } = finish(
+      applied(),
+      "## Next steps\n1. /mate-submit-change acme-fix",
+    );
+    expect(await verdict).toEqual({ kind: "pass" });
+    expect(queries).toEqual([{ change: "acme-fix", after: "mate-apply-change" }]);
+    // An empty record counts as none.
+    const empty = finish({ ...applied(), recorded: [] }, "");
+    await empty.verdict;
+    expect(empty.queries).toEqual([{ change: "acme-fix", after: "mate-apply-change" }]);
+  });
+
+  test("the turn's own step recorded without its change is still sent back", async () => {
+    const turn = noteRecorded(startTurn("/acme-security-review acme-fix"), [
+      { skill: "acme-security-review", change: "" },
+    ]);
+    const result = await finish(turn, "Reviewed.").verdict;
+    expect(result.kind === "sendBack" && result.reason).toStartWith(
+      "`mate workflow done acme-security-review` named no change",
     );
   });
 });

@@ -9,6 +9,7 @@ import {
   mayReportStep,
   mayStartStep,
   sessionFileName,
+  turnSession,
   turnStateDir,
 } from "../runtime/turn-state.mjs";
 import { mateHome } from "../runtime/runtime-directory";
@@ -99,6 +100,23 @@ describe("the turn state folder", () => {
     const planted = path.join(dir, sessionFileName("acme-session"));
     await fs.writeFile(planted, "{}\n");
     await refusedByBoth(planted);
+  });
+});
+
+describe("the session a command runs in", () => {
+  test("is Claude Code's, else OpenCode's, else none", () => {
+    expect(turnSession({ CLAUDE_CODE_SESSION_ID: "acme-claude" })).toBe("acme-claude");
+    expect(turnSession({ OPENCODE_SESSION_ID: "ses_acme" })).toBe("ses_acme");
+    expect(
+      turnSession({ CLAUDE_CODE_SESSION_ID: "acme-claude", OPENCODE_SESSION_ID: "ses_acme" }),
+    ).toBe("acme-claude");
+    expect(turnSession({})).toBeUndefined();
+    expect(turnSession({ CLAUDE_CODE_SESSION_ID: "", OPENCODE_SESSION_ID: "" })).toBeUndefined();
+  });
+
+  test("names its state file through the sanitizer, as the hooks do", () => {
+    const session = turnSession({ OPENCODE_SESSION_ID: "../acme/s 1" });
+    expect(sessionFileName(session!)).toBe("___acme_s_1.json");
   });
 });
 

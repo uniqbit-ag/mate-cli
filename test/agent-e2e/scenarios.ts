@@ -20,6 +20,8 @@ export interface Scenario {
    * none, and records such a report like any other.
    */
   closes?: Record<string, string>;
+  /** Those closing steps report through a shell loop that names the change at run time. */
+  loop?: true;
   /** Steps the change's Delivery Record already holds, by stage id. */
   recorded?: Record<string, string[]>;
   /** The change's `tasks.md` body. */
@@ -268,6 +270,27 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
+    id: "loop-report",
+    title: "a step reported through a shell loop is checked against its own hand-off",
+    workflow: workflow(
+      "  - id: apply\n    steps: [{ skill: mate-apply-change }, { skill: acme-verify }]\n",
+    ),
+    skills: ["acme-verify"],
+    closes: { "acme-verify": "apply" },
+    loop: true,
+    tasks: TASKS.replaceAll("- [ ]", "- [x]"),
+    files: { "greeting.txt": "hello acme\ngoodbye acme\n" },
+    recorded: { apply: ["mate-apply-change"] },
+    prompt: VERIFY,
+    expect: {
+      stages: { apply: ["mate-apply-change", "acme-verify"] },
+      at: "submit",
+      ran: ["acme-verify"],
+      openTasks: 0,
+      handoff: [SUBMIT],
+    },
+  },
+  {
     id: "counted-step",
     title:
       "an unreported custom stage counts once apply is recorded, and apply hands off to submit",
@@ -448,13 +471,19 @@ function fullCustom(): Scenario[] {
 
 export const DEFAULT_TASKS = TASKS;
 
-/** The step a skill ends with to close its stage: the same in Mate's skills and a companion's. */
-export function closingStep(skill: string): string {
+/**
+ * The step a skill ends with to close its stage: the same in Mate's skills and a companion's.
+ * With `loop`, the report names the change through a shell loop variable.
+ */
+export function closingStep(skill: string, loop = false): string {
+  const report = loop
+    ? `for c in "<change-name>"; do mate workflow done ${skill} "$c"; done`
+    : `mate workflow done ${skill} "<change-name>"`;
   return `## Finish
 
 When this skill has finished for a change, also with work still open, run:
 
-    mate workflow done ${skill} "<change-name>"
+    ${report}
 
 It prints the next actions for the change. End the response with a final \`## Next steps\`
 section: numbered required actions in execution order, with exact commands and known
@@ -472,8 +501,8 @@ work appears above it only as a skill invocation labelled optional, as the comma
  * A companion's own skill, written with no Mate line: it runs `acme-step`, which leaves a marker
  * outside both repositories, so a recorded step that never ran is caught. With `stage`, its author ends it with the closing step anyway.
  */
-export function customSkill(name: string, stage?: string): string {
-  const ending = stage ? closingStep(name) : "";
+export function customSkill(name: string, stage?: string, loop = false): string {
+  const ending = stage ? closingStep(name, loop) : "";
   return `---
 name: ${name}
 description: Acme's ${name} step of the Delivery Path. Use when asked to run ${name} for a change.
