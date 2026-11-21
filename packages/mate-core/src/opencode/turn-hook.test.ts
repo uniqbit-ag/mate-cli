@@ -32,7 +32,8 @@ interface Session {
   messages: unknown[];
 }
 
-function fakeApi(directory: string) {
+/** `checked` settles once the hook's next turn check ends. */
+function fakeApi(directory: string, checked: () => Promise<void>) {
   const queue: unknown[] = [];
   let wake: (() => void) | undefined;
   const hooks = new Map<string, (event: never) => void>();
@@ -89,15 +90,17 @@ function fakeApi(directory: string) {
       input,
       status,
     });
-  /** The turn's response, then the turn's end. */
-  const finish = async (sessionID: string, response: string, type = "succeeded") => {
+  /** The turn's response, then the turn's end; a succeeded turn waits for its check. */
+  const finish = async (sessionID: string, response: string, type = "succeeded", wait = true) => {
     sessions
       .get(sessionID)!
       .messages.push(
         { type: "user", text: "" },
         { type: "assistant", content: [{ type: "text", text: response }] },
       );
+    const done = wait && type === "succeeded" ? checked() : undefined;
     await emit({ type: `session.execution.${type}`, data: { sessionID } });
+    await done;
   };
   return { api: api as never, emit, session, prompt, tool, finish, sent, gets };
 }
@@ -106,6 +109,9 @@ let root: string;
 let companion: string;
 let deps: TurnHookDeps;
 let asked: string[];
+/** Waiters for turn checks, in the order the checks end. */
+let checks: (() => void)[];
+const checked = () => new Promise<void>((resolve) => checks.push(resolve));
 
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "acme-oc-turn-"));
@@ -116,10 +122,12 @@ beforeEach(async () => {
     await fs.mkdir(path.join(companion, "openspec", "changes", change), { recursive: true });
   }
   asked = [];
+  checks = [];
   deps = {
     companionPath: companion,
     env: {},
     stateDir: path.join(root, "state"),
+    checked: () => checks.shift()?.(),
     nextHandoff: async (change) => {
       asked.push(change);
       return change === "acme-fix" || change === "acme-login" ? HANDOFF : null;
@@ -132,7 +140,7 @@ afterEach(async () => {
 });
 
 async function setup(directory = "/w/acme") {
-  const fake = fakeApi(directory);
+  const fake = fakeApi(directory, checked);
   const cleanup = await registerTurnHook(fake.api, deps);
   fake.session("ses_1");
   return { ...fake, cleanup };
@@ -281,13 +289,14 @@ describe("OpenCode turn hook", () => {
     const { prompt, tool, finish, emit, sent, cleanup } = await setup();
     prompt("ses_1", "@mate-apply-change acme-fix");
     tool("ses_1", "shell", { command: "mate workflow done mate-apply-change acme-fix" });
-    await finish("ses_1", "Done, prose only.");
+    const done = checked();
+    await finish("ses_1", "Done, prose only.", "succeeded", false);
     await emit({
       type: "session.inbox.enqueued",
       data: { sessionID: "ses_1", inboxID: "msg_q", item: { type: "user" } },
     });
     answer(HANDOFF);
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await done;
     expect(sent).toHaveLength(0);
     cleanup();
   });
@@ -378,7 +387,8 @@ stages:
     const { prompt, finish, sent, cleanup } = await setup();
     // No prompt hook was registered.
     expect(() => prompt("ses_1", "@mate-apply-change acme-fix")).toThrow();
-    await finish("ses_1", "Prose.");
+    // No subscription either, so no check to wait for.
+    await finish("ses_1", "Prose.", "succeeded", false);
     expect(sent).toHaveLength(0);
     cleanup();
   });
