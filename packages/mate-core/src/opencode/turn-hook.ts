@@ -48,6 +48,8 @@ export interface TurnHookDeps {
   env?: Record<string, string | undefined>;
   /** Where `mate workflow done` notes a session's steps; `<mate home>/turn-hooks` by default. */
   stateDir?: string;
+  /** Told when a turn's check ends, whatever it decided. */
+  checked?: (sessionID: string) => void;
 }
 
 /** A session's turn; a new prompt replaces it, which is how a running check sees one. */
@@ -217,7 +219,9 @@ export async function registerTurnHook(api: Context, deps: TurnHookDeps): Promis
           queued.get(id)?.delete(event.data.inboxID);
         } else if (event.type === "session.execution.succeeded") {
           // Not awaited: a prompt queued while `mate workflow next` runs must still be seen.
-          void check(id).catch(() => {});
+          void check(id)
+            .catch(() => {})
+            .finally(() => deps.checked?.(id));
         } else if (
           event.type?.startsWith("session.execution.") &&
           event.type !== "session.execution.started"
