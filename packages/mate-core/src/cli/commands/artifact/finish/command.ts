@@ -630,7 +630,12 @@ export async function runArtifactPublishCommand(
     const all = flattened(changeResults);
     const outcomes = await cleanUpCompletedWorksets(
       context.companionPath,
-      all.flatMap(publishedBy),
+      all.flatMap((result) =>
+        publishedBy(result).map((anchor) => ({
+          anchor,
+          ...(result.commit ? { commit: result.commit } : {}),
+        })),
+      ),
       deps.worktreeCleanup,
     );
     for (const result of all) {

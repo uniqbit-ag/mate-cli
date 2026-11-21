@@ -265,7 +265,8 @@ it, and exits 0 either way. Before removing a worktree it removes the
 worktree's wrap, including the Claude local-scope MCP entries kept for its
 path; when that fails, it keeps the worktree and names the reason. A locked
 worktree is kept as is. A worktree Git refuses to remove is kept and wrapped
-again. It never
+again. A change of a Done Workset with no Delivery Record in the companion is
+named in a warning. It never
 deletes the branch. It takes `--companion <path>` and `--json` as well.
 
 After the child worktrees of an umbrella's mirrored worktree are handled, prune
@@ -1251,6 +1252,10 @@ When a publication makes its Workset Done, publish then removes that Workset's
 worktrees as `mate working worktree prune` does: clean, fully pushed worktrees
 go, and any other is kept with its reason. A change without a Workset record is
 Done once published. With `--all` this runs once, after the last publication.
+It reads each published change's Delivery Record from the publication's commit,
+so a Delivery Group published to the remote is cleaned up even when this
+companion checkout is behind it and lacks the archived change. A change whose
+Delivery Record it cannot find is named in a warning, and its worktrees stay.
 The cleanup is best effort: it never changes the result's status, the exit code,
 or where `--all` stops, and it never deletes a branch or uses `--force`. With
 `--json`, the result that finished the Workset carries
