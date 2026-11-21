@@ -212,6 +212,19 @@ RTK compacts command output: its own hook, which Mate sets up for each
 selected agent runtime, rewrites a command such as `git status` to
 `rtk git status`.
 
+#### Removing RTK
+
+RTK's integration is global: every companion on the machine shares it.
+
+- A sync leaves it alone, even in a companion that does not select RTK.
+- `mate companion setup` removes it when the run deselects RTK, or the last agent
+  runtime that used RTK in this companion. The `rtk` binary stays installed.
+- Removing RTK from `framework.yaml` by hand changes nothing global, and a later
+  `mate companion setup` no longer sees it as deselected. Remove the integration
+  yourself with `rtk init -g --uninstall` (add `--opencode` for OpenCode).
+
+If another companion still selects RTK, its next launch sets the integration up again.
+
 #### RTK in worktrees
 
 After a Claude Code session moves into a linked worktree with `EnterWorktree`,
