@@ -66,7 +66,7 @@ class FakeEventSource {
 (globalThis as { EventSource: unknown }).EventSource = FakeEventSource;
 
 afterAll(() => {
-  mock.module("../../server/vault", () => realVault);
+  mock.module("../../server/vault", () => ({ ...realVault }));
   (globalThis as { EventSource?: unknown }).EventSource = realEventSource;
 });
 
