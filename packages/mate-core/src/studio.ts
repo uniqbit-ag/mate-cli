@@ -78,12 +78,20 @@ export {
   type StudioSelection,
   type StudioView,
 } from "./cli/commands/studio/selection";
+export {
+  connectionStateOf,
+  probeStudio,
+  type StudioConnection,
+  type StudioConnectionProblem,
+  type StudioConnectionState,
+} from "./cli/commands/studio/connection";
 export { BRAND_SVGS } from "./brand/svg.generated";
 export {
   REPORT_VIEW_PREFIX,
   SERVICE_ASSET_PREFIX,
   SERVICE_ROUTE_PREFIX,
   STUDIO_EVENTS_ROUTE,
+  STUDIO_PING_ROUTE,
   TERMINAL_SESSIONS_END_ROUTE,
   TERMINAL_SESSIONS_ROUTE,
   TERMINAL_SOCKET_ROUTE,

@@ -1,9 +1,17 @@
+import type { QueryClient } from "@tanstack/react-query";
+import type {
+  StudioConnection,
+  StudioConnectionState,
+  StudioViewMountContext,
+} from "@uniqbit/mate-core/studio";
 import { afterEach, describe, expect, it } from "bun:test";
 
 await import("../../test/dom");
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { mountPluginView, PluginView } = await import("./plugin-view");
+const { startConnectionMonitor, studioConnection, useConnectionState } =
+  await import("../stores/connection");
 
 const CONTEXT = { companion: "abcdef0123", apiBase: "/api/plugins/acme", writable: true };
 
@@ -29,6 +37,8 @@ async function render(ui: React.ReactNode) {
 }
 
 afterEach(() => {
+  studioConnection()?.dispose();
+  useConnectionState.setState({ state: "online" });
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = undefined;
 });
 
@@ -81,6 +91,45 @@ describe("mounting a plugin view", () => {
     );
     await settle();
     expect(view.container.textContent).toContain("The view could not load: offline");
+    await view.unmount();
+  });
+
+  it("hands the view Studio's connection and keeps it mounted when the state changes", async () => {
+    const log: string[] = [];
+    const heard: string[] = [];
+    let answer: (state: StudioConnectionState) => void = () => {};
+    const monitor = startConnectionMonitor({
+      queryClient: { invalidateQueries: async () => {} } as unknown as QueryClient,
+      probe: () => new Promise((resolve) => (answer = resolve)),
+    });
+    let given: StudioConnection | undefined;
+    const load = async (url: string) => {
+      log.push(`load ${url}`);
+      return {
+        mount: (_: HTMLElement, context: StudioViewMountContext) => {
+          given = context.connection;
+          const unsubscribe = given?.subscribe((state) => heard.push(state));
+          return () => {
+            unsubscribe?.();
+            log.push("unmount");
+          };
+        },
+      };
+    };
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const view = await render(
+      <PluginView moduleUrl="/studio/plugins/acme/board/view.js" context={CONTEXT} load={load} />,
+    );
+    await settle();
+    expect(given).toBe(monitor);
+    given!.suspect();
+    answer("offline");
+    await settle();
+    window.dispatchEvent(new Event("online"));
+    answer("online");
+    await settle();
+    expect(heard).toEqual(["offline", "online"]);
+    expect(log).toEqual(["load /studio/plugins/acme/board/view.js"]);
     await view.unmount();
   });
 });

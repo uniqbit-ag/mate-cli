@@ -6,6 +6,7 @@ import {
 } from "@uniqbit/mate-core/studio";
 import { type RefObject, useEffect, useRef, useState } from "react";
 
+import { studioFetch } from "../lib/studio-fetch";
 import type { ShellTerminal } from "../server/shell";
 import { useTerminalUi } from "../stores/terminal-ui";
 import { storedSession, TerminalClient, type TerminalState } from "./terminal-client";
@@ -59,7 +60,7 @@ function useTerminalSessions() {
   const sessions = useQuery({
     queryKey: sessionsKey,
     queryFn: async (): Promise<TerminalSession[]> => {
-      const response = await fetch(TERMINAL_SESSIONS_ROUTE, { credentials: "same-origin" });
+      const response = await studioFetch(TERMINAL_SESSIONS_ROUTE);
       return response.ok
         ? ((await response.json()) as { sessions: TerminalSession[] }).sessions
         : [];

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Studio shows a lost connection and recovers from it
+
+- When a background request of Studio's page fails, the page probes the new `GET /api/ping` route. Only the probe decides: a refusal leaves everything as it was, while a lost network (`offline`), a redirect from an auth proxy in front of Studio (`signed-out`), a missing or changed access token (`expired`) or a host Studio does not serve (`host-refused`) shows a banner above the view. The view keeps its data.
+- The banner offers Reload, except for `host-refused`; Studio never reloads by itself. While the connection is lost it probes again after 1 s, doubling up to 30 s, and at once when the browser goes online or the tab becomes visible. When the connection is back, the banner hides, Studio refetches its queries and reopens its event stream.
+- Plugin views share the state: the mount context gains an optional `connection` (`state()`, `suspect()`, `subscribe()`). `@uniqbit/mate-core/studio` exports `connectionStateOf()`, `probeStudio()` and `STUDIO_PING_ROUTE`; `@uniqbit/mate-core/plugin-api` exports the types. See the Service Plugins reference.
+
 ### The full OpenSpec schema is now `mate-full`
 
 - Mate's full schema (proposal, specs, design, tasks) is renamed from `mate-v1` to `mate-full`, next to `mate-minimal`. A new companion gets `schema: mate-full` in `openspec/config.yaml`, and `mate-propose-change` names `mate-full`.

@@ -38,6 +38,7 @@ import {
   SERVICE_ROUTE_PREFIX,
   STUDIO_EVENTS_ROUTE,
   STUDIO_HOSTNAME,
+  STUDIO_PING_ROUTE,
   type StudioEvent,
   TERMINAL_ASSET_PREFIX,
   TERMINAL_SESSIONS_END_ROUTE,
@@ -717,6 +718,10 @@ export function createStudioFetch(
     if (route.kind === "session") return publishReport(request);
     const refusal = refusalFor(route, request, url, acceptedOrigin);
     if (refusal) return respond(refusal);
+
+    if (url.pathname === STUDIO_PING_ROUTE) {
+      return respond(new Response(null, { status: 204, headers: { "cache-control": "no-store" } }));
+    }
 
     if (url.pathname === REPORTS_ROUTE) {
       const digest = url.searchParams.get(COMPANION_PARAM) ?? "";
