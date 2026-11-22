@@ -15,6 +15,9 @@ export const SERVICE_ROUTE_PREFIX = "/api/plugins/";
 /** A service plugin's view modules: `/studio/plugins/<service id>/<view id>/<file>`. */
 export const SERVICE_ASSET_PREFIX = "/studio/plugins/";
 
+/** Answers 204 to any reader; the page probes its connection here. */
+export const STUDIO_PING_ROUTE = "/api/ping";
+
 /** One event stream per page: board, reports and markdown tree changes for a companion. */
 export const STUDIO_EVENTS_ROUTE = "/api/events";
 
