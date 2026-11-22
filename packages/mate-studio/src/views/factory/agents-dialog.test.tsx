@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import type { CredentialStatus, FactoryRunView, StudioWorkset } from "@uniqbit/mate-core/studio";
+import type { CredentialStatus, FactoryRunView } from "@uniqbit/mate-core/factory-studio";
+import type { StudioWorkset } from "@uniqbit/mate-core/studio";
 
 await import("../../../test/dom");
 const { act, render } = await import("@testing-library/react");
@@ -65,7 +66,7 @@ async function submit(doc: Document, selector: string, name: string, value: stri
 
 describe("the Agents panel", () => {
   it("shows the status without any part of a value", async () => {
-    const { view, doc } = await mountDialog({ "GET /api/factory/credential": studioKey });
+    const { view, doc } = await mountDialog({ "GET /api/plugins/factory/credential": studioKey });
     const status = doc.querySelector("[data-agents-status]")!.textContent!;
     expect(status).toStartWith("Anthropic API key, set in Studio on");
     expect(doc.body.innerHTML).not.toContain("sk-ant-api03");
@@ -74,15 +75,15 @@ describe("the Agents panel", () => {
 
   it("saves an API key in one request and empties the field", async () => {
     const { view, doc, calls } = await mountDialog({
-      "GET /api/factory/credential": none,
-      "PUT /api/factory/credential": studioKey,
+      "GET /api/plugins/factory/credential": none,
+      "PUT /api/plugins/factory/credential": studioKey,
     });
     await act(async () => doc.querySelector<HTMLButtonElement>("#agents-tab-api-key")!.click());
     const form = await submit(doc, '[data-agents-form="api-key"]', "value", KEY);
     expect(calls.filter((call) => call.method === "PUT")).toEqual([
       {
         method: "PUT",
-        path: "/api/factory/credential",
+        path: "/api/plugins/factory/credential",
         body: JSON.stringify({ kind: "api-key", value: KEY }),
       },
     ]);
@@ -95,8 +96,8 @@ describe("the Agents panel", () => {
 
   it("explains claude setup-token and saves the pasted token as a subscription", async () => {
     const { view, doc, calls } = await mountDialog({
-      "GET /api/factory/credential": none,
-      "PUT /api/factory/credential": { ...studioKey, kind: "subscription" },
+      "GET /api/plugins/factory/credential": none,
+      "PUT /api/plugins/factory/credential": { ...studioKey, kind: "subscription" },
     });
     expect(doc.querySelector('[data-agents-form="subscription"]')!.textContent).toContain(
       "claude setup-token",
@@ -110,15 +111,15 @@ describe("the Agents panel", () => {
 
   it("offers Clear only for a credential set in Studio", async () => {
     const startup = await mountDialog({
-      "GET /api/factory/credential": { kind: "api-key", source: "startup", setAt: null },
+      "GET /api/plugins/factory/credential": { kind: "api-key", source: "startup", setAt: null },
     });
     expect(startup.doc.querySelector(".agents-clear")).toBeNull();
     startup.view.unmount();
     restore();
 
     const { view, doc, calls } = await mountDialog({
-      "GET /api/factory/credential": studioKey,
-      "DELETE /api/factory/credential": none,
+      "GET /api/plugins/factory/credential": studioKey,
+      "DELETE /api/plugins/factory/credential": none,
     });
     await act(async () => doc.querySelector<HTMLButtonElement>(".agents-clear button")!.click());
     await settle();
@@ -180,7 +181,7 @@ describe("the Agents button", () => {
   });
 
   it("opens the panel in factory mode", async () => {
-    const fake = fakeFetch({ "GET /api/factory/credential": none });
+    const fake = fakeFetch({ "GET /api/plugins/factory/credential": none });
     restore = fake.restore;
     const view = await mountBoard(true);
     const doc = view.container.ownerDocument;
@@ -191,7 +192,7 @@ describe("the Agents button", () => {
   });
 
   it("is linked from a run refused for a missing credential", async () => {
-    const fake = fakeFetch({ "GET /api/factory/credential": none });
+    const fake = fakeFetch({ "GET /api/plugins/factory/credential": none });
     restore = fake.restore;
     const view = await mountBoard(
       true,

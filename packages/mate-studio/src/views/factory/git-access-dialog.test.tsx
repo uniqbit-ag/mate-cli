@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import type { GitTokenStatus } from "@uniqbit/mate-core/studio";
+import type { GitTokenStatus } from "@uniqbit/mate-core/factory-studio";
 
 await import("../../../test/dom");
 const { act, render } = await import("@testing-library/react");
@@ -11,7 +11,7 @@ const { Factory } = await import("./factory-view");
 const { useFactoryUi } = await import("../../stores/factory-ui");
 
 const SECRET = "acme-dom-git-secret";
-const ROUTE = "/api/factory/git-tokens";
+const ROUTE = "/api/plugins/factory/git-tokens";
 const studioKey: GitTokenStatus = {
   key: "git.acme.test/acme",
   source: "studio",

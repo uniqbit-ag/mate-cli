@@ -1,10 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import type {
-  FactoryRunView,
-  StudioCompanionPayload,
-  StudioWorkset,
-} from "@uniqbit/mate-core/studio";
+import type { FactoryRunView } from "@uniqbit/mate-core/factory-studio";
+import type { StudioCompanionPayload, StudioWorkset } from "@uniqbit/mate-core/studio";
 import {
   attentionKind,
   derivedSituation,

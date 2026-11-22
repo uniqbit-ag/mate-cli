@@ -75,7 +75,7 @@ const count = (entry: string) =>
 /** The client a Workset command is: one connection to the public socket. */
 const CONNECT = "socat -t 5 - UNIX-CONNECT:/var/run/docker.sock </dev/null";
 
-async function startInit(): Promise<void> {
+async function startInit(env: Record<string, string> = {}): Promise<void> {
   container = `mate-workset-init-${Math.random().toString(36).slice(2, 10)}`;
   const started = run([
     "run",
@@ -86,6 +86,7 @@ async function startInit(): Promise<void> {
     "none",
     "--volume",
     `${root}:${CASE}:z`,
+    ...Object.entries(env).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
     IMAGE,
   ]);
   expect(started.stderr).toBe("");
@@ -142,6 +143,36 @@ CMD ["/usr/local/bin/mate-workset-init"]
     root = fs.mkdtempSync(path.join(os.tmpdir(), "mate-workset-init-"));
     fs.chmodSync(root, 0o777);
   };
+
+  /** A stand-in cgroup v2 root: plain files, so the case needs no privileges. */
+  const fakeCgroup = () => {
+    const cgroup = path.join(root, "cgroup");
+    fs.mkdirSync(cgroup, { mode: 0o777 });
+    fs.writeFileSync(path.join(cgroup, "cgroup.controllers"), "cpu memory pids\n");
+    fs.writeFileSync(path.join(cgroup, "cgroup.procs"), "1\n");
+    fs.writeFileSync(path.join(cgroup, "cgroup.subtree_control"), "");
+    return cgroup;
+  };
+
+  test("dind delegates the cgroup controllers before anything starts", async () => {
+    fresh();
+    const cgroup = fakeCgroup();
+    await startInit({ MATE_WORKSET_RUNTIME: "dind", MATE_CGROUP_ROOT: `${CASE}/cgroup` });
+    expect(fs.readFileSync(path.join(cgroup, "cgroup.subtree_control"), "utf8").trim()).toBe(
+      "+cpu +memory +pids",
+    );
+    expect(fs.readFileSync(path.join(cgroup, "init", "cgroup.procs"), "utf8").trim()).toBe("1");
+    // Made by the container's root; the host side cannot remove it.
+    exec(`rm -rf ${CASE}/cgroup/init`);
+  }, 120_000);
+
+  test("Sysbox leaves the cgroups alone", async () => {
+    fresh();
+    const cgroup = fakeCgroup();
+    await startInit({ MATE_CGROUP_ROOT: `${CASE}/cgroup` });
+    expect(fs.readFileSync(path.join(cgroup, "cgroup.subtree_control"), "utf8")).toBe("");
+    expect(fs.existsSync(path.join(cgroup, "init"))).toBe(false);
+  }, 120_000);
 
   test("starts no daemon, only the socket listener", async () => {
     fresh();

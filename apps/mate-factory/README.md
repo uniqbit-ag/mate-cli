@@ -196,6 +196,67 @@ remote.
 - `MATE_DOGFOOD_GIT_PORT` changes the port. Other options, such as
   `--companion`, pass through to `local-up.ts`.
 
+### Running the factory without Sysbox (dind)
+
+Some sandboxes cannot run Sysbox: a Guildhall workshop, a CI runner, or any
+VM whose kernel has no loadable modules (`sysbox-mgr` stops with
+`shiftfs kernel module check failed` or `binfmt_misc kernel module check
+failed`), and any container that is itself a Sysbox container. There, choose
+the dind Workset runtime:
+
+```bash
+MATE_FACTORY_WORKSET_RUNTIME=dind bun run factory:local
+```
+
+What changes with `dind`:
+
+- The supervisor starts no `sysbox-mgr` or `sysbox-fs`, and the inner Docker
+  daemon runs with `/etc/mate-factory/daemon-runc.json`: runc only, no
+  `sysbox-runc` required.
+- Each Workset container runs **privileged under runc**, with a volume of its
+  own for its nested `/var/lib/docker` (`workset-docker-<workset>`; overlay
+  on overlay fails). Its init delegates the cgroup controllers, as Docker's
+  own dind image does, so the Workset's Docker daemon can run containers.
+- Preflight skips Sysbox's own needs: `/dev/fuse`, the kernel version, user
+  namespaces and the `/var/lib/sysbox` volume.
+- Switching the runtime of an existing factory recreates each stopped Workset
+  container at its next start; its worktree and home volume stay.
+
+**The isolation trade-off.** With `dind`, root inside a Workset container is
+the factory container's root, and a privileged Workset can reach everything the
+factory container can. Worksets are isolated from each other only by runc, and
+the whole factory is bounded only by the outer sandbox. Use it for development
+and CI, never for a production factory or with untrusted repositories. The
+default, `sysbox`, keeps root inside a Workset unprivileged.
+
+**A small profile for a workshop.** The whole stack must fit the sandbox; the
+defaults need about 13 GB (see "Sizing the factory" in `docs/factory.mdx`).
+One run at a time with smaller containers needs about 5 GB (1 GB + 2 × 2 GB):
+
+```bash
+MATE_FACTORY_WORKSET_RUNTIME=dind \
+MATE_FACTORY_PARALLEL_RUNS=1 \
+MATE_FACTORY_WORKSET_MEMORY=2g \
+MATE_FACTORY_AGENT_MEMORY=1g \
+  bun run factory:local -- --companion ~/path/to/companion
+```
+
+That is one parallel run, one build at a time, and two Workset containers (the
+run and a session). Where the sandbox does not delegate the cgroup memory
+controller, the inner daemon logs `No memory limit support` and the Workset
+memory limits are not enforced; the sandbox's own limit then bounds everything.
+This was the case in a Guildhall workshop on a Mac worker (aarch64), where the
+dind runtime was verified: Studio started, and a Workset container ran
+`docker run hello-world`.
+
+On a Linux host, two more things matter for `factory:local`:
+
+- The companion is cloned inside the container as uid 10001. When your
+  checkout belongs to another uid, Git refuses it as `dubious ownership`; use
+  a copy owned by uid 10001.
+- The companion must be a full clone. A Git worktree or a partial clone
+  (`--filter=blob:none`) cannot be cloned from the read-only mount.
+
 ### Dependency locks
 
 `locks/global-tools.package-lock.json` is checked on every pull request and

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { GitTokenStatus } from "@uniqbit/mate-core/studio";
+import type { GitTokenStatus } from "@uniqbit/mate-core/factory-studio";
 import { useState } from "react";
 
 import { Sheet, SheetClose, SheetContent, SheetTitle } from "../../components/ui/sheet";

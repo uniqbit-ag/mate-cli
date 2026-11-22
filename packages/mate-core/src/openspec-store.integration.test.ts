@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 
-import { getWrapperBinPath } from "./lib/package-paths";
+import { refreshRuntimeDirectory } from "./lib/runtime-directory-refresh";
 import { runtimeWrapperBinPath } from "./runtime/runtime-directory";
 import { openSpecCliDeps } from "./lib/openspec-cli";
 import { checkStoreRegistration, openSpecStoreDeps } from "./lib/orchestrator/openspec-store";
@@ -27,13 +27,11 @@ setDefaultTimeout(30_000);
 
 const SCHEMA_SOURCE = path.join(import.meta.dirname, "templates", "capabilities", "openspec-cap");
 /**
- * Where a projection says the wrappers live, under the test run's HOME; linked
- * to the package's wrappers the way the runtime directory is.
+ * Where a projection says the wrappers live, under the test run's HOME. The refresh links them to
+ * the package's wrappers without the link ever going missing for the files sharing that HOME.
  */
 const WRAPPER_BIN = runtimeWrapperBinPath();
-fs.mkdirSync(path.dirname(path.dirname(WRAPPER_BIN)), { recursive: true });
-fs.rmSync(path.dirname(WRAPPER_BIN), { recursive: true, force: true });
-fs.symlinkSync(path.dirname(getWrapperBinPath()), path.dirname(WRAPPER_BIN));
+await refreshRuntimeDirectory();
 
 const REAL_OPENSPEC = findRealOpenSpec();
 const NODE_DIR = path.dirname(

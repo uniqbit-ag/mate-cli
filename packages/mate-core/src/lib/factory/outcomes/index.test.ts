@@ -15,7 +15,7 @@ import { RunStore } from "../runner/state";
 import type { StageAgent } from "../runner/workflow";
 import { type FactoryOutcomes, factoryOutcomes, recordOutcomes } from "./index";
 import type { OutcomeAction } from "./actions";
-import { LiveSessions } from "./sessions";
+import { LiveSessions } from "../../../cli/commands/studio/live-sessions";
 import { compareUrlFor } from "./runs";
 
 let root: string;
