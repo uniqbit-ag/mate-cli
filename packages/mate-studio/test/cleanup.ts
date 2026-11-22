@@ -14,4 +14,12 @@ afterEach(async () => {
   if (typeof document === "undefined") return;
   const { cleanup } = await import("@testing-library/react");
   cleanup();
+  /**
+   * cleanup() unmounts the render containers, but a portal can outlive them —
+   * a Base UI sheet lands in document.body and keeps its exit-transition node
+   * until a timer fires, so on a slow machine it is still there when the next
+   * test's whole-document queries (page.container.ownerDocument) run, which
+   * read the wrong sheet. Nothing outside the current test may survive it.
+   */
+  document.body.replaceChildren();
 });
