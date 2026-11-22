@@ -346,7 +346,22 @@ describe("Dashboard", () => {
       panel(doc)!.querySelector<HTMLButtonElement>('[data-artifact="proposal"]')!.click(),
     );
     await settle();
-    expect(panel(doc)!.querySelector(".markdown-body h1")?.textContent).toBe("Acme proposal");
+    const heading = panel(doc)!.querySelector(".markdown-body h1")?.textContent;
+    if (heading !== "Acme proposal") {
+      console.error(
+        "DEBUG sheets:",
+        [...doc.querySelectorAll('[data-slot="sheet-content"]')].map((sheet) =>
+          sheet.outerHTML.slice(0, 500),
+        ),
+      );
+      console.error(
+        "DEBUG body children:",
+        [...doc.body.children]
+          .map((child) => `${child.tagName} ${child.id} ${child.className}`.slice(0, 120))
+          .join("\n"),
+      );
+    }
+    expect(heading).toBe("Acme proposal");
     const back = [...panel(doc)!.querySelectorAll("button")].find((button) =>
       button.textContent?.trim().endsWith("Artifacts"),
     )!;
