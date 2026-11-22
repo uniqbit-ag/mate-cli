@@ -8,8 +8,8 @@
 # Left out on purpose:
 # - mate-cli's e2e suite drives a TTY through `expect`, which the workshop
 #   lacks.
-# - mate-container and mate-factory tests start Docker images (Sysbox for the
-#   factory), which the workshop cannot run; CI runs them when apps change.
+# - mate-container tests start Docker images, which the workshop cannot run; CI
+#   runs them when the app changes.
 # - knip: CI does not run it, and main carries findings of its own.
 # - mate-cli's `prepare` installs lefthook, which the workshop lacks; bun install
 #   reports it and goes on.

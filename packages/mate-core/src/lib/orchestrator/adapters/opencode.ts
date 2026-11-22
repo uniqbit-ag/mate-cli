@@ -15,6 +15,7 @@ import { resolveSecretPolicy } from "../../../runtime/policy";
 import { ensureOpenCodeServer } from "../../opencode-server";
 import { validateOpenCodePluginAssets } from "../../package-paths";
 import { readOpenCodeConfig } from "../../../tools/setup/providers/opencode-format";
+import { declaredGuidance } from "../../../runtime/companion-guidance";
 import { buildOpenCodeGuidance } from "../opencode-guidance";
 import type { PrepareResult } from "../session-prepare";
 import { LaunchPreflightError } from "../types";
@@ -173,6 +174,7 @@ export class OpenCodeAdapter extends LaunchAdapter {
       companionScoped: !context.repository,
       secretGuardrails: resolveSecretPolicy(context.companionPath).guardrails,
       friction: readFrictionSwitch(),
+      ...declaredGuidance(context.companionPath),
     });
   }
 

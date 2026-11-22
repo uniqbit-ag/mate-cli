@@ -91,6 +91,9 @@ export function sharedRefusalMessage(
   if (refusal.reason === "tickets-off") {
     return `mate: ${TICKETS_OFF}`;
   }
+  if (refusal.reason === "missing-folder") {
+    return `mate: ${refusal.change} has no change folder at ${refusal.path}; a skill of its stage creates it.`;
+  }
   if (refusal.reason === "no-resolved-branch") {
     const reasons = refusal.diagnostics.length > 0 ? ` (${refusal.diagnostics.join(" ")})` : "";
     return `mate: ${refusal.change} has no Delivery Branch to name with a ticket${reasons}; pass --branch instead.`;

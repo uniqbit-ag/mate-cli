@@ -951,8 +951,8 @@ describe("executeSetup", () => {
     expect(config.packageManagers).toEqual(["bun"]);
   });
 
-  test("setup with the openspec capability activates mate-v1 in companion-local openspec config", async () => {
-    const root = await makeTempDir("mate-setup-openspec-mate-v1-");
+  test("setup with the openspec capability activates mate-full in companion-local openspec config", async () => {
+    const root = await makeTempDir("mate-setup-openspec-mate-full-");
     const globalConfigStore = new GlobalConfigStore(
       path.join(root, "home", ".mate", "config.yaml"),
     );
@@ -969,10 +969,12 @@ describe("executeSetup", () => {
     expect(config.capabilities).toContainEqual({ name: "openspec" });
     expect(
       parseYaml(await fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")),
-    ).toEqual({ schema: "mate-v1", rules: { specs: [MATE_SPECS_RULE] } });
-    await expect(
-      fs.access(path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml")),
-    ).resolves.toBeNull();
+    ).toEqual({ schema: "mate-full", rules: { specs: [MATE_SPECS_RULE] } });
+    for (const name of ["mate-full", "mate-v1"]) {
+      await expect(
+        fs.access(path.join(root, "openspec", "schemas", name, "schema.yaml")),
+      ).resolves.toBeNull();
+    }
 
     await executeSetup(
       {
@@ -984,9 +986,9 @@ describe("executeSetup", () => {
 
     expect(
       parseYaml(await fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")),
-    ).toEqual({ schema: "mate-v1", rules: { specs: [MATE_SPECS_RULE] } });
+    ).toEqual({ schema: "mate-full", rules: { specs: [MATE_SPECS_RULE] } });
     await expect(
-      fs.access(path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml")),
+      fs.access(path.join(root, "openspec", "schemas", "mate-full", "schema.yaml")),
     ).resolves.toBeNull();
     await expect(
       fs.access(path.join(root, "openspec", "schemas", "mate-minimal", "schema.yaml")),
@@ -1049,6 +1051,34 @@ describe("executeSetup", () => {
     expect(gitignore).toContain(`# ${FRAMEWORK_NAME} managed: start`);
     expect(gitignore).not.toContain(".venv/");
     expect(gitignore).not.toContain("__pycache__/");
+  });
+
+  test("setup and sync leave the workflow declaration alone and tracked", async () => {
+    const root = await makeTempDir("mate-setup-workflow-");
+    const globalConfigStore = new GlobalConfigStore(
+      path.join(root, "home", ".mate", "config.yaml"),
+    );
+    await installOpenSpecStub(root);
+    const declaration = path.join(root, ".mate", "config", "workflow.yaml");
+    // Written by the owner, with a comment and spacing no rewrite would keep.
+    const source =
+      "version: 1\n\n# acme's path\nstages:\n  - id: submit\n    artifact: openspec\n    steps: [ { skill: mate-submit-change } ]\n  - id: publish\n    steps: [ { skill: mate-publish-artifact } ]\n";
+    await fs.mkdir(path.dirname(declaration), { recursive: true });
+    await fs.writeFile(declaration, source, "utf8");
+    const config = { allowedAgents: ["claude" as const], capabilities: [{ name: "openspec" }] };
+
+    await executeSetup(config, { cwd: root, globalConfigStore });
+    expect(await fs.readFile(declaration, "utf8")).toBe(source);
+
+    // `mate companion update` synchronizes through the same call.
+    await syncCompanionFiles(root, config);
+    expect(await fs.readFile(declaration, "utf8")).toBe(source);
+
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    expect(() =>
+      execFileSync("git", ["check-ignore", "-q", ".mate/config/workflow.yaml"], { cwd: root }),
+    ).toThrow();
+    expect(await fs.readFile(path.join(root, ".gitignore"), "utf8")).not.toContain("workflow");
   });
 
   test("setup writes the rtk capability to config when the rtk binary is present", async () => {

@@ -11,6 +11,8 @@ import type {
   StudioRouteAccess,
   StudioServiceContribution,
   StudioServiceHost,
+  StudioSocketHandler,
+  StudioSocketPeer,
   StudioWorksetSessions,
 } from "../../../tools/setup/service";
 import { SERVICE_ASSET_PREFIX, SERVICE_ROUTE_PREFIX } from "./routes";
@@ -22,6 +24,8 @@ export interface StudioServiceViewSummary {
   description?: string;
   /** Where the view's module is served from, when the service ships one. */
   moduleUrl?: string;
+  /** The service route answering the view's attention count, when it declares one. */
+  attentionUrl?: string;
 }
 
 /** A mounted service as Studio's application sees it. */
@@ -66,32 +70,96 @@ function connectionOf(service: PluginService, env: NodeJS.ProcessEnv): ServiceCo
   return service.connection ? service.connection(env) : null;
 }
 
+/** How long one service's `studio` may take: every Studio request waits for the mount. */
+const SERVICE_START_TIMEOUT_MS = 15_000;
+
+/** `started`, or a rejection after `ms`; a contribution that arrives later is closed. */
+function startWithin(
+  started: Promise<StudioServiceContribution | null | undefined>,
+  ms: number,
+): Promise<StudioServiceContribution | null | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let late = false;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      late = true;
+      reject(new Error(`it did not answer within ${ms / 1000}s`));
+    }, ms);
+  });
+  void started.then(
+    (contribution) => (late ? contribution?.close?.().catch(() => {}) : undefined),
+    () => {},
+  );
+  return Promise.race([started, timeout]).finally(() => clearTimeout(timer));
+}
+
 /**
  * Mounts each service whose daemon is there (or that declares none): calls its `studio` with
- * the host. A service that throws is left out with a warning; Studio keeps serving.
+ * the host. A service that throws, or does not answer within `timeoutMs`, is left out with a
+ * warning; Studio keeps serving.
  */
 export async function mountStudioServices(
   services: readonly PluginService[],
   host: StudioServiceHostBase,
   warn: (message: string) => void = (message) => process.stderr.write(`mate studio: ${message}\n`),
+  timeoutMs = SERVICE_START_TIMEOUT_MS,
 ): Promise<MountedServices> {
   const mounted: MountedService[] = [];
   for (const service of services) {
     try {
       const connection = connectionOf(service, host.env);
       if (service.connection && connection === null) continue;
+      const started = Promise.resolve(
+        service.studio?.({ ...host, apiVersion: SERVICE_API_VERSION, connection }),
+      );
       // oxlint-disable-next-line no-await-in-loop -- registration order decides who owns a hook
-      const contribution = await service.studio?.({
-        ...host,
-        apiVersion: SERVICE_API_VERSION,
-        connection,
-      });
+      const contribution = await startWithin(started, timeoutMs);
       if (contribution) mounted.push({ service, contribution });
     } catch (error) {
       warn(`the ${service.label} service did not start: ${errorMessage(error)}`);
     }
   }
   return mountedServices(mounted);
+}
+
+/**
+ * `handler` with each call guarded, as service HTTP routes are: a throw or rejection is
+ * reported through `warn` and closes the socket (1011) instead of escaping into the server.
+ */
+export function guardedSocket(
+  handler: StudioSocketHandler,
+  warn: (message: string) => void,
+): StudioSocketHandler {
+  let peer: StudioSocketPeer | null = null;
+  let failed = false;
+  const fail = (error: unknown): void => {
+    if (failed) return;
+    failed = true;
+    warn(`a service socket failed: ${errorMessage(error)}`);
+    try {
+      peer?.close(1011, "the service failed");
+    } catch {
+      // Already closed.
+    }
+  };
+  const guard = (call: () => unknown): void => {
+    try {
+      const result = call();
+      if (result instanceof Promise) result.catch(fail);
+    } catch (error) {
+      fail(error);
+    }
+  };
+  return {
+    open: (opened) => {
+      peer = opened;
+      guard(() => handler.open(opened));
+    },
+    message: (data) => {
+      if (!failed) guard(() => handler.message(data));
+    },
+    close: () => guard(() => handler.close()),
+  };
 }
 
 /** No service mounted: what a Studio without plugins serves. */
@@ -146,6 +214,9 @@ function mountedServices(mounted: MountedService[]): MountedServices {
             ? {
                 moduleUrl: `${SERVICE_ASSET_PREFIX}${service.id}/${view.id}/${view.module.entry}`,
               }
+            : {}),
+          ...(view.attention
+            ? { attentionUrl: `${SERVICE_ROUTE_PREFIX}${service.id}${view.attention}` }
             : {}),
         })),
       })),

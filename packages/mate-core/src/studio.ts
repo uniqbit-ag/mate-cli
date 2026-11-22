@@ -79,12 +79,20 @@ export {
   type StudioSelection,
   type StudioView,
 } from "./cli/commands/studio/selection";
+export {
+  connectionStateOf,
+  probeStudio,
+  type StudioConnection,
+  type StudioConnectionProblem,
+  type StudioConnectionState,
+} from "./cli/commands/studio/connection";
 export { BRAND_SVGS } from "./brand/svg.generated";
 export {
   REPORT_VIEW_PREFIX,
   SERVICE_ASSET_PREFIX,
   SERVICE_ROUTE_PREFIX,
   STUDIO_EVENTS_ROUTE,
+  STUDIO_PING_ROUTE,
   TERMINAL_SESSIONS_END_ROUTE,
   TERMINAL_SESSIONS_ROUTE,
   TERMINAL_SOCKET_ROUTE,
@@ -164,14 +172,44 @@ export {
 } from "./cli/commands/studio/actions";
 export { WORKSET_STAGE_ORDER, type WorksetStageId } from "./lib/workset/stage";
 export {
+  canonicalSchema,
   DEFAULT_SCHEMA,
   deliveryPath,
   isMateSchema,
+  LEGACY_SCHEMA_ALIASES,
   SCHEMA_ARTIFACTS,
+  SHIPPED_SCHEMAS,
+  type DeliveryPath,
   type DeliveryStage,
   type MateSchema,
+  type ReviewStage,
+  type SkillStage,
   type SkillStageId,
 } from "./lib/delivery/stages";
+// The workflow model imports nothing, so the browser bundle can resolve a path with it.
+export {
+  BUILTIN_ARTIFACT_TYPE,
+  defaultWorkflow,
+  nextStage,
+  WORKFLOW_FILE,
+  type Milestone,
+  type NextStage,
+  type Workflow,
+  type WorkflowProblem,
+  type WorkflowReviewStage,
+  type WorkflowSkillStage,
+  type WorkflowStage,
+  type WorkflowStep,
+} from "./runtime/workflow/workflow";
+export {
+  pathPosition,
+  stagesBeforeWork,
+  stepStage,
+  type PathPosition,
+  type PathProgress,
+  type PathSubject,
+} from "./lib/workflow/position";
+export type { Handoff, HandoffAction, SkillAction, TextAction } from "./lib/workflow/handoff";
 export type { WorkflowTopology } from "./cli/commands/studio/topology";
 export {
   contrastRatio,

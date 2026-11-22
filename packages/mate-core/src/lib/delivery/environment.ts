@@ -9,6 +9,8 @@ import {
 } from "./branches";
 import { sameRepository } from "./record";
 import { parseRemote, repositoryPath, type RemoteRepo } from "./remote";
+import type { ArtifactType } from "./staging/artifact-type";
+import type { Workflow } from "../workflow/declaration";
 import type { FrameworkContext } from "../orchestrator/framework-context";
 import type { CapabilityConfig, LinkedRepository } from "../orchestrator/types";
 import {
@@ -41,6 +43,13 @@ export interface DeliveryEnvironment {
   checkoutOf?: (repository: string) => Promise<string | null>;
   /** The companion's Git mode is `auto`: merge checks fetch before reading local refs. */
   gitAutoMode?: boolean;
+  /**
+   * The declared artifact type the companion's submit handles, whose change folders the delivery
+   * commands then work on; absent for the built-in type.
+   */
+  artifactType?: ArtifactType;
+  /** The companion's Delivery Path, read once with `artifactType`; loaded on demand when absent. */
+  workflow?: Workflow;
 }
 
 /** `dir` relative to the companion, with forward slashes. */

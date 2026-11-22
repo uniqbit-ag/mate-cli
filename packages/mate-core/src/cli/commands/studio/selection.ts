@@ -4,7 +4,6 @@ import type { StudioInventory, StudioInventoryCompanion } from "./inventory";
 
 export type StudioView =
   | "dashboard"
-  | "factory"
   | "workflow"
   | "getting-started"
   | "specs"
@@ -17,7 +16,6 @@ export type StudioView =
 
 export const STUDIO_VIEWS: readonly StudioView[] = [
   "dashboard",
-  "factory",
   "workflow",
   "getting-started",
   "specs",
@@ -36,7 +34,7 @@ export const STUDIO_MODES: readonly StudioMode[] = ["engineering", "analysis"];
 
 /** Views only the mode is offered, in navigation order. */
 export const MODE_VIEWS: Readonly<Record<StudioMode, readonly StudioView[]>> = {
-  engineering: ["dashboard", "factory", "workflow", "skills", "getting-started"],
+  engineering: ["dashboard", "workflow", "skills", "getting-started"],
   // The same `dashboard` id; `Content` renders each mode's own Overview.
   analysis: ["dashboard"],
 };

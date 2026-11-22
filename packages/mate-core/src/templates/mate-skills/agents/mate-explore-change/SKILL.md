@@ -63,11 +63,23 @@ large for one change is suggested as several.
    proposed. Several slices may share one delivery branch. Slicing is a suggestion;
    the user decides.
 
-4. **Hand off.**
-   End the response with a final `## Next steps` section: numbered required actions in
-   execution order, with exact commands and known change names, prerequisites first.
-   Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
-   follows it. Listing an action never invokes it. Never offer the user an optional command, in or above the section; optional work appears above it only as a skill invocation labelled optional.
+4. **Close the stage.** At the end of every run of this skill, run the first command
+   while no change folder exists, else the second:
+
+   ```bash
+   mate workflow done mate-explore-change
+   mate workflow done mate-explore-change "<change-name>"
+   ```
+
+   It prints the next actions for the change. End the response with a final `## Next
+   steps` section: numbered required actions in execution order, with exact commands and
+   known change names, prerequisites first: required work of this run that is still
+   open, then the actions the command printed, in its order. Summaries, evidence,
+   warnings, optional work, and deferred context go above it; nothing follows it.
+   Listing an action never invokes it. Never offer the user an optional command, in or
+   above the section; optional work appears above it only as a skill invocation labelled
+   optional, as the command's `optional:` line names it. If the command fails, report its
+   problems and end without a `Next steps` section.
 
    **Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
    and Cursor and the fallback. When the current runtime uses another syntax, swap only
@@ -76,9 +88,9 @@ large for one change is suggested as several.
    folder or an older example. Arguments, commands, paths, and order stay, and naming
    never invokes.
 
-   List `/mate-propose-change <change-name>`, or one `/mate-propose-change <slice>` per
-   agreed slice in dependency order. A slice deferred for later is context above the
-   section, not an action in it.
+   Add only what this skill knows: the agreed change name on the printed action, or
+   that action once per agreed slice in dependency order. A slice deferred for later is
+   context above the section, not an action in it.
 
 ## Boundary
 

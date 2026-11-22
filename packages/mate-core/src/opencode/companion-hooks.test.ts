@@ -240,6 +240,16 @@ describe("OpenCode commit-attribution guard", () => {
       }),
     ).resolves.toBeUndefined();
   });
+
+  test("refuses it from OpenCode 2.x's `shell` tool too", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-attribution-shell-");
+    const context = await launchContext(companion, repo);
+    await expect(
+      guardToolInput(context, "shell", {
+        command: `git commit -m "x" -m "Co-Authored-By: OpenCode <noreply@opencode.ai>"`,
+      }),
+    ).rejects.toThrow("No commit was created");
+  });
 });
 
 describe("OpenCode secret guardrails", () => {

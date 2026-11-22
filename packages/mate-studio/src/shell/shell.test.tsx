@@ -68,7 +68,7 @@ const shell = (overrides: Partial<ShellData> = {}): ShellData => ({
   collectedAt: null,
   metrics: null,
   writable: false,
-  factoryMode: false,
+  addsCompanions: false,
   pluginViews: [],
   terminal: null,
   ...overrides,
@@ -405,12 +405,10 @@ describe("the sidebar", () => {
     }
   });
 
-  it("offers Factory after Workflow only where the factory broker runs", () => {
-    expect(viewLinks(sidebar(shell()))).not.toContain("/factory");
-    expect(viewLinks(sidebar(shell({ factoryMode: true })))).toEqual([
+  it("lists the Engineering views in navigation order", () => {
+    expect(viewLinks(sidebar(shell()))).toEqual([
       "/",
       "/workflow",
-      "/factory",
       "/skills",
       "/getting-started",
       "/specs",
@@ -422,8 +420,8 @@ describe("the sidebar", () => {
     ]);
   });
 
-  it("gives Analysis its Overview and the published views, and no Workflow, Skills or Factory", () => {
-    const markup = sidebar(shell({ studioMode: "analysis", factoryMode: true }));
+  it("gives Analysis its Overview and the published views, and no Workflow or Skills", () => {
+    const markup = sidebar(shell({ studioMode: "analysis" }));
     expect(viewLinks(markup)).toEqual([
       "/",
       "/specs",
@@ -618,22 +616,28 @@ afterEach(() => {
 });
 
 describe("Add companion", () => {
-  it("is offered only in factory mode with the write path", async () => {
-    for (const [factoryMode, writable] of [
+  it("is offered only where a service adds companions, with the write path", async () => {
+    for (const [addsCompanions, writable] of [
       [false, true],
       [true, false],
       [false, false],
     ] as const) {
       // oxlint-disable-next-line no-await-in-loop -- one page at a time
       const { page, doc } = await mount(
-        () => <CompanionPicker companions={[acme]} writable={writable} factoryMode={factoryMode} />,
+        () => (
+          <CompanionPicker
+            companions={[acme]}
+            writable={writable}
+            addsCompanions={addsCompanions}
+          />
+        ),
         "/",
       );
       expect(doc.querySelector("[data-add-companion]")).toBeNull();
       page.unmount();
     }
     const { page, doc } = await mount(
-      () => <CompanionPicker companions={[acme]} writable factoryMode />,
+      () => <CompanionPicker companions={[acme]} writable addsCompanions />,
       "/",
     );
     expect(doc.querySelector("[data-add-companion]")).not.toBeNull();
@@ -642,7 +646,7 @@ describe("Add companion", () => {
 
   it("adds by Git URL and selects the new companion", async () => {
     const { doc, instance } = await mount(
-      () => <CompanionPicker companions={[acme]} writable factoryMode />,
+      () => <CompanionPicker companions={[acme]} writable addsCompanions />,
       "/",
     );
     await openAdd(doc);
@@ -653,7 +657,7 @@ describe("Add companion", () => {
   });
 
   it("adds by local path in its own mode", async () => {
-    const { doc } = await mount(() => <CompanionPicker companions={[]} writable factoryMode />);
+    const { doc } = await mount(() => <CompanionPicker companions={[]} writable addsCompanions />);
     await openAdd(doc);
     const tabs = [...addDialog(doc)!.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
     expect(tabs.map((tab) => tab.textContent)).toEqual(["Git URL", "Local path"]);
@@ -669,7 +673,7 @@ describe("Add companion", () => {
   it("shows a refusal in place and selects nothing", async () => {
     answers = [{ ok: false, reason: "That repository is not a companion: nothing to register." }];
     const { doc, instance } = await mount(
-      () => <CompanionPicker companions={[acme]} writable factoryMode />,
+      () => <CompanionPicker companions={[acme]} writable addsCompanions />,
       "/",
     );
     await openAdd(doc);
@@ -681,7 +685,7 @@ describe("Add companion", () => {
     expect(instance.state.location.search).not.toMatchObject({ companion: "abcdef0123" });
   });
 
-  it("offers the token form for the refused host and organization, then retries", async () => {
+  it("names the Git token a refused private clone needs", async () => {
     answers = [
       {
         ok: false,
@@ -689,47 +693,21 @@ describe("Add companion", () => {
         tokenKey: "git.acme.test/acme",
       },
     ];
-    const calls: Array<{ method: string; body: string | null }> = [];
-    const original = globalThis.fetch;
-    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push({
-        method: init?.method ?? "GET",
-        body: typeof init?.body === "string" ? init.body : null,
-      });
-      return Response.json({ tokens: [] });
-    }) as typeof fetch;
-    try {
-      const { doc, instance } = await mount(() => (
-        <CompanionPicker companions={[acme]} writable factoryMode />
-      ));
-      await openAdd(doc);
-      await typeInto(addDialog(doc)!.querySelector<HTMLInputElement>("input")!, COMPANION_URL);
-      await submitAdd(doc);
-      const token = addDialog(doc)!.querySelector<HTMLFormElement>("[data-git-token-form]")!;
-      expect(token.querySelector<HTMLInputElement>('[name="key"]')!.value).toBe(
-        "git.acme.test/acme",
-      );
-
-      token.querySelector<HTMLInputElement>('[name="token"]')!.value = SECRET;
-      await act(async () => token.requestSubmit());
-      await settle();
-      expect(calls.find((call) => call.method === "PUT")!.body).toBe(
-        JSON.stringify({ key: "git.acme.test/acme", token: SECRET }),
-      );
-      expect(asked).toEqual([
-        { kind: "url", url: COMPANION_URL },
-        { kind: "url", url: COMPANION_URL },
-      ]);
-      expect(instance.state.location.search).toMatchObject({ companion: "abcdef0123" });
-      expect(doc.body.innerHTML).not.toContain(SECRET);
-    } finally {
-      globalThis.fetch = original;
-    }
+    const { doc } = await mount(() => (
+      <CompanionPicker companions={[acme]} writable addsCompanions />
+    ));
+    await openAdd(doc);
+    await typeInto(addDialog(doc)!.querySelector<HTMLInputElement>("input")!, COMPANION_URL);
+    await submitAdd(doc);
+    expect(addDialog(doc)!.querySelector("[data-add-companion-token]")!.textContent).toContain(
+      "git.acme.test/acme",
+    );
+    expect(asked).toEqual([{ kind: "url", url: COMPANION_URL }]);
   });
 
   it("is offered in the switcher too", async () => {
     const { doc } = await mount(
-      () => <CompanionSwitcher companions={[acme]} selected={acme} writable factoryMode />,
+      () => <CompanionSwitcher companions={[acme]} selected={acme} writable addsCompanions />,
       `/?companion=${acme.digest}`,
     );
     await act(async () => doc.querySelector<HTMLButtonElement>("#studio-companion")!.click());
@@ -738,11 +716,11 @@ describe("Add companion", () => {
   });
 });
 
-describe("removing a companion in the factory", () => {
+describe("removing a companion a service fetched", () => {
   it("says a companion outside the companions directory is only unregistered", async () => {
     const outside: ShellCompanion = { ...acme, path: "/srv/acme-companion", keepsFolder: true };
     const { doc } = await mount(() => (
-      <CompanionPicker companions={[outside]} writable factoryMode />
+      <CompanionPicker companions={[outside]} writable addsCompanions />
     ));
     await act(async () =>
       doc.querySelector<HTMLButtonElement>('[aria-label="Actions for acme-companion"]')!.click(),
@@ -759,5 +737,47 @@ describe("removing a companion in the factory", () => {
       (button) => button.textContent === "Remove",
     )!;
     expect(confirm.disabled).toBe(false);
+  });
+});
+
+describe("a plugin view in the sidebar", () => {
+  it("shows the count its service's attention route answers", async () => {
+    const asked: string[] = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      asked.push(String(input));
+      return Response.json({ count: 3 });
+    }) as typeof fetch;
+    try {
+      const data = shell({
+        pluginViews: [
+          {
+            service: "acme",
+            view: "board",
+            label: "Acme board",
+            moduleUrl: "/studio/plugins/acme/board/main.js",
+            attentionUrl: "/api/plugins/acme/waiting",
+          },
+          {
+            service: "acme",
+            view: "plain",
+            label: "Acme plain",
+            moduleUrl: "/studio/plugins/acme/plain/main.js",
+          },
+        ],
+      });
+      const { page, doc } = await mount(() => (
+        <Sidebar shell={data} search={{ companion: acme.digest }} view="dashboard" />
+      ));
+      await settle();
+      expect(asked).toEqual([`/api/plugins/acme/waiting?companion=${acme.digest}`]);
+      const services = doc.querySelector('[data-studio-nav-section="Services"]')!;
+      const [board, plain] = [...services.querySelectorAll("a")];
+      expect(board!.querySelector('[aria-label="3 need you"]')?.textContent).toBe("3");
+      expect(plain!.querySelector("[aria-label]")).toBeNull();
+      page.unmount();
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });

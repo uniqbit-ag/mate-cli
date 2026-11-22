@@ -12,7 +12,7 @@ import { buildCompanionGuidance } from "../runtime/companion-guidance";
  */
 const BASELINE = {
   policy: 5782,
-  "mate-v1/schema.yaml": 12204,
+  "mate-full/schema.yaml": 12204,
   "mate-minimal/schema.yaml": 3646,
   "mate-propose-change/SKILL.md": 6905,
   "mate-apply-change/SKILL.md": 5078,
@@ -21,11 +21,11 @@ const BASELINE = {
 
 /** Before the change, every stage below read the whole conventions file. */
 const STAGE_SECTIONS: Record<string, string[]> = {
-  "mate-v1 proposal": ["rules"],
-  "mate-v1 specs": ["rules", "spec_rules"],
-  "mate-v1 design": ["rules"],
-  "mate-v1 tasks": ["rules", "skill_tagging", "verification"],
-  "mate-v1 apply": ["verification"],
+  "mate-full proposal": ["rules"],
+  "mate-full specs": ["rules", "spec_rules"],
+  "mate-full design": ["rules"],
+  "mate-full tasks": ["rules", "skill_tagging", "verification"],
+  "mate-full apply": ["verification"],
   "mate-minimal specs": ["rules", "spec_rules"],
   "mate-minimal tasks": ["rules", "skill_tagging", "verification"],
   "mate-minimal apply": ["verification"],
@@ -86,7 +86,7 @@ describe("workflow guidance payload", () => {
   });
 
   test("each stage names only the sections it needs, with a safe full-read fallback", async () => {
-    for (const name of ["mate-v1", "mate-minimal"]) {
+    for (const name of ["mate-full", "mate-minimal"]) {
       const schema = parse(await read(path.join(capRoot, name, "schema.yaml"))) as Schema;
       const instructions: Record<string, string> = Object.fromEntries([
         ...schema.artifacts.map((artifact) => [artifact.id, artifact.instruction]),
@@ -112,7 +112,7 @@ describe("workflow guidance payload", () => {
   });
 
   test("schemas leave structural examples to their templates", async () => {
-    const raw = await read(path.join(capRoot, "mate-v1", "schema.yaml"));
+    const raw = await read(path.join(capRoot, "mate-full", "schema.yaml"));
     expect(raw).not.toContain("type: change-proposal");
     expect(raw).not.toContain("type: change-design");
     expect(raw).not.toContain("type: change-tasks");
@@ -125,7 +125,7 @@ describe("workflow guidance payload", () => {
     const lookup = bytes(sectionIndex(conventions));
     const current = {
       policy: bytes(policy()),
-      "mate-v1/schema.yaml": bytes(await read(path.join(capRoot, "mate-v1", "schema.yaml"))),
+      "mate-full/schema.yaml": bytes(await read(path.join(capRoot, "mate-full", "schema.yaml"))),
       "mate-minimal/schema.yaml": bytes(
         await read(path.join(capRoot, "mate-minimal", "schema.yaml")),
       ),
@@ -151,7 +151,7 @@ describe("workflow guidance payload", () => {
     const after = Object.values(current).reduce((sum, value) => sum + value, 0) + conventionReads;
 
     expect(current.policy).toBeLessThan(BASELINE.policy);
-    expect(current["mate-v1/schema.yaml"]).toBeLessThan(BASELINE["mate-v1/schema.yaml"]);
+    expect(current["mate-full/schema.yaml"]).toBeLessThan(BASELINE["mate-full/schema.yaml"]);
     expect(current["mate-propose-change/SKILL.md"]).toBeLessThan(
       BASELINE["mate-propose-change/SKILL.md"],
     );

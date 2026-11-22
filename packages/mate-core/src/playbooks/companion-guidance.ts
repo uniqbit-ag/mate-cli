@@ -1,5 +1,6 @@
 import {
   buildCompanionGuidance as buildCompanionGuidanceWith,
+  declaredGuidance,
   type GuidanceContext,
 } from "../runtime/companion-guidance";
 import { getWrapperBinPath } from "../lib/package-paths";
@@ -27,8 +28,9 @@ export function buildCompanionGuidance(
   context: GuidanceContext,
   options: { wrapperBinPath?: string; friction?: boolean } = {},
 ): string {
-  return buildCompanionGuidanceWith(context, {
-    wrapperBinPath: options.wrapperBinPath ?? getWrapperBinPath(),
-    friction: options.friction,
-  });
+  return buildCompanionGuidanceWith(
+    // The companion's declared artifact types and stages, read live like its other predicates.
+    { ...declaredGuidance(context.companionPath), ...context },
+    { wrapperBinPath: options.wrapperBinPath ?? getWrapperBinPath(), friction: options.friction },
+  );
 }

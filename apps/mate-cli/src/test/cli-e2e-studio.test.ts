@@ -203,7 +203,7 @@ describe("mate studio e2e", () => {
       const workflowMarkup = await workflow.text();
       expect(workflowMarkup).toContain(">Workflow</h1>");
       expect(workflowMarkup).toContain(`["${digest}","view","workflow"`);
-      expect(workflowMarkup).toContain('schemaName:"mate-v1"');
+      expect(workflowMarkup).toContain('schemaName:"mate-full"');
       expect(workflowMarkup).not.toContain('name:"add-acme-checkout"');
     } finally {
       await studio.stop("SIGINT");

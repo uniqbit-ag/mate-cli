@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
@@ -11,7 +12,11 @@ import {
   showAt,
   type StagingFixture,
 } from "../../../../test/staging-fixture";
+import { changeNames, locate } from "../../change-layout";
+import { parseWorkflow } from "../../workflow/declaration";
 import { recordDir, sourceDir, type ArtifactType } from "./artifact-type";
+import { declaredArtifactType } from "./declared-type";
+import { openspecArtifactType } from "./openspec-type";
 import { publishSubmitted } from "./publish";
 import { submitGroups, writeSubmissionState } from "./submit";
 
@@ -122,4 +127,87 @@ describe("artifact type conformance", () => {
     },
     TIMEOUT,
   );
+});
+
+describe("lookup and reads of both adapters", () => {
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  function companionWith(files: Record<string, string>): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "acme-adapters-"));
+    roots.push(root);
+    for (const [file, content] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+      fs.writeFileSync(path.join(root, file), content);
+    }
+    return root;
+  }
+
+  function declaredNotes(): ArtifactType {
+    const verdict = parseWorkflow(`version: 1
+artifacts:
+  acme-notes:
+    change: notes/{name}/
+    archive: notes-history/{id}/
+    published: [notes/index.md]
+    reviews: { brief: brief.md, plan: plan.md }
+    publish:
+      apply: { run: "true" }
+stages:
+  - id: submit
+    artifact: acme-notes
+    steps: [{ skill: mate-submit-change }]
+  - id: publish
+    steps: [{ skill: mate-publish-artifact }]
+`);
+    if (!verdict.ok) throw new Error(JSON.stringify(verdict.problems));
+    return declaredArtifactType(verdict.workflow.artifacts[0]!);
+  }
+
+  test("the built-in type: changes, archive ids, its plan and the artifacts it has", async () => {
+    const type = openspecArtifactType();
+    const root = companionWith({
+      "openspec/changes/acme-fix/tasks.md": "- [x] 1.1 Acme\n- [ ] 1.2 Acme\n",
+      "openspec/changes/acme-fix/proposal.md": "# Acme\n",
+      "openspec/changes/archive/2026-01-02-acme-old/proposal.md": "# Acme\n",
+    });
+    const dir = sourceDir(root, type, "acme-fix");
+
+    expect(await changeNames(root, type)).toEqual(["acme-fix"]);
+    expect(await locate(root, type, "acme-fix")).toEqual({ dir, archived: false });
+    expect(await locate(root, type, "2026-01-02-acme-old")).toEqual({
+      dir: recordDir(root, type, "2026-01-02-acme-old"),
+      archived: true,
+    });
+    expect(await locate(root, type, "acme-new")).toEqual({ missing: "openspec/changes/acme-new/" });
+    expect(await type.plan!(dir)).toEqual({ totalTasks: 2, completedTasks: 1 });
+    expect(await type.reviews!(dir)).toEqual([
+      { id: "proposal", file: "proposal.md" },
+      { id: "tasks", file: "tasks.md" },
+    ]);
+  });
+
+  test("a declared type: changes, archive ids, no plan, and every declared review", async () => {
+    const type = declaredNotes();
+    const root = companionWith({
+      "notes/acme-glossary/brief.md": "# Acme\n",
+      "notes-history/2026-01-02-acme-old/brief.md": "# Acme\n",
+    });
+    const dir = sourceDir(root, type, "acme-glossary");
+
+    expect(await changeNames(root, type)).toEqual(["acme-glossary"]);
+    expect(await locate(root, type, "acme-glossary")).toEqual({ dir, archived: false });
+    expect(await locate(root, type, "2026-01-02-acme-old")).toEqual({
+      dir: recordDir(root, type, "2026-01-02-acme-old"),
+      archived: true,
+    });
+    expect(await locate(root, type, "acme-new")).toEqual({ missing: "notes/acme-new/" });
+    expect(type.plan).toBeUndefined();
+    expect(await type.reviews!(dir)).toEqual([
+      { id: "brief", file: "brief.md" },
+      { id: "plan", file: "plan.md" },
+    ]);
+  });
 });
