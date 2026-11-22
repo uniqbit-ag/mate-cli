@@ -10,9 +10,10 @@ import {
   type FrictionView,
   type FrictionViewDays,
   type FrictionGroup,
+  type FrictionItemState,
   type StateFilter,
 } from "@uniqbit/mate-core/studio";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useId, useRef, useState } from "react";
 
 import {
   RecordingButton,
@@ -80,18 +81,32 @@ function FrictionTime({ at }: { at: string }) {
   return <time dateTime={at}>{browser ? DATE_TIME.format(Date.parse(at)) : ""}</time>;
 }
 
+/** A fixed label column, so values start on one edge in every group and report; a narrow list keeps the width for values. */
+const DETAILS =
+  "m-0 grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 @md:grid-cols-[6rem_minmax(0,1fr)]";
+
+function Detail({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <>
+      <dt className="text-muted">{label}</dt>
+      <dd className="m-0 min-w-0">{children}</dd>
+    </>
+  );
+}
+
 function Counted({ label, counts }: { label: string; counts: Record<string, number> }) {
   const entries = Object.entries(counts);
   if (entries.length === 0) return null;
   return (
-    <p className="m-0 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
-      <span className="text-muted">{label}</span>
-      {entries.map(([name, count]) => (
-        <span key={name} className="font-mono tabular-nums">
-          {name} <span className="text-muted">×{count}</span>
-        </span>
-      ))}
-    </p>
+    <Detail label={label}>
+      <span className="flex flex-wrap gap-x-3 gap-y-1">
+        {entries.map(([name, count]) => (
+          <span key={name} className="font-mono tabular-nums">
+            {name} <span className="text-muted">×{count}</span>
+          </span>
+        ))}
+      </span>
+    </Detail>
   );
 }
 
@@ -114,25 +129,31 @@ function ItemFooter({
   );
 }
 
-/** Labelled text lines; empty ones are left out. */
+/** Labelled text; empty fields are left out. */
 function Fields({ fields }: { fields: readonly (readonly [string, string | null])[] }) {
-  return fields.map(([label, text]) =>
-    text ? (
-      <p key={label} className="m-0 max-w-[70ch] text-sm">
-        <span className="text-muted">{label}: </span>
-        {text}
-      </p>
-    ) : null,
+  const shown = fields.filter(([, text]) => text);
+  if (shown.length === 0) return null;
+  return (
+    <dl className={cn(DETAILS, "max-w-[70ch] text-sm")}>
+      {shown.map(([label, text]) => (
+        <Detail key={label} label={label}>
+          {text}
+        </Detail>
+      ))}
+    </dl>
   );
 }
 
 /** One list item that opens in place; `focusKey` makes it a mark's focus target. */
 function Row({
   focusKey,
+  line,
   summary,
   children,
 }: {
   focusKey: string;
+  /** The summary line's layout once its list is wide enough for columns. */
+  line: string;
   summary: ReactNode;
   children: ReactNode;
 }) {
@@ -144,7 +165,9 @@ function Row({
             name="right"
             className="mt-1 size-3.5 text-muted transition-transform group-open/friction:rotate-90 motion-reduce:transition-none"
           />
-          <div className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1">{summary}</div>
+          <div className={cn("flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1", line)}>
+            {summary}
+          </div>
         </summary>
         <div className="mr-4 mb-3 ml-9.5 grid gap-1.5 border-l border-rule-soft pl-3">
           {children}
@@ -154,50 +177,118 @@ function Row({
   );
 }
 
-const FACT = "font-mono text-xs whitespace-nowrap text-muted tabular-nums";
+/**
+ * A row's facts. In a narrow list they wrap after the title; once the list is wide enough each
+ * fact takes a track of `--friction-facts`, so the facts line up as columns across rows.
+ */
+const FACTS =
+  "flex flex-wrap items-baseline gap-x-3 gap-y-0.5 font-mono text-xs whitespace-nowrap text-muted tabular-nums";
+/** Mono `ch` tracks; "last seen " plus a medium date and short time fits 32ch in common locales. */
+const LAST_SEEN_TRACK = "minmax(32ch,max-content)";
+const AT_TRACK = "minmax(22ch,max-content)";
+const STATE_TRACK = "11ch";
 
-function GroupItem({ group, onMark }: { group: FrictionGroup; onMark: MarkItem }) {
-  const facts = [
+/** Which optional fact columns any row of the list fills; the others get no track. */
+interface Columns {
+  reports: boolean;
+  state: boolean;
+}
+
+/** Holds an optional column's track in a row that has no value for it. */
+function Gap({ wide }: { wide: string }) {
+  return <span aria-hidden="true" className={cn("hidden", wide)} />;
+}
+
+function groupCounts(group: FrictionGroup): [string, string, string, string | null] {
+  return [
     `at most ${group.maxPerSession} in one session`,
     plural(group.events, "event"),
     plural(group.sessions, "session"),
+    group.reports.length > 0 ? plural(group.reports.length, "report") : null,
   ];
-  if (group.reports.length > 0) facts.push(plural(group.reports.length, "report"));
+}
+
+/** Each count column is as wide as its longest value in the list. */
+function groupTracks(groups: FrictionGroup[], columns: Columns): string {
+  const counts = groups.map(groupCounts);
+  const widest = (column: number) => Math.max(...counts.map((row) => row[column]?.length ?? 0), 0);
+  const tracks = [0, 1, 2].map((column) => `${widest(column)}ch`);
+  if (columns.reports) tracks.push(`${widest(3)}ch`);
+  tracks.push(LAST_SEEN_TRACK);
+  if (columns.state) tracks.push(STATE_TRACK);
+  return tracks.join(" ");
+}
+
+function reportTracks(stateColumn: boolean): string {
+  return stateColumn ? `${AT_TRACK} ${STATE_TRACK}` : AT_TRACK;
+}
+
+const factsStyle = (tracks: string) => ({ "--friction-facts": tracks }) as CSSProperties;
+
+/** The state word keeps the sans face inside the mono facts. */
+function StateCell({
+  state,
+  column,
+  wide,
+}: {
+  state: FrictionItemState | null;
+  column: boolean;
+  wide: string;
+}) {
+  if (state) {
+    return (
+      <span className="font-sans">
+        <StateWord state={state} />
+      </span>
+    );
+  }
+  return column ? <Gap wide={wide} /> : null;
+}
+
+function GroupItem({
+  group,
+  columns,
+  onMark,
+}: {
+  group: FrictionGroup;
+  columns: Columns;
+  onMark: MarkItem;
+}) {
+  const [peak, events, sessions, reports] = groupCounts(group);
   return (
     <Row
       focusKey={group.fingerprint}
+      line="@5xl:grid @5xl:grid-cols-[minmax(0,1fr)_auto]"
       summary={
         <>
           <h3 className="m-0 min-w-0 flex-[1_1_16rem] text-base font-semibold">{group.title}</h3>
-          <span className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-            {facts.map((fact) => (
-              <span key={fact} className={FACT}>
-                {fact}
-              </span>
-            ))}
-            <span className={FACT}>
+          <span className={cn(FACTS, "@3xl:grid @3xl:grid-cols-(--friction-facts)")}>
+            <span>{peak}</span>
+            <span>{events}</span>
+            <span>{sessions}</span>
+            {reports ? <span>{reports}</span> : columns.reports ? <Gap wide="@3xl:block" /> : null}
+            <span>
               last seen <FrictionTime at={group.lastSeen} />
             </span>
-            <StateWord state={group.state} />
+            <StateCell state={group.state} column={columns.state} wide="@3xl:block" />
           </span>
         </>
       }
     >
-      <p className="m-0 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
-        <span className="text-muted">Fingerprint</span>
-        <code className="font-mono">{group.fingerprint}</code>
-      </p>
-      <p className="m-0 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
-        <span>
-          First seen <FrictionTime at={group.firstSeen} />
-        </span>
-        <span>
-          Last seen <FrictionTime at={group.lastSeen} />
-        </span>
-      </p>
-      <Counted label="Mate" counts={group.versions} />
-      <Counted label="Paths" counts={group.paths} />
-      <Counted label="Flags" counts={group.flags} />
+      <dl className={cn(DETAILS, "text-xs")}>
+        <Detail label="Fingerprint">
+          <code className="font-mono">{group.fingerprint}</code>
+        </Detail>
+        <Detail label="First seen">
+          <FrictionTime at={group.firstSeen} />
+        </Detail>
+        <Detail label="Last seen">
+          <FrictionTime at={group.lastSeen} />
+        </Detail>
+        <Counted label="Mate" counts={group.versions} />
+        <Counted label="Paths" counts={group.paths} />
+        <Counted label="Flags" counts={group.flags} />
+      </dl>
       {group.reports.length > 0 ? (
         <section aria-label={`Reports on ${group.title}`} className="mt-1">
           <h4 className="m-0 text-xs font-semibold text-muted">
@@ -231,20 +322,33 @@ function GroupItem({ group, onMark }: { group: FrictionGroup; onMark: MarkItem }
   );
 }
 
-function FreeReportItem({ report, onMark }: { report: FrictionFreeReport; onMark: MarkItem }) {
+function FreeReportItem({
+  report,
+  stateColumn,
+  onMark,
+}: {
+  report: FrictionFreeReport;
+  stateColumn: boolean;
+  onMark: MarkItem;
+}) {
   return (
     <Row
       focusKey={report.id}
+      line="@3xl:grid @3xl:grid-cols-[minmax(0,1fr)_auto]"
       summary={
         <>
-          <h3 className="m-0 min-w-0 font-mono text-sm font-semibold">{report.subject}</h3>
-          <span className="rounded-full border border-rule bg-page px-2 font-mono text-[0.7rem] text-text">
-            {report.kind}
+          <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+            <h3 className="m-0 min-w-0 font-mono text-sm leading-[1.375rem] font-semibold">
+              {report.subject}
+            </h3>
+            <span className="rounded-full border border-rule bg-page px-2 font-mono text-[0.7rem] text-text">
+              {report.kind}
+            </span>
           </span>
-          <span className={FACT}>
+          <span className={cn(FACTS, "@3xl:grid @3xl:grid-cols-(--friction-facts)")}>
             <FrictionTime at={report.at} />
+            <StateCell state={report.state} column={stateColumn} wide="@3xl:block" />
           </span>
-          <StateWord state={report.state} />
         </>
       }
     >
@@ -343,6 +447,11 @@ function Recording({ recording, toggle }: { recording: boolean; toggle: Recordin
         <RecordingButton recording={recording} toggle={toggle} />
       </div>
       <RecordingReach />
+      {toggle.error ? (
+        <p className="m-0 text-sm text-bad" role="alert">
+          {toggle.error}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -401,6 +510,7 @@ function FilterSelect<T extends string>({
   );
 }
 
+/** The selects; the state pills sit with the period. */
 function Filters({
   view,
   shown,
@@ -418,13 +528,7 @@ function Filters({
   ];
   const noReports = selectFriction(view, { ...filters, kind: undefined }).freeReports.length === 0;
   return (
-    <>
-      <Pills
-        label="State"
-        options={STATES}
-        value={filters.state}
-        onChange={(state) => onFilters({ ...filters, state })}
-      />
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
       <FilterSelect
         label="Type"
         options={types}
@@ -446,7 +550,7 @@ function Filters({
         value={filters.sort}
         onChange={(sort) => onFilters({ ...filters, sort })}
       />
-    </>
+    </div>
   );
 }
 
@@ -470,15 +574,24 @@ function Lists({
       </EmptyNote>
     );
   }
+  const groupColumns: Columns = {
+    reports: shown.groups.some((group) => group.reports.length > 0),
+    state: shown.groups.some((group) => group.state !== null),
+  };
+  const reportState = shown.freeReports.some((report) => report.state !== null);
   return (
     <div className="grid gap-4">
       {shown.groups.length > 0 ? (
         <ListCard {...RECORDED_SECTION} count={shown.groups.length} className="wrap-anywhere">
-          <ul className="m-0 list-none p-0">
+          <ul
+            className="@container m-0 list-none p-0"
+            style={factsStyle(groupTracks(shown.groups, groupColumns))}
+          >
             {shown.groups.map((group) => (
               <GroupItem
                 key={group.fingerprint}
                 group={group}
+                columns={groupColumns}
                 onMark={markItem(group.fingerprint, group.title)}
               />
             ))}
@@ -486,15 +599,21 @@ function Lists({
         </ListCard>
       ) : null}
       {shown.freeReports.length > 0 ? (
-        <ListCard {...REPORTS_SECTION} count={shown.freeReports.length} className="wrap-anywhere">
-          <p className="m-0 border-b border-rule-soft px-4 py-2 text-xs text-muted">
-            These reports are not attached to a recorded event.
-          </p>
-          <ul className="m-0 list-none p-0">
+        <ListCard
+          {...REPORTS_SECTION}
+          count={shown.freeReports.length}
+          hint="These reports are not attached to a recorded event."
+          className="wrap-anywhere"
+        >
+          <ul
+            className="@container m-0 list-none p-0"
+            style={factsStyle(reportTracks(reportState))}
+          >
             {shown.freeReports.map((report) => (
               <FreeReportItem
                 key={report.id}
                 report={report}
+                stateColumn={reportState}
                 onMark={markItem(report.id, report.subject)}
               />
             ))}
@@ -580,28 +699,30 @@ export function FrictionPanel({
   return (
     <div ref={panel} className={cn(PAGE_PAD, "grid min-w-0 gap-4 pt-3 pb-6")}>
       <Recording recording={view.recording} toggle={toggle} />
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <Pills
-          label="Period"
-          options={PERIODS}
-          value={String(days)}
-          onChange={(value) => onDays(Number(value) as FrictionViewDays)}
-        />
+      <div className="grid gap-2">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          <Pills
+            label="Period"
+            options={PERIODS}
+            value={String(days)}
+            onChange={(value) => onDays(Number(value) as FrictionViewDays)}
+          />
+          {recorded ? (
+            <Pills
+              label="State"
+              options={STATES}
+              value={filters.state}
+              onChange={(state) => onFilters({ ...filters, state })}
+            />
+          ) : null}
+        </div>
         {recorded ? (
           <Filters view={view} shown={shown} filters={filters} onFilters={onFilters} />
         ) : null}
       </div>
-      <div aria-live="polite">
-        {toggle.error ? (
-          <p className="m-0 text-sm text-bad" role="alert">
-            {toggle.error}
-          </p>
-        ) : null}
-        {marked ? (
-          <p key={marked.id} className="sr-only m-0">
-            {marked.message}
-          </p>
-        ) : null}
+      {/* Out of the grid flow: an empty region would add a second gap. */}
+      <div aria-live="polite" className="sr-only">
+        {marked ? <p key={marked.id}>{marked.message}</p> : null}
       </div>
       {recorded ? (
         <>

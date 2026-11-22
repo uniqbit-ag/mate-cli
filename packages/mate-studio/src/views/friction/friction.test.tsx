@@ -96,6 +96,11 @@ function openRow(row: HTMLDetailsElement) {
   return row.lastElementChild as HTMLElement;
 }
 const openGroup = (page: ReturnType<typeof panel>) => openRow(groupRow(page));
+/** Each labelled field as "Label: value", in order. */
+const fields = (element: HTMLElement) =>
+  [...element.querySelectorAll("dt")]
+    .map((term) => `${term.textContent}: ${term.nextElementSibling!.textContent}`)
+    .join(" ");
 
 function expectActionsOnlyWhenOpen(page: ReturnType<typeof panel>, heading: string) {
   expect(page.queryByRole("group", { name: `Mark ${heading}` })).toBeNull();
@@ -163,7 +168,7 @@ describe("the friction list", () => {
     openGroup(page);
     const reports = page.getByRole("region", { name: `Reports on ${ARTIFACT_GROUP}` });
     expect(reports.textContent).toContain("bug");
-    expect(reports.textContent).toContain("Expected: editing a tracked Markdown file is allowed");
+    expect(fields(reports)).toContain("Expected: editing a tracked Markdown file is allowed");
   });
 });
 
@@ -189,7 +194,7 @@ describe("the agent reports", () => {
   test("open from a native summary and lead with the expected text, before the evidence", () => {
     const row = rowOf(reportsOnly([freeReport()]), SUBJECT);
     expect(row.firstElementChild!.tagName).toBe("SUMMARY");
-    expect(openRow(row).textContent).toMatch(/^Expected: editing.*Evidence: step 3/);
+    expect(fields(openRow(row))).toMatch(/^Expected: editing.*Evidence: step 3/);
   });
 
   test("stand apart under their subject and say they have no event", () => {
@@ -201,11 +206,12 @@ describe("the agent reports", () => {
   });
 
   test("without expected text still show kind, cost, evidence and workaround", () => {
-    const text = agentReports({
+    const region = agentReports({
       expected: "",
       workaround: "named the branch by hand",
-    }).textContent!;
-    expect(text).not.toContain("Expected:");
+    });
+    const text = `${region.textContent} ${fields(region)}`;
+    expect(text).not.toContain("Expected");
     for (const part of [
       "unclear",
       "detour",
