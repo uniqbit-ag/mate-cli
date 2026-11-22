@@ -346,27 +346,7 @@ describe("Dashboard", () => {
       panel(doc)!.querySelector<HTMLButtonElement>('[data-artifact="proposal"]')!.click(),
     );
     await settle();
-    const heading = panel(doc)!.querySelector(".markdown-body h1")?.textContent;
-    if (heading !== "Acme proposal") {
-      const sheetHtml = panel(doc)!.outerHTML;
-      console.error(
-        "DEBUG sheet sections:",
-        [...panel(doc)!.querySelectorAll("section")]
-          .map((section) => section.getAttribute("aria-label"))
-          .join(", "),
-      );
-      const at = sheetHtml.indexOf("Notes");
-      console.error("DEBUG notes anchor:", sheetHtml.slice(Math.max(0, at - 150), at + 600));
-      const body = panel(doc)!.querySelector(".markdown-body");
-      console.error("DEBUG markdown-body:", body ? body.outerHTML.slice(0, 600) : "(none)");
-      console.error(
-        "DEBUG anchors:",
-        [...panel(doc)!.querySelectorAll("a")]
-          .map((anchor) => `${anchor.textContent?.trim()} -> ${anchor.getAttribute("href")}`)
-          .join("\n"),
-      );
-    }
-    expect(heading).toBe("Acme proposal");
+    expect(panel(doc)!.querySelector(".markdown-body h1")?.textContent).toBe("Acme proposal");
     const back = [...panel(doc)!.querySelectorAll("button")].find((button) =>
       button.textContent?.trim().endsWith("Artifacts"),
     )!;

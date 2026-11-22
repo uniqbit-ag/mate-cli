@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { VaultView } from "@uniqbit/mate-core/studio";
 
 await import("../../../test/dom");
@@ -12,6 +12,15 @@ const server = {
   /** Replaces the open file's rendered markdown. */
   markdown: null as unknown[] | null,
 };
+
+/**
+ * The real server functions. bun's mock.module overrides are process-wide and never auto-restored
+ * (`mock.restore()` leaves them), so a later file — bun runs files in file-system order, which
+ * differs between machines — would read this file's fixture wherever it asks the vault for a
+ * document. The file puts both globals back when it ends.
+ */
+const realVault = await import("../../server/vault");
+const realEventSource = (globalThis as { EventSource?: unknown }).EventSource;
 
 mock.module("../../server/vault", () => ({
   getVault: async () =>
@@ -55,6 +64,11 @@ class FakeEventSource {
   }
 }
 (globalThis as { EventSource: unknown }).EventSource = FakeEventSource;
+
+afterAll(() => {
+  mock.module("../../server/vault", () => realVault);
+  (globalThis as { EventSource?: unknown }).EventSource = realEventSource;
+});
 
 const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
