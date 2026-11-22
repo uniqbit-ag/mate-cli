@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, describe, expect, it, mock } from "bun:test";
 import type { CompanionAddInput, CompanionAddResult, StudioView } from "@uniqbit/mate-core/studio";
 
 import type { ShellCompanion, ShellData } from "../server/shell";
@@ -9,6 +9,13 @@ await import("../../test/dom");
 const deleted: string[] = [];
 const asked: CompanionAddInput[] = [];
 let answers: CompanionAddResult[] = [];
+/**
+ * The real companions service. bun's mock.module overrides are process-wide and never auto-restored
+ * (`mock.restore()` leaves them), so a later file — bun runs files in file-system order, which
+ * differs between machines — would get this file's fake wherever it asks the server about
+ * companions. The file puts it back when it ends.
+ */
+const realCompanions = await import("../server/companions");
 mock.module("../server/companions", () => ({
   deleteCompanion: async ({ data }: { data: { companion: string } }) => {
     deleted.push(data.companion);
@@ -19,6 +26,11 @@ mock.module("../server/companions", () => ({
     return answers.shift() ?? { ok: true, digest: "abcdef0123", existing: false };
   },
 }));
+
+afterAll(() => {
+  mock.module("../server/companions", () => ({ ...realCompanions }));
+});
+
 const { act, render } = await import("@testing-library/react");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
 const router = await import("@tanstack/react-router");
