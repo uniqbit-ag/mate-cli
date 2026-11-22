@@ -356,9 +356,14 @@ describe("Dashboard", () => {
           .join(", "),
       );
       const at = sheetHtml.indexOf("Notes");
+      console.error("DEBUG notes anchor:", sheetHtml.slice(Math.max(0, at - 150), at + 600));
+      const body = panel(doc)!.querySelector(".markdown-body");
+      console.error("DEBUG markdown-body:", body ? body.outerHTML.slice(0, 600) : "(none)");
       console.error(
-        "DEBUG notes context:",
-        at === -1 ? "(none)" : sheetHtml.slice(Math.max(0, at - 600), at + 200),
+        "DEBUG anchors:",
+        [...panel(doc)!.querySelectorAll("a")]
+          .map((anchor) => `${anchor.textContent?.trim()} -> ${anchor.getAttribute("href")}`)
+          .join("\n"),
       );
     }
     expect(heading).toBe("Acme proposal");
