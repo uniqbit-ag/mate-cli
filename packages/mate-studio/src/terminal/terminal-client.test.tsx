@@ -1,8 +1,16 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 await import("../../test/dom");
 /** The terminal the loader hands out; each test sets its fake. */
 const wterm: { Ctor: unknown } = { Ctor: null };
+/**
+ * The real terminal module and browser WebSocket. bun's mock.module overrides are process-wide and
+ * never auto-restored (`mock.restore()` leaves them), so a later file — bun runs files in
+ * file-system order, which differs between machines — would read this file's fake wherever it
+ * loads the terminal or opens a socket. The file puts both globals back when it ends.
+ */
+const realWTerm = await import("./wterm");
+const realWebSocket = (globalThis as { WebSocket?: unknown }).WebSocket;
 mock.module("./wterm", () => ({ loadWTerm: async () => wterm.Ctor }));
 const { TERMINAL_SESSION_KEY } = await import("./keys");
 const { TerminalClient } = await import("./terminal-client");
@@ -76,6 +84,11 @@ function client() {
 beforeEach(() => {
   (globalThis as { WebSocket: unknown }).WebSocket = FakeSocket;
   sessionStorage.clear();
+});
+
+afterAll(() => {
+  mock.module("./wterm", () => ({ ...realWTerm }));
+  (globalThis as { WebSocket?: unknown }).WebSocket = realWebSocket;
 });
 
 describe("the agent terminal client", () => {
