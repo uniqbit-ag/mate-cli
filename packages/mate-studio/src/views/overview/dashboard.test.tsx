@@ -348,18 +348,12 @@ describe("Dashboard", () => {
     await settle();
     const heading = panel(doc)!.querySelector(".markdown-body h1")?.textContent;
     if (heading !== "Acme proposal") {
-      console.error(
-        "DEBUG sheets:",
-        [...doc.querySelectorAll('[data-slot="sheet-content"]')].map((sheet) =>
-          sheet.outerHTML.slice(0, 500),
-        ),
-      );
-      console.error(
-        "DEBUG body children:",
-        [...doc.body.children]
-          .map((child) => `${child.tagName} ${child.id} ${child.className}`.slice(0, 120))
-          .join("\n"),
-      );
+      const sheetHtml = panel(doc)!.outerHTML;
+      console.error("DEBUG sheet sections:", [
+        ...panel(doc)!.querySelectorAll("section"),
+      ].map((section) => section.getAttribute("aria-label")).join(", "));
+      const at = sheetHtml.indexOf("Notes");
+      console.error("DEBUG notes context:", at === -1 ? "(none)" : sheetHtml.slice(Math.max(0, at - 600), at + 200));
     }
     expect(heading).toBe("Acme proposal");
     const back = [...panel(doc)!.querySelectorAll("button")].find((button) =>
