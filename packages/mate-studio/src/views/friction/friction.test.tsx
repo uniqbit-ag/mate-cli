@@ -85,29 +85,42 @@ const reportsOnly = (freeReports: FrictionFreeReport[]) =>
   panel(frictionFixture({ ...empty, freeReports }));
 
 const ARTIFACT_GROUP = "The artifact check refused a file write";
-const groupRow = (page: ReturnType<typeof panel>) =>
-  page.getByRole("heading", { name: ARTIFACT_GROUP }).closest("details")!;
+const SUBJECT = "skill:mate-apply-change";
+const rowOf = (page: ReturnType<typeof panel>, heading: string) =>
+  page.getByRole("heading", { name: heading }).closest("details")!;
+const groupRow = (page: ReturnType<typeof panel>) => rowOf(page, ARTIFACT_GROUP);
 
 /** Happy DOM does not toggle `details` on a click, so the row is opened directly. */
-function openGroup(page: ReturnType<typeof panel>) {
-  const row = groupRow(page);
+function openRow(row: HTMLDetailsElement) {
   row.open = true;
-  return row.lastElementChild!;
+  return row.lastElementChild as HTMLElement;
+}
+const openGroup = (page: ReturnType<typeof panel>) => openRow(groupRow(page));
+
+function expectActionsOnlyWhenOpen(page: ReturnType<typeof panel>, heading: string) {
+  expect(page.queryByRole("group", { name: `Mark ${heading}` })).toBeNull();
+  const body = within(openRow(rowOf(page, heading)));
+  for (const action of ["Mark fixed", "Mark reported", "Dismiss"]) {
+    expect(body.getByRole("button", { name: action })).toBeDefined();
+  }
 }
 
 describe("the friction list", () => {
-  test("a collapsed row shows the counts and keeps the evidence behind its summary", () => {
+  test("a collapsed row leads with the most in one session and keeps the evidence behind it", () => {
     const page = panel(
       frictionFixture({ groups: [frictionGroup({ reports: [frictionReport()] })] }),
     );
     const row = groupRow(page);
     const summary = row.querySelector("summary")!;
     expect(row.open).toBe(false);
-    for (const count of ["5 events", "2 sessions", "at most 3 in one session", "1 report"]) {
-      expect(within(summary).getByText(count)).toBeDefined();
-    }
-    expect(summary.textContent).toContain("last seen");
+    expect(summary.textContent).toMatch(
+      /at most 3 in one session.*5 events.*2 sessions.*1 report.*last seen/,
+    );
     expect(summary.textContent).not.toContain("refusal:artifact:write");
+  });
+
+  test("a collapsed group offers no mark action; opened, it offers them", () => {
+    expectActionsOnlyWhenOpen(panel(frictionFixture()), ARTIFACT_GROUP);
   });
 
   test("an open row shows the fingerprint, times, versions and paths", () => {
@@ -158,25 +171,33 @@ describe("the agent reports", () => {
   const freeReport = (fields: Partial<FrictionFreeReport> = {}) =>
     frictionFreeReport({
       kind: "unclear",
-      subject: "skill:mate-apply-change",
+      subject: SUBJECT,
       evidence: "step 3 names no branch",
       ...fields,
     });
   const agentReports = (fields?: Partial<FrictionFreeReport>) =>
     reportsOnly([freeReport(fields)]).getByRole("region", { name: "Agent reports" });
 
+  test("are collapsed rows naming subject and kind, with no mark action until opened", () => {
+    const page = reportsOnly([freeReport()]);
+    const summary = rowOf(page, SUBJECT).querySelector("summary")!;
+    expect(summary.textContent).toContain("unclear");
+    expect(summary.textContent).not.toContain("Expected");
+    expectActionsOnlyWhenOpen(page, SUBJECT);
+  });
+
+  test("open from a native summary and lead with the expected text, before the evidence", () => {
+    const row = rowOf(reportsOnly([freeReport()]), SUBJECT);
+    expect(row.firstElementChild!.tagName).toBe("SUMMARY");
+    expect(openRow(row).textContent).toMatch(/^Expected: editing.*Evidence: step 3/);
+  });
+
   test("stand apart under their subject and say they have no event", () => {
     const page = reportsOnly([freeReport()]);
     const section = page.getByRole("region", { name: "Agent reports" });
     expect(section.textContent).toContain("not attached to a recorded event");
-    expect(
-      within(section).getByRole("heading", { level: 3, name: "skill:mate-apply-change" }),
-    ).toBeDefined();
+    expect(within(section).getByRole("heading", { level: 3, name: SUBJECT })).toBeDefined();
     expect(page.queryByRole("region", { name: "Recorded friction" })).toBeNull();
-  });
-
-  test("lead with the expected text, before the evidence", () => {
-    expect(agentReports().textContent).toMatch(/Expected: editing.*Evidence: step 3/);
   });
 
   test("without expected text still show kind, cost, evidence and workaround", () => {
@@ -488,13 +509,13 @@ describe("the filters", () => {
       Object.fromEntries(new URLSearchParams("frictionState=handled&frictionType=skill")),
     );
     const page = panel(view, idle, filtersFromSearch(search));
-    const pressed = (group: string) =>
-      within(page.getByRole("group", { name: group }))
+    expect(
+      within(page.getByRole("group", { name: "State" }))
         .getAllByRole("button")
         .filter((button) => button.getAttribute("aria-pressed") === "true")
-        .map((button) => button.textContent);
-    expect(pressed("State")).toEqual(["Handled"]);
-    expect(pressed("Subject type")).toEqual(["skill"]);
+        .map((button) => button.textContent),
+    ).toEqual(["Handled"]);
+    expect(page.getByRole("combobox", { name: "Type" }).textContent).toBe("skill");
     expect(page.queryByRole("region", { name: "Recorded friction" })).toBeNull();
     expect(
       within(page.getByRole("region", { name: "Agent reports" }))
@@ -503,11 +524,45 @@ describe("the filters", () => {
     ).toEqual(["skill:mate-apply-change"]);
   });
 
-  test("choosing a control hands the new filters to the address", () => {
+  test("the type, kind and sort selects show their label and current choice", () => {
+    const page = panel(view);
+    const shown = (name: string) => page.getByRole("combobox", { name }).textContent;
+    expect([shown("Type"), shown("Kind"), shown("Sort")]).toEqual([
+      "All types",
+      "All kinds",
+      "Most repeated in one session",
+    ]);
+    expect(
+      page.getByRole("combobox", { name: "Kind", description: "Agent reports only" }),
+    ).toBeDefined();
+  });
+
+  test("the kind select is disabled when the period holds no Agent report, unless a kind is chosen", () => {
+    const kind = (fixture: FrictionView, filters = DEFAULT_FRICTION_FILTERS) =>
+      panel(fixture, idle, filters)
+        .getByRole("combobox", { name: "Kind" })
+        .hasAttribute("data-disabled");
+    expect(kind(frictionFixture())).toBe(true);
+    cleanup();
+    expect(kind(view)).toBe(false);
+    cleanup();
+    expect(kind(frictionFixture(), { ...DEFAULT_FRICTION_FILTERS, kind: "bug" })).toBe(false);
+  });
+
+  test("choosing a select hands the new filters to the address", async () => {
     const chosen: FrictionFilters[] = [];
     const page = panel(view, idle, undefined, (filters) => chosen.push(filters));
-    fireEvent.click(page.getByRole("button", { name: "Most recent" }));
-    fireEvent.click(page.getByRole("button", { name: "bug" }));
+    for (const [name, option] of [
+      ["Sort", "Most recent"],
+      ["Kind", "bug"],
+    ]) {
+      await act(async () => {
+        fireEvent.click(page.getByRole("combobox", { name }));
+      });
+      await act(async () => {
+        fireEvent.keyDown(page.getByRole("option", { name: option }), { key: "Enter" });
+      });
+    }
     expect(chosen).toEqual([
       { state: "open", sort: "recent" },
       { state: "open", sort: "repeats", kind: "bug" },
@@ -549,9 +604,13 @@ describe("the hidden items", () => {
         groups: [frictionGroup(fixed), frictionGroup({ fingerprint: "b", ...fixed })],
       }),
     );
-    expect(page.container.textContent).toContain("No item matches the filters.");
+    const overview = page.getByRole("region", { name: "Overview" });
+    expect(overview.textContent).not.toContain("hidden");
+    expect(within(overview).queryByRole("button", { name: /Show all/ })).toBeNull();
+    const note = page.getByText(/No item matches the filters\./);
+    expect(note.textContent).toContain("2 items are hidden by the filters.");
+    expect(within(note).getByRole("button", { name: /Show all/ })).toBeDefined();
     expect(page.container.textContent).not.toContain("No friction was recorded");
-    expect(page.getAllByRole("button", { name: /Show all/ })).toHaveLength(1);
   });
 });
 
@@ -570,6 +629,7 @@ describe("an item's Friction State", () => {
       idle,
       { state: "all", sort: "repeats" },
     );
+    openGroup(page);
     const row = groupRow(page).parentElement!;
     expect(row.textContent).toContain("Reported by triage");
     expect(row.textContent).toContain("2 events since reported");
@@ -597,8 +657,9 @@ describe("an item's Friction State", () => {
 describe("marking", () => {
   const LINK = "https://github.com/acme/mate/issues/7";
   const OTHER_GROUP = "mate artifact archive failed with exit code 1";
-  const actions = (page: ReturnType<typeof mount>, name: string) =>
-    within(page.getByRole("group", { name: `Mark ${name}` }));
+  /** The item's opened row: a person opens it before marking. */
+  const opened = (page: ReturnType<typeof mount>, heading: string) =>
+    within(openRow(rowOf(page, heading)));
 
   test("a group marked reported leaves the Open list, is announced, and focus moves on", async () => {
     const marks: FrictionMarkInput[] = [];
@@ -616,11 +677,12 @@ describe("marking", () => {
     const client = new QueryClient();
     const page = mount(client);
     await settle();
-    fireEvent.click(actions(page, ARTIFACT_GROUP).getByRole("button", { name: "Reported" }));
+    const row = opened(page, ARTIFACT_GROUP);
+    fireEvent.click(row.getByRole("button", { name: "Mark reported" }));
     const field = page.getByLabelText("Issue link (optional)");
     expect(document.activeElement).toBe(field);
     fireEvent.change(field, { target: { value: LINK } });
-    fireEvent.click(page.getByRole("button", { name: "Confirm reported" }));
+    fireEvent.click(row.getByRole("button", { name: "Mark reported" }));
     await settle();
     expect(marks).toEqual([{ target: "refusal:artifact:write", state: "reported", link: LINK }]);
     expect(page.queryByRole("heading", { name: ARTIFACT_GROUP })).toBeNull();
@@ -628,12 +690,38 @@ describe("marking", () => {
       `${ARTIFACT_GROUP}: marked reported.`,
     );
     expect(document.activeElement).toBe(
-      page.getByRole("heading", { name: OTHER_GROUP }).closest("li"),
+      page.getByRole("heading", { name: OTHER_GROUP }).closest("summary"),
     );
     client.clear();
   });
 
-  test("marking the last shown item moves focus to Show all", async () => {
+  test("a group marked under All stays open, shows its new state and keeps focus", async () => {
+    server.read = async () => frictionFixture();
+    server.mark = async () => {
+      server.read = async () =>
+        frictionFixture({
+          groups: [
+            frictionGroup({ state: frictionState({ by: "studio" }), open: false }),
+            frictionFixture().groups[1]!,
+          ],
+        });
+      return { ok: true, state: frictionState({ by: "studio" }) };
+    };
+    const client = new QueryClient();
+    const page = mount(client, undefined, { state: "all", sort: "repeats" });
+    await settle();
+    const row = opened(page, ARTIFACT_GROUP);
+    fireEvent.click(row.getByRole("button", { name: "Mark fixed" }));
+    fireEvent.click(row.getByRole("button", { name: "Mark fixed" }));
+    await settle();
+    const details = groupRow(page);
+    expect(details.open).toBe(true);
+    expect(details.querySelector("summary")!.textContent).toContain("Fixed");
+    expect(document.activeElement).toBe(details.querySelector("summary"));
+    client.clear();
+  });
+
+  test("marking the last shown item moves focus to Show all in the empty message", async () => {
     const only = frictionGroup();
     server.read = async () => frictionFixture({ groups: [only] });
     server.mark = async () => {
@@ -644,10 +732,15 @@ describe("marking", () => {
     const client = new QueryClient();
     const page = mount(client);
     await settle();
-    fireEvent.click(actions(page, ARTIFACT_GROUP).getByRole("button", { name: "Fixed" }));
-    fireEvent.click(page.getByRole("button", { name: "Confirm fixed" }));
+    const row = opened(page, ARTIFACT_GROUP);
+    fireEvent.click(row.getByRole("button", { name: "Mark fixed" }));
+    fireEvent.click(row.getByRole("button", { name: "Mark fixed" }));
     await settle();
-    expect(document.activeElement).toBe(page.getByRole("button", { name: /Show all/ }));
+    expect(document.activeElement).toBe(
+      within(page.getByText(/No item matches the filters\./)).getByRole("button", {
+        name: /Show all/,
+      }),
+    );
     client.clear();
   });
 
@@ -675,7 +768,7 @@ describe("marking", () => {
     const client = new QueryClient();
     const page = mount(client, undefined, { state: "handled", sort: "repeats" });
     await settle();
-    fireEvent.click(actions(page, "docs:acme").getByRole("button", { name: "Reopen" }));
+    fireEvent.click(opened(page, "docs:acme").getByRole("button", { name: "Reopen" }));
     await settle();
     expect(marks).toEqual([{ target: "r-dismissed", state: "open" }]);
     page.unmount();
@@ -684,7 +777,7 @@ describe("marking", () => {
     expect(
       within(open.getByRole("region", { name: "Agent reports" })).getByText("docs:acme"),
     ).toBeDefined();
-    expect(actions(open, "docs:acme").getByRole("button", { name: "Fixed" })).toBeDefined();
+    expect(opened(open, "docs:acme").getByRole("button", { name: "Mark fixed" })).toBeDefined();
     client.clear();
   });
 
@@ -698,18 +791,18 @@ describe("marking", () => {
     const client = new QueryClient();
     const page = mount(client);
     await settle();
-    fireEvent.click(actions(page, ARTIFACT_GROUP).getByRole("button", { name: "Dismissed" }));
+    const row = opened(page, ARTIFACT_GROUP);
+    fireEvent.click(row.getByRole("button", { name: "Dismiss" }));
     fireEvent.change(page.getByLabelText("Note (optional)"), { target: { value: note } });
-    fireEvent.click(page.getByRole("button", { name: "Confirm dismissed" }));
+    fireEvent.click(row.getByRole("button", { name: "Dismiss" }));
     await settle();
-    const row = groupRow(page).parentElement!;
-    expect(within(row).getByRole("alert").textContent).toContain("holds a secret");
-    expect(within(row).getByRole("alert").textContent).not.toContain(note);
-    expect(row.textContent).not.toContain("Dismissed in Studio");
+    expect(row.getByRole("alert").textContent).toContain("holds a secret");
+    expect(row.getByRole("alert").textContent).not.toContain(note);
+    expect(groupRow(page).textContent).not.toContain("Dismissed in Studio");
     client.clear();
   });
 
-  test("Fixed is reached and confirmed from the keyboard", async () => {
+  test("Mark fixed is reached and confirmed from the keyboard once the row is open", async () => {
     const marks: FrictionMarkInput[] = [];
     server.read = async () => frictionFixture();
     server.mark = async (input) => {
@@ -719,7 +812,8 @@ describe("marking", () => {
     const client = new QueryClient();
     const page = mount(client);
     await settle();
-    const fixed = actions(page, ARTIFACT_GROUP).getByRole("button", { name: "Fixed" });
+    const row = opened(page, ARTIFACT_GROUP);
+    const fixed = row.getByRole("button", { name: "Mark fixed" });
     expect(fixed.tagName).toBe("BUTTON");
     expect(fixed.tabIndex).toBe(0);
     fixed.focus();

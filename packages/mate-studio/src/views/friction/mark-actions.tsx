@@ -25,15 +25,22 @@ const BY: Record<FrictionStateOrigin, string> = {
 
 export const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
+/** The item's Friction State as one word with its marker; nothing for an unmarked item. */
+export function StateWord({ state }: { state: FrictionItemState | null }) {
+  if (!state) return null;
+  const word = STATE_WORDS[state.state];
+  return state.reopened ? (
+    <StatusWord marker="warn">Reopened</StatusWord>
+  ) : (
+    <StatusWord marker={word.marker}>{word.label}</StatusWord>
+  );
+}
+
 export function ItemState({ state, time }: { state: FrictionItemState; time: ReactNode }) {
   const word = STATE_WORDS[state.state];
   return (
     <p className="m-0 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-muted">
-      {state.reopened ? (
-        <StatusWord marker="warn">Reopened</StatusWord>
-      ) : (
-        <StatusWord marker={word.marker}>{word.label}</StatusWord>
-      )}
+      <StateWord state={state} />
       <span>
         {state.reopened ? "Fixed, then recorded again; marked " : `${word.label} `}
         {BY[state.by]} {time}
@@ -53,10 +60,11 @@ export function ItemState({ state, time }: { state: FrictionItemState; time: Rea
 
 const NOTE = { label: "Note (optional)", key: "note", type: "text" } as const;
 const LINK = { label: "Issue link (optional)", key: "link", type: "url" } as const;
-const FIELD: Record<FrictionStateName, typeof NOTE | typeof LINK> = {
-  fixed: NOTE,
-  reported: LINK,
-  dismissed: NOTE,
+/** Each mark's action label and its optional field. */
+const MARKS: Record<FrictionStateName, { action: string; field: typeof NOTE | typeof LINK }> = {
+  fixed: { action: "Mark fixed", field: NOTE },
+  reported: { action: "Mark reported", field: LINK },
+  dismissed: { action: "Dismiss", field: NOTE },
 };
 
 /** Resolves to a refusal to show, or `null` once the mark is saved. */
@@ -105,29 +113,29 @@ export function MarkActions({
     <div className="grid gap-1.5">
       {draft ? (
         <form
-          aria-label={`Mark ${name} ${STATE_WORDS[draft].label.toLowerCase()}`}
+          aria-label={`${MARKS[draft].action}: ${name}`}
           className="flex flex-wrap items-end gap-2"
           onSubmit={(event) => {
             event.preventDefault();
-            void submit(draft, { [FIELD[draft].key]: text });
+            void submit(draft, { [MARKS[draft].field.key]: text });
           }}
           onKeyDown={(event) => {
             if (event.key === "Escape") close();
           }}
         >
           <label htmlFor={fieldId} className="grid gap-1 text-xs text-muted">
-            {FIELD[draft].label}
+            {MARKS[draft].field.label}
             <Input
               id={fieldId}
               ref={field}
-              type={FIELD[draft].type}
+              type={MARKS[draft].field.type}
               value={text}
               onChange={(event) => setText(event.target.value)}
               className="h-8 w-72 max-w-full"
             />
           </label>
           <Button size="sm" variant="primary" type="submit" disabled={pending}>
-            Confirm {STATE_WORDS[draft].label.toLowerCase()}
+            {MARKS[draft].action}
           </Button>
           <Button size="sm" onClick={close} disabled={pending}>
             Cancel
@@ -137,7 +145,7 @@ export function MarkActions({
         <div role="group" aria-label={`Mark ${name}`} className="flex flex-wrap gap-2">
           {FRICTION_STATES.map((state) => (
             <Button key={state} size="sm" disabled={pending} onClick={() => setDraft(state)}>
-              {STATE_WORDS[state].label}
+              {MARKS[state].action}
             </Button>
           ))}
           {handled ? (
