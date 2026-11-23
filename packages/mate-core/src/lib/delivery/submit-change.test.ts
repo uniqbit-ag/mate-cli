@@ -135,6 +135,7 @@ async function submit(
       now: () => new Date("2026-10-28T10:00:00.000Z"),
       runOpenSpec: fakeOpenSpec(),
       submitGroups: fakeGroups(),
+      preflightGroup: async () => ({ status: "passed" }),
       ...deps,
     },
   );

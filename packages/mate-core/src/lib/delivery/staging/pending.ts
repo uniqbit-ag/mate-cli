@@ -213,6 +213,23 @@ async function materializeChanges(
   );
 }
 
+/** Compares change names as Git lists the folders one commit adds: `acme-a-b/` before `acme-a/`. */
+export function byFolderPath(a: string, b: string): number {
+  return `${a}/` < `${b}/` ? -1 : `${a}/` > `${b}/` ? 1 : 0;
+}
+
+/** Compares change names by their place in `order`, then by `tie`; names not in it go last. */
+export function bySubmitOrder(
+  order: readonly string[],
+  tie: (a: string, b: string) => number = (a, b) => a.localeCompare(b),
+): (a: string, b: string) => number {
+  const rank = (name: string): number => {
+    const at = order.indexOf(name);
+    return at === -1 ? order.length : at;
+  };
+  return (a, b) => rank(a) - rank(b) || tie(a, b);
+}
+
 /**
  * The changes of `type` submitted at `ref` (`state: submitted` in their Delivery Record), in
  * submit order, then by name; with `only`, just those of that name. Only each folder's Delivery
@@ -254,11 +271,8 @@ export async function submittedAt(
     const found = read.filter((entry): entry is SubmittedChange => entry !== null);
     // One change needs no order.
     const order = found.length > 1 ? await submitOrder(git, ref, type) : [];
-    const rank = (name: string): number => {
-      const at = order.indexOf(name);
-      return at === -1 ? order.length : at;
-    };
-    return found.toSorted((a, b) => rank(a.name) - rank(b.name) || a.name.localeCompare(b.name));
+    const compare = bySubmitOrder(order);
+    return found.toSorted((a, b) => compare(a.name, b.name));
   } finally {
     await fs.rm(scratch, { recursive: true, force: true });
   }

@@ -16,9 +16,22 @@ import { errorMessage } from "../../../runtime/error-message";
 import { inboxText } from "../../../runtime/pending-records";
 import { declaredDependencies } from "../overlap";
 import { isCommitId, readDeliveryRecord } from "../record";
-import { applyChain, describeFailure, failureRemedy, isChainFailure } from "./apply-chain";
+import {
+  applyChain,
+  describeFailure,
+  failureRemedy,
+  isChainFailure,
+  type AppliedChain,
+  type ChainFailure,
+} from "./apply-chain";
 import { sourceDir, type ArtifactType } from "./artifact-type";
-import { deltaBase, orderByDependencies, submittedAt, type SubmittedChange } from "./pending";
+import {
+  deltaBase,
+  orderByDependencies,
+  sourcePathOf,
+  submittedAt,
+  type SubmittedChange,
+} from "./pending";
 import {
   anchorsAt,
   defaultRef,
@@ -28,6 +41,7 @@ import {
   type StagingRemote,
 } from "./refs";
 import { defaultArtifactType } from "./registry";
+import { acceptsBlock } from "./submit";
 import { assertNoLinkedContent, WITHOUT_HOOKS, withTemporaryWorktree } from "./worktree";
 
 /** Bound on one projection, the optional fetch included. */
@@ -70,16 +84,206 @@ export interface ProjectDeps {
 const defaultGit = (cwd: string): CompanionGit =>
   companionGit(cwd, { prompt: "never", budgetMs: PROJECTION_BUDGET_MS });
 
-interface ChainMember {
+/** A change a chain run applies, read from this checkout or the pending branch. */
+export interface RunMember {
   name: string;
   source: ChainSource;
   dependsOn: string[];
   /** The submitted copy, for its delta base; absent for a local change. */
   submitted?: SubmittedChange;
+  /** A blocked change submitted again: when submit accepts the block, the default tip is its base. */
+  rebased?: boolean;
+}
+
+/** Read from this checkout when `local` (its `dependsOn`) is set, else from `copy`. */
+export function runMember(name: string, local: string[] | null, copy?: SubmittedChange): RunMember {
+  return {
+    name,
+    source: local !== null ? "local" : "submitted",
+    dependsOn: local ?? copy?.dependsOn ?? [],
+    ...(copy ? { submitted: copy } : {}),
+  };
 }
 
 function failed(change: string, status: "conflict" | "error", message: string): ProjectionResult {
   return { status, change, chain: [], dir: null, files: [], message };
+}
+
+/** What a chain run reads: this checkout, and the default and pending branches as last fetched. */
+export interface ChainContext {
+  companionPath: string;
+  type: ArtifactType;
+  gitFor: (cwd: string) => CompanionGit;
+  git: CompanionGit;
+  remote: StagingRemote | null;
+  /** The default branch, or `HEAD` without one. */
+  baseRef: string;
+  /** The changes on the pending branch, in submit order. */
+  submitted: SubmittedChange[];
+  /** Change names the default branch archived. */
+  published: ReadonlySet<string>;
+  /** Why the refs are the last fetched ones, as a message suffix; empty otherwise. */
+  warning: string;
+  tmpRoot?: string;
+  /** The `dependsOn` of a change in this checkout; null when it has no folder here. */
+  localDependencies: (change: string) => Promise<string[] | null>;
+}
+
+/** Reads the {@link ChainContext} of `companionPath`, fetching first with `deps.fetch`. */
+export async function chainContext(
+  companionPath: string,
+  deps: ProjectDeps = {},
+): Promise<ChainContext> {
+  const type = deps.artifactType ?? defaultArtifactType(deps.runOpenSpec);
+  const gitFor = deps.git ?? defaultGit;
+  const git = gitFor(companionPath);
+  let remote: StagingRemote | null = await stagingRemote(git);
+  let warning = "";
+  if (remote && deps.fetch) {
+    const fetched = await fetchPendingBranches(git, remote);
+    if ("error" in fetched) warning = ` (${fetched.error}; read the last fetched state)`;
+    else remote = fetched;
+  }
+  const baseRef =
+    remote &&
+    (await git.run(["rev-parse", "--verify", "-q", `${defaultRef(remote)}^{commit}`])).status === 0
+      ? defaultRef(remote)
+      : "HEAD";
+  const submitted = remote ? await submittedAt(git, pendingRef(remote), type, deps.tmpRoot) : [];
+  const published = new Set((await anchorsAt(git, baseRef, type)).map((id) => type.recordName(id)));
+  return {
+    companionPath,
+    type,
+    gitFor,
+    git,
+    remote,
+    baseRef,
+    submitted,
+    published,
+    warning,
+    ...(deps.tmpRoot ? { tmpRoot: deps.tmpRoot } : {}),
+    localDependencies: async (change) => {
+      const dir = sourceDir(companionPath, type, change);
+      return (await pathIsDirectory(dir)) ? declaredDependencies(dir) : null;
+    },
+  };
+}
+
+/**
+ * - `missing`: a dependency is neither here, submitted nor published; nothing was applied
+ * - `empty`: nothing to apply
+ * - `conflict`: publication would refuse the run, for `failure`
+ */
+export type ChainRun<T> =
+  | { status: "missing"; missing: string[] }
+  | { status: "empty" }
+  | {
+      status: "conflict";
+      chain: ProjectionResult["chain"];
+      failure: ChainFailure;
+      branch: string;
+    }
+  | { status: "ok"; chain: ProjectionResult["chain"]; value: T };
+
+/**
+ * Applies, in a temporary worktree of the default branch and with publication's apply code, the
+ * unpublished `dependsOn` chain `dependencies` reach, then `members` as publication orders a
+ * group: `dependsOn` among them, then their given order. Neither `members` nor `exclude` join
+ * the chain. `onApplied` reads the worktree before it is removed. Commits and pushes nothing.
+ */
+export async function runChain<T>(
+  context: ChainContext,
+  input: {
+    dependencies: readonly string[];
+    members?: readonly RunMember[];
+    exclude?: readonly string[];
+  },
+  onApplied: (dir: string, applied: AppliedChain) => Promise<T>,
+): Promise<ChainRun<T>> {
+  const { companionPath, type, gitFor, git, remote, baseRef } = context;
+  const members = orderByDependencies(input.members ?? []);
+  const exclude = new Set([...(input.exclude ?? []), ...members.map((member) => member.name)]);
+  const { chain, missing } = await collectChain(
+    exclude,
+    input.dependencies,
+    context.submitted,
+    context.published,
+    context.localDependencies,
+  );
+  if (missing.length > 0) return { status: "missing", missing };
+  const ordered = orderByDependencies(chain);
+  const reported = ordered.map((member) => ({ name: member.name, source: member.source }));
+  const applying = [...ordered, ...members];
+  if (applying.length === 0) return { status: "empty" };
+
+  return withTemporaryWorktree(
+    companionPath,
+    baseRef,
+    async (dir): Promise<ChainRun<T>> => {
+      const work = gitFor(dir);
+      const start = (await work.run(["rev-parse", "HEAD"])).stdout.trim();
+      const pending = remote ? pendingRef(remote) : null;
+      await stageChain(work, companionPath, dir, type, applying, pending);
+      // A scaffold commit the stale check reads the chain from; it never leaves this worktree.
+      await work.run(["add", "-f", "-A"]);
+      const scaffold = await work.run([
+        ...WITHOUT_HOOKS,
+        "-c",
+        "user.name=Mate",
+        "-c",
+        "user.email=mate@localhost",
+        "commit",
+        "--allow-empty",
+        "-q",
+        "-m",
+        "projection",
+      ]);
+      if (scaffold.status !== 0) throw new Error(describeGitFailure(scaffold));
+      // The worktree checked only the base; the pending branch's folders arrived since.
+      await assertNoLinkedContent(work, "HEAD", [type], "the projected chain");
+      const baseOf = async (member: RunMember): Promise<string | null> => {
+        if (member.submitted && remote && pending) {
+          return deltaBase(git, defaultRef(remote), pending, member.submitted, type);
+        }
+        const record = await readDeliveryRecord(sourceDir(dir, type, member.name)).catch(
+          () => null,
+        );
+        const base = record?.specBase;
+        if (!base || !isCommitId(base)) return null;
+        const held = await work.run(["merge-base", "--is-ancestor", base, start]);
+        return held.status === 0 ? base : null;
+      };
+      const bases = await Promise.all(
+        applying.map(async (member) => {
+          const base = await baseOf(member);
+          const folder = sourcePathOf(type, member.name);
+          // Submit then moves the base to the tip, as it does for an accepted block.
+          const accepted =
+            base !== null &&
+            member.rebased === true &&
+            (await acceptsBlock(type, work, "HEAD", folder, base, start));
+          return accepted ? null : base;
+        }),
+      );
+      const applied = await applyChain({
+        type,
+        work,
+        dir,
+        members: applying.map((member, index) => ({
+          name: member.name,
+          base: bases[index] ?? null,
+        })),
+        ref: "HEAD",
+        start,
+      });
+      if (isChainFailure(applied)) {
+        const branch = remote?.defaultBranch ?? "the default branch";
+        return { status: "conflict", chain: reported, failure: applied, branch };
+      }
+      return { status: "ok", chain: reported, value: await onApplied(dir, applied) };
+    },
+    { git: gitFor, types: [type], ...(context.tmpRoot ? { tmpRoot: context.tmpRoot } : {}) },
+  );
 }
 
 /**
@@ -107,47 +311,32 @@ async function project(
   name: string,
   deps: ProjectDeps,
 ): Promise<ProjectionResult> {
-  const type = deps.artifactType ?? defaultArtifactType(deps.runOpenSpec);
-  const gitFor = deps.git ?? defaultGit;
-  const git = gitFor(companionPath);
-  let remote: StagingRemote | null = await stagingRemote(git);
-  let warning = "";
-  if (remote && deps.fetch) {
-    const fetched = await fetchPendingBranches(git, remote);
-    if ("error" in fetched) warning = ` (${fetched.error}; read the last fetched state)`;
-    else remote = fetched;
-  }
-  const baseRef =
-    remote &&
-    (await git.run(["rev-parse", "--verify", "-q", `${defaultRef(remote)}^{commit}`])).status === 0
-      ? defaultRef(remote)
-      : "HEAD";
-  const submitted = remote ? await submittedAt(git, pendingRef(remote), type, deps.tmpRoot) : [];
-  const published = new Set((await anchorsAt(git, baseRef, type)).map((id) => type.recordName(id)));
-
-  const localDependencies = async (change: string): Promise<string[] | null> => {
-    const dir = sourceDir(companionPath, type, change);
-    return (await pathIsDirectory(dir)) ? declaredDependencies(dir) : null;
-  };
+  const context = await chainContext(companionPath, deps);
+  const { type, warning } = context;
   const own =
-    (await localDependencies(name)) ??
-    submitted.find((change) => change.name === name)?.dependsOn ??
+    (await context.localDependencies(name)) ??
+    context.submitted.find((change) => change.name === name)?.dependsOn ??
     null;
   if (own === null) {
     return failed(name, "error", `mate: no change named ${name} here or on the pending branch.`);
   }
 
-  const { chain, missing } = await collectChain(name, own, submitted, published, localDependencies);
-  if (missing.length > 0) {
+  const run = await runChain(context, { dependencies: own, exclude: [name] }, (dir, applied) => {
+    const derived = applied.changed.filter(
+      (file) =>
+        !file.startsWith(`${type.source}/`) &&
+        (type.archiveRoot === undefined || !file.startsWith(`${type.archiveRoot}/`)),
+    );
+    return writeProjection(dir, derived, deps.outRoot ?? os.tmpdir());
+  });
+  if (run.status === "missing") {
     return failed(
       name,
       "error",
-      `mate: ${name} depends on ${missing.map(inboxText).join(", ")}, which is neither here, submitted nor published.`,
+      `mate: ${name} depends on ${run.missing.map(inboxText).join(", ")}, which is neither here, submitted nor published.`,
     );
   }
-  const ordered = orderByDependencies(chain);
-  const reported = ordered.map((member) => ({ name: member.name, source: member.source }));
-  if (ordered.length === 0) {
+  if (run.status === "empty") {
     return {
       status: "ok",
       change: name,
@@ -158,102 +347,46 @@ async function project(
     };
   }
 
-  return withTemporaryWorktree(
-    companionPath,
-    baseRef,
-    async (dir) => {
-      const work = gitFor(dir);
-      const start = (await work.run(["rev-parse", "HEAD"])).stdout.trim();
-      const pending = remote ? pendingRef(remote) : null;
-      await stageChain(work, companionPath, dir, type, ordered, pending);
-      // A scaffold commit the stale check reads the chain from; it never leaves this worktree.
-      await work.run(["add", "-f", "-A"]);
-      const scaffold = await work.run([
-        ...WITHOUT_HOOKS,
-        "-c",
-        "user.name=Mate",
-        "-c",
-        "user.email=mate@localhost",
-        "commit",
-        "--allow-empty",
-        "-q",
-        "-m",
-        "projection",
-      ]);
-      if (scaffold.status !== 0) throw new Error(describeGitFailure(scaffold));
-      // The worktree checked only the base; the pending branch's folders arrived since.
-      await assertNoLinkedContent(work, "HEAD", [type], "the projected chain");
-      const bases = await Promise.all(
-        ordered.map(async (member) => {
-          if (member.submitted && remote && pending) {
-            return deltaBase(git, defaultRef(remote), pending, member.submitted, type);
-          }
-          const record = await readDeliveryRecord(sourceDir(dir, type, member.name)).catch(
-            () => null,
-          );
-          const base = record?.specBase;
-          if (!base || !isCommitId(base)) return null;
-          const held = await work.run(["merge-base", "--is-ancestor", base, start]);
-          return held.status === 0 ? base : null;
-        }),
-      );
-      const applied = await applyChain({
-        type,
-        work,
-        dir,
-        members: ordered.map((member, index) => ({
-          name: member.name,
-          base: bases[index] ?? null,
-        })),
-        ref: "HEAD",
-        start,
-      });
-      if (isChainFailure(applied)) {
-        const branch = remote?.defaultBranch ?? "the default branch";
-        return {
-          ...failed(
-            name,
-            "conflict",
-            `mate: ${name}'s dependencies cannot be published: ${describeFailure(applied, branch)}. ${failureRemedy(applied)}`,
-          ),
-          chain: reported,
-        };
-      }
-      const derived = applied.changed.filter(
-        (file) =>
-          !file.startsWith(`${type.source}/`) &&
-          (type.archiveRoot === undefined || !file.startsWith(`${type.archiveRoot}/`)),
-      );
-      const { out, files } = await writeProjection(dir, derived, deps.outRoot ?? os.tmpdir());
-      return {
-        status: "ok",
-        change: name,
-        chain: reported,
-        dir: out,
-        files,
-        message: `Projected ${files.length} file${files.length === 1 ? "" : "s"} once ${reported.map((member) => member.name).join(", ")} ${reported.length === 1 ? "is" : "are"} published, in ${out}.${warning}`,
-      };
-    },
-    { git: gitFor, types: [type], ...(deps.tmpRoot ? { tmpRoot: deps.tmpRoot } : {}) },
-  );
+  if (run.status === "conflict") {
+    return {
+      ...failed(
+        name,
+        "conflict",
+        `mate: ${name}'s dependencies cannot be published: ${describeFailure(run.failure, run.branch)}. ${failureRemedy(run.failure)}`,
+      ),
+      chain: run.chain,
+    };
+  }
+  const { chain } = run;
+  const { out, files } = run.value;
+  return {
+    status: "ok",
+    change: name,
+    chain,
+    dir: out,
+    files,
+    message: `Projected ${files.length} file${files.length === 1 ? "" : "s"} once ${chain.map((member) => member.name).join(", ")} ${chain.length === 1 ? "is" : "are"} published, in ${out}.${warning}`,
+  };
 }
 
 /**
  * The unpublished changes `dependencies` reach, transitively and depth first, and those found
  * neither here, submitted nor published. A submitted change also present here is read locally.
+ * Those in `exclude` are passed over.
  */
 async function collectChain(
-  name: string,
+  exclude: ReadonlySet<string>,
   dependencies: readonly string[],
   submitted: readonly SubmittedChange[],
   published: ReadonlySet<string>,
   localDependencies: (change: string) => Promise<string[] | null>,
-): Promise<{ chain: ChainMember[]; missing: string[] }> {
-  const chain: ChainMember[] = [];
+): Promise<{ chain: RunMember[]; missing: string[] }> {
+  const chain: RunMember[] = [];
   const missing: string[] = [];
   const visit = async (next: readonly string[]): Promise<void> => {
     for (const dependency of next) {
-      if (dependency === name || chain.some((member) => member.name === dependency)) continue;
+      if (exclude.has(dependency) || chain.some((member) => member.name === dependency)) continue;
+      if (missing.includes(dependency)) continue;
       const copy = submitted.find((change) => change.name === dependency);
       // oxlint-disable-next-line no-await-in-loop -- a short chain
       const local = await localDependencies(dependency);
@@ -262,12 +395,7 @@ async function collectChain(
         missing.push(dependency);
         continue;
       }
-      const member: ChainMember = {
-        name: dependency,
-        source: local !== null ? "local" : "submitted",
-        dependsOn: local ?? copy!.dependsOn,
-        ...(copy ? { submitted: copy } : {}),
-      };
+      const member = runMember(dependency, local, copy);
       chain.push(member);
       // oxlint-disable-next-line no-await-in-loop -- depth first
       await visit(member.dependsOn);
@@ -283,7 +411,7 @@ async function stageChain(
   companionPath: string,
   dir: string,
   type: ArtifactType,
-  ordered: readonly ChainMember[],
+  ordered: readonly RunMember[],
   pending: string | null,
 ): Promise<void> {
   for (const member of ordered) {

@@ -1,5 +1,5 @@
 name: mate-minimal
-version: 6
+version: 7
 description: Mate's short OpenSpec workflow for one-Area, low-risk changes - specs → tasks
 artifacts:
   - id: specs
@@ -27,6 +27,10 @@ artifacts:
         `- **Then**` bullets. This is the minimal profile's readable form of a scenario.
       - MODIFIED entries MUST include the full updated story and criteria. REMOVED entries MUST
         include **Reason** and **Migration**.
+      - A MODIFIED story MUST keep every scenario name the current requirement has, each as a
+        `#### Scenario: <name>` heading over its Given/When/Then bullets, and give each new
+        criterion its own `#### Scenario:` heading. Archive refuses a story that drops a
+        scenario name, for example by folding scenarios into one Acceptance Criteria block.
 
       Every user story carries an **Area:** marker naming the Areas it binds, using values from
       the `scopes` in the spec's `mate:delta` comment - always, even when there is only one Area.

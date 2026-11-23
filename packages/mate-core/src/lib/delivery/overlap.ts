@@ -44,13 +44,17 @@ export type CountedWarning = {
   message: string;
 };
 
+/** Submit could not archive the change's Delivery Group as publication would. */
+export type PreflightWarning = { kind: "preflight-skipped"; change: string; message: string };
+
 export type SubmitWarning =
   | { kind: "overlap"; change: string; capability: string; requirement: string; message: string }
   | DependencyWarning
   | PlanningWarning
   | GroupWarning
   | StageWarning
-  | CountedWarning;
+  | CountedWarning
+  | PreflightWarning;
 
 const SECTION = /^##\s+(ADDED|MODIFIED|REMOVED|RENAMED)\s+Requirements\s*$/;
 const REQUIREMENT = /^###\s+Requirement:\s*(.+?)\s*$/;

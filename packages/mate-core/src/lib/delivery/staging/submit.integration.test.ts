@@ -941,9 +941,13 @@ function submitUi(
     {
       ...deps(fixture, options.deps),
       runOpenSpec: options.runOpenSpec ?? recordingOpenSpec(),
+      preflightGroup: passedPreflight,
     },
   );
 }
+
+/** The fake OpenSpec below cannot archive. */
+const passedPreflight = async () => ({ status: "passed" as const });
 
 /** `status` fails; `validate` appends its change to `checked` and fails for `invalid`. */
 function recordingOpenSpec(
@@ -985,6 +989,7 @@ describe("submitChanges", () => {
         {
           ...deps(fixture),
           runOpenSpec: recordingOpenSpec(),
+          preflightGroup: passedPreflight,
         },
       );
 
@@ -1436,6 +1441,7 @@ describe("takeSubmitted", () => {
         {
           ...deps(fixture),
           runOpenSpec: recordingOpenSpec(),
+          preflightGroup: passedPreflight,
         },
       );
 
@@ -1464,6 +1470,7 @@ describe("takeSubmitted", () => {
           {
             ...deps(fixture),
             runOpenSpec: recordingOpenSpec(),
+            preflightGroup: passedPreflight,
           },
         );
       git(product.clone, "switch", "-q", "workset/acme-login");

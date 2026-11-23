@@ -106,6 +106,20 @@ export interface LocalMember {
   group: string;
 }
 
+/** The active members of `group` not in `names`: submitting `names` waits for them. */
+export function waitingMembers(
+  members: readonly LocalMember[],
+  group: string,
+  names: readonly string[],
+): string[] {
+  return members
+    .filter(
+      (member) =>
+        member.group === group && member.state === "active" && !names.includes(member.name),
+    )
+    .map((member) => member.name);
+}
+
 /** Every local source folder of `type` with its state and Delivery Group, by name. */
 export async function localMembers(
   companionPath: string,
@@ -393,7 +407,7 @@ export interface PushOptions {
  * conflict, submitted it again, and what remains stale (a removal, a plain rename) replaces no
  * one's text. A part it would overwrite still needs `mate artifact resolve`.
  */
-async function acceptsBlock(
+export async function acceptsBlock(
   type: ArtifactType,
   work: CompanionGit,
   ref: string,
@@ -726,9 +740,7 @@ export async function submitGroups(
   const submissions: GroupSubmission[] = [];
   for (const group of groups) {
     const inGroup = members.filter((member) => member.group === group);
-    const waitingFor = inGroup
-      .filter((member) => member.state === "active" && !names.includes(member.name))
-      .map((member) => member.name);
+    const waitingFor = waitingMembers(inGroup, group, names);
     if (waitingFor.length > 0) {
       submissions.push({ group, status: "waiting", waitingFor });
       continue;
