@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import {
   defaultWorkflow,
   pathPosition,
@@ -15,6 +15,25 @@ const router = await import("@tanstack/react-router");
 const { staticMarkup } = await import("../../../test/render");
 const { Dashboard } = await import("./dashboard");
 const { vaultQuery } = await import("../../lib/studio-queries");
+
+/**
+ * The dashboard reads the vault only through seeded query caches, so its suite pins the server
+ * functions to refusals: whichever files bun happens to run first, a vault fixture mocked
+ * elsewhere (bun's mock.module overrides are process-wide) must not feed this suite's documents.
+ */
+mock.module("../../server/vault", () => ({
+  getVault: async ({ data }: { data: { path?: string } }) => {
+    throw new Error(`the dashboard reads no vault file (${data.path ?? "no path"})`);
+  },
+  getVaultChildren: async () => ({ entries: [], generation: 0 }),
+  getVaultMatches: async () => ({ shown: [], total: 0, generation: 0 }),
+  previewVaultFile: async () => {
+    throw new Error("the dashboard previews no vault file");
+  },
+  saveVaultFile: async () => {
+    throw new Error("the dashboard saves no vault file");
+  },
+}));
 
 const change = (
   name: string,
