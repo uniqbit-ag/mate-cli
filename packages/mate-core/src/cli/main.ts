@@ -80,6 +80,13 @@ const mainDeps: MainDeps = {
   refreshRuntimeDirectory,
 };
 
+/** For a command whose caller parses stdout as JSON: the gate's reason stays on stderr. */
+function printPreflightError(message: string): void {
+  console.log(
+    JSON.stringify({ kind: "error", version: 1, error: { code: "PREFLIGHT_FAILED", message } }),
+  );
+}
+
 export async function main(argv = process.argv, deps: MainDeps = mainDeps): Promise<void> {
   const [, , command, subcommand, ...rest] = argv;
 
@@ -296,16 +303,7 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       return;
     case "report":
       if (!(await gate({ updateGuard: true, install: true }))) {
-        console.log(
-          JSON.stringify({
-            kind: "error",
-            version: 1,
-            error: {
-              code: "PREFLIGHT_FAILED",
-              message: "Mate must be updated or installed before reporting; see stderr",
-            },
-          }),
-        );
+        printPreflightError("Mate must be updated or installed before reporting; see stderr");
         return;
       }
       await runReportCommand(argv.slice(3));
@@ -327,10 +325,19 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       await runDoctorCommand(argv.slice(3));
       return;
     case "friction": {
-      // The switch and Friction States are machine-wide: only reading or writing the log needs a companion.
-      const readsLog = subcommand === "list" || subcommand === "report";
-      if (!(await gate(readsLog ? { updateGuard: true, companion: true, install: true } : {})))
+      // Only the log needs a companion; the nudge names `report` after an update or install refusal too.
+      const needs: GateNeeds =
+        subcommand === "list"
+          ? { updateGuard: true, companion: true, install: true }
+          : subcommand === "report"
+            ? { companion: true }
+            : {};
+      if (!(await gate(needs))) {
+        if (rest.includes("--json")) {
+          printPreflightError("Mate must be updated, installed or given one companion; see stderr");
+        }
         return;
+      }
       await runFrictionCommand(subcommand, rest);
       return;
     }

@@ -354,12 +354,35 @@ describe("command gating", () => {
     expect(dispatched).toEqual(["friction", "friction", "friction", "friction"]);
   });
 
-  test("friction list and report keep companion selection and install preflight", async () => {
-    for (const subcommand of ["list", "report"]) {
-      const { gateCalls, deps } = recordingDeps();
-      await main(["node", "mate", "friction", subcommand], deps);
-      expect(gateCalls).toEqual(["companion", "install"]);
-    }
+  test("friction list keeps companion selection and install preflight", async () => {
+    const { gateCalls, deps } = recordingDeps();
+    await main(["node", "mate", "friction", "list"], deps);
+    expect(gateCalls).toEqual(["companion", "install"]);
+  });
+
+  test("friction report runs while an update is required and installation is incomplete", async () => {
+    spies.push(
+      spyOn(updateChecker, "enforceUpdateIfRequired").mockImplementation(async () => true),
+    );
+    const { gateCalls, deps } = recordingDeps({ installOk: false });
+    await main(["node", "mate", "friction", "report", "F-acme"], deps);
+    expect(gateCalls).toEqual(["companion"]);
+    expect(dispatched).toEqual(["friction"]);
+  });
+
+  test("friction list --json prints an error document when a gate blocks it", async () => {
+    const output = spyOn(console, "log").mockImplementation(() => {});
+    spies.push(
+      output,
+      spyOn(console, "error").mockImplementation(() => {}),
+    );
+    const { deps } = recordingDeps({ installOk: false });
+    await main(["node", "mate", "friction", "list", "--json"], deps);
+    expect(dispatched).toEqual([]);
+    expect(process.exitCode).toBe(1);
+    expect(output.mock.calls.map(([line]) => JSON.parse(String(line)))).toMatchObject([
+      { kind: "error", version: 1, error: { code: "PREFLIGHT_FAILED" } },
+    ]);
   });
 
   test("wrap declares companion selection and install preflight", async () => {
