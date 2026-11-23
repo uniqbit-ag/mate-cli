@@ -56,11 +56,14 @@ working repository and never sends it anywhere.
 
 An event holds the check or the command, the tool kind, the refusal message or
 the last error text (up to 1,000 characters) and up to five paths the call
-names. A refused commit also keeps its shell command (up to 500 characters); a
-refused write keeps only its paths. It never holds:
+names. It never holds:
 
+- the shell command of a refused call, because a command can carry what it
+  writes,
 - the content a tool call would write,
-- the value of a flag (`--token abc123` is recorded as `--token`),
+- the value of a flag (`--token abc123` is recorded as `--token`). When the
+  error text repeats a value of three or more characters, Mate replaces it
+  with `…`; a shorter value, such as a port `1`, stays in the error text,
 - the value of an environment variable whose name marks a secret (`TOKEN`,
   `SECRET`, `PASSW`, `KEY`, `CREDENTIAL`, `AUTH`) and that is at least 8
   characters long; Mate replaces it with `***`,

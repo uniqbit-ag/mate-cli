@@ -42,62 +42,15 @@ function recordingHome(): string {
 }
 
 describe("refusalDetail", () => {
-  test("cuts message, command and paths to their limits", () => {
+  test("cuts message and paths to their limits", () => {
     const detail = refusalDetail({
-      check: "attribution",
-      toolKind: "shell",
+      check: "artifact",
+      toolKind: "write",
       message: "m".repeat(3_000),
-      command: "c".repeat(3_000),
       paths: ["a", "b", "c", "d", "e", "f"],
     });
     expect((detail.message as string).length).toBe(1_000);
-    expect(detail.command).toBe("c".repeat(500));
     expect(detail.paths).toEqual(["a", "b", "c", "d", "e"]);
-  });
-
-  test("keeps no heredoc body or assigned value of a shell command", () => {
-    const detail = refusalDetail({
-      check: "attribution",
-      toolKind: "shell",
-      message: "refused",
-      command: 'TOKEN="x\\"ab\\\nc123" git commit -F - <<\'EOF\'\nsecret line\nEOF',
-    });
-    expect(detail.command).toContain("git commit -F -");
-    expect(detail.command).not.toContain("secret line");
-    expect(detail.command).not.toContain("c123");
-  });
-
-  test("keeps no heredoc body inside a command substitution", () => {
-    const detail = refusalDetail({
-      check: "attribution",
-      toolKind: "shell",
-      message: "refused",
-      command: `git commit -m "$(cat <<'EOF'\nsecret line\nEOF\n)"\ngit log`,
-    });
-    expect(detail.command).not.toContain("secret line");
-    expect(detail.command).toContain("git log");
-  });
-
-  test("keeps no segment of a concatenated assigned value", () => {
-    const detail = refusalDetail({
-      check: "attribution",
-      toolKind: "shell",
-      message: "refused",
-      command: `ACME_TOKEN="public""acme-private"'x'y\\ z git commit`,
-    });
-    expect(detail.command).toBe("ACME_TOKEN=… git commit");
-  });
-
-  test("keeps no command for a refused shell write, only its paths", () => {
-    const detail = refusalDetail({
-      check: "artifact",
-      toolKind: "shell",
-      message: "refused",
-      command: "printf '%s' 'acme-private' > notes.md",
-      paths: ["notes.md"],
-    });
-    expect(detail).not.toHaveProperty("command");
-    expect(detail.paths).toEqual(["notes.md"]);
   });
 
   test("holds only check and tool kind for a secret refusal", () => {
@@ -145,20 +98,18 @@ describe("recordRefusal", () => {
     });
   });
 
-  test("keeps no value of a secret-named variable in a refused command", () => {
+  test("keeps no value of a secret-named variable in a refusal message", () => {
     const home = recordingHome();
     const secret = "acme-secret-value-123";
     record(companion(), home, {
       check: "attribution",
       toolKind: "shell",
       message: `refused: git push https://x:${secret}@example.com/acme`,
-      command: `git push https://x:${secret}@example.com/acme`,
       env: { HOME: home, ACME_TOKEN: secret },
     });
 
     const [event] = readEvents({ sinceDays: 1, homeDir: home });
-    expect(JSON.stringify(event.detail)).not.toContain(secret);
-    expect(event.detail.command).toBe("git push https://x:***@example.com/acme");
+    expect(event.detail.message).toBe("refused: git push https://x:***@example.com/acme");
   });
 
   test("a refused secret read leaves neither file name nor message", () => {
@@ -254,6 +205,17 @@ describe("command projection", () => {
     expect(JSON.stringify(detail)).not.toContain("abc123");
     expect(JSON.stringify(detail)).not.toContain("/acme/repo");
     expect(commandFingerprint(detail)).toBe("command:opencode:1");
+  });
+
+  test("leaves an echoed value shorter than three characters in the error text", () => {
+    const detail = commandDetail({
+      args: ["studio", "serve", "--port", "0"],
+      exitCode: 1,
+      errorText: "invalid --port value: 0 (exit code 1)",
+    });
+
+    expect(detail.flags).toEqual(["--port"]);
+    expect(detail.errorText).toBe("invalid --port value: 0 (exit code 1)");
   });
 
   test("keeps the tail of long error text", () => {

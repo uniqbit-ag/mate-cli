@@ -23,7 +23,6 @@ import { maskSecretValues } from "./secret-values";
  */
 
 const MESSAGE_LIMIT = 1_000;
-const COMMAND_LIMIT = 500;
 const PATH_LIMIT = 5;
 
 type Env = Record<string, string | undefined>;
@@ -46,41 +45,11 @@ interface RefusalEvidence {
   check: FrictionCheck;
   toolKind: ToolKind;
   message: string;
-  /** The shell command of a shell call. */
-  command?: string;
   /** The paths the call names; never its content. */
   paths?: string[];
 }
 
-/** The whole shell word after `NAME=`, concatenated and escaped segments included; an unclosed quote runs to the end. */
-const ASSIGNMENT =
-  /(^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=(?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|\\[\s\S]|[^\s"'\\]|["'][\s\S]*)*/g;
-const ANY_HEREDOC_MARKER = /(?<!<)<<(?!<)-?\s*(['"]?)([\w.-]+)\1/g;
-
-/**
- * Unlike the guards' `stripHeredocBodies`, a marker inside quotes also opens a
- * body, as in `-m "$(cat <<'EOF'`: dropping too much is safe for evidence.
- */
-function withoutHeredocBodies(command: string): string {
-  const kept: string[] = [];
-  const pending: string[] = [];
-  for (const line of command.split("\n")) {
-    if (pending.length > 0) {
-      if (line.trim() === pending[0]) pending.shift();
-      continue;
-    }
-    kept.push(line);
-    for (const marker of line.matchAll(ANY_HEREDOC_MARKER)) pending.push(marker[2]);
-  }
-  return kept.join("\n");
-}
-
-/** Without heredoc bodies (content) or the values of `NAME=value` assignments. */
-function shellEvidence(command: string): string {
-  return withoutHeredocBodies(command.replace(ASSIGNMENT, "$1$2=…"));
-}
-
-/** A secret refusal keeps only check and tool kind: its message and paths name the secret. */
+/** No shell command: it can carry content. A secret refusal keeps only check and tool kind: its message and paths name the secret. */
 export function refusalDetail(evidence: RefusalEvidence): Record<string, unknown> {
   const { check, toolKind: kind } = evidence;
   if (check === "secret") return { check, toolKind: kind };
@@ -88,10 +57,6 @@ export function refusalDetail(evidence: RefusalEvidence): Record<string, unknown
     check,
     toolKind: kind,
     message: evidence.message.trim().slice(0, MESSAGE_LIMIT),
-    // A refused write's command can carry what it writes; its paths are kept instead.
-    ...(check === "attribution" && kind === "shell" && evidence.command
-      ? { command: shellEvidence(evidence.command).slice(0, COMMAND_LIMIT) }
-      : {}),
     paths: (evidence.paths ?? []).filter(Boolean).slice(0, PATH_LIMIT),
   };
 }
@@ -120,7 +85,6 @@ export function recordRefusal(refusal: RefusalRecord): string | null {
         detail: refusalDetail({
           ...refusal,
           message: maskSecretValues(refusal.message, refusal.env),
-          command: refusal.command && maskSecretValues(refusal.command, refusal.env),
         }),
       },
       { homeDir: refusal.env.HOME },

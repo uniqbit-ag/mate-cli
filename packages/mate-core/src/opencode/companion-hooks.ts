@@ -258,7 +258,7 @@ export async function registerCompanionHooks(
   });
 }
 
-/** Names only: the paths a call targets and the command a shell call runs, never written content. */
+/** Names only: the paths a call targets, never its shell command or written content. */
 function recordToolRefusal(
   refusal: GuardRefusal,
   event: { tool: string; sessionID: string; input: unknown },
@@ -270,7 +270,6 @@ function recordToolRefusal(
     string,
     unknown
   >;
-  const command = tool === "bash" ? textOf(args.command) : "";
   const paths =
     tool === "apply_patch"
       ? extractPatchPaths(textOf(args.patchText))
@@ -279,7 +278,6 @@ function recordToolRefusal(
     check: refusal.check,
     toolKind: secretToolCall(context, tool, args)?.kind ?? "other",
     message: refusal.message,
-    command,
     paths,
     companionPath: context.companionPath,
     repositoryPath: context.repositoryPath || null,

@@ -352,7 +352,7 @@ function toolCall(payload: unknown): ToolCall {
   };
 }
 
-/** Names only: the paths a call targets and the command a shell call runs, never written content. */
+/** Names only: the paths a call targets, never its shell command or written content. */
 function recordHookRefusal(
   check: FrictionCheck,
   stderr: string,
@@ -368,7 +368,6 @@ function recordHookRefusal(
     check,
     toolKind: secretToolCall(toolName, toolInput, ctx)?.kind ?? "other",
     message: stderr,
-    command,
     paths,
     companionPath: ctx.companion,
     repositoryPath: ctx.repoRoot,

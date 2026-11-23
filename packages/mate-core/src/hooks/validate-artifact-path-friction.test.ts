@@ -74,6 +74,7 @@ describe("the Claude guard records refusals as friction", () => {
     expect(events[2].detail.paths).toEqual([path.join(repo, "notes.md")]);
     const log = JSON.stringify(events);
     expect(log).not.toContain(".env");
+    expect(log).not.toContain("fix: x");
     expect(log).not.toContain("line one");
   });
 

@@ -541,6 +541,7 @@ describe("OpenCode companion hooks record refusals as friction", () => {
     for (const event of events) {
       expect(event).toMatchObject({ runtime: "opencode", sessionId: "s1", companion });
     }
+    expect(JSON.stringify(events)).not.toContain("fix: x");
     expect(JSON.stringify(events)).not.toContain("line one");
   });
 
