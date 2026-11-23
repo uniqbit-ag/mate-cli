@@ -467,14 +467,10 @@ describe("mate CLI e2e: setup, link and doctor", () => {
     });
 
     expect(result.exitCode).toBe(0);
-    const parsed = JSON.parse(result.stdout) as {
-      workingRepository: { id: string; path: string };
-      companions: Array<{ path: string; repositoryId: string; active: boolean }>;
-    };
-    expect(parsed.workingRepository).toEqual({ id: "app", path: scenario.working });
-    expect(parsed.companions).toEqual([
-      { path: scenario.companion, repositoryId: "app", active: true },
-    ]);
+    expect(JSON.parse(result.stdout)).toEqual({
+      workingRepository: { id: "app", path: scenario.working },
+      companions: [{ path: scenario.companion, repositoryId: "app", active: true }],
+    });
   });
 
   test("doctor reports companion state when no repos are linked", async () => {
