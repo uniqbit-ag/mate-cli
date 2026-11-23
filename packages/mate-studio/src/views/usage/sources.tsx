@@ -78,7 +78,7 @@ export function UsageSources({
           const summary = sourceSummary(rows);
           return (
             <details key={name} className="group/source py-3">
-              <summary className="flex cursor-pointer list-none items-start gap-2 rounded-control text-sm outline-none focus-visible:outline-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
+              <summary className="flex cursor-pointer list-none items-start gap-2 rounded-control text-sm [&::-webkit-details-marker]:hidden">
                 <Icon
                   name="right"
                   className="mt-0.5 size-3.5 text-muted transition-transform group-open/source:rotate-90 motion-reduce:transition-none"
