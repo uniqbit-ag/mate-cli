@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import type { CompanionGit } from "../../../runtime/companion-git";
+import type { ChangeLayout } from "../../change-layout";
 import type { DeltaFailure, ReplayOptions, ReplayResult } from "./replay";
 
 /** The `Mate-Artifact` trailer value of record `id`: `<type>/<id>`. */
@@ -13,8 +14,12 @@ export function sourceDir(root: string, type: ArtifactType, name: string): strin
   return path.join(root, ...type.source.split("/"), name);
 }
 
-/** Directory of `type`'s archived records below `root`, or of record `id` when given. */
-export function recordDir(root: string, type: ArtifactType, id?: string): string {
+/**
+ * Directory of `type`'s archived records below `root`, or of record `id` when given; null for a
+ * type that keeps no archive.
+ */
+export function recordDir(root: string, type: ArtifactType, id?: string): string | null {
+  if (type.archiveRoot === undefined) return null;
   return path.join(root, ...type.archiveRoot.split("/"), ...(id === undefined ? [] : [id]));
 }
 
@@ -31,13 +36,16 @@ export interface ValidationFailure {
  * What submit, publication, pending discovery and synchronization know about one kind of
  * artifact. Only its hooks read or write the type's own files.
  */
-export interface ArtifactType {
+export interface ArtifactType extends ChangeLayout {
   /** Name in the `Mate-Artifact: <type>/<id>` trailer. */
   name: string;
   /** Directory holding one source folder per change, relative to the companion. */
   source: string;
-  /** Directory holding one folder per archived record, relative to the companion. */
-  archiveRoot: string;
+  /**
+   * Directory holding one folder per archived record, relative to the companion. A type without
+   * one keeps no history: its published records are read from `Mate-Artifact` trailers.
+   */
+  archiveRoot?: string;
   /** File in a source folder or record holding its Delivery Record. */
   deliveryFile: string;
   /** True for a directory name below {@link archiveRoot} that is a record. */
@@ -76,4 +84,18 @@ export interface ArtifactType {
   touches?: (changeDir: string) => Promise<StalePart[]>;
   /** The first of `files` (changed derived files, relative to `dir`) that is invalid. */
   validate?: (dir: string, files: readonly string[]) => Promise<ValidationFailure | null>;
+  /**
+   * The plan of the change at `changeDir`, which the Path Position infers stages from. Absent for
+   * a type without one: its stages are only recorded. Whether it validates is the caller's.
+   */
+  plan?: (changeDir: string) => Promise<{ totalTasks: number; completedTasks: number }>;
+  /** The files of the change at `changeDir` a review can name, in review order, relative to it. */
+  reviews?: (changeDir: string) => Promise<ReviewFile[]>;
+}
+
+/** A file of a change a review names. */
+export interface ReviewFile {
+  id: string;
+  /** Relative to the change folder; a trailing `/` names a folder. */
+  file: string;
 }

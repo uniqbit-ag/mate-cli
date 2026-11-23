@@ -89,6 +89,13 @@ const exists = (candidate: string): Promise<boolean> =>
     () => false,
   );
 
+async function makeExecutable(dir: string, name: string): Promise<string> {
+  const filePath = path.join(dir, name);
+  await fs.writeFile(filePath, "#!/bin/sh\nexit 0\n", "utf8");
+  await fs.chmod(filePath, 0o755);
+  return filePath;
+}
+
 describe("an OpenCode-only wrap pass", () => {
   test("wraps the repository for OpenCode and not for Claude", async () => {
     const { companionPath, repository } = await linkedRepo();
@@ -300,20 +307,34 @@ describe("a full wrap pass", () => {
       );
     };
 
-    await runWrapPass(companionPath, repository, { runtimes: ["claude"] });
-    const wrapped = await commands();
-    expect(wrapped.some((command) => command.includes("hook-pre-tool-use"))).toBe(true);
-    expect(wrapped.some((command) => command.includes("session-prepare.mjs"))).toBe(true);
+    /**
+     * The tokensave hooks render only when the CLI resolves on PATH — a machine
+     * without the install gets none by design. Pin a fake binary so the test
+     * does not depend on the host running the suite.
+     */
+    const binDir = await fs.mkdtemp(path.join(os.tmpdir(), "acme-tokensave-bin-"));
+    tempRoots.push(binDir);
+    const originalPath = process.env.PATH;
+    await makeExecutable(binDir, "tokensave");
+    try {
+      process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
+      await runWrapPass(companionPath, repository, { runtimes: ["claude"] });
+      const wrapped = await commands();
+      expect(wrapped.some((command) => command.includes("hook-pre-tool-use"))).toBe(true);
+      expect(wrapped.some((command) => command.includes("session-prepare.mjs"))).toBe(true);
 
-    /** The launch scope's legacy strip leaves what the wrap placed. */
-    expect(
-      await syncWorkingRepoClaudeAdditionalDirectories(
-        repository.path,
-        companionPath,
-        emptyRegistry(companionPath),
-      ),
-    ).toBe("current");
-    expect(await commands()).toEqual(wrapped);
+      /** The launch scope's legacy strip leaves what the wrap placed. */
+      expect(
+        await syncWorkingRepoClaudeAdditionalDirectories(
+          repository.path,
+          companionPath,
+          emptyRegistry(companionPath),
+        ),
+      ).toBe("current");
+      expect(await commands()).toEqual(wrapped);
+    } finally {
+      process.env.PATH = originalPath;
+    }
   });
 
   test("unwrap tolerates keys Claude Code itself already removed", async () => {

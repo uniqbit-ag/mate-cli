@@ -5,7 +5,10 @@ import {
   type DeliveryEdit,
   type RecordDeliveryDeps,
 } from "../../../../lib/delivery/record-delivery";
+import type { ArtifactType } from "../../../../lib/delivery/staging/artifact-type";
 import { isDeliveryGroup } from "../../../../lib/delivery/staging/naming";
+import { declaredSubmitType } from "../../../../lib/delivery/staging/registry";
+import { errorMessage } from "../../../../runtime/error-message";
 import { settleLinked } from "../../../../lib/delivery/staging/settle-linked";
 import {
   publicationQueue,
@@ -388,6 +391,17 @@ export async function runArtifactPublishCommand(
   const loadCapabilities = deps.loadCapabilities ?? defaultLoadCapabilities;
   const capabilities = await loadCapabilities(context);
 
+  // The declared type the companion's submit handles; an invalid declaration publishes nothing.
+  let declaredType: ArtifactType | undefined;
+  try {
+    declaredType = await declaredSubmitType(context.companionPath);
+  } catch (err) {
+    emitErr(`mate: ${errorMessage(err)}`);
+    process.exitCode = 1;
+    return;
+  }
+  const typeDeps = declaredType ? { artifactType: declaredType } : {};
+
   let git: GitOps;
   const finishContext: FinishContext = {
     companionPath: context.companionPath,
@@ -546,6 +560,7 @@ export async function runArtifactPublishCommand(
         // `--all` publishes dependencies in queue order instead, and takes nobody's answer.
         ...(inQueue ? { withDependencies: false, ownAnswersOnly: true } : {}),
         scan: scanPublicationFn,
+        ...typeDeps,
       },
     );
     const result = withOutcomes(publicationResult(type, target, publication));
@@ -615,7 +630,12 @@ export async function runArtifactPublishCommand(
     const all = flattened(changeResults);
     const outcomes = await cleanUpCompletedWorksets(
       context.companionPath,
-      all.flatMap(publishedBy),
+      all.flatMap((result) =>
+        publishedBy(result).map((anchor) => ({
+          anchor,
+          ...(result.commit ? { commit: result.commit } : {}),
+        })),
+      ),
       deps.worktreeCleanup,
     );
     for (const result of all) {
@@ -662,7 +682,10 @@ export async function runArtifactPublishCommand(
     };
 
     if (hasRemote) {
-      const queue = await (deps.publicationQueue ?? publicationQueue)(context.companionPath);
+      const queue = await (deps.publicationQueue ?? publicationQueue)(
+        context.companionPath,
+        typeDeps,
+      );
       // A queue read from stale refs: the first publication fetches for itself.
       refsFresh = queue.fresh;
       for (const group of queue.groups) {

@@ -5,6 +5,8 @@
  * strict consumer project. The host checks `apiVersion` against the versions it supports.
  */
 
+import type { StudioConnection } from "../../cli/commands/studio/connection";
+
 /** Service API version this contract describes. Grows only on breaking changes. */
 export type ServiceApiVersion = 1;
 
@@ -194,6 +196,8 @@ export interface StudioViewMountContext {
   /** The service's route prefix, e.g. `/api/plugins/factory`. */
   apiBase: string;
   writable: boolean;
+  /** Studio's connection state; absent in a Studio older than this field. */
+  connection?: StudioConnection;
 }
 
 /** A view module's `mount` export; returns its unmount. */

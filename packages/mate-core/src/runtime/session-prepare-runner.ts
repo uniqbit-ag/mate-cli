@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 
+import { withoutSessionIds } from "./session-id";
+
 /**
  * Client side of `mate session prepare`, shared by the OpenCode plugin and the
  * Claude session-prepare hook: spawned through the runtime-directory launcher,
@@ -85,6 +87,7 @@ function prepareSpawn(mateBin: string, repoPath: string, sync: boolean) {
   ]);
   const options = {
     cwd: repoPath,
+    env: withoutSessionIds(process.env),
     shell: false,
     detached: sync,
     windowsHide: true,

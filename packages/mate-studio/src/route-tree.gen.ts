@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as FrictionRouteImport } from './routes/friction'
 import { Route as GettingStartedRouteImport } from './routes/getting-started'
 import { Route as GraphRouteImport } from './routes/graph'
 import { Route as ReportsRouteImport } from './routes/reports'
@@ -25,6 +26,11 @@ import { Route as PluginsServiceViewRouteImport } from './routes/plugins.$servic
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FrictionRoute = FrictionRouteImport.update({
+  id: '/friction',
+  path: '/friction',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GettingStartedRoute = GettingStartedRouteImport.update({
@@ -85,6 +91,7 @@ const PluginsServiceViewRoute = PluginsServiceViewRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/friction': typeof FrictionRoute
   '/getting-started': typeof GettingStartedRouteWithChildren
   '/graph': typeof GraphRoute
   '/reports': typeof ReportsRoute
@@ -99,6 +106,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/friction': typeof FrictionRoute
   '/graph': typeof GraphRoute
   '/reports': typeof ReportsRoute
   '/skills': typeof SkillsRoute
@@ -113,6 +121,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/friction': typeof FrictionRoute
   '/getting-started': typeof GettingStartedRouteWithChildren
   '/graph': typeof GraphRoute
   '/reports': typeof ReportsRoute
@@ -129,6 +138,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/friction'
     | '/getting-started'
     | '/graph'
     | '/reports'
@@ -143,6 +153,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/friction'
     | '/graph'
     | '/reports'
     | '/skills'
@@ -156,6 +167,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/friction'
     | '/getting-started'
     | '/graph'
     | '/reports'
@@ -171,6 +183,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  FrictionRoute: typeof FrictionRoute
   GettingStartedRoute: typeof GettingStartedRouteWithChildren
   GraphRoute: typeof GraphRoute
   ReportsRoute: typeof ReportsRoute
@@ -189,6 +202,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/friction': {
+      id: '/friction'
+      path: '/friction'
+      fullPath: '/friction'
+      preLoaderRoute: typeof FrictionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/getting-started': {
@@ -287,6 +307,7 @@ const GettingStartedRouteWithChildren = GettingStartedRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  FrictionRoute: FrictionRoute,
   GettingStartedRoute: GettingStartedRouteWithChildren,
   GraphRoute: GraphRoute,
   ReportsRoute: ReportsRoute,

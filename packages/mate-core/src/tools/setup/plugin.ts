@@ -29,6 +29,11 @@ export interface SetupContext {
   activeProviders: string[];
   /** Selects which `Plugin.lifecycle` entry the engine dispatches. */
   scope: SetupScope;
+  /**
+   * The selection before this setup run; absent on every sync. Lets a teardown with
+   * machine-wide effects act only on what this run actually deselected.
+   */
+  previousSetup?: { config: FrameworkConfig; activeProviders: string[] };
   /** Working repository path when syncing from a linked repo (e.g. during launch). */
   repoPath?: string;
   /** Defaults to `companion`, so a caller that names no target is unchanged. */

@@ -11,6 +11,8 @@ import {
 } from "../runtime/companion-sync";
 import { hasLaunchEnvironment } from "../runtime/env";
 import { MATE_ENV } from "../runtime/env-names";
+import { recordRefusal } from "../runtime/friction-recorder";
+import type { FrictionCheck } from "../runtime/friction-fingerprint";
 import { resolveProjection } from "../runtime/projection";
 import { checkSecretAccess, type SecretToolCall } from "../runtime/secret-guard";
 import { isSecretPolicyFile } from "../runtime/secret-policy-weakening";
@@ -96,7 +98,17 @@ export async function refuseForkedCompanionWrite(
   if (!filePath || !isArtifactPath(filePath)) return;
   if (!isCompanionTarget(context, filePath)) return;
   const refusal = await companionForkRefusal(env, context.companionPath);
-  if (refusal) throw new Error(refusal);
+  if (refusal) throw new GuardRefusal("fork", refusal);
+}
+
+/** A guard refusal; its message is what the agent sees, `check` names the check that refused. */
+export class GuardRefusal extends Error {
+  readonly check: FrictionCheck;
+
+  constructor(check: FrictionCheck, message: string) {
+    super(message);
+    this.check = check;
+  }
 }
 
 const textOf = (value: unknown) => (typeof value === "string" ? value : "");
@@ -195,11 +207,11 @@ export async function guardToolInput(
       companionPath: context.companionPath,
       isCompanionPath: (filePath) => filePath.startsWith(companionRoot),
     });
-    if (refusal) throw new Error(refusal);
+    if (refusal) throw new GuardRefusal("secret", refusal);
   }
   if (tool === "bash") {
     const refusal = checkCommitAttribution(String(args.command ?? ""));
-    if (refusal) throw new Error(refusal);
+    if (refusal) throw new GuardRefusal("attribution", refusal);
   }
   const filePaths =
     tool === "write" || tool === "edit"
@@ -210,7 +222,7 @@ export async function guardToolInput(
 
   for (const filePath of filePaths) {
     if (context.repositoryPath && filePath && shouldBlockArtifactWrite(context, filePath)) {
-      throw new Error(buildArtifactError(context, filePath));
+      throw new GuardRefusal("artifact", buildArtifactError(context, filePath));
     }
     // oxlint-disable-next-line no-await-in-loop -- the first refusal wins
     await refuseForkedCompanionWrite(context, filePath, env);
@@ -234,7 +246,43 @@ export async function registerCompanionHooks(
   await repairCompanionGitOnce(context, env, api.location.directory).catch(() => []);
 
   await api.tool.hook("execute.before", async (event) => {
-    await guardToolInput(context, event.tool, event.input, env);
+    try {
+      await guardToolInput(context, event.tool, event.input, env);
+    } catch (error) {
+      if (error instanceof GuardRefusal) {
+        const nudge = recordToolRefusal(error, event, context, env);
+        if (nudge) error.message = `${error.message}\n${nudge}`;
+      }
+      throw error;
+    }
+  });
+}
+
+function recordToolRefusal(
+  refusal: GuardRefusal,
+  event: { tool: string; sessionID: string; input: unknown },
+  context: CompanionContext,
+  env: Record<string, string | undefined>,
+): string | null {
+  const tool = V1_TOOL_NAMES[event.tool] ?? event.tool;
+  const args = (event.input && typeof event.input === "object" ? event.input : {}) as Record<
+    string,
+    unknown
+  >;
+  const paths =
+    tool === "apply_patch"
+      ? extractPatchPaths(textOf(args.patchText))
+      : [textOf(args.filePath) || textOf(args.path)];
+  return recordRefusal({
+    check: refusal.check,
+    toolKind: secretToolCall(context, tool, args)?.kind ?? "other",
+    message: refusal.message,
+    paths,
+    companionPath: context.companionPath,
+    repositoryPath: context.repositoryPath || null,
+    runtime: "opencode",
+    sessionId: event.sessionID,
+    env,
   });
 }
 

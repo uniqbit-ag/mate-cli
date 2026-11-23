@@ -291,6 +291,8 @@ are submitted with it when all their tasks are checked; while one has open
 tasks, submit waits and pushes nothing. It warns when another active change
 modifies the same requirement, when a change it `dependsOn` is not submitted yet,
 or when a planning artifact its schema requires is missing; warnings never block.
+It also warns when the change you submit still has unchecked tasks or no
+tasks at all, naming what is open; the change is submitted all the same.
 A failed push fails the submit; run it again. `/mate-archive-change` and
 `mate artifact archive` still work as deprecated aliases.
 

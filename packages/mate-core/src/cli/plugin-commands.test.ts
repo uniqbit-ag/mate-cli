@@ -3,7 +3,7 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { resetActiveDistribution, setActiveDistribution } from "../distribution";
 import type { Plugin, PluginCliCommand } from "../tools/setup/plugin";
 import { PluginRegistry } from "../tools/setup/registry";
-import { ensureCapabilityEnabled } from "./plugin-commands";
+import { ensureCapabilityEnabled, runPluginCliCommand } from "./plugin-commands";
 
 const distributionConfig = {
   runtime: "bun" as const,
@@ -32,6 +32,48 @@ function activate(...plugins: Plugin[]): void {
 
 afterEach(() => {
   resetActiveDistribution();
+});
+
+describe("runPluginCliCommand", () => {
+  test.each(["--help", "-h"])(
+    "%s prints the namespace usage to stdout and runs nothing",
+    async (flag) => {
+      const originalExitCode = process.exitCode;
+      process.exitCode = 0;
+      const logs: string[] = [];
+      const errors: string[] = [];
+      const logSpy = spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+        logs.push(args.join(" "));
+      });
+      const errorSpy = spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+        errors.push(args.join(" "));
+      });
+      let ran = false;
+      activate(
+        makePlugin("acme", [
+          {
+            name: "list",
+            description: "List acme things.",
+            run: async () => {
+              ran = true;
+            },
+          },
+        ]),
+      );
+
+      try {
+        expect(await runPluginCliCommand("acme", flag, [])).toBe(true);
+        expect(logs.join("\n")).toContain("mate cap acme list  List acme things.");
+        expect(errors).toEqual([]);
+        expect(ran).toBe(false);
+        expect(process.exitCode).toBe(0);
+      } finally {
+        logSpy.mockRestore();
+        errorSpy.mockRestore();
+        process.exitCode = originalExitCode ?? 0;
+      }
+    },
+  );
 });
 
 describe("ensureCapabilityEnabled", () => {

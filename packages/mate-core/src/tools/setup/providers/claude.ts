@@ -66,6 +66,7 @@ import {
   mateSessionEndHookGroups,
   mateSessionPrepareHookGroups,
   mateTokensaveRouteHookGroups,
+  mateTurnHookGroups,
 } from "./claude-plugin-hooks";
 import { getSetupRootTemplates } from "./utils";
 
@@ -379,7 +380,7 @@ function renderManagedClaudeSettings(
 /**
  * Loaded by a managed session beside the launch's plugin, so each Mate hook
  * here runs twice there: the guard, tokensave routing and the RTK git deny are input-pure, guidance yields under a
- * launch env, and the banner, prepare and instruction copies carry
+ * launch env, and the banner, prepare, instruction and turn-hook copies carry
  * `--projected`, so one copy of each acts. Capability groups run once: the
  * launch omits them from `--settings`.
  *
@@ -411,6 +412,7 @@ function claudeSettingsRegions(
     SubagentStart: mateInstructionHookGroups(),
     SessionEnd: mateSessionEndHookGroups(),
     Notification: mateAttentionHookGroups(),
+    ...mateTurnHookGroups(),
   };
   const events = [...new Set([...Object.keys(mateHooks), ...Object.keys(capabilityHooks)])];
   const served = servingWrapState(repoRoot);

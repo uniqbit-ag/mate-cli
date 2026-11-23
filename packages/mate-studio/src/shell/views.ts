@@ -10,6 +10,7 @@ export const VIEW_PATHS: Record<StudioView, string> = {
   specs: "/specs",
   reports: "/reports",
   usage: "/usage",
+  friction: "/friction",
   graph: "/graph",
 };
 
@@ -23,6 +24,7 @@ export const VIEW_TITLES: Record<StudioView, string> = {
   specs: "Specs",
   reports: "Reports",
   usage: "Usage",
+  friction: "Friction",
   graph: "Graph",
 };
 
@@ -49,6 +51,7 @@ export const VIEW_DESCRIPTIONS: Record<StudioMode, Record<StudioView, string>> =
     specs: "Capabilities by Area, with their requirements.",
     reports: "Reports agents published for this companion.",
     usage: "Token usage across this companion and every linked Working Repository.",
+    friction: "Where Mate got in your agents' way, recorded on this machine.",
     graph: "Capabilities, Areas and repositories, and how they connect.",
   },
   analysis: {
@@ -60,6 +63,7 @@ export const VIEW_DESCRIPTIONS: Record<StudioMode, Record<StudioView, string>> =
     specs: "Capabilities by Area, with their requirements.",
     reports: "Reports agents published for this companion.",
     usage: "Token usage across this companion and every linked Working Repository.",
+    friction: "Where Mate got in the agents' way, recorded on this machine.",
     graph: "Capabilities, Areas and repositories, and how they connect.",
   },
 };

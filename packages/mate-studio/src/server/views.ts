@@ -30,6 +30,8 @@ export interface CompanionViewData {
   /** Workflow. */
   skills?: StudioCompanionPayload["skills"];
   topology?: StudioCompanionPayload["topology"];
+  /** Workflow and Overview, Engineering: the path changes are placed on. */
+  workflow?: StudioCompanionPayload["workflow"];
   skillInventory?: StudioCompanionPayload["skillInventory"];
   /** Spec actions by id; the browser rebuilds each offer's prompts from core's action list. */
   actions?: {
@@ -77,7 +79,14 @@ export const getCompanionView = createServerFn({ method: "GET" })
     const base = { error: null, studioMode, warnings: payload.warnings };
     // The view the server resolved, not the one asked for: a mode never answers another's view.
     const view = page.selection.view;
-    if (view === "workflow") return { ...base, skills: payload.skills, topology: payload.topology };
+    if (view === "workflow") {
+      return {
+        ...base,
+        skills: payload.skills,
+        topology: payload.topology,
+        workflow: payload.workflow,
+      };
+    }
     if (view === "skills") return { ...base, skillInventory: payload.skillInventory };
     if (view === "specs") {
       return {
@@ -90,5 +99,10 @@ export const getCompanionView = createServerFn({ method: "GET" })
     }
     return studioMode === "analysis"
       ? { ...base, shipped: payload.shipped }
-      : { ...base, changes: payload.changes, submitted: payload.submitted };
+      : {
+          ...base,
+          changes: payload.changes,
+          submitted: payload.submitted,
+          workflow: payload.workflow,
+        };
   });

@@ -14,6 +14,7 @@ import { useAppearance } from "../stores/appearance";
 import { usePageUi } from "../stores/page-ui";
 import { CommandPalette } from "./command-palette";
 import { CompanionPicker } from "./companion-picker";
+import { ConnectionBanner } from "./connection-banner";
 import { shellQuery } from "../lib/studio-queries";
 import type { StudioSearch } from "../lib/search";
 import { NavigationProgress } from "./navigation-progress";
@@ -78,6 +79,7 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
         {/* Choosing a companion is the whole page: no views to navigate yet. */}
         {shell.selected ? <Sidebar shell={shell} search={search} view={view} /> : null}
         <main className="studio-main flex min-h-0 min-w-0 flex-col overflow-auto" id="studio-main">
+          <ConnectionBanner />
           {shell.selected ? (
             <>
               <PageHeader

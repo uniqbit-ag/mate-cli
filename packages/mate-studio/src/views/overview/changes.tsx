@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import type { StudioChange, StudioSubmittedChange } from "@uniqbit/mate-core/studio";
+import type { StudioChange, StudioSubmittedChange, Workflow } from "@uniqbit/mate-core/studio";
 import { useState } from "react";
 
 import { PathSteps } from "../../components/path-steps";
@@ -24,6 +24,7 @@ import {
   activeChanges,
   CHANGE_GROUPS,
   changeGroup,
+  changePath,
   changeProgress,
   changeStep,
   GROUP_TITLES,
@@ -47,6 +48,13 @@ const GROUP_HINTS: Record<ChangeGroup, string> = {
 function status(change: StudioChange): { marker: Marker; word: string } {
   if (change.valid === false) return { marker: "issue", word: "Invalid" };
   const group = changeGroup(change);
+  // Without a plan there are no tasks to count: its stage is its status.
+  if (change.planned === false) {
+    const stage = change.position?.stage;
+    if (!stage) return { marker: "idle", word: change.dropped ? "Dropped" : "Not placed" };
+    if (group === "ready") return { marker: "done", word: stage.label };
+    return { marker: stage.kind === "review" ? "review" : "build", word: stage.label };
+  }
   // Lilac is the Human review stage, as on the Workflow map; a plan without tasks is unfinished.
   if (group === "needs-you") {
     return (change.totalTasks ?? 0) === 0
@@ -57,21 +65,23 @@ function status(change: StudioChange): { marker: Marker; word: string } {
   return { marker: "done", word: "Ready" };
 }
 
-const PATH_STAGES = ["Propose change", "Human review", "Apply change", "Submit change"];
-
 function ChangeDetail({
   change,
+  workflow,
   companion,
   reading,
   onRead,
 }: {
   change: StudioChange;
+  /** The companion's Delivery Path; the built-in default when absent. */
+  workflow?: Workflow;
   companion?: string;
   /** The artifact open to read, or `null` for the change's summary. */
   reading: string | null;
   onRead: (path: string | null) => void;
 }) {
-  const step = changeStep(change);
+  const step = changeStep(change, workflow);
+  const path = changePath(workflow);
   const progress = changeProgress(change);
   const { marker, word } = status(change);
   const artifacts = (
@@ -107,21 +117,23 @@ function ChangeDetail({
           {review ? artifacts : null}
           <PanelSection title="Delivery Path" aside={step.stage}>
             <PathSteps
-              steps={PATH_STAGES}
-              current={PATH_STAGES.indexOf(step.stage)}
-              tone={step.stage === "Human review" ? "why" : "accent"}
+              steps={path.map((stage) => stage.label)}
+              current={path.findIndex((stage) => stage.id === step.stageId)}
+              tone={step.review ? "why" : "accent"}
             />
           </PanelSection>
           <PanelSection title="Next step">
             <p className="m-0 text-sm">{step.next}.</p>
             <CommandLine text={step.prompt} />
           </PanelSection>
-          <PanelSection
-            title={progress.unit === "tasks" ? "Tasks" : "Plan"}
-            aside={`${progress.done}/${progress.total}`}
-          >
-            <Progress {...progress} />
-          </PanelSection>
+          {change.planned === false ? null : (
+            <PanelSection
+              title={progress.unit === "tasks" ? "Tasks" : "Plan"}
+              aside={`${progress.done}/${progress.total}`}
+            >
+              <Progress {...progress} />
+            </PanelSection>
+          )}
           {review ? null : artifacts}
         </>
       )}
@@ -131,15 +143,17 @@ function ChangeDetail({
 
 function ChangeRow({
   change,
+  workflow,
   current,
   onOpen,
 }: {
   change: StudioChange;
+  workflow?: Workflow;
   current: boolean;
   onOpen: () => void;
 }) {
   const { marker, word } = status(change);
-  const step = changeStep(change);
+  const step = changeStep(change, workflow);
   return (
     <li>
       <button
@@ -162,7 +176,7 @@ function ChangeRow({
         </span>
         <StatusWord marker={marker}>{word}</StatusWord>
         <span className="@max-[640px]:hidden">
-          <Progress {...changeProgress(change)} />
+          {change.planned === false ? null : <Progress {...changeProgress(change)} />}
         </span>
         <Age at={change.lastModified} className="text-right @max-[640px]:hidden" />
       </button>
@@ -239,8 +253,11 @@ export function Changes({
   submitted = NONE_SUBMITTED,
   selected,
   companion,
+  workflow,
 }: {
   changes: StudioChange[];
+  /** The companion's Delivery Path, which changes are placed on; the default when absent. */
+  workflow?: Workflow;
   /** Submitted changes on the pending branch; a local copy is not listed as active too. */
   submitted?: StudioSubmittedChange[];
   selected?: string;
@@ -316,6 +333,7 @@ export function Changes({
                 <ChangeRow
                   key={change.name}
                   change={change}
+                  workflow={workflow}
                   current={change.name === selected}
                   onOpen={() => {
                     setPass(false);
@@ -339,6 +357,7 @@ export function Changes({
         {current ? (
           <ChangeDetail
             change={current}
+            workflow={workflow}
             companion={companion}
             reading={readingPath}
             onRead={(path) => setReading(path ? { change: current.name, path } : null)}

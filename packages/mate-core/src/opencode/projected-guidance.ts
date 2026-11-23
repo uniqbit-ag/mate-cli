@@ -1,5 +1,6 @@
-import { buildOpenCodeGuidance } from "../runtime/companion-guidance";
+import { buildOpenCodeGuidance, declaredGuidance } from "../runtime/companion-guidance";
 import { MATE_ENV } from "../runtime/env-names";
+import { readFrictionSwitch } from "../runtime/friction-switch";
 import { parseGuidanceContent, type MateGuidanceFile } from "../runtime/guidance";
 import { readCompanionPolicy } from "../runtime/policy";
 import { resolveProjection } from "../runtime/projection";
@@ -47,7 +48,11 @@ export function resolveOpenCodeGuidance(
   const policy = readCompanionPolicy(projection.companionPath);
   const guidance = buildOpenCodeGuidance(
     policy.enabledCapabilities.map((name) => ({ name })),
-    { secretGuardrails: policy.secrets.guardrails },
+    {
+      secretGuardrails: policy.secrets.guardrails,
+      friction: readFrictionSwitch(env.HOME),
+      ...declaredGuidance(projection.companionPath),
+    },
   );
   return { guidance: guidance.errors.length > 0 ? null : guidance, errors: guidance.errors };
 }

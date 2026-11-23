@@ -7,7 +7,7 @@ import {
   type CompanionResolutionResult,
   findRepoLocalLinkedRepository,
 } from "./repository-link";
-import { ConfigStore, mergeWithDefaults } from "./config-store";
+import { ConfigStore, defaultConfig, mergeWithDefaults } from "./config-store";
 import { GlobalConfigStore } from "./global-config-store";
 import type { FrameworkConfig, LinkedRepository } from "./types";
 
@@ -32,6 +32,8 @@ export interface RootContext {
 
 export interface RootContextDeps {
   globalConfigStore?: GlobalConfigStore;
+  /** `false` resolves without repairing the repo-local registry. */
+  write?: boolean;
 }
 
 const emptyResolution = (): CompanionResolutionResult => ({
@@ -44,8 +46,22 @@ function kindForConfig(config: FrameworkConfig): Exclude<RootKind, "core"> {
   return config.type === "hub" ? "hub" : config.type === "working" ? "working" : "companion";
 }
 
-async function loadRootConfig(rootPath: string): Promise<FrameworkConfig> {
+async function loadRootConfig(
+  rootPath: string,
+  write?: boolean,
+  failures: CompanionResolutionResult["failures"] = [],
+): Promise<FrameworkConfig> {
   const configPath = path.join(rootPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+  const missing =
+    write === false &&
+    (await fs.access(configPath).then(
+      () => false,
+      (error: NodeJS.ErrnoException) => error.code === "ENOENT",
+    ));
+  if (missing) {
+    failures.push({ companionPath: rootPath, message: `${configPath} is missing.` });
+    return mergeWithDefaults(defaultConfig());
+  }
   return mergeWithDefaults(await new ConfigStore(configPath).load());
 }
 
@@ -59,7 +75,8 @@ export async function resolveRootContext(
   const envRootPath = process.env.MATE_ARTIFACT_PATH;
   if (envRootPath) {
     const rootPath = path.resolve(envRootPath);
-    const config = await loadRootConfig(rootPath);
+    const resolution = emptyResolution();
+    const config = await loadRootConfig(rootPath, deps.write, resolution.failures);
     return {
       kind: kindForConfig(config),
       origin: "env",
@@ -67,15 +84,15 @@ export async function resolveRootContext(
       config,
       repositoryId: process.env.MATE_REPO_ID ?? linkedRepository?.id,
       linkedRepository,
-      resolution: emptyResolution(),
+      resolution,
     };
   }
 
   const resolver = new CompanionResolver(deps.globalConfigStore ?? new GlobalConfigStore());
-  const resolution = await resolver.resolveWithDiagnostics(resolvedCwd);
+  const resolution = await resolver.resolveWithDiagnostics(resolvedCwd, { write: deps.write });
   if (resolution.match) {
     const rootPath = resolution.match.companionPath;
-    const config = await loadRootConfig(rootPath);
+    const config = await loadRootConfig(rootPath, deps.write, resolution.failures);
     return {
       kind: kindForConfig(config),
       origin: "registry",

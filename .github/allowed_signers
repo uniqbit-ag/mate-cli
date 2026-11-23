@@ -1,3 +1,5 @@
 # Release tag signers. CI reads this file from main only; see .github/workflows/release.yml.
 12394370+timosg@users.noreply.github.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAH1dKEnV8bkTFzs5szSR8p5KgArznasAFbqpLdN84rf
 14312750+exilhanseat@users.noreply.github.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID0B19lHs956gI0cW6j7Pwg+9amCS7ReoTSgliq7Gmbs
+197237212+chrisbichlmeier@users.noreply.github.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPWkJJuxlWH+nmRe50tO2PTatNPayxvGoRYZi8Imowc1
+126565532+TornquistK@users.noreply.github.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKAaloXLreLoLQEs+ECohz4hGtJrxgeFBgnqTiI5RuAW

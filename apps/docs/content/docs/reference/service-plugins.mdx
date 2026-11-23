@@ -5,8 +5,7 @@ description: "Run a service next to Mate from a plugin: its own command, a backg
 
 A Mate plugin usually adds content to agent sessions: capabilities, hooks,
 subagents. A **service plugin** also runs something next to Mate: a daemon
-that Studio talks to, with its own command and its own part of Studio. The
-Mate factory is built this way.
+that Studio talks to, with its own command and its own part of Studio.
 
 A plugin declares its service in `service` on the plugin object it returns.
 Import the types from `@uniqbit/mate-core/plugin-api`, as types only: a
@@ -143,6 +142,64 @@ The module owns everything inside `element` and brings its own framework and
 styles. Studio mounts it again when the selected companion changes, and calls
 the returned function when the view leaves.
 
+#### Connection
+
+The mount context also carries `connection`, Studio's connection to its server,
+shared by every view on the page. It is optional: a Studio older than the field
+leaves it out.
+
+| Member                | What it does                                                                       |
+| --------------------- | ---------------------------------------------------------------------------------- |
+| `state()`             | The current state.                                                                 |
+| `suspect()`           | Tells Studio a request failed. Studio probes `GET /api/ping` unless a probe runs.  |
+| `subscribe(listener)` | Calls `listener` with each new state; returns the unsubscribe. Call it on unmount. |
+
+Only the probe changes the state, so a refusal from your route never shows as a
+lost connection. `GET /api/ping` is a `read` route that answers 204. The states:
+
+| State          | Probe outcome                                          | Studio's banner                                                   |
+| -------------- | ------------------------------------------------------ | ----------------------------------------------------------------- |
+| `online`       | Any answer of Studio's, a refusal included             | none                                                              |
+| `offline`      | `fetch` threw a `TypeError`                            | Connection to Studio lost                                         |
+| `signed-out`   | A redirect (`opaqueredirect`), e.g. from an auth proxy | Connection to Studio lost — reload to sign in again               |
+| `expired`      | 401: the access token is missing or changed            | Session expired — open the address Studio printed when it started |
+| `host-refused` | 421: Studio does not answer to this host               | Studio does not answer to this host                               |
+
+Studio shows the banner and its Reload button, and never reloads by itself.
+While not `online` it probes again with backoff, from 1 s up to 30 s. A view
+calls `suspect()` when one of its requests fails, keeps showing what it has,
+and fetches again when its listener hears `online`. Studio refetches its own
+queries then too:
+
+```ts
+import { connectionStateOf } from "@uniqbit/mate-core/studio";
+
+export const mount: StudioViewMount = (element, { apiBase, connection }) => {
+  const load = async () => {
+    try {
+      const response = await fetch(`${apiBase}/status`, { redirect: "manual" });
+      if (connectionStateOf(response)) return connection?.suspect();
+      element.textContent = await response.text();
+    } catch {
+      connection?.suspect();
+    }
+  };
+  const unsubscribe = connection?.subscribe((state) => {
+    if (state === "online") void load();
+  });
+  void load();
+  return () => {
+    unsubscribe?.();
+    element.replaceChildren();
+  };
+};
+```
+
+`connectionStateOf(outcome)` from `@uniqbit/mate-core/studio` classifies a
+response or a thrown value like the probe does, `null` when it shows no
+connection problem. Send a request with `redirect: "manual"`, so an auth proxy's
+redirect reaches it instead of failing as a cross-origin request.
+
 A view can name an `attention` route: a `read` GET route of the service, as a
 path below its prefix, that answers `{ "count": <number> }` for
 `?companion=<digest>`. Studio shows a count above zero on the view's
@@ -167,5 +224,4 @@ runs for them.
 
 Declare the plugin package in the companion's `framework.yaml` under
 `plugins:` and install it with `mate plugin install`, like any plugin. A
-distribution can also register it in `createMate`, as the Mate CLI does with
-the factory.
+distribution can also register it in `createMate`.

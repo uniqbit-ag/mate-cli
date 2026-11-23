@@ -16,6 +16,11 @@ export type {
   SetupContext,
   SetupScope,
 } from "./tools/setup/plugin";
+export type {
+  StudioConnection,
+  StudioConnectionProblem,
+  StudioConnectionState,
+} from "./cli/commands/studio/connection";
 export type { ClaudeHookCommand, ClaudeHookGroup } from "./runtime/claude-hook-group";
 export type {
   CompanionSourceResult,

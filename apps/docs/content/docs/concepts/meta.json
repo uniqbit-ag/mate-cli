@@ -6,6 +6,7 @@
     "worktrees",
     "secret-guardrails",
     "merge-state",
-    "commit-attribution"
+    "commit-attribution",
+    "friction"
   ]
 }
