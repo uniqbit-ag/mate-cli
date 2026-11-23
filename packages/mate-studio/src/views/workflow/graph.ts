@@ -1,4 +1,10 @@
-import { PHASE_LABELS, type WorkflowPath, type WorkflowPhaseId, type WorkflowStep } from "./steps";
+import {
+  nodeOf,
+  PHASE_LABELS,
+  type WorkflowPath,
+  type WorkflowPhaseId,
+  type WorkflowStep,
+} from "./steps";
 
 /** Slot on the graph grid: a column per sequential position, a row per stacked peer. */
 interface GraphSlot {
@@ -10,7 +16,8 @@ interface GraphSlot {
 type ColumnNode =
   | { id: "start"; kind: "start" }
   | { id: string; kind: "stage"; step: WorkflowStep }
-  | { id: "reviews"; kind: "review-group"; steps: WorkflowStep[] };
+  /** `reviews` for the default review stage; see {@link nodeOf}. */
+  | { id: string; kind: "review-group"; steps: WorkflowStep[] };
 
 export type WorkflowGraphNode = GraphSlot & ColumnNode;
 
@@ -62,8 +69,8 @@ function columnsOf(path: WorkflowPath): Column[] {
     }
     if (entry.group === "human") {
       return {
-        nodes: [{ id: "reviews", kind: "review-group", steps: entry.steps }],
-        optional: false,
+        nodes: [{ id: nodeOf(entry.steps[0]), kind: "review-group", steps: entry.steps }],
+        optional: entry.steps[0].optional,
         phase: entry.steps[0].phase,
       };
     }

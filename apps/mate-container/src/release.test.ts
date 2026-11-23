@@ -130,10 +130,7 @@ describe("publication asks for an image only after npm has succeeded", () => {
     path.join(WORKSPACE_ROOT, ".github", "workflows", "release.yml"),
     "utf8",
   );
-  const imageJob = release.slice(
-    release.indexOf("\n  image:"),
-    release.indexOf("\n  factory-image:"),
-  );
+  const imageJob = release.slice(release.indexOf("\n  image:"));
 
   test("the dispatch runs in its own job after the publish job", () => {
     expect(publish).not.toContain("gh workflow run");

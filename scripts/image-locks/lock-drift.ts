@@ -14,8 +14,11 @@ import path from "node:path";
 
 import { RELEASE_PACKAGES } from "../../apps/mate-container/src/image-pins";
 
-/** Workspace-relative image roots whose global-tools locks are checked independently. */
-const IMAGE_ROOTS = ["apps/mate-container", "apps/mate-factory"] as const;
+/**
+ * Workspace-relative image roots whose global-tools locks are checked independently. The
+ * factory image moved to github.com/uniqbit-ag/mate-factory and checks its own lock there.
+ */
+export const IMAGE_ROOTS: readonly string[] = ["apps/mate-container"];
 
 const MANIFEST = "locks/global-tools.package.json";
 const LOCK = "locks/global-tools.package-lock.json";
@@ -266,9 +269,13 @@ function allProblems(
 }
 
 /** Read-only: never writes a tracked file, resolves a version, or runs a lifecycle script. */
-export function checkImageLocks(workspaceRoot: string, deps: Pick<Deps, "runNpm">): LockCheck[] {
+export function checkImageLocks(
+  workspaceRoot: string,
+  deps: Pick<Deps, "runNpm">,
+  imageRoots: readonly string[] = IMAGE_ROOTS,
+): LockCheck[] {
   const releases = readReleaseMetadata(workspaceRoot);
-  return IMAGE_ROOTS.map((imageRoot) => {
+  return imageRoots.map((imageRoot) => {
     const lockSource = fs.readFileSync(path.join(workspaceRoot, lockPathOf(imageRoot)), "utf8");
     const manifestSource = fs.readFileSync(path.join(workspaceRoot, imageRoot, MANIFEST), "utf8");
     return {
@@ -475,11 +482,13 @@ function prepare(
  * Prepares and validates both candidates before replacing either lock. A
  * failure while writing restores any lock already replaced.
  */
-export function refreshImageLocks(workspaceRoot: string, deps: Deps): LockRefresh[] {
+export function refreshImageLocks(
+  workspaceRoot: string,
+  deps: Deps,
+  imageRoots: readonly string[] = IMAGE_ROOTS,
+): LockRefresh[] {
   const releases = readReleaseMetadata(workspaceRoot);
-  const prepared = IMAGE_ROOTS.map((imageRoot) =>
-    prepare(workspaceRoot, imageRoot, releases, deps),
-  );
+  const prepared = imageRoots.map((imageRoot) => prepare(workspaceRoot, imageRoot, releases, deps));
   const pending = prepared.filter(({ candidate, original }) => candidate !== original);
 
   const temporaries = pending.map(({ file }) => `${file}.refresh-${process.pid}`);

@@ -8,6 +8,7 @@ import {
   type SubmittedChangeView,
   type SubmittedDiscovery,
 } from "../../../../lib/delivery/staging/pending";
+import { declaredSubmitType } from "../../../../lib/delivery/staging/registry";
 import { hasOpenspecCapability } from "../../../../lib/orchestrator/capabilities";
 import { resolveForCapability } from "../../../../lib/orchestrator/framework-context";
 import type { LaunchContext } from "../../../../lib/orchestrator/framework-context";
@@ -283,15 +284,22 @@ export async function runArtifactPendingCommand(
     () => false,
   );
   // The local listing stands on its own; a failed discovery is reported, not fatal.
-  const submitted = await (deps.discoverSubmitted ?? discoverSubmitted)(context.companionPath, {
-    fetch: gitAutoMode,
-  }).catch((error: unknown): SubmittedDiscovery => ({
-    pendingBranch: null,
-    fetchedAt: null,
-    stale: true,
-    error: errorMessage(error),
-    groups: [],
-  }));
+  // A declared type's submitted changes are listed in place of the built-in type's; an invalid
+  // declaration is reported with the discovery.
+  const submitted = await declaredSubmitType(context.companionPath)
+    .then((type) =>
+      (deps.discoverSubmitted ?? discoverSubmitted)(context.companionPath, {
+        fetch: gitAutoMode,
+        ...(type ? { type } : {}),
+      }),
+    )
+    .catch((error: unknown): SubmittedDiscovery => ({
+      pendingBranch: null,
+      fetchedAt: null,
+      stale: true,
+      error: errorMessage(error),
+      groups: [],
+    }));
   const result: PendingResult = {
     type: "openspec",
     companionPath: context.companionPath,

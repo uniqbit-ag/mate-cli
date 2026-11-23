@@ -1,6 +1,7 @@
 import { getActiveDistribution } from "../distribution";
 import { FRAMEWORK_NAME } from "../framework";
 import { pluginCliCommandLines } from "./plugin-commands";
+import { serviceCommandLines } from "../tools/setup/service-registry";
 
 export function usage(): string {
   const n = FRAMEWORK_NAME;
@@ -52,16 +53,28 @@ export function usage(): string {
     "   [--json]   one triple per stale requirement of the change",
     ` ${n} artifact project <change> [--json]`,
     ` ${n} artifact apply-context <change> --json [--since <digest>]`,
+    ` ${n} workflow steps <stage> [--json]   a Delivery Path stage's steps, entry and next stage`,
+    ` ${n} workflow done <skill> [<change>] [--json]   record a finished step; prints the next`,
+    ` ${n} workflow next <change> [--after <skill>] [--json]   the stage a change is at and its next actions`,
+    ` ${n} workflow trust [--json]   approve the run: commands the companion's workflow declares`,
     ` ${n} doctor`,
+    ` ${n} friction on    record Mate's friction on this machine (off by default)`,
+    ` ${n} friction off   stop recording; the records stay`,
+    ` ${n} friction status [--json]`,
+    ` ${n} friction list [--days N] [--all] [--state open|handled|all] [--json]`,
+    ` ${n} friction report [<event-id>] --kind <bug|unclear|missing> --expected <text>`,
+    "   [--cost <blocker|detour|papercut>] [--subject <type>[:<name>]] [--evidence <text>]",
+    "   [--workaround <text>] [--json]",
+    ` ${n} friction mark <fingerprint|report-id> --state <open|fixed|reported|dismissed>`,
+    "   [--note <text>] [--link <url>] [--json]",
+    ` ${n} triage [--agent <claude|opencode>] [--no-launch]`,
     ` ${n} report [--days N] [--input FILE|-] [--json]`,
     ` ${n} studio [--writable] [--terminal] [--detach-timeout <minutes>]`,
     ` ${n} studio serve --port <port> [--host <host>] [--writable] [--terminal]`,
     "   [--detach-timeout <minutes>] [--token <value>] [--allowed-host <host>]",
     "   [--public-origin <origin>] [--companion <path>] [--no-git]",
     "   [--profile standard|appliance]",
-    ` ${n} factory serve --socket <path> --docker-host <url> --state-dir <dir> --image <image>`,
-    "   --user <name> --companions-dir <dir> (the appliance's factory broker, run as root)",
-    ` ${n} factory attach <workset> --session <id> --companion <path> [--start clarify|explore|continue]`,
+    ...serviceCommandLines(),
     ` ${n} config`,
     ` ${n} vscode setup [--editor code|cursor] [--vsix <path>] [--if-installed]`,
     ` ${n} claude [args...] (after --: --no-git, --companion, --yes no-op)`,

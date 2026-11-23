@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { buildOpenCodeGuidance } from "../runtime/companion-guidance";
+import { writeFrictionSwitch } from "../runtime/friction-switch";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
 import { resolveOpenCodeGuidance } from "./projected-guidance";
@@ -54,6 +55,20 @@ afterEach(() => {
 });
 
 describe("resolveOpenCodeGuidance", () => {
+  test("follows a changed Friction Switch in the next session, with no sync", () => {
+    const { repoRoot } = wrapRepo();
+    const env = { HOME: makeTempDir("opencode-guidance-home-") };
+
+    writeFrictionSwitch(true, env.HOME);
+    expect(resolveOpenCodeGuidance(env, repoRoot).guidance?.companionGuidance).toContain(
+      "## Friction",
+    );
+    writeFrictionSwitch(false, env.HOME);
+    expect(resolveOpenCodeGuidance(env, repoRoot).guidance?.companionGuidance).not.toContain(
+      "## Friction",
+    );
+  });
+
   test("prefers the launch payload over the projection", () => {
     const { repoRoot } = wrapRepo(["tokensave"]);
     const injected = buildOpenCodeGuidance([{ name: "openspec" }]);

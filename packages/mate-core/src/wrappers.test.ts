@@ -331,7 +331,7 @@ function storeFixture(): { repo: string; companion: string; nested: string } {
   const nested = path.join(repo, "packages", "web");
   fs.mkdirSync(nested, { recursive: true });
   fs.mkdirSync(path.join(companion, "openspec"), { recursive: true });
-  fs.writeFileSync(path.join(companion, "openspec", "config.yaml"), "schema: mate-v1\n", "utf8");
+  fs.writeFileSync(path.join(companion, "openspec", "config.yaml"), "schema: mate-full\n", "utf8");
   wrapRepo(repo, companion);
   return { repo, companion, nested };
 }
@@ -389,7 +389,7 @@ describe("openspec wrapper with a Mate store pointer", () => {
       stubDir: stubBinary("openspec"),
     });
 
-    expect(result.stdout).toContain("args=templates --schema mate-v1");
+    expect(result.stdout).toContain("args=templates --schema mate-full");
   });
 
   test("a missing pointer keeps the companion and hints at mate wrap on stderr only", () => {

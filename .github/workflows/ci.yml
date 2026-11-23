@@ -1,8 +1,11 @@
 name: CI
 
-# The pull-request gate, as one job to keep runner minutes down: one checkout, one
-# install, and each app's tests only when its files changed. Branch protection on
-# main requires `ci-ok`.
+# The pull-request gate, as one job to keep runner minutes down: one checkout,
+# one install, the product suites on every PR, and the remaining app suites only
+# when their files changed. Branch protection on main requires `ci-ok`.
+#
+# mate-cli's integration/e2e suite stays out: it drives a TTY through `expect`,
+# which the ubuntu-latest runner image does not ship.
 #
 # Real-agent e2e stays out: it needs MATE_RUN_REAL_AGENT_TESTS=1 plus real
 # claude/opencode binaries, and this workflow provides neither.
@@ -22,6 +25,11 @@ jobs:
     name: ci-ok
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # `bun install`'s prepare script installs lefthook hooks; tests that
+      # commit inside the checkout must not fire them (.guildhall/verify
+      # exports the same).
+      LEFTHOOK: "0"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,9 +41,6 @@ jobs:
           filters: |
             container:
               - "apps/mate-container/**"
-              - ".github/workflows/ci.yml"
-            factory:
-              - "apps/mate-factory/**"
               - ".github/workflows/ci.yml"
             vscode:
               - "apps/mate-vscode/**"
@@ -75,12 +80,6 @@ jobs:
           MATE_CONTAINER_RUNTIME: docker
         run: bun run --filter @uniqbit/mate-container test
 
-      - name: Test mate-factory
-        if: steps.changes.outputs.factory == 'true'
-        env:
-          MATE_CONTAINER_RUNTIME: docker
-        run: bun run --filter @uniqbit/mate-factory test
-
       - name: Test mate-vscode
         if: steps.changes.outputs.vscode == 'true'
         run: bun run --filter @uniqbit/mate-vscode test
@@ -89,3 +88,17 @@ jobs:
       - name: Check docs
         if: steps.changes.outputs.docs == 'true'
         run: bun run docs:check
+
+      # The product suites run on every PR, not path-gated: without them a red
+      # mate-core, mate-cli or mate-studio could reach main unnoticed.
+      - name: Test mate-core
+        run: bun run --filter @uniqbit/mate-core test
+
+      - name: Test mate-cli (unit)
+        run: bun run --cwd apps/mate-cli test:unit
+
+      - name: Typecheck mate-studio
+        run: bun run --cwd packages/mate-studio typecheck
+
+      - name: Test mate-studio
+        run: bun run --cwd packages/mate-studio test

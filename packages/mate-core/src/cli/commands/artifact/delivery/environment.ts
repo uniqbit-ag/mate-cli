@@ -11,6 +11,10 @@ import {
 import type { CapabilityConfig, LinkedRepository } from "../../../../lib/orchestrator/types";
 import type { OriginReader } from "../../../../lib/orchestrator/umbrella-checkouts";
 import { WorkingRepoRequiredError } from "../../../../lib/orchestrator/types";
+import type { ArtifactType } from "../../../../lib/delivery/staging/artifact-type";
+import { loadSubmitWorkflow } from "../../../../lib/delivery/staging/registry";
+import type { Workflow } from "../../../../lib/workflow/declaration";
+import { errorMessage } from "../../../../runtime/error-message";
 import { ensureUnambiguousCompanion } from "../../shared/companion-selection";
 
 export interface DeliveryEnvironmentDeps {
@@ -56,8 +60,17 @@ export async function resolveDeliveryEnvironment(
     return { error: "mate: the openspec capability must be enabled to record delivery." };
   }
 
+  // An invalid declaration stops here: the built-in type would work on the wrong folders.
+  let declared: { workflow: Workflow; artifactType?: ArtifactType };
+  try {
+    declared = await loadSubmitWorkflow(context.companionPath);
+  } catch (err) {
+    return { error: `mate: ${errorMessage(err)}` };
+  }
+  const { workflow, artifactType } = declared;
+
   const { loadLinkedRepositories, loadGitAutoMode } = deps;
-  return linkedDeliveryEnvironment(
+  const environment = await linkedDeliveryEnvironment(
     context,
     capabilities,
     context.repository?.path ?? process.env.MATE_REPO_PATH,
@@ -70,4 +83,5 @@ export async function resolveDeliveryEnvironment(
       ...(loadGitAutoMode ? { loadGitAutoMode: () => loadGitAutoMode(context) } : {}),
     },
   );
+  return { ...environment, workflow, ...(artifactType ? { artifactType } : {}) };
 }
