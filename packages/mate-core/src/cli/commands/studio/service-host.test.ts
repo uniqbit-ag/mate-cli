@@ -9,6 +9,7 @@ import type {
   StudioSocketHandler,
 } from "../../../tools/setup/service";
 import { createStudioAccess } from "./access";
+import { guardedSocket, mountStudioServices, type StudioServiceHostBase } from "./service-host";
 import { companionDigest } from "./selection";
 import { createStudioFetch, type StudioUpgrader } from "./server";
 
@@ -74,7 +75,12 @@ function acmeService(recorded: Recorded, overrides: Partial<PluginService> = {})
           },
         ],
         views: [
-          { id: "board", label: "Acme board", module: { dir: viewDir, entry: "view.js" } },
+          {
+            id: "board",
+            label: "Acme board",
+            module: { dir: viewDir, entry: "view.js" },
+            attention: "/status",
+          },
           { id: "plain", label: "Plain" },
         ],
         pinnedCompanions: [companion],
@@ -132,12 +138,23 @@ describe("mounting services in Studio", () => {
     );
     expect(await recorded.host!.launchTarget(companionDigest(companion))).toBe(companion);
     expect(recorded.host!.terminal.enabled).toBe(false);
+    const snapshot = await recorded.host!.companionSnapshot(companionDigest(companion));
+    expect(Object.keys(snapshot).toSorted()).toEqual(["collectedAt", "error", "payload"]);
+    expect(snapshot.payload !== null || snapshot.error !== null).toBe(true);
+    await expect(recorded.host!.companionSnapshot("0".repeat(16))).rejects.toThrow(
+      "no registered companion",
+    );
     expect(handler.services.services()).toEqual([
       {
         id: "acme",
         label: "Acme",
         views: [
-          { id: "board", label: "Acme board", moduleUrl: "/studio/plugins/acme/board/view.js" },
+          {
+            id: "board",
+            label: "Acme board",
+            moduleUrl: "/studio/plugins/acme/board/view.js",
+            attentionUrl: "/api/plugins/acme/status",
+          },
           { id: "plain", label: "Plain" },
         ],
       },
@@ -290,6 +307,8 @@ describe("companions a service pins or provides", () => {
 
   test("adding a companion needs a service that provides them", async () => {
     const handler = handlerFor([]);
+    await handler.ready;
+    expect(handler.services.addsCompanions()).toBe(false);
     expect(
       await handler.services.addCompanion({ kind: "url", url: "https://acme.test/c.git" }),
     ).toMatchObject({ ok: false, reason: expect.stringContaining("service") });
@@ -309,11 +328,95 @@ describe("companions a service pins or provides", () => {
     });
     const handler = handlerFor([service]);
     await handler.ready;
+    expect(handler.services.addsCompanions()).toBe(true);
     expect(handler.services.keepsFolder(companion)).toBe(true);
     expect(handler.services.keepsFolder(path.join(root, "fetched", "acme"))).toBe(false);
     expect(
       await handler.services.addCompanion({ kind: "url", url: "https://acme.test/c.git" }),
     ).toEqual({ ok: false, reason: "offline" });
     await handler.close();
+  });
+});
+
+describe("a guarded service socket", () => {
+  test("a throwing or rejecting handler is reported and closes the socket", async () => {
+    const warnings: string[] = [];
+    const closes: number[] = [];
+    const socket = guardedSocket(
+      {
+        open: () => {},
+        message: (data) => {
+          if (data === "sync") throw new Error("acme bad input");
+          return Promise.reject(new Error("acme async")) as unknown as void;
+        },
+        close: () => {
+          throw new Error("acme close");
+        },
+      },
+      (message) => warnings.push(message),
+    );
+    socket.open({ send: () => {}, close: (code) => void closes.push(code ?? 0) });
+
+    expect(() => socket.message("sync")).not.toThrow();
+    socket.message("ignored after the failure");
+    expect(() => socket.close()).not.toThrow();
+    await Promise.resolve();
+
+    expect(warnings).toEqual(["a service socket failed: acme bad input"]);
+    expect(closes).toEqual([1011]);
+  });
+
+  test("a rejection closes the socket too", async () => {
+    const warnings: string[] = [];
+    const closes: number[] = [];
+    const socket = guardedSocket(
+      {
+        open: () => {},
+        message: () => Promise.reject(new Error("acme async")) as unknown as void,
+        close: () => {},
+      },
+      (message) => warnings.push(message),
+    );
+    socket.open({ send: () => {}, close: (code) => void closes.push(code ?? 0) });
+
+    socket.message("acme");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(warnings).toEqual(["a service socket failed: acme async"]);
+    expect(closes).toEqual([1011]);
+  });
+});
+
+describe("mounting services", () => {
+  test("a service that never answers is left out after the timeout; the next one mounts", async () => {
+    const warnings: string[] = [];
+    let closed = false;
+    let answer: (contribution: { close(): Promise<void> }) => void = () => {};
+    const hanging: PluginService = {
+      apiVersion: 1,
+      id: "acme-hanging",
+      label: "Acme hanging",
+      studio: () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    };
+    const host = { env: {} } as unknown as StudioServiceHostBase;
+
+    const mounted = await mountStudioServices(
+      [hanging, acmeService({ calls: [], socket: [] }, { connection: undefined })],
+      host,
+      (message) => warnings.push(message),
+      20,
+    );
+
+    expect(warnings).toEqual([
+      "the Acme hanging service did not start: it did not answer within 0.02s",
+    ]);
+    expect(mounted.summaries().map((summary) => summary.id)).toEqual(["acme"]);
+    // A contribution that arrives after the timeout is closed, never mounted.
+    answer({ close: async () => void (closed = true) });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(closed).toBe(true);
   });
 });

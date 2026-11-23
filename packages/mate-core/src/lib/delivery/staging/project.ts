@@ -220,7 +220,9 @@ async function project(
         };
       }
       const derived = applied.changed.filter(
-        (file) => !file.startsWith(`${type.source}/`) && !file.startsWith(`${type.archiveRoot}/`),
+        (file) =>
+          !file.startsWith(`${type.source}/`) &&
+          (type.archiveRoot === undefined || !file.startsWith(`${type.archiveRoot}/`)),
       );
       const { out, files } = await writeProjection(dir, derived, deps.outRoot ?? os.tmpdir());
       return {

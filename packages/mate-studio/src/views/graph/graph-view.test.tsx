@@ -1,13 +1,32 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterAll, describe, expect, it, mock } from "bun:test";
 import type { StudioSpecGraph } from "@uniqbit/mate-core/studio";
 
 await import("../../../test/dom");
 
 /** The WebGL canvas cannot run here; the stub records that the renderer was asked for. */
 let rendererLoads = 0;
+/**
+ * The real canvas module. bun's mock.module overrides are process-wide and never auto-restored
+ * (`mock.restore()` leaves them), so a later file — bun runs files in file-system order, which
+ * differs between machines — would get this file's stub wherever it renders the graph. Evaluating
+ * the real module runs sigma, which reads WebGL2RenderingContext constants the DOM here does not
+ * define, so the capture lends the two it reads and puts the absent global straight back. The file
+ * puts the mock back when it ends.
+ */
+const realWebGL2 = (globalThis as { WebGL2RenderingContext?: unknown }).WebGL2RenderingContext;
+(globalThis as { WebGL2RenderingContext?: unknown }).WebGL2RenderingContext = {
+  UNSIGNED_BYTE: 0x1400,
+  FLOAT: 0x1406,
+};
+const realGraphCanvas = await import("./graph-canvas");
+(globalThis as { WebGL2RenderingContext?: unknown }).WebGL2RenderingContext = realWebGL2;
 mock.module("./graph-canvas", () => {
   rendererLoads += 1;
   return { default: () => <div data-canvas-stub /> };
+});
+
+afterAll(() => {
+  mock.module("./graph-canvas", () => ({ ...realGraphCanvas }));
 });
 
 const { act, render: mountDom } = await import("@testing-library/react");

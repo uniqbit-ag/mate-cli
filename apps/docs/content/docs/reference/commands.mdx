@@ -267,7 +267,8 @@ it, and exits 0 either way. Before removing a worktree it removes the
 worktree's wrap, including the Claude local-scope MCP entries kept for its
 path; when that fails, it keeps the worktree and names the reason. A locked
 worktree is kept as is. A worktree Git refuses to remove is kept and wrapped
-again. It never
+again. A change of a Done Workset with no Delivery Record in the companion is
+named in a warning. It never
 deletes the branch. It takes `--companion <path>` and `--json` as well.
 
 After the child worktrees of an umbrella's mirrored worktree are handled, prune
@@ -287,11 +288,12 @@ companion.
 
 ## Installation And Health
 
-| Command                  | Purpose                                                                            |
-| ------------------------ | ---------------------------------------------------------------------------------- |
-| `mate install [--yes]`   | Install and verify core requirements or refresh the active companion requirements. |
-| `mate doctor`            | Show context, policy, selected capabilities, and tool status.                      |
-| `mate config [--vscode]` | Open the global `~/.mate` configuration directory.                                 |
+| Command                                                  | Purpose                                                                            |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `mate install [--yes]`                                   | Install and verify core requirements or refresh the active companion requirements. |
+| `mate doctor`                                            | Show context, policy, selected capabilities, and tool status.                      |
+| `mate config [--vscode]`                                 | Open the global `~/.mate` configuration directory.                                 |
+| `mate triage [--agent <claude\|opencode>] [--no-launch]` | Hand a Mate problem to your coding agent in a triage session.                      |
 
 `mate install --yes` skips interactive confirmation and is required when the
 process has no TTY. It can run before a companion is linked; in that context it
@@ -307,6 +309,28 @@ audience. With `MATE_AUDIENCE` unset it installs no audience plugin.
 
 For OpenSpec, `mate doctor` reports the CLI bundled with Mate, with its path
 and version, instead of looking for `openspec` on `PATH`.
+
+While [friction recording](/docs/concepts/friction) is on, `mate doctor` shows
+a Friction section: the events of open fingerprints recorded for the
+companion in the last seven days and the most frequent open fingerprint with its
+count. A fingerprint marked `fixed`, `reported` or `dismissed` is left out until
+it is reopened; see [Friction States](/docs/concepts/friction#friction-states).
+`--json` carries it as `friction`, with `days`, `events` and `top`
+(`null` without events). An unreadable log or state file counts as no events or
+no states. While
+recording is off, doctor shows no Friction section, the JSON has no `friction`
+field, and doctor reads no log.
+With one or more events, the human-readable section names `mate triage` as the
+next action.
+
+`mate triage` writes a triage session at `~/.mate/triage/<UTC time>/` with
+`context.md` (machine facts and the doctor report), the shipped `PLAYBOOK.md`,
+`prompt.md`, and the friction of the last 30 days, then starts Claude Code or
+OpenCode in it directly, not through a Mate launch. It runs before every gate,
+so it works when the installation, an update or the companion blocks other
+commands. `--agent` picks the agent when both are installed; `--no-launch` only
+prints the session paths. It ends with the agent's exit code. See
+[Triage a Mate Problem](/docs/scenarios/triage-a-mate-problem).
 
 ### Progress Output
 
@@ -850,6 +874,9 @@ repository.
 | `mate cap index --graphify`                | Refresh only Graphify.                          |
 | `mate cap index --tokensave`               | Refresh only TokenSave.                         |
 
+`mate cap <namespace> --help`, or `-h`, lists the commands of a namespace a
+plugin provides and exits 0.
+
 The two index flags cannot be combined. When both Graphify and TokenSave are
 enabled, the default index flow refreshes TokenSave and then refreshes Graphify
 against the resulting state.
@@ -860,6 +887,140 @@ the repository's `.graphifyignore` and passes the secret patterns as
 `--exclude`. Afterwards it removes any secret that still reached the output and
 keeps the rest of the graph. A secret never stops the run. See
 [Secret Guardrails](/docs/concepts/secret-guardrails).
+
+## Friction
+
+| Command                                                        | Purpose                                              |
+| -------------------------------------------------------------- | ---------------------------------------------------- |
+| `mate friction on`                                             | Turn friction recording on for this machine.         |
+| `mate friction off`                                            | Turn friction recording off; the records stay.       |
+| `mate friction status [--json]`                                | Say whether recording is on, and where the log is.   |
+| `mate friction list [--days N] [--all] [--state <s>] [--json]` | List recorded friction, grouped by fingerprint.      |
+| `mate friction report [<event-id>] ...`                        | Record what an agent expected.                       |
+| `mate friction mark <fingerprint\|report-id> --state <s> ...`  | Record that a fingerprint or Free Report is handled. |
+
+See [Friction](/docs/concepts/friction) for what Mate records and where. For
+people, Studio's **Friction** view lists the same records and turns recording on
+or off; see [Friction in Studio](/docs/concepts/friction#in-studio).
+
+`mate friction on` and `mate friction off` set the machine's Friction Switch,
+print the new state in one line and exit 0, also when the state does not
+change. `mate friction off` names the folder that keeps the records. Both
+refuse inside an agent session, exit 1 and change nothing. They,
+`mate friction status` and `mate friction mark` run in any folder, without a linked companion or a
+complete installation. `mate friction report` needs a linked companion, but it
+also runs while an update is required or the installation is incomplete, so the
+command a nudge names is not blocked by the failure it reports.
+
+`mate friction status` prints whether recording is on and the log folder. With
+`--json` it prints one document with `kind` `friction-status`, `version` 1, a
+boolean `recording` and the folder as `logDir`. It runs inside an agent session
+too.
+
+`mate friction list` reads the events of the last `N` days, default 30 and at
+most 90 (the time the log keeps a record), recorded for
+the resolved companion, and groups them by fingerprint. A fingerprint is
+`refusal:<check>:<tool kind>` or `command:<command> <subcommand>:<exit code>`.
+For each group it shows the fingerprint with a plain sentence for it, the event count, the number of sessions, the highest
+count in one session, the first and last time seen, the Mate versions, the paths
+its refusals named and the flags its failed commands carried, and the number of
+reports on its events with the latest `expected` text. Groups with the most repeats in one
+session come first, then those with the most events. Free reports of the
+companion follow in their own section, newest first, each with its id.
+`--state <open|handled|all>`, default `open`, chooses what is listed by
+[Friction State](/docs/concepts/friction#friction-states): `open` lists unmarked
+and reopened items, `handled` lists `fixed`, `reported` and `dismissed` items
+that are not reopened, and `all` lists both. The event and session totals count
+the whole period whatever the filter. When the filter hides items, the output
+says how many and names `--state all`; when records exist but none passes, it
+says so and exits 0. Each listed item with a Friction State shows its state, who
+set it and when, its note or link, and for a group whether it is reopened or how
+many events arrived since it was reported. When it lists anything,
+the output ends with a line that names
+[`mate triage`](/docs/scenarios/triage-a-mate-problem), to run in your own
+terminal inside the affected repository. With `--json` it prints
+one document with `kind` `friction-list` and `version` 1, the applied `state`,
+the number of `hidden` items and `recording`; each group carries its `reports`,
+its sentence as `title` and its `subjectType`, and the document carries
+`freeReports`, each with the `subjectType` its subject names or `null`. Each group and Free Report carries `state`:
+`null` when unmarked, otherwise `state`, `at`, `by`, `note` and `link`, and for a
+group also `reopened` and `eventsSince`. Each also carries `open`. It writes nothing to the
+log. With `--all` it lists the friction of every companion on this machine,
+including companions no repository resolves to any more: each group names its
+companions with their event counts, and the JSON `companion` is `null`. Without
+`--all`, in a folder that resolves no companion, it lists nothing and exits 1
+with a message that names `--all` and the affected repository; with `--json` it
+prints `kind` `error` with the code `no-companion`. With `--json`, a bad argument
+exits 1 and prints `kind` `error` with the code `usage`; when a required update,
+companion selection or an incomplete installation blocks the command, it prints
+`kind` `error` with the code `PREFLIGHT_FAILED`. While
+recording is off, the list still shows what was recorded, after a first line
+that says recording is off and names `mate friction on`; the `--json` document
+changes only in `recording`.
+
+`mate friction report` records one Friction Report and prints its id. While
+recording is off, it records nothing and exits 1:
+
+| Flag                                 | Meaning                                                                                               |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `<event-id>`                         | The Friction Event the report is about. Optional; without it, the report is a free report.            |
+| `--kind <bug\|unclear\|missing>`     | Required. Mate was wrong, its message did not help, or something needed does not exist.               |
+| `--expected <text>`                  | Required. What the agent expected.                                                                    |
+| `--cost <blocker\|detour\|papercut>` | Optional. What the friction cost.                                                                     |
+| `--subject <type>[:<name>]`          | Required for a free report. `type` is `command`, `hook`, `skill`, `guidance`, `capability` or `docs`. |
+| `--evidence <text>`                  | Required for a free report: what the agent saw.                                                       |
+| `--workaround <text>`                | Optional. What the agent did instead.                                                                 |
+| `--json`                             | Print one JSON document.                                                                              |
+
+A report on an event takes its subject from the event; a `--subject` given
+with an event id is ignored. Each text is cut to
+1,000 characters. The report records the agent session's id and runtime, or
+null outside a session. With `--json` it prints `kind` `friction-report`,
+`version` 1, `id` and `eventId`. A refusal exits 1 and records nothing; with
+`--json` it prints `kind` `error` with one of these codes:
+
+| Code                                                     | Cause                                                                          |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `missing-kind`, `invalid-kind`                           | `--kind` is missing or not one of the three values.                            |
+| `missing-expected`, `invalid-cost`                       | `--expected` is missing, or `--cost` has an unknown value.                     |
+| `event-not-found`                                        | No event in the log has that id.                                               |
+| `missing-subject`, `invalid-subject`, `missing-evidence` | A free report lacks its subject or evidence, or names an unknown subject type. |
+| `secret`, `scan-failed`                                  | The text holds a secret, or it could not be scanned. The text is not printed.  |
+| `no-companion`                                           | A free report was made in a folder that resolves no companion.                 |
+| `recording-off`                                          | Friction recording is off on this machine.                                     |
+| `usage`, `write-failed`                                  | An argument is unknown, or the log cannot be written.                          |
+
+`mate friction mark` sets the [Friction State](/docs/concepts/friction#friction-states)
+of one fingerprint or one Free Report, replacing an earlier one, and prints the
+target and its new state. It changes no record in the Friction Log.
+
+| Flag                                         | Meaning                                                                          |
+| -------------------------------------------- | -------------------------------------------------------------------------------- |
+| `<fingerprint\|report-id>`                   | Required. A fingerprint as `mate friction list` shows it, or a Free Report's id. |
+| `--state <open\|fixed\|reported\|dismissed>` | Required. `open` removes the Friction State.                                     |
+| `--note <text>`                              | Optional. Why, such as what was fixed or why it is no Mate problem.              |
+| `--link <url>`                               | Optional, only with `--state reported`. The `http` or `https` issue URL.         |
+| `--json`                                     | Print one JSON document.                                                         |
+
+Note and link are cut to 1,000 characters and refused when they hold a secret.
+You run `mark` in your own terminal and it records `by` `person`. An agent may
+run it only from the session folder of the running
+[`mate triage`](/docs/scenarios/triage-a-mate-problem) that started it, where it
+records `by` `triage`; anywhere else it refuses, so an agent cannot hide the
+friction it causes. With `--json` it prints `kind`
+`friction-state`, `version` 1, the `target`, and the new `state` with its fields,
+or `null` after `--state open`. A refusal exits 1 and changes nothing; with
+`--json` it prints `kind` `error` with one of these codes:
+
+| Code                                  | Cause                                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `usage`, `invalid-state`              | The target or `--state` is missing, an argument is unknown, or the state is not one of the four. |
+| `unknown-target`                      | No event has that fingerprint and no Friction State names it, and no Free Report has that id.    |
+| `report-on-event`                     | The id is a report on an event; it follows its fingerprint, which the message names.             |
+| `link-needs-reported`, `invalid-link` | `--link` was given without `--state reported`, or is no `http` or `https` URL.                   |
+| `secret`, `scan-failed`               | The note or link holds a secret, or could not be scanned. The text is not printed.               |
+| `agent-session`                       | An agent ran it outside the session folder of the `mate triage` that started it.                 |
+| `state-file-damaged`, `write-failed`  | The state file is malformed and was kept unchanged, or it could not be written.                  |
 
 ## Usage And Reports
 
@@ -965,8 +1126,83 @@ falls back locally. Final delivery failure returns
 | `mate artifact resolve <change> --capability --requirement --file` | Resolve a publication conflict in a submitted change, from any machine.        |
 | `mate artifact project <change> [--json]`                          | Show the canonical specs once the change's `dependsOn` chain is published.     |
 | `mate artifact apply-context <change> --json [--since <digest>]`   | Fetch fresh apply instructions as a full or compact envelope.                  |
+| `mate workflow steps <stage> [--json]`                             | Resolve a Delivery Path stage: its steps, entry skill, and next stage.         |
+| `mate workflow done <skill> [<change>] [--json]`                   | Record a finished step and print what comes next.                              |
+| `mate workflow next <change> [--after <skill>] [--json]`           | Show the stage a change is at and its next actions.                            |
+| `mate workflow trust [--json]`                                     | Approve the `run:` commands the companion's workflow declares.                 |
 | `mate update`                                                      | Upgrade an npm-managed Mate installation and reinstall requirements.           |
 | `mate update --check`                                              | Check for an update without installing it.                                     |
+
+**Workflow.** A companion may declare its Delivery Path in
+`.mate/config/workflow.yaml`; see
+[Design a Team Companion](/docs/scenarios/design-a-team-companion). A session
+uses three commands to follow it; you run none of them yourself. `mate workflow steps <stage>` resolves one
+skill stage and writes nothing. With `--json` it prints `ok`, `stage`, `source`
+(`declared` or `default`), `file`, `steps` (each a `skill`, with `own: true`
+for the stage's Mate stage skill), `entry` (the skill the stage is started
+with: its first step's), `artifact` for `submit`, `next`, and `warnings`.
+`mate workflow done <skill> <change>` reports that one step finished. A skill
+is one step of the Delivery Path, so it names its stage: the command appends the
+skill to the list `stages.<stage>` in the change's `delivery.yaml` and changes
+nothing else in it. A step already recorded changes nothing. A Mate stage
+skill's step counts as done once the change's plan says its work is done
+(`propose`: the change validates and has tasks; `apply`: every task is
+checked), recorded or not. Any other step that is not recorded counts as done
+once a later step of the Delivery Path is recorded for the change, or the
+change is submitted; counted steps are computed, never stored. So a step
+reported before an earlier one is still recorded, and the earlier one counts.
+The command then prints the hand-off: the actions the developer starts next, as
+`next:` lines and one `optional:` line, then a
+`Counted, not reported: /<skill> <change>. Not an action below; run it if it did not run.` line
+naming each counted step, which is never an action. The actions are the next
+step of the stage while one is left, or the stage the change is then at, so an
+open earlier stage is listed first. No step runs by itself: the session ends
+with the section and runs nothing it lists. Every Mate stage skill ends with
+this command, on the default path too. With `--json` it prints `ok`, `stage`,
+`change`, `step`, `recorded`, `remaining`, `counted` (the counted steps by
+stage), `complete`, `handoff` (the `## Next steps` section, with the counted
+line above it), `actions` and `optional`. `actions` holds the section's actions
+in order, each either `{ "kind": "skill", "skill", "change", "note", "afterReview" }`
+or `{ "kind": "text", "text" }`; `optional` holds the offered optional stages as
+skill actions. Skill names carry no prefix there; `change` and `note` are
+omitted when empty, and `afterReview: true` marks the stage that follows the
+listed reviews.
+Without a change, `mate workflow done <skill>` is for a stage that ends before
+a change exists, such as `explore`: it records nothing and hands off to the
+stage after it. A stage declared `optional: true` records nothing
+(`recorded: false`): no change waits for it, and the hand-off always offers it.
+`publish`, and `mate-submit-change` and the steps after it in `submit`, record
+nothing either: the change's `state` and its publication say where it is.
+
+`mate workflow next <change>` prints the stage a change is at, what is open in
+it, and the same hand-off as a `## Next steps` section, writing nothing. It is
+computed from the declaration, the change's `delivery.yaml` and its tasks, so it
+holds whatever an earlier session wrote; skills and runners call it to find
+where a change stands. With `--json` it prints `ok`, `change`, `stage`, `open`,
+`handoff`, `actions` and `optional`. With `--after <skill>` the hand-off is the one
+`mate workflow done <skill> <change>` printed, which for a step that records
+nothing follows its stage's steps; the turn hook checks a response against it.
+
+The commands exit 1 on an invalid declaration, with every problem and its key
+path on stderr and, with `--json`, `ok: false` and `problems` on stdout. `steps`
+also exits 1 for an unknown stage or a review stage. `done` exits 1, writing
+nothing, for a skill that is no step, naming each stage's steps, as `next`
+does for such an `--after` skill; `done` and `next` exit 1 for a change whose
+folder does not exist, naming the expected path and the changes that exist.
+`done` hands off without a folder only up to the path's first required stage,
+before the change exists. An invalid declaration never falls back to the
+default steps.
+
+`mate workflow trust` lists the `run:` commands the companion's workflow
+declares for its artifact types and asks you to approve the ones this machine
+has not. Submit and publication run no such command until you approve it,
+since anyone who can push to the companion can change it; they fail naming
+the command instead. Approvals are kept per user in `~/.mate/trusted-hooks.json`,
+per companion checkout, type, hook and command text, so an edited command, or
+the same text in another companion, needs approving again; a script the
+command calls is trusted with it. The command asks only in a terminal outside
+an agent session, so a session cannot approve a command for you. With `--json` it prints `ok` and
+`commands` (each `type`, `hook`, `run` and `trusted`) and approves nothing.
 
 **Submit.** A finished change is submitted before its delivery branch merges.
 `mate artifact submit <change>...` records and refreshes the delivery as
@@ -997,7 +1233,12 @@ delivery it submits nothing and reports `needs-branch`; answer with
 `--branch <branch>` (`--direct` for a protected one), `--not-applicable <reason>`,
 or `--skip-branch`, which leaves an unlinked record so publication asks again;
 add `--repository <org/repo>` when the Working Repository has no `origin` remote
-Mate can read. A failed check or push fails the submit and changes no state;
+Mate can read. A change whose plan leaves a required stage of its Delivery Path
+before `submit` open (unchecked tasks, or no tasks) is submitted with a warning
+of kind `stage-open` that names the stage, what is open, and the skill to run.
+Submitting counts every other step before `mate-submit-change` not reported
+with `mate workflow done`, and names them in a warning of kind `step-counted`.
+Like every warning, neither blocks. A failed check or push fails the submit and changes no state;
 run it again, and an unchanged resubmit adds no commit. A change already
 submitted is pushed again only when you edited it since; one you dropped comes
 back when you name it. Submit never replaces a folder a teammate resolved or
@@ -1173,6 +1414,10 @@ When a publication makes its Workset Done, publish then removes that Workset's
 worktrees as `mate working worktree prune` does: clean, fully pushed worktrees
 go, and any other is kept with its reason. A change without a Workset record is
 Done once published. With `--all` this runs once, after the last publication.
+It reads each published change's Delivery Record from the publication's commit,
+so a Delivery Group published to the remote is cleaned up even when this
+companion checkout is behind it and lacks the archived change. A change whose
+Delivery Record it cannot find is named in a warning, and its worktrees stay.
 The cleanup is best effort: it never changes the result's status, the exit code,
 or where `--all` stops, and it never deletes a branch or uses `--force`. With
 `--json`, the result that finished the Workset carries

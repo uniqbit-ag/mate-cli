@@ -11,7 +11,6 @@ import {
   createRtkPlugin,
   createTokensavePlugin,
 } from "@uniqbit/mate-core/plugins";
-import { createFactoryPlugin } from "@uniqbit/mate-core/factory";
 
 import { version } from "../package.json";
 import { createContext7Plugin } from "./plugins/context7";
@@ -27,8 +26,6 @@ const graphify = createGraphifyPlugin();
 const context7 = createContext7Plugin();
 const contextMode = createContextModePlugin();
 const companionMentions = createCompanionMentionsPlugin();
-// The factory is a service plugin: `mate factory`, its broker connection and its Studio part.
-const factory = createFactoryPlugin();
 
 const cli = createMate({
   config: {
@@ -39,6 +36,7 @@ const cli = createMate({
       registry: "https://registry.npmjs.org/",
       enforce: true,
     },
+    issueRepository: "uniqbit-ag/mate-cli",
   },
   plugins: [
     { plugin: opencode, policy: "required" },
@@ -51,7 +49,6 @@ const cli = createMate({
     { plugin: context7, policy: "optional" },
     { plugin: contextMode, policy: "optional" },
     { plugin: companionMentions, policy: "optional" },
-    { plugin: factory, policy: "optional" },
   ],
 });
 

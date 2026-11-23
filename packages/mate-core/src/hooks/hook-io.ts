@@ -57,12 +57,14 @@ async function readHookInput(): Promise<unknown> {
 export async function runHook(
   build: (input: unknown) => HookOutcome | Promise<HookOutcome>,
   onError: (error: unknown) => HookOutcome,
+  /** The payload; stdin by default, or what a shim already read from it. */
+  readInput: () => Promise<unknown> = readHookInput,
 ): Promise<number> {
   let outcome: HookOutcome;
   try {
     // A background session can inherit another launch's environment from Claude's daemon.
     guardLaunchEnvironment(process.env, process.cwd());
-    outcome = await build(await readHookInput());
+    outcome = await build(await readInput());
   } catch (error) {
     outcome = onError(error);
   }

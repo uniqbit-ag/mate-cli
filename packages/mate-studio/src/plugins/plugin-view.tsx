@@ -1,6 +1,8 @@
 import type { StudioViewMount, StudioViewMountContext } from "@uniqbit/mate-core/studio";
 import { useEffect, useRef, useState } from "react";
 
+import { studioConnection } from "../stores/connection";
+
 /** Loads a view module; the browser's own `import` outside tests. */
 export type ModuleLoader = (url: string) => Promise<Record<string, unknown>>;
 
@@ -46,7 +48,9 @@ export function PluginView({
     let unmount: (() => void) | null = null;
     let left = false;
     setFailure(null);
-    mountPluginView(element, moduleUrl, { companion, apiBase, writable }, load).then(
+    // The monitor lives as long as the page, so a state change never mounts the view again.
+    const connection = studioConnection() ?? undefined;
+    mountPluginView(element, moduleUrl, { companion, apiBase, writable, connection }, load).then(
       (done) => {
         if (left) done();
         else unmount = done;

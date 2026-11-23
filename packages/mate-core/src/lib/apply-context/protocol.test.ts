@@ -27,7 +27,7 @@ function payload(done = 0, extra: ApplyPayload = {}): ApplyPayload {
   return {
     changeName: "acme-queue",
     changeDir: "/companion/openspec/changes/acme-queue",
-    schemaName: "mate-v1",
+    schemaName: "mate-full",
     contextFiles: {
       proposal: ["/companion/openspec/changes/acme-queue/proposal.md"],
       specs: ["/companion/openspec/changes/acme-queue/specs/acme-queue/spec.md"],

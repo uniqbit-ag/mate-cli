@@ -8,7 +8,7 @@ type MateSchema = {
   apply: { instruction: string };
 };
 
-const SCHEMAS = ["mate-v1", "mate-minimal"] as const;
+const SCHEMAS = ["mate-full", "mate-minimal"] as const;
 const VERIFICATION_SKILL = "mate-react-doctor";
 
 type Conventions = { rules: string; verification: string; skill_tagging: string };

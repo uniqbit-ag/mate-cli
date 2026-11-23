@@ -22,6 +22,7 @@ import { AddCompanionDialog } from "./add-companion-dialog";
 import type { ShellCompanion } from "../server/shell";
 import { copyText } from "../stores/page-ui";
 import { companionName } from "./frame";
+import { GlobalFeatures } from "./global-features";
 import { COMPANION_STORAGE_KEY } from "./prepaint";
 
 const svgUri = (svg: string) => `data:image/svg+xml;base64,${btoa(svg)}`;
@@ -357,13 +358,13 @@ export function CompanionSwitcher({
   companions,
   selected,
   writable = false,
-  factoryMode = false,
+  addsCompanions = false,
 }: {
   companions: ShellCompanion[];
   selected: ShellCompanion | null;
   writable?: boolean;
-  /** The factory broker runs: only then can a companion be added from here. */
-  factoryMode?: boolean;
+  /** A service adds companions by Git URL: only then can one be added from here. */
+  addsCompanions?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const select = useSelectCompanion();
@@ -426,7 +427,7 @@ export function CompanionSwitcher({
             </p>
           ) : null}
           <Separator className="my-1" />
-          {factoryMode && writable ? (
+          {addsCompanions && writable ? (
             <button
               type="button"
               className="flex items-center gap-2.5 rounded-control border-0 bg-transparent px-2.5 py-2 text-left text-sm text-text hover:bg-surface-soft"
@@ -454,73 +455,73 @@ export function CompanionSwitcher({
         </PopoverContent>
       </Popover>
       {deletion.dialog}
-      {factoryMode && writable ? adding.dialog : null}
+      {addsCompanions && writable ? adding.dialog : null}
     </>
   );
 }
 
-/** The page while no companion is selected: every registered companion, and how to add one. */
 export function CompanionPicker({
   companions,
   writable = false,
-  factoryMode = false,
+  addsCompanions = false,
 }: {
   companions: ShellCompanion[];
   writable?: boolean;
-  factoryMode?: boolean;
+  /** A service adds companions by Git URL: only then can one be added from here. */
+  addsCompanions?: boolean;
 }) {
   const select = useSelectCompanion();
   const prefetch = usePrefetchCompanion();
   const deletion = useCompanionDeletion(null);
   const adding = useCompanionAdd();
   return (
-    <section
-      className="mx-auto grid w-full max-w-[760px] gap-5 px-8 py-16 max-sm:px-4"
-      aria-label="Companion Repositories"
-    >
-      <div className="grid gap-1.5">
-        <h1 className="m-0 text-[1.7rem] font-semibold tracking-[-0.02em]">
-          {companions.length === 0 ? "No Companion Repository" : "Choose a Companion Repository"}
-        </h1>
-        <p className="m-0 text-muted">
-          {companions.length === 0
-            ? "No Companion Repository is registered on this machine."
-            : "Studio serves one companion at a time, and remembers the one you choose for your next visit."}
+    <div className="mx-auto grid w-full max-w-[760px] gap-8 px-8 py-16 max-sm:px-4">
+      <GlobalFeatures />
+      <section className="grid gap-5" aria-label="Companion Repositories">
+        <div className="grid gap-1.5">
+          <h1 className="m-0 text-[1.7rem] font-semibold tracking-[-0.02em]">
+            {companions.length === 0 ? "No Companion Repository" : "Choose a Companion Repository"}
+          </h1>
+          <p className="m-0 text-muted">
+            {companions.length === 0
+              ? "No Companion Repository is registered on this machine."
+              : "Studio serves one companion at a time, and remembers the one you choose for your next visit."}
+          </p>
+        </div>
+        {companions.length > 0 ? (
+          <div className="overflow-hidden rounded-card border border-rule">
+            {companions.map((companion) => (
+              <CompanionRow
+                key={companion.digest}
+                companion={companion}
+                selected={false}
+                roomy
+                onChoose={() => select(companion.digest)}
+                onIntent={() => prefetch(companion.digest)}
+                writable={writable}
+                onDelete={() => deletion.ask(companion)}
+              />
+            ))}
+          </div>
+        ) : null}
+        {addsCompanions && writable ? (
+          <div>
+            <Button type="button" data-add-companion="" onClick={adding.ask}>
+              <Icon name="plus" />
+              Add companion…
+            </Button>
+          </div>
+        ) : null}
+        <p className="m-0 text-sm text-muted">
+          To add one, run{" "}
+          <code className="rounded-[6px] border border-rule bg-surface px-1.5 font-mono text-xs">
+            mate companion setup
+          </code>{" "}
+          in a Working Repository.
         </p>
-      </div>
-      {companions.length > 0 ? (
-        <div className="overflow-hidden rounded-card border border-rule">
-          {companions.map((companion) => (
-            <CompanionRow
-              key={companion.digest}
-              companion={companion}
-              selected={false}
-              roomy
-              onChoose={() => select(companion.digest)}
-              onIntent={() => prefetch(companion.digest)}
-              writable={writable}
-              onDelete={() => deletion.ask(companion)}
-            />
-          ))}
-        </div>
-      ) : null}
-      {factoryMode && writable ? (
-        <div>
-          <Button type="button" data-add-companion="" onClick={adding.ask}>
-            <Icon name="plus" />
-            Add companion…
-          </Button>
-        </div>
-      ) : null}
-      <p className="m-0 text-sm text-muted">
-        To add one, run{" "}
-        <code className="rounded-[6px] border border-rule bg-surface px-1.5 font-mono text-xs">
-          mate companion setup
-        </code>{" "}
-        in a Working Repository.
-      </p>
-      {deletion.dialog}
-      {factoryMode && writable ? adding.dialog : null}
-    </section>
+        {deletion.dialog}
+        {addsCompanions && writable ? adding.dialog : null}
+      </section>
+    </div>
   );
 }

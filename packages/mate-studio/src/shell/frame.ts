@@ -16,26 +16,20 @@ import { useTerminalUi } from "../stores/terminal-ui";
 /** What the frame's parts share: view order and icons, companion names, refresh and terminal. */
 
 /** Navigation order; core decides which views a mode offers. */
-const MODE_ORDER: readonly StudioView[] = [
-  "dashboard",
-  "workflow",
-  "factory",
-  "skills",
-  "getting-started",
-];
+const MODE_ORDER: readonly StudioView[] = ["dashboard", "workflow", "skills", "getting-started"];
 const LIBRARY_ORDER: readonly StudioView[] = ["specs", "vault", "graph"];
-const INSIGHTS_ORDER: readonly StudioView[] = ["usage", "reports"];
+const INSIGHTS_ORDER: readonly StudioView[] = ["usage", "friction", "reports"];
 
 export const VIEW_ICONS: Record<StudioView, IconName> = {
   dashboard: "home",
   workflow: "flow",
   "getting-started": "doc",
-  factory: "factory",
   skills: "spark",
   specs: "doc",
   vault: "folder",
   reports: "chart",
   usage: "chart",
+  friction: "alert",
   graph: "graph",
 };
 
@@ -45,9 +39,9 @@ function inOrder(views: readonly StudioView[], order: readonly StudioView[]): St
   return views.toSorted((a, b) => rank(a) - rank(b));
 }
 
-/** The views a mode lists, in navigation order; Factory only where the broker runs. */
-export function modeViews(mode: StudioMode, factoryMode: boolean): StudioView[] {
-  return inOrder(MODE_VIEWS[mode], MODE_ORDER).filter((view) => factoryMode || view !== "factory");
+/** The views a mode lists, in navigation order. */
+export function modeViews(mode: StudioMode): StudioView[] {
+  return inOrder(MODE_VIEWS[mode], MODE_ORDER);
 }
 
 export function libraryViews(): StudioView[] {

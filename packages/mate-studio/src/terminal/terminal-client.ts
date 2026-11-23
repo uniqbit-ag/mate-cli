@@ -249,7 +249,7 @@ export class TerminalClient {
     this.sendOrQueue({ type: "start", agent, companion: this.companion, ...this.size(), ...task });
   }
 
-  /** A Factory Outcome names only its Workset; the server resolves everything else. */
+  /** A Workset session names only its Workset; the server resolves everything else. */
   startWorkset(workset: string): void {
     this.sendOrQueue({ type: "start", workset, companion: this.companion, ...this.size() });
   }

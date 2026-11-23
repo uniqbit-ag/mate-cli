@@ -25,6 +25,7 @@ import { registeredServices } from "../../../tools/setup/service-registry";
 import { addCompanionByPath, addCompanionByUrl } from "./companion-add";
 import { LiveSessions } from "./live-sessions";
 import {
+  guardedSocket,
   type MatchedServiceRoute,
   mountStudioServices,
   type MountedServices,
@@ -37,6 +38,7 @@ import {
   SERVICE_ROUTE_PREFIX,
   STUDIO_EVENTS_ROUTE,
   STUDIO_HOSTNAME,
+  STUDIO_PING_ROUTE,
   type StudioEvent,
   TERMINAL_ASSET_PREFIX,
   TERMINAL_SESSIONS_END_ROUTE,
@@ -51,6 +53,7 @@ import {
   modePolicy,
   parse,
   parseVaultSelection,
+  REFRESH_PARAM,
   resolveCompanion,
   type StudioModePolicy,
   type StudioProfile,
@@ -139,6 +142,8 @@ export interface StudioServerDeps {
   vault?: VaultManager;
   reports?: ReportStore;
   usage?: UsageCache;
+  /** Where the Friction Log and Switch live; the user's home when absent. */
+  homeDir?: string;
   terminal?: Partial<TerminalRegistryOptions>;
   launchableAgents?: typeof launchableAgents;
   /** The plugin services Studio mounts; the registered plugins' when absent. */
@@ -500,6 +505,18 @@ export function createStudioFetch(
       mateCommand: process.argv.slice(0, 2),
       env,
       companionPath: companionPathOf,
+      companionSnapshot: async (digest, { refresh = false } = {}) => {
+        await companionPathOf(digest);
+        const url = new URL("http://studio.local/");
+        url.searchParams.set(COMPANION_PARAM, digest);
+        if (refresh) url.searchParams.set(REFRESH_PARAM, "1");
+        const page = await collectPage(url);
+        return {
+          payload: page.payload,
+          error: page.error?.reason ?? null,
+          collectedAt: page.collectedAt,
+        };
+      },
       companionDigest,
       launchTarget: async (digest) =>
         (await effectiveLaunchCompanion(await inventory(), launchCompanion, digest))?.path ?? null,
@@ -552,6 +569,7 @@ export function createStudioFetch(
       const folder = services.companions?.folder;
       return folder !== undefined && !deletableWithin(companionPath, folder);
     },
+    addsCompanions: () => services.companions !== null,
     modePolicy: policy,
     page: collectPage,
     callService,
@@ -595,6 +613,30 @@ export function createStudioFetch(
           throw error;
         });
       return (await usage).read(companionPath, request);
+    },
+    friction: async (digest, { days }) => {
+      const companionPath = await companionPathOf(digest);
+      const { readFrictionView } = await import("../../../lib/friction/view/read");
+      return readFrictionView({ companion: companionPath }, { days, homeDir: deps.homeDir });
+    },
+    frictionRecording: async () => {
+      const { readFrictionSwitch } = await import("../../../runtime/friction-switch");
+      return { recording: readFrictionSwitch(deps.homeDir) };
+    },
+    setFrictionRecording: async (recording) => {
+      const { writeFrictionSwitch } = await import("../../../runtime/friction-switch");
+      writeFrictionSwitch(recording, deps.homeDir);
+      return { recording };
+    },
+    markFriction: async (target, state, { note, link }) => {
+      const { markFriction } = await import("../../../lib/friction/mark");
+      const marked = await markFriction(
+        target,
+        state,
+        { note, link, by: "studio" },
+        { homeDir: deps.homeDir },
+      );
+      return marked.ok ? { ok: true, state: marked.state } : { ok: false, reason: marked.reason };
     },
     skillPreview: async (digest, agent, name, file) => {
       const { readSkillPreview } = await import("./skill-files");
@@ -703,6 +745,10 @@ export function createStudioFetch(
     const refusal = refusalFor(route, request, url, acceptedOrigin);
     if (refusal) return respond(refusal);
 
+    if (url.pathname === STUDIO_PING_ROUTE) {
+      return respond(new Response(null, { status: 204, headers: { "cache-control": "no-store" } }));
+    }
+
     if (url.pathname === REPORTS_ROUTE) {
       const digest = url.searchParams.get(COMPANION_PARAM) ?? "";
       if (!COMPANION_DIGEST_PATTERN.test(digest)) {
@@ -740,7 +786,10 @@ export function createStudioFetch(
         }
         const handler = serviceRoute.route.socket?.(request, context) ?? null;
         if (!handler) return respond(refused("the service refused the connection", 403));
-        if (server.upgrade(request, { data: { service: handler } })) return undefined;
+        const service = guardedSocket(handler, (message) =>
+          process.stderr.write(`mate studio: ${message}\n`),
+        );
+        if (server.upgrade(request, { data: { service } })) return undefined;
         return respond(refused("the connection could not be upgraded", 400));
       }
       if (!serviceRoute.route.handle) return respond(notFound());

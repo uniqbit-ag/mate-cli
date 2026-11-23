@@ -13,7 +13,6 @@ import {
 import { Input } from "../components/ui/fields";
 import { cn } from "../lib/cn";
 import { addCompanion } from "../server/companions";
-import { GitTokenForm } from "../views/factory/git-token-form";
 
 type Mode = "url" | "path";
 
@@ -23,7 +22,7 @@ const MODES: { mode: Mode; label: string; field: string; placeholder: string; hi
     label: "Git URL",
     field: "Git URL of the companion",
     placeholder: "https://git.acme.test/acme/companion.git",
-    hint: "The factory clones it into its companions directory. A private repository asks for a Git token.",
+    hint: "The service that adds companions clones it into its own folder. A private repository needs a Git token.",
   },
   {
     mode: "path",
@@ -34,7 +33,7 @@ const MODES: { mode: Mode; label: string; field: string; placeholder: string; hi
   },
 ];
 
-/** Adds a companion by Git URL or local path; opens the token form when a private clone is refused. */
+/** Adds a companion by Git URL or local path; names the Git token a refused private clone needs. */
 export function AddCompanionDialog({
   open,
   onClose,
@@ -140,18 +139,13 @@ export function AddCompanionDialog({
           </div>
         </form>
         {refusal?.tokenKey ? (
-          <div className="grid gap-2 border-t border-rule pt-3" data-add-companion-token="">
-            <p className="m-0 text-sm text-muted">
-              Set a Git token for this host, then add the companion again.
-            </p>
-            <GitTokenForm
-              defaultKey={refusal.tokenKey}
-              onSaved={() => {
-                setRefusal(null);
-                add.mutate();
-              }}
-            />
-          </div>
+          <p
+            className="m-0 border-t border-rule pt-3 text-sm text-muted"
+            data-add-companion-token=""
+          >
+            Set a Git token for <code className="font-mono">{refusal.tokenKey}</code> where the
+            service keeps its Git tokens, then add the companion again.
+          </p>
         ) : null}
       </DialogContent>
     </Dialog>

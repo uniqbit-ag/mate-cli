@@ -366,11 +366,17 @@ candidate in the other buckets gets its own entry.
 Close with anything that limited the pass: missing test coverage, or formatter drift you
 reverted.
 
-When the pass ran on an applied change and hands off: End the response with a final `## Next steps` section: numbered required actions in
-execution order, with exact commands and known change names, prerequisites first.
-Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
-follows it. Listing an action never invokes it. Never offer the user an optional command, in or above the section; optional work appears above it only as a skill invocation labelled optional. Mention
-`/mate-show-me` above it as optional; list `/mate-submit-change <change-name>` in it.
+When the pass ran on an applied change, close the stage at the end of the run: run
+`mate workflow done mate-simplify-code "<change-name>"`. It prints the next
+actions for the change. End the response with a final `## Next steps` section: numbered
+required actions in execution order, with exact commands and known change names,
+prerequisites first: required work of this run that is still open, then the actions the
+command printed, in its order. Summaries, evidence, warnings, optional work, and
+deferred context go above it; nothing follows it. Listing an action never invokes it.
+Never offer the user an optional command, in or above the section; optional work appears
+above it only as a skill invocation labelled optional, as the command's `optional:` line
+names it. If the command fails, report its problems and end without a `Next steps`
+section.
 
 **Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
 and Cursor and the fallback. When the current runtime uses another syntax, swap only

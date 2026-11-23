@@ -2,15 +2,14 @@ import { describe, expect, it } from "bun:test";
 import { QueryClient, type QueryKey } from "@tanstack/react-query";
 
 import type { ShellData } from "../server/shell";
-import { agentCredentialKey } from "./agent-credential";
 import {
   afterEvent,
   afterRefresh,
   afterVaultRefresh,
   afterVaultFileChange,
   companionViewQuery,
-  factoryQuery,
   holdShellForMode,
+  pluginAttentionQuery,
   reportsQuery,
   shellQuery,
   vaultChildrenQuery,
@@ -20,14 +19,14 @@ import {
 const acme = "0123456789";
 const acmeTwo = "9876543210";
 
-/** Every held query of both companions, plus the agent credential, all fresh. */
+/** Every held query of both companions, all fresh. */
 function seeded() {
   const queryClient = new QueryClient();
   const held = (companion: string): Record<string, QueryKey> => ({
     shell: shellQuery({ companion }).queryKey,
     overview: companionViewQuery("dashboard", { companion }).queryKey,
     specs: companionViewQuery("specs", { companion, studioMode: "engineering" }).queryKey,
-    factory: factoryQuery(companion).queryKey,
+    attention: pluginAttentionQuery(companion, "/api/plugins/acme/waiting").queryKey,
     reports: reportsQuery(companion).queryKey,
     vault: vaultQuery(companion, { path: "notes.md" }).queryKey,
     children: vaultChildrenQuery(companion, "docs").queryKey,
@@ -36,7 +35,6 @@ function seeded() {
   for (const key of [...Object.values(keys.acme), ...Object.values(keys.acmeTwo)]) {
     queryClient.setQueryData(key, "held");
   }
-  queryClient.setQueryData(agentCredentialKey, "held");
   const stale = (key: QueryKey) => queryClient.getQueryState(key)?.isInvalidated ?? false;
   const staleNames = (companion: "acme" | "acmeTwo") =>
     Object.entries(keys[companion])
@@ -46,12 +44,11 @@ function seeded() {
 }
 
 describe("afterEvent", () => {
-  it("makes a board change stale for the companion's shell, views and Factory only", async () => {
-    const { queryClient, stale, staleNames } = seeded();
+  it("makes a board change stale for the companion's shell, views and plugin counts only", async () => {
+    const { queryClient, staleNames } = seeded();
     await afterEvent(queryClient, acme, "board");
-    expect(staleNames("acme")).toEqual(["shell", "overview", "specs", "factory"]);
+    expect(staleNames("acme")).toEqual(["shell", "overview", "specs", "attention"]);
     expect(staleNames("acmeTwo")).toEqual([]);
-    expect(stale(agentCredentialKey)).toBe(false);
   });
 
   it("makes a new report stale for the companion's Reports only", async () => {
@@ -69,20 +66,19 @@ describe("afterEvent", () => {
 });
 
 describe("afterRefresh", () => {
-  it("makes only the selected companion and the agent credential stale", async () => {
-    const { queryClient, stale, staleNames } = seeded();
+  it("makes only the selected companion stale", async () => {
+    const { queryClient, staleNames } = seeded();
     await afterRefresh(queryClient, acme);
     expect(staleNames("acme")).toEqual([
       "shell",
       "overview",
       "specs",
-      "factory",
+      "attention",
       "reports",
       "vault",
       "children",
     ]);
     expect(staleNames("acmeTwo")).toEqual([]);
-    expect(stale(agentCredentialKey)).toBe(true);
   });
 });
 
