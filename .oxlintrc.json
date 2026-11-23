@@ -1,11 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": [
-    "react",
-    "typescript",
-    "import",
-    "unicorn"
-  ],
+  "plugins": ["react", "typescript", "import", "unicorn"],
   "env": {
     "node": true
   },
@@ -56,12 +51,7 @@
   },
   "overrides": [
     {
-      "files": [
-        "**/*.test.ts",
-        "**/*.test.tsx",
-        "**/*.spec.ts",
-        "**/*.spec.tsx"
-      ],
+      "files": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
       "rules": {
         "typescript/no-explicit-any": "off"
       }
@@ -71,6 +61,28 @@
       "rules": {
         "react/no-unknown-property": "off",
         "react/jsx-key": "off"
+      }
+    },
+    {
+      "files": [
+        "packages/mate-core/src/lib/friction/view/model.ts",
+        "packages/mate-core/src/lib/friction/view/select.ts",
+        "packages/mate-core/src/runtime/friction-retention.ts",
+        "packages/mate-core/src/runtime/friction-vocabulary.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**", "!./model", "!**/friction-retention", "!**/friction-vocabulary"],
+                "allowTypeImports": true,
+                "message": "Studio's browser client imports this module: import only the other browser-safe friction modules, or types."
+              }
+            ]
+          }
+        ]
       }
     }
   ],
