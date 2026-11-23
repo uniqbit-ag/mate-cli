@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { createTempDir } from "../../../../../test/fixtures";
 import { resetActiveDistribution, setActiveDistribution } from "../../distribution";
 import type { launchAgent } from "../../lib/triage/launch";
+import { launchedTriageSessionDir } from "../../lib/triage/session";
 import { PluginRegistry } from "../../tools/setup/registry";
 import * as doctorCmd from "./doctor";
 import { runTriageCommand, type TriageDeps } from "./triage";
@@ -97,6 +98,29 @@ describe("mate triage", () => {
     expect(launches[0]!.agent).toBe("claude");
     expect(fs.existsSync(path.join(launches[0]!.sessionDir, "PLAYBOOK.md"))).toBe(true);
     expect(process.exitCode).toBe(3);
+  });
+
+  test("lets the agent's commands use the session folder only while the agent runs", async () => {
+    const { deps } = await setup(["claude"]);
+    const launched = (dir: string) =>
+      launchedTriageSessionDir(dir, {
+        homeDir: deps.env!.HOME,
+        isAncestor: (pid) => pid === process.pid,
+      });
+    let dir = "";
+    let during: string | null = null;
+
+    await runTriageCommand([], {
+      ...deps,
+      launch: async (options) => {
+        dir = options.sessionDir;
+        during = launched(dir);
+        return 0;
+      },
+    });
+
+    expect(during).toBe(fs.realpathSync(dir));
+    expect(launched(dir)).toBeNull();
   });
 
   test("starts no agent inside an agent session and exits zero", async () => {

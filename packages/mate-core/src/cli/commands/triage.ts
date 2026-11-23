@@ -13,6 +13,7 @@ import {
   seedPrompt,
   type TriageSessionFiles,
 } from "../../lib/triage/prepare";
+import { recordTriageLauncher } from "../../lib/triage/session";
 import { currentSession } from "../../runtime/session-id";
 import { collectDoctorReport } from "./doctor";
 
@@ -138,9 +139,15 @@ export async function runTriageCommand(argv: string[] = [], deps: TriageDeps = {
     process.exitCode = 1;
     return;
   }
-  process.exitCode = await (deps.launch ?? launchAgent)({
-    ...choice.found,
-    sessionDir: files.dir,
-    prompt: seedPrompt(),
-  });
+  // `friction mark` accepts an agent's mark only while this process runs that agent.
+  const release = recordTriageLauncher(files.dir);
+  try {
+    process.exitCode = await (deps.launch ?? launchAgent)({
+      ...choice.found,
+      sessionDir: files.dir,
+      prompt: seedPrompt(),
+    });
+  } finally {
+    release();
+  }
 }

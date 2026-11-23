@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { createTempDir } from "../../../../../test/fixtures";
 import { mateHome } from "../../runtime/runtime-directory";
-import { createTriageSession, triageRoot, triageSessionDir } from "./session";
+import { createTriageSession, parentPid, triageRoot, triageSessionDir } from "./session";
 
 const homes: string[] = [];
 
@@ -67,5 +67,11 @@ describe("triageSessionDir", () => {
     expect(triageSessionDir(stray, homeDir)).toBeNull();
     expect(triageSessionDir(triageRoot(homeDir), homeDir)).toBeNull();
     expect(triageSessionDir(repository, homeDir)).toBeNull();
+  });
+});
+
+describe("parentPid", () => {
+  test.skipIf(process.platform === "win32")("reads the parent of a running process", () => {
+    expect(parentPid(process.pid)).toBe(process.ppid);
   });
 });

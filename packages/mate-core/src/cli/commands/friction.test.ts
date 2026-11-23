@@ -15,7 +15,7 @@ import {
 import { readFrictionStates } from "../../runtime/friction-state";
 import { readFrictionSwitch, writeFrictionSwitch } from "../../runtime/friction-switch";
 import { markFriction } from "../../lib/friction/mark";
-import { createTriageSession } from "../../lib/triage/session";
+import { createTriageSession, recordTriageLauncher } from "../../lib/triage/session";
 import { PluginRegistry } from "../../tools/setup/registry";
 import {
   runFrictionCommand,
@@ -154,7 +154,9 @@ describe("mate friction list", () => {
     expect(text.indexOf("refusal:artifact:write")).toBeLessThan(
       text.indexOf("refusal:secret:read"),
     );
-    expect(text).toContain("  refusal:artifact:write · The artifact check refused a file write\n");
+    expect(text).toContain(
+      '  "refusal:artifact:write" · The artifact check refused a file write\n',
+    );
   });
 
   test("an empty window says so and exits zero", async () => {
@@ -675,8 +677,12 @@ describe("mate friction list --state", () => {
 
 describe("mate friction mark", () => {
   const agent = { CLAUDE_CODE_SESSION_ID: "s1" };
-  const mark = (argv: string[], env: Record<string, string> = {}, cwd = home) =>
-    runFrictionMarkCommand(argv, { homeDir: home, now, env, cwd });
+  const mark = (
+    argv: string[],
+    env: Record<string, string> = {},
+    cwd = home,
+    isAncestor = (pid: number) => pid === process.pid,
+  ) => runFrictionMarkCommand(argv, { homeDir: home, now, env, cwd, isAncestor });
 
   test("a person marks in their own terminal, in text and JSON", async () => {
     record("refusal:artifact:write", "a");
@@ -716,10 +722,28 @@ describe("mate friction mark", () => {
   test("the triage agent marks from its session folder", async () => {
     record("refusal:artifact:write", "a");
     const session = createTriageSession({ homeDir: home });
+    recordTriageLauncher(session);
 
     await mark(["refusal:artifact:write", "--state", "fixed"], agent, session);
 
     expect(readFrictionStates(home).fingerprints["refusal:artifact:write"]?.by).toBe("triage");
+  });
+
+  test("an agent cannot mark from a folder it made or from an old triage session", async () => {
+    record("refusal:artifact:write", "a");
+    const made = createTriageSession({ homeDir: home });
+    const old = createTriageSession({ homeDir: home });
+    recordTriageLauncher(old);
+    const dismiss = ["refusal:artifact:write", "--state", "dismissed", "--json"];
+
+    await mark(dismiss, agent, made);
+    await mark(dismiss, agent, old, () => false);
+
+    expect(stdout.map((line) => JSON.parse(line).error?.code)).toEqual([
+      "agent-session",
+      "agent-session",
+    ]);
+    expect(readFrictionStates(home).fingerprints).toEqual({});
   });
 
   test.each([

@@ -2,7 +2,7 @@ import { getActiveDistribution } from "../../distribution";
 import { FRAMEWORK_NAME } from "../../framework";
 import { resolveInstallContext } from "../../lib/install";
 import { currentSession } from "../../lib/session-attribution";
-import { triageSessionDir } from "../../lib/triage/session";
+import { launchedTriageSessionDir } from "../../lib/triage/session";
 import { usageDays } from "../../lib/usage/window";
 import {
   cut,
@@ -108,7 +108,8 @@ function renderGroup(group: FrictionGroup, all: boolean): string {
   const named = (label: string, counts: Record<string, number>) =>
     Object.keys(counts).length > 0 ? [`    ${label}: ${counted(counts)}`] : [];
   return [
-    `  ${group.fingerprint} · ${group.title}`,
+    // Quoted, ready for `friction mark`: a failed command's fingerprint holds spaces.
+    `  ${JSON.stringify(group.fingerprint)} · ${group.title}`,
     ...stateLines(group.state),
     `    ${plural(group.events, "event")} in ${plural(group.sessions, "session")}, at most ${group.maxPerSession} in one session`,
     `    first ${minute(group.firstSeen)}, last ${minute(group.lastSeen)}; mate ${counted(group.versions)}`,
@@ -427,13 +428,15 @@ export interface FrictionMarkDeps {
   env?: Record<string, string | undefined>;
   cwd?: string;
   scan?: SecretScan;
+  isAncestor?: (pid: number) => boolean;
 }
 
-const MARK_USAGE = `${FRAMEWORK_NAME} friction mark <fingerprint|report-id> --state <${MARK_STATES.join("|")}> [--note <text>] [--link <url>] [--json]`;
+const MARK_USAGE = `${FRAMEWORK_NAME} friction mark "<fingerprint|report-id>" --state <${MARK_STATES.join("|")}> [--note <text>] [--link <url>] [--json]`;
 
 /**
- * Sets a Friction State. An agent may mark only from a triage session folder, so it cannot hide
- * the friction it causes; Mate's base permission lets an agent run any mate command unprompted.
+ * Sets a Friction State. An agent may mark only from the session folder of a running `mate triage`
+ * that started it, so it cannot hide the friction it causes; Mate's base permission lets an agent
+ * run any mate command unprompted.
  */
 export async function runFrictionMarkCommand(
   argv: string[],
@@ -449,7 +452,7 @@ export async function runFrictionMarkCommand(
     }
     let by: "person" | "triage" = "person";
     if (currentSession(deps.env ?? process.env)) {
-      if (!triageSessionDir(deps.cwd ?? process.cwd(), deps.homeDir)) {
+      if (!launchedTriageSessionDir(deps.cwd ?? process.cwd(), deps)) {
         throw new FrictionRefusal(
           "agent-session",
           `${FRAMEWORK_NAME} friction mark records a person's decision: run it in your own terminal, or let ${FRAMEWORK_NAME} triage record it from its session folder. Nothing was changed.`,

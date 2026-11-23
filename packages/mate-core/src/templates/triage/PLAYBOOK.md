@@ -105,8 +105,8 @@ When `context.md` says `Issue repository: none set`, file nothing anywhere. Writ
 
 Once the chosen outcome is done, ask the person whether to record it. Only after an explicit yes, record it for each fingerprint or Free Report it covers, under the name shown in `Invoked as`:
 
-- a fix: `mate friction mark <fingerprint|report-id> --state fixed --note "<what changed>"`
-- a posted issue or comment: `mate friction mark <fingerprint|report-id> --state reported --link <issue or comment URL>`
-- no Mate problem: `mate friction mark <fingerprint|report-id> --state dismissed --note "<why>"`
+- a fix: `mate friction mark "<fingerprint|report-id>" --state fixed --note "<what changed>"`
+- a posted issue or comment: `mate friction mark "<fingerprint|report-id>" --state reported --link <issue or comment URL>`
+- no Mate problem: `mate friction mark "<fingerprint|report-id>" --state dismissed --note "<why>"`
 
 The note and the link are kept on this machine; give no secret and no product detail in them. When the person chose nothing, record `dismissed` only when they said so in step 7.
