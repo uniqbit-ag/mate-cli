@@ -207,6 +207,27 @@ describe("command projection", () => {
     expect(commandFingerprint(detail)).toBe("command:opencode:1");
   });
 
+  test("names the command a cap namespace ran, and no path a namespace takes first", () => {
+    const fingerprint = (args: string[]) =>
+      commandFingerprint(commandDetail({ args, exitCode: 1, errorText: "" }));
+
+    expect(fingerprint(["cap", "acme", "validate", "acme-change"])).toBe(
+      "command:cap acme validate:1",
+    );
+    expect(fingerprint(["cap", "graphify", "acme", "--update"])).toBe("command:cap graphify:1");
+  });
+
+  test("replaces an echoed value only where it stands as a whole word", () => {
+    const errorText = "installation is incomplete. Run mate install before continuing.";
+    const detail = commandDetail({
+      args: ["friction", "list", "--state", "all"],
+      exitCode: 1,
+      errorText,
+    });
+
+    expect(detail.errorText).toBe(errorText);
+  });
+
   test("leaves an echoed value shorter than three characters in the error text", () => {
     const detail = commandDetail({
       args: ["studio", "serve", "--port", "0"],

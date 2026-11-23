@@ -134,6 +134,8 @@ export function commandDetail(failure: CommandFailure): CommandDetail {
 const COMMAND_WORD = /^[a-z][a-z0-9-]*$/;
 /** Their arguments go to the Agent Runtime (paths, prompts), so none is a subcommand. */
 const RUNTIME_LAUNCHES = new Set(["claude", "opencode"]);
+/** `cap` namespaces whose first argument is no command: graphify takes a path, index and sync only flags. */
+const CAP_WITHOUT_COMMAND = new Set(["graphify", "index", "sync"]);
 /** Shorter values are left alone: replacing them garbles the text and leaks little. */
 const REDACTED_VALUE_MIN = 3;
 
@@ -145,13 +147,26 @@ function commandWords(args: string[]): { command: string | null; subcommand: str
   };
   const command = positional(0);
   const subcommand = command && !RUNTIME_LAUNCHES.has(command) ? positional(1) : null;
-  return { command, subcommand };
+  // The namespace alone would give every command of `cap <namespace> <command>` one fingerprint.
+  const capCommand =
+    command === "cap" && subcommand && !CAP_WITHOUT_COMMAND.has(subcommand) ? positional(2) : null;
+  return { command, subcommand: capCommand ? `${subcommand} ${capCommand}` : subcommand };
+}
+
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+
+/** Matches the value only where no letter or digit continues it, so `all` stays in `install`. */
+function wholeValue(value: string): RegExp {
+  const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const before = WORD_CHAR.test(value.at(0) ?? "") ? "(?<![\\p{L}\\p{N}])" : "";
+  const after = WORD_CHAR.test(value.at(-1) ?? "") ? "(?![\\p{L}\\p{N}])" : "";
+  return new RegExp(`${before}${escaped}${after}`, "gu");
 }
 
 /** A command may echo its arguments: every flag value and positional except the command words is replaced. */
 function withoutArgumentValues(text: string, args: string[]): string {
   const { command, subcommand } = commandWords(args);
-  const kept = new Set([command, subcommand]);
+  const kept = new Set([command, ...(subcommand?.split(" ") ?? [])]);
   const values = args
     .map((arg) => {
       const [name, ...value] = arg.split("=");
@@ -159,7 +174,7 @@ function withoutArgumentValues(text: string, args: string[]): string {
     })
     .filter((value) => value.length >= REDACTED_VALUE_MIN && !kept.has(value))
     .toSorted((a, b) => b.length - a.length);
-  return values.reduce((result, value) => result.replaceAll(value, "…"), text);
+  return values.reduce((result, value) => result.replace(wholeValue(value), "…"), text);
 }
 
 /** What a failed command printed, without its argument values and secret-named variables' values. */
