@@ -11,6 +11,8 @@ export { repositorySegment };
 export interface DeliveryGroupName {
   /** Delivery Group, e.g. `acme_widgets/workset/acme-login`. */
   group: string;
+  /** The repository the group is named after; absent for `change/<change>`. */
+  repository?: string;
   /** Set when the record names different branches for different repositories. */
   warning?: string;
 }
@@ -50,6 +52,7 @@ export function deliveryGroupFor(
   const group = groupOf(preferred);
   return {
     group,
+    repository: preferred.repository,
     ...(distinct.length > 1
       ? {
           warning: `${change} records different branches (${distinct.join(", ")}); submitting it in ${group}.`,

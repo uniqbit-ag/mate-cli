@@ -7,6 +7,7 @@ import {
 } from "../../../../lib/delivery/record-delivery";
 import type { ArtifactType } from "../../../../lib/delivery/staging/artifact-type";
 import { isDeliveryGroup } from "../../../../lib/delivery/staging/naming";
+import { groupOfChange } from "../../../../lib/delivery/staging/submit";
 import { declaredSubmitType } from "../../../../lib/delivery/staging/registry";
 import { errorMessage } from "../../../../runtime/error-message";
 import { settleLinked } from "../../../../lib/delivery/staging/settle-linked";
@@ -501,11 +502,12 @@ export async function runArtifactPublishCommand(
       const environment = await deliveryEnvironment();
       if ("error" in environment) return environment.error;
       const answer = refreshOnly ? undefined : confirm;
-      const record = (names: string[], edit: DeliveryEdit = {}) =>
+      const record = (names: string[], edit: DeliveryEdit = {}, repository?: string) =>
         recordDelivery(
           { ...environment, companionPath: dir },
           {
             changes: names,
+            repository,
             refresh: edit.confirm === undefined && refresh,
             refreshAll: true,
             edit,
@@ -522,11 +524,17 @@ export async function runArtifactPublishCommand(
         }
       }
       if (!answer) return null;
-      // The answer is for the Working Repository's delivery; changes without one keep theirs.
+      // The answer is for the Working Repository's delivery, else, as in the companion, for the
+      // repository the group is named after; changes without that delivery keep theirs.
+      const working = environment.workingRepo;
+      const repositoryOf = async (change: string) =>
+        working?.slug || working?.umbrellaChildren
+          ? undefined
+          : (await groupOfChange(dir, change, declaredType)).repository;
       let confirmed = 0;
       for (const change of changes) {
         // oxlint-disable-next-line no-await-in-loop -- one record at a time, in group order
-        const outcome = await record([change], { confirm: answer });
+        const outcome = await record([change], { confirm: answer }, await repositoryOf(change));
         if (!("refusal" in outcome)) confirmed += 1;
         else if (outcome.refusal.reason !== "no-delivery-branch") {
           return deliveryRefusal([change], outcome.refusal.reason);

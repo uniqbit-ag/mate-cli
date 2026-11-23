@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
+import { readDeliveryRecord } from "../../../../lib/delivery/record";
 import type { LaunchContext } from "../../../../lib/orchestrator/framework-context";
 import type { CapabilityConfig } from "../../../../lib/orchestrator/types";
 import { WorkingRepoRequiredError } from "../../../../lib/orchestrator/types";
@@ -962,6 +963,25 @@ describe("runArtifactPublishCommand — Delivery Groups", () => {
     };
   }
 
+  /** A companion in a temp folder whose submitted acme-login records its acme/product branch. */
+  async function submittedAcmeLogin(): Promise<{ dir: string; change: string }> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-publish-group-"));
+    const change = path.join(dir, "openspec", "changes", "acme-login");
+    await fs.mkdir(change, { recursive: true });
+    await fs.writeFile(
+      path.join(change, "delivery.yaml"),
+      "version: 1\nchange: acme-login\nstate: submitted\ndeliveries:\n  - repository: acme/product\n    branch: workset/acme-login\n",
+    );
+    return { dir, change };
+  }
+
+  /** A delivery environment with no Working Repository and nothing linked. */
+  const UNLINKED = {
+    ensureUnambiguousCompanion: async () => true,
+    loadLinkedRepositories: async () => [],
+    loadGitAutoMode: async () => false,
+  };
+
   function groupDeps(
     calls: { target: string; deps: PublishDeps }[],
     statuses: Record<string, PublicationResult["status"]> = {},
@@ -1020,20 +1040,10 @@ describe("runArtifactPublishCommand — Delivery Groups", () => {
   });
 
   test("a group --refresh leaves held names the lookups that need an answer", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-publish-held-"));
-    const change = path.join(dir, "openspec", "changes", "acme-login");
-    await fs.mkdir(change, { recursive: true });
-    await fs.writeFile(
-      path.join(change, "delivery.yaml"),
-      "version: 1\nchange: acme-login\nstate: submitted\ndeliveries:\n  - repository: acme/product\n    branch: workset/acme-login\n",
-    );
+    const { dir } = await submittedAcmeLogin();
     const { deps, stdout, stderr } = groupDeps([]);
     deps.settleLinked = async () => ({ recorded: [], warning: null });
-    deps.deliveryEnvironment = {
-      ensureUnambiguousCompanion: async () => true,
-      loadLinkedRepositories: async () => [],
-      loadGitAutoMode: async () => false,
-    };
+    deps.deliveryEnvironment = UNLINKED;
     deps.publishSubmitted = async (_companion, target, publish) => {
       expect(await publish.settle!(dir, ["acme-login"])).toBeNull();
       return publication(target, "held", { reason: "unmerged" });
@@ -1059,6 +1069,31 @@ describe("runArtifactPublishCommand — Delivery Groups", () => {
       `${GROUP}: held\n  workset/acme-login: acme/product is not linked on this machine; needs an answer\n  Answer with --confirm-merged, --confirm-open or --confirm-dropped.`,
     );
     expect(process.exitCode).toBe(0);
+  });
+
+  test("--confirm-merged with no Working Repository records the merge for the group's repository", async () => {
+    const { dir, change } = await submittedAcmeLogin();
+    const { deps } = groupDeps([]);
+    deps.deliveryEnvironment = UNLINKED;
+    let settled: string | null | undefined;
+    deps.publishSubmitted = async (_companion, target, publish) => {
+      settled = await publish.settle!(dir, ["acme-login"]);
+      return publication(target, "ok", { commit: "a".repeat(40) });
+    };
+
+    try {
+      await runArtifactPublishCommand([GROUP, "--confirm-merged", "--json"], deps);
+      expect(settled).toBeNull();
+      const record = await readDeliveryRecord(change);
+      expect(record?.deliveries).toEqual([
+        expect.objectContaining({
+          repository: "acme/product",
+          merge: expect.objectContaining({ state: "merged", source: "user" }),
+        }),
+      ]);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 
   test("--all tries every group, dependencies first by the queue, and exits non-zero on a conflict", async () => {

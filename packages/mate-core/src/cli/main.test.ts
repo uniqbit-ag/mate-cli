@@ -775,6 +775,41 @@ describe("command gating", () => {
       logSpy.mockRestore();
     }
   });
+
+  test("a help request after a built-in command prints usage and runs no gate or command", async () => {
+    const printed: string[] = [];
+    const logSpy = spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      printed.push(args.join(" "));
+    });
+    try {
+      const { gateCalls, deps } = recordingDeps({ rootKind: "companion" });
+      await main(["node", "mate", "companion", "sync", "--help"], deps);
+      await main(["node", "mate", "artifact", "submit", "acme-login", "-h"], deps);
+      // These two run before every gate; their help is still the usage.
+      await main(["node", "mate", "triage", "--help"], deps);
+      await main(["node", "mate", "session", "context", "--help"], deps);
+      expect(gateCalls).toEqual([]);
+      expect(dispatched).toEqual([]);
+      expect(printed).toHaveLength(4);
+      expect(process.exitCode ?? 0).toBe(0);
+
+      // A failed runtime refresh, fatal for `wrap` itself, does not block its help.
+      const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+      deps.refreshRuntimeDirectory = async () => {
+        throw new Error("read-only");
+      };
+      await main(["node", "mate", "wrap", "--help"], deps);
+      errorSpy.mockRestore();
+      expect(printed).toHaveLength(5);
+      expect(process.exitCode ?? 0).toBe(0);
+
+      // A command that answers its own help request still gets it.
+      await main(["node", "mate", "workflow", "--help"], deps);
+      expect(dispatched).toEqual(["workflow"]);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
 });
 
 test("--version still refreshes the runtime links", async () => {
