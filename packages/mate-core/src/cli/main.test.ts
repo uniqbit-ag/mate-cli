@@ -810,6 +810,19 @@ describe("command gating", () => {
       logSpy.mockRestore();
     }
   });
+
+  test("--help on every built-in command prints usage, except where the command answers it", async () => {
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      for (const command of BUILT_IN_COMMANDS) {
+        const { deps } = recordingDeps({ rootKind: "companion" });
+        await main(["node", "mate", command, "--help"], deps);
+      }
+      expect([...dispatched].sort()).toEqual(["cap", "claude", "opencode", "workflow"]);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
 });
 
 test("--version still refreshes the runtime links", async () => {
