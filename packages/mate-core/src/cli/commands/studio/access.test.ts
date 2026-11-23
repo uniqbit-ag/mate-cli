@@ -567,3 +567,46 @@ describe("guards by request kind", () => {
     });
   });
 });
+
+describe("ping", () => {
+  test("answers 204 with no body and no caching to a reader with the cookie", async () => {
+    await withFixture(async (state) => {
+      const handler = serve(state, { access: access({ invocation: "serve", token: TOKEN }) });
+      for (const method of ["GET", "HEAD"]) {
+        const response = (await handler(
+          new Request(`http://localhost:${PORT}/api/ping`, {
+            method,
+            headers: { host: `localhost:${PORT}`, cookie: COOKIE },
+          }),
+        ))!;
+        expect(response.status).toBe(204);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        expect(await response.text()).toBe("");
+      }
+      expect(state.rendered).toBe(0);
+      await handler.close();
+    });
+  });
+
+  test("refuses a ping without the token where reading needs it", async () => {
+    await withFixture(async (state) => {
+      const handler = serve(state, { access: access({ invocation: "serve", token: TOKEN }) });
+      const response = (await handler(get("/api/ping")))!;
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({
+        reason:
+          "Studio's access token is required; open the address Studio printed when it started",
+      });
+      await handler.close();
+    });
+  });
+
+  test("refuses a ping to a host Studio does not serve", async () => {
+    await withFixture(async (state) => {
+      const handler = serve(state, { access: access() });
+      const response = (await handler(get("/api/ping", { host: `rebind.acme.test:${PORT}` })))!;
+      expect(response.status).toBe(421);
+      await handler.close();
+    });
+  });
+});

@@ -32,6 +32,34 @@ describe("validateStudioSearch", () => {
     expect(validateStudioSearch({ companion: "0123456789" })).toEqual({ companion: "0123456789" });
     expect(validateStudioSearch({ companion: "../acme" })).toEqual({});
   });
+
+  it("keeps the friction filters and order it knows", () => {
+    expect(
+      validateStudioSearch({
+        frictionState: "handled",
+        frictionType: "skill",
+        frictionKind: "bug",
+        frictionSort: "recent",
+      }),
+    ).toEqual({
+      frictionState: "handled",
+      frictionType: "skill",
+      frictionKind: "bug",
+      frictionSort: "recent",
+    });
+  });
+
+  it("drops each friction value naming no option, so its control shows the default", () => {
+    for (const [key, value] of [
+      ["frictionState", "closed"],
+      ["frictionType", "acme"],
+      ["frictionKind", "blocker"],
+      ["frictionSort", "oldest"],
+      ["frictionState", 1],
+    ] as const) {
+      expect(validateStudioSearch({ [key]: value })).toEqual({});
+    }
+  });
 });
 
 describe("canonicalHref", () => {

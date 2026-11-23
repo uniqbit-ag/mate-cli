@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import type { StudioChange } from "@uniqbit/mate-core/studio";
+import { defaultWorkflow, pathPosition, type StudioChange } from "@uniqbit/mate-core/studio";
 
+import { positioned } from "../../../test/positioned";
 import {
   activeChanges,
   changeGroup,
@@ -49,6 +50,17 @@ describe("changeGroup", () => {
     expect(changeGroup(change({ completedTasks: 7, totalTasks: 7 }))).toBe("ready");
   });
 
+  it("groups a change without a plan by its stage: Ready to submit from submit on", () => {
+    const workflow = defaultWorkflow();
+    const at = (steps: Record<string, string[]>, state?: "submitted"): StudioChange =>
+      change({
+        planned: false,
+        position: pathPosition(workflow, { steps, ...(state ? { state } : {}) }, {}),
+      });
+    expect(changeGroup(at({}))).toBe("needs-you");
+    expect(changeGroup(at({}, "submitted"))).toBe("ready");
+  });
+
   it("lists each change once, in its group", () => {
     const groups = groupChanges([
       change({ name: "a", completedTasks: 0, totalTasks: 16 }),
@@ -62,22 +74,45 @@ describe("changeGroup", () => {
 });
 
 describe("changeStep", () => {
-  it("names the issue count of an invalid change", () => {
-    expect(changeStep(change({ valid: false, issueCount: 2 })).situation).toBe(
-      "2 validation issues",
-    );
+  const step = (overrides: Partial<StudioChange>) => changeStep(positioned(change(overrides)));
+
+  it("keeps a change whose plan does not validate at Propose change", () => {
+    expect(step({ completedTasks: 7, totalTasks: 7, valid: false, issueCount: 2 })).toMatchObject({
+      stage: "Propose change",
+      situation: "the change does not validate",
+      prompt: "/mate-propose-change acme-queue",
+    });
   });
 
   it("offers the submit prompt once every task is done", () => {
-    const step = changeStep(change({ completedTasks: 7, totalTasks: 7 }));
-    expect(step.stage).toBe("Submit change");
-    expect(step.prompt).toBe("/mate-submit-change acme-queue");
+    expect(step({ completedTasks: 7, totalTasks: 7 })).toMatchObject({
+      stage: "Submit change",
+      prompt: "/mate-submit-change acme-queue",
+    });
   });
 
-  it("offers the apply prompt while building", () => {
-    const step = changeStep(change({ completedTasks: 3, totalTasks: 7 }));
-    expect(step.stage).toBe("Apply change");
-    expect(step.situation).toBe("4 tasks left");
+  it("names the open tasks while building, as `mate workflow next` does", () => {
+    expect(step({ completedTasks: 2, totalTasks: 4 })).toMatchObject({
+      stage: "Apply change",
+      situation: "2 tasks open",
+      prompt: "/mate-apply-change acme-queue",
+    });
+  });
+
+  it("names the reviews, then the stage after them", () => {
+    expect(step({ completedTasks: 0, totalTasks: 4 })).toMatchObject({
+      stage: "Human review",
+      review: true,
+      next: "Review the plan, then run Apply change",
+      prompt: "/mate-apply-change acme-queue",
+    });
+  });
+
+  it("places nothing without a position", () => {
+    expect(changeStep(change({ completedTasks: 2, totalTasks: 4 }))).toMatchObject({
+      stageId: null,
+      prompt: "",
+    });
   });
 });
 

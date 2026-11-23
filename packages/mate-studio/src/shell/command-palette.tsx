@@ -107,16 +107,18 @@ function useCommands(shell: ShellData, search: StudioSearch, open: boolean): Com
       }),
   }));
   const changes = engineering ? (data?.changes ?? []) : [];
+  // An invalid declaration places changes on the default path.
+  const workflow = data?.workflow ?? undefined;
   const changeCommands: Command[] = changes.map((change) => ({
     id: `change-${change.name}`,
     label: change.name,
-    hint: changeStep(change).situation,
+    hint: changeStep(change, workflow).situation,
     icon: "doc",
     mono: true,
     run: () => go("dashboard", { change: change.name }),
   }));
   const nextSteps: Command[] = groupChanges(changes)["needs-you"].map((change) => {
-    const step = changeStep(change);
+    const step = changeStep(change, workflow);
     return {
       id: `next-${change.name}`,
       label: `Copy next step: ${step.prompt}`,

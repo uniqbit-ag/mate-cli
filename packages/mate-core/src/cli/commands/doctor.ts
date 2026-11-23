@@ -6,6 +6,9 @@ import { parse as parseYaml } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { gitEnvironment } from "../../runtime/companion-git";
+import { readFrictionView } from "../../lib/friction/view/read";
+import { selectFriction } from "../../lib/friction/view/select";
+import { readFrictionSwitch } from "../../runtime/friction-switch";
 import { checkoutCommonDir, checkoutAt, sameClone } from "../../runtime/git-layout";
 import { physicalPath } from "../../runtime/physical-path";
 import { otherServingClaudeWrapRoot } from "../../runtime/serving-claude-wrap";
@@ -57,6 +60,8 @@ import { printSection, renderKeyValueTable, renderTable } from "./status";
 
 interface DoctorDeps {
   globalConfigStore?: GlobalConfigStore;
+  /** `false` reports without repairing the repo-local registry, so the evidence stays as found. */
+  write?: boolean;
   cwd?: string;
   pathValue?: string;
   /** Returns a member checkout's HEAD commit, or null when unreadable. */
@@ -73,6 +78,8 @@ interface DoctorDeps {
   /** Environment `MATE_AUDIENCE` is read from; defaults to the process environment. */
   env?: Record<string, string | undefined>;
   createProgress?: typeof createStartupProgress;
+  /** Time the friction window ends at; defaults to now. */
+  now?: Date;
 }
 
 export type DoctorKind = "core" | "working" | "companion" | "hub";
@@ -132,6 +139,36 @@ export interface DoctorReport {
   resolutionFailures: Array<{ companionPath: string; message: string }>;
   /** Present inside a Git Checkout of a linked clone, or a worktree Git no longer recognizes. */
   checkout?: DoctorCheckout;
+  /** Present while the Friction Switch is on. */
+  friction?: DoctorFriction;
+}
+
+export interface DoctorFriction {
+  days: number;
+  events: number;
+  top: { fingerprint: string; events: number } | null;
+}
+
+const DOCTOR_FRICTION_DAYS = 7;
+
+function collectFriction(
+  companionPath: string,
+  env: Record<string, string | undefined>,
+  now?: Date,
+): DoctorFriction {
+  const view = readFrictionView(
+    { companion: companionPath },
+    { days: DOCTOR_FRICTION_DAYS, homeDir: env.HOME, now },
+  );
+  const { groups } = selectFriction(view, { state: "open" });
+  let top: DoctorFriction["top"] = null;
+  for (const group of groups) {
+    if (!top || group.events > top.events) {
+      top = { fingerprint: group.fingerprint, events: group.events };
+    }
+  }
+  const events = groups.reduce((sum, group) => sum + group.events, 0);
+  return { days: DOCTOR_FRICTION_DAYS, events, top };
 }
 
 export interface DoctorCheckout {
@@ -560,6 +597,10 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
     report.pluginCapabilities = inspection.capabilities;
   }
 
+  if (root.rootPath && readFrictionSwitch(env.HOME)) {
+    report.friction = collectFriction(root.rootPath, env, deps.now);
+  }
+
   return report;
 }
 
@@ -788,6 +829,16 @@ function renderHumanReport(report: DoctorReport): void {
   }
 
   if (report.checkout) printSection("Checkout", renderCheckout(report.checkout));
+
+  if (report.friction) {
+    const { days, events, top } = report.friction;
+    const rows: Array<[string, string]> = [
+      [`Events, last ${days} days`, String(events)],
+      ["Most frequent", top ? `${top.fingerprint} (${top.events})` : "none"],
+    ];
+    if (top) rows.push(["Next action", `${FRAMEWORK_NAME} triage`]);
+    printSection("Friction", renderKeyValueTable(rows));
+  }
 
   printSection(
     "Resolution Failures",

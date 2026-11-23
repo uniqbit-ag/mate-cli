@@ -3,6 +3,7 @@ import type { SkillAgent, StudioEvent, StudioMode, VaultView } from "@uniqbit/ma
 
 import { unpackGraph } from "./graph-wire";
 import type { StudioSearch } from "./search";
+import { studioFetch } from "./studio-fetch";
 import { getGraph } from "../server/graph";
 import { getReports } from "../server/reports";
 import { getShell, type ShellData } from "../server/shell";
@@ -83,8 +84,7 @@ export const pluginAttentionQuery = (companion: string, url: string) =>
   queryOptions({
     queryKey: [...keys.views(companion), "plugin-attention", url],
     queryFn: async (): Promise<number> => {
-      const response = await fetch(`${url}?companion=${encodeURIComponent(companion)}`, {
-        credentials: "same-origin",
+      const response = await studioFetch(`${url}?companion=${encodeURIComponent(companion)}`, {
         headers: { accept: "application/json" },
       });
       if (!response.ok) return 0;

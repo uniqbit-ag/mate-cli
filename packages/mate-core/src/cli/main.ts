@@ -12,6 +12,7 @@ import { runCompanionCommand } from "./commands/companion/companion";
 import { runHubCommand } from "./commands/companion/hub";
 import { runConfigCommand } from "./commands/config";
 import { runDoctorCommand } from "./commands/doctor";
+import { runFrictionCommand } from "./commands/friction";
 import { runLaunchClaudeCommand } from "./commands/launch/claude";
 import { runLaunchOpenCodeCommand } from "./commands/launch/opencode";
 import { runPluginCommand } from "./commands/plugin/plugin";
@@ -19,11 +20,13 @@ import { runReportCommand } from "./commands/report";
 import { runSessionContextCommand } from "./commands/session/context";
 import { runSessionCommand } from "./commands/session/prepare";
 import { runStudioCommand } from "./commands/studio";
+import { runTriageCommand } from "./commands/triage";
 import { runUpdateCommand } from "./commands/update";
 import { runUnwrapCommand } from "./commands/unwrap";
 import { runVscodeCommand } from "./commands/vscode/setup";
 import { parseWrapArgs, runWrapCommand } from "./commands/wrap";
 import { runWorkingCommand } from "./commands/working/working";
+import { runWorkflowCommand } from "./commands/workflow/workflow";
 import { isFrozenPluginInstall, runInstallCommand } from "./commands/install";
 import { parseDirectLaunchArgs } from "./commands/launch/shared";
 import {
@@ -77,6 +80,17 @@ const mainDeps: MainDeps = {
   refreshRuntimeDirectory,
 };
 
+function printPreflightErrorDocument(message: string): void {
+  console.log(
+    JSON.stringify({ kind: "error", version: 1, error: { code: "PREFLIGHT_FAILED", message } }),
+  );
+}
+
+const FRICTION_GATE_NEEDS = new Map<string | undefined, GateNeeds>([
+  ["list", { updateGuard: true, companion: true, install: true }],
+  ["report", { companion: true }],
+]);
+
 export async function main(argv = process.argv, deps: MainDeps = mainDeps): Promise<void> {
   const [, , command, subcommand, ...rest] = argv;
 
@@ -87,6 +101,11 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
    */
   if (command === "session" && subcommand === "context") {
     await runSessionContextCommand(rest);
+    return;
+  }
+
+  if (command === "triage") {
+    await runTriageCommand(argv.slice(3));
     return;
   }
 
@@ -128,9 +147,9 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
   // scheduleBackgroundCheck() has been observed to race a large final stdout
   // write against process exit, truncating it.
   const ownsStdout = isPluginCommand;
-  // `report` prints one large JSON contract, so it skips the background check
-  // too but keeps update enforcement and its stderr banner.
-  const skipsBackgroundCheck = ownsStdout || command === "report";
+  const printsJsonContract =
+    command === "report" || command === "friction" || command === "workflow";
+  const skipsBackgroundCheck = ownsStdout || printsJsonContract;
 
   // Every dispatch case opens with a gate() call declaring what the command
   // needs before it may run. Declared gates run in fixed order — update
@@ -215,6 +234,15 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;
       await runArtifactCommand(subcommand, rest);
       return;
+    case "workflow":
+      // The gates of `artifact`: a stage skill resolves and records in its Session Companion.
+      // `next` writes nothing and the turn hooks run it, so a required update cannot switch
+      // their hand-off check off.
+      if (!(await gate({ updateGuard: subcommand !== "next", companion: true, install: true }))) {
+        return;
+      }
+      await runWorkflowCommand(subcommand, rest);
+      return;
     case "companion":
       switch (subcommand) {
         // setup/link are recovery paths and must never be gated on the
@@ -282,15 +310,8 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       return;
     case "report":
       if (!(await gate({ updateGuard: true, install: true }))) {
-        console.log(
-          JSON.stringify({
-            kind: "error",
-            version: 1,
-            error: {
-              code: "PREFLIGHT_FAILED",
-              message: "Mate must be updated or installed before reporting; see stderr",
-            },
-          }),
+        printPreflightErrorDocument(
+          "Mate must be updated or installed before reporting; see stderr",
         );
         return;
       }
@@ -312,6 +333,18 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       if (!(await gate({}))) return;
       await runDoctorCommand(argv.slice(3));
       return;
+    case "friction": {
+      if (!(await gate(FRICTION_GATE_NEEDS.get(subcommand) ?? {}))) {
+        if (rest.includes("--json")) {
+          printPreflightErrorDocument(
+            "Mate must be updated, installed or given one companion; see stderr",
+          );
+        }
+        return;
+      }
+      await runFrictionCommand(subcommand, rest);
+      return;
+    }
     case "cap":
       if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;
       await runCapCommand(subcommand, rest);

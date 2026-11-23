@@ -70,6 +70,13 @@ function SpecFiles({
   );
 }
 
+/** What an artifact's row says it offers. */
+function artifactNote(artifact: { declared: boolean; done: boolean; folder: boolean }): string {
+  if (artifact.declared) return artifact.folder ? "folder" : "read";
+  if (!artifact.done) return "not yet";
+  return artifact.folder ? "per capability" : "read";
+}
+
 /** The artifacts the Delivery Path writes, in its order; a written one opens to read. */
 export function Artifacts({
   change,
@@ -86,9 +93,12 @@ export function Artifacts({
   return (
     <ul className="m-0 -mx-2 grid list-none gap-0.5 p-0">
       {change.artifacts.map((artifact) => {
+        // A declared review has its own path and no status: reading says whether it is written.
+        const declared = artifact.path !== undefined;
         const done = artifact.status === "done";
-        const readable = done && companion !== undefined;
-        const folder = artifact.id === "specs";
+        const readable = (done || declared) && companion !== undefined;
+        const folder =
+          artifact.path === undefined ? artifact.id === "specs" : artifact.path.endsWith("/");
         return (
           <li key={artifact.id}>
             <button
@@ -96,16 +106,16 @@ export function Artifacts({
               className={ITEM}
               disabled={!readable || folder}
               data-artifact={artifact.id}
-              onClick={() => onRead(`${dir}/${artifact.id}.md`)}
+              onClick={() => onRead(artifact.path ?? `${dir}/${artifact.id}.md`)}
             >
-              <Check done={done} />
-              <span className={done ? "text-text" : "text-muted"}>{artifact.id}</span>
+              {declared ? null : <Check done={done} />}
+              <span className={done || declared ? "text-text" : "text-muted"}>{artifact.id}</span>
               <span className="ml-auto text-xs text-muted">
-                {!done ? "not yet" : folder ? "per capability" : "read"}
+                {artifactNote({ declared, done, folder })}
               </span>
               {readable && !folder ? <Icon name="right" className="text-muted" /> : null}
             </button>
-            {readable && folder ? (
+            {readable && folder && !declared ? (
               <SpecFiles companion={companion} dir={dir} onRead={onRead} />
             ) : null}
           </li>

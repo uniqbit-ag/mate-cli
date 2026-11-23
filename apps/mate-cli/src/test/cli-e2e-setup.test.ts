@@ -18,6 +18,7 @@ import {
   writeOpenSpecStub,
   writeUvStub,
   removeScenarios,
+  type E2EScenario,
 } from "./cli-e2e-support";
 
 setDefaultTimeout(DEFAULT_TEST_TIMEOUT_MS);
@@ -66,6 +67,25 @@ describe("mate CLI e2e: setup, link and doctor", () => {
     expect(config).toContain("name: openspec");
     expect(config).toContain("name: rtk");
     expect(config).not.toContain("react-doctor");
+  });
+
+  test("setup offers no friction capability: selecting it writes no friction guidance", async () => {
+    const scenario = await createScenario("mate-cli-e2e-setup-retired-capability-");
+
+    const result = await setupCompanion(scenario, [], {
+      allowedAgents: ["claude", "opencode"],
+      capabilities: ["openspec", "rtk", "friction"],
+    });
+    expect(result.exitCode).toBe(0);
+    expect((await installCompanion(scenario)).exitCode).toBe(0);
+
+    const read = (name: string) =>
+      fs.readFile(path.join(scenario.companion, name), "utf8").catch(() => "");
+    expect(await read(".claude/settings.local.json")).toContain("Bash(rtk:*)");
+    expect(await read(".claude/settings.local.json")).not.toContain("cap friction");
+    for (const name of ["CLAUDE.md", "AGENTS.md"]) {
+      expect(await read(name)).not.toContain("## Friction");
+    }
   });
 
   test("flagged setup persists selected package managers", async () => {
@@ -360,6 +380,23 @@ describe("mate CLI e2e: setup, link and doctor", () => {
     await expect(fs.access(path.join(scenario.companion, ".claude"))).rejects.toThrow();
     await expect(fs.access(path.join(scenario.companion, "AGENTS.md"))).rejects.toThrow();
     await expect(fs.access(path.join(scenario.home, ".mate", "config.yaml"))).rejects.toThrow();
+  });
+
+  test("triage writes a session that names the Mate issue repository", async () => {
+    const scenario = await createScenario("mate-cli-e2e-triage-");
+
+    const result = await runMate(scenario, {
+      cwd: scenario.root,
+      args: ["triage", "--no-launch"],
+      env: { PATH: `${scenario.bin}:${path.dirname(process.execPath)}:/usr/bin:/bin` },
+    });
+
+    expect(result.exitCode).toBe(0);
+    const contextPath = result.stdout.match(/context: +(\S+)/)?.[1];
+    expect(contextPath?.startsWith(path.join(scenario.home, ".mate", "triage"))).toBe(true);
+    expect(await fs.readFile(contextPath!, "utf8")).toContain(
+      "Issue repository: uniqbit-ag/mate-cli",
+    );
   });
 
   test("linking and doctor succeed in one isolated flow", async () => {

@@ -33,11 +33,24 @@ export type PlanningWarning = {
 /** The record names a branch that is no branch name, or different branches per repository. */
 export type GroupWarning = { kind: "group"; change: string; message: string };
 
+/** A required stage of the Delivery Path before submit is unfinished for the change. */
+export type StageWarning = { kind: "stage-open"; change: string; stage: string; message: string };
+
+/** Submitting counts steps before `mate-submit-change` nobody reported; `steps` by stage id. */
+export type CountedWarning = {
+  kind: "step-counted";
+  change: string;
+  steps: Record<string, string[]>;
+  message: string;
+};
+
 export type SubmitWarning =
   | { kind: "overlap"; change: string; capability: string; requirement: string; message: string }
   | DependencyWarning
   | PlanningWarning
-  | GroupWarning;
+  | GroupWarning
+  | StageWarning
+  | CountedWarning;
 
 const SECTION = /^##\s+(ADDED|MODIFIED|REMOVED|RENAMED)\s+Requirements\s*$/;
 const REQUIREMENT = /^###\s+Requirement:\s*(.+?)\s*$/;
@@ -114,15 +127,21 @@ async function tasksComplete(changeDir: string): Promise<boolean> {
   return marks.length > 0 && marks.every((mark) => mark !== " ");
 }
 
-/** The unchecked tasks in the change's `tasks.md`; none without the file. */
-export async function openTasks(changeDir: string): Promise<number> {
+/** The tasks in the change's `tasks.md` and how many are unchecked; none without the file. */
+export async function taskCounts(changeDir: string): Promise<{ total: number; open: number }> {
   let source: string;
   try {
     source = await fs.readFile(path.join(changeDir, "tasks.md"), "utf8");
   } catch {
-    return 0;
+    return { total: 0, open: 0 };
   }
-  return source.split(/\r?\n/).filter((line) => TASK.exec(line)?.[1] === " ").length;
+  const marks = source.split(/\r?\n/).flatMap((line) => TASK.exec(line)?.[1] ?? []);
+  return { total: marks.length, open: marks.filter((mark) => mark === " ").length };
+}
+
+/** The unchecked tasks in the change's `tasks.md`; none without the file. */
+export async function openTasks(changeDir: string): Promise<number> {
+  return (await taskCounts(changeDir)).open;
 }
 
 /**

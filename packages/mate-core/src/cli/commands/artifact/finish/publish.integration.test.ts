@@ -1,8 +1,9 @@
+import fs from "node:fs";
 import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { git } from "../../../../../test/git-checkouts";
+import { git, initRepo } from "../../../../../test/git-checkouts";
 import {
   archiveLocally,
   canonicalSpec,
@@ -76,6 +77,24 @@ async function submit(
 
 const mainHead = (fixture: StagingFixture): string =>
   git(fixture.remote, "rev-parse", "main").trim();
+
+/** A main checkout of `acme/product`, linked to `companion`. */
+function productCheckout(fixture: StagingFixture, companion: string): string {
+  const bare = path.join(fixture.root, "origins", "product.git");
+  git(fixture.root, "clone", "-q", "--bare", initRepo(path.join(fixture.root, "source")), bare);
+  const main = path.join(fixture.root, "src", "product");
+  fs.mkdirSync(path.dirname(main), { recursive: true });
+  git(fixture.root, "clone", "-q", bare, main);
+  const url = "https://git.acme.test/acme/product.git";
+  git(main, "remote", "set-url", "origin", url);
+  git(main, "config", `url.${bare}.insteadOf`, url);
+  fs.mkdirSync(path.join(companion, ".mate", "config"), { recursive: true });
+  fs.writeFileSync(
+    path.join(companion, ".mate", "config", "registry.yaml"),
+    `repos:\n  - id: product\n    path: ${main}\n`,
+  );
+  return main;
+}
 
 describe.skipIf(!REAL_OPENSPEC)("mate artifact publish against a companion remote", () => {
   test(
@@ -178,6 +197,52 @@ describe.skipIf(!REAL_OPENSPEC)("mate artifact publish against a companion remot
         "Widget shines",
       );
       expect(process.exitCode).toBe(1);
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "removes the worktree of a Delivery Group published from a checkout that lags behind",
+    async () => {
+      const fixture = await setup();
+      const companion = fixture.clone("acme-companion");
+      await submit(fixture, companion, "acme-login", {
+        branch: "workset/acme-login",
+        merged: true,
+        deltas: { widget: requirement("ADDED", "Widget logs in", "The widget SHALL log in.") },
+      });
+      const product = productCheckout(fixture, companion);
+      const worktree = path.join(fixture.root, "src", "product.worktrees", "acme-login");
+      git(product, "worktree", "add", "-q", "-b", "workset/acme-login", worktree, "origin/HEAD");
+      const behind = git(companion, "rev-parse", "HEAD").trim();
+      const out: string[] = [];
+      const publishDeps = deps(fixture, companion, out);
+      const publish = publishDeps.publishSubmitted!;
+      publishDeps.publishSubmitted = async (...args) => {
+        const publication = await publish(...args);
+        // A checkout that did not take the publication, its change folder gone.
+        git(companion, "reset", "-q", "--hard", behind);
+        fs.rmSync(path.join(companion, "openspec", "changes", "acme-login"), {
+          recursive: true,
+          force: true,
+        });
+        return publication;
+      };
+
+      await runArtifactPublishCommand(["acme-login", "--json"], publishDeps);
+
+      const result = JSON.parse(out[0]!) as FinishResult;
+      expect(result.status).toBe("ok");
+      expect(fs.existsSync(path.join(companion, "openspec", "changes", "archive"))).toBe(false);
+      expect(result.worktrees).toEqual({
+        removed: [{ workset: "acme-login", repository: "acme/product", path: worktree }],
+        kept: [],
+        warnings: [],
+      });
+      expect(fs.existsSync(worktree)).toBe(false);
+      expect(git(product, "branch", "--list", "workset/acme-login")).toContain(
+        "workset/acme-login",
+      );
     },
     TIMEOUT,
   );
