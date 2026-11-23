@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { cp, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -14,6 +14,21 @@ import {
 } from "@uniqbit/mate-core/studio";
 
 const SERVER = path.join(import.meta.dir, "../dist/server/server.js");
+
+function newestSource() {
+  let newest = 0;
+  for (const dir of ["../src", "../../mate-core/src"]) {
+    const root = path.join(import.meta.dir, dir);
+    for (const file of readdirSync(root, { recursive: true }) as string[]) {
+      if (/\.test\.tsx?$/.test(file)) continue;
+      const stat = statSync(path.join(root, file));
+      if (stat.isFile()) newest = Math.max(newest, stat.mtimeMs);
+    }
+  }
+  return newest;
+}
+
+const stale = existsSync(SERVER) && statSync(SERVER).mtimeMs < newestSource();
 
 /** Answers like core's services: every page selection is resolved through the profile. */
 const servicesFor = (profile: StudioProfile) =>
@@ -73,6 +88,7 @@ const selecting = (studio: StudioServices) =>
 
 async function built() {
   expect(existsSync(SERVER)).toBe(true);
+  if (stale) throw new Error("dist/server is older than its sources: run `bun run build`.");
   const { default: handler } = (await import(SERVER)) as {
     default: {
       fetch(request: Request, options: { context: StudioRequestContext }): Promise<Response>;

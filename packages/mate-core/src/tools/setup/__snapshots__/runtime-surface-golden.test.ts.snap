@@ -304,6 +304,58 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
       },
       {
         "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -1161,6 +1213,58 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
       },
       {
         "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -1835,6 +1939,14 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
           {
             "hooks": [
               {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
                 "args": [
                   "hook-prompt-submit",
                 ],
@@ -1848,10 +1960,36 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
       {
         "at": [
           "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
           "Stop",
         ],
         "kind": "list",
         "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
           {
             "hooks": [
               {
@@ -2769,6 +2907,14 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
           {
             "hooks": [
               {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
                 "args": [
                   "hook-prompt-submit",
                 ],
@@ -2782,10 +2928,36 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
       {
         "at": [
           "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
           "Stop",
         ],
         "kind": "list",
         "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
           {
             "hooks": [
               {
@@ -3428,6 +3600,58 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -4210,6 +4434,58 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
       },
       {
         "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -4802,6 +5078,58 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -5568,6 +5896,58 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
       },
       {
         "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -5999,31 +6379,31 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
     },
   },
   "claudeSkills": {
-    "mate-apply-change/SKILL.md": "f7d77753982d",
+    "mate-apply-change/SKILL.md": "6c3f42b0ace2",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "fa61cbd0bc83",
     "mate-archive-change/SKILL.md": "675ef32ae065",
     "mate-backfill-spec/SKILL.md": "d07cd4a60169",
-    "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
+    "mate-clarify-intent/SKILL.md": "7f7d768be634",
     "mate-create-report/SKILL.md": "b4d92b44719a",
     "mate-domain-modeling/SKILL.md": "92f3e1f5faa2",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-explore-change/SKILL.md": "564a76ff5424",
+    "mate-explore-change/SKILL.md": "66158c617ed4",
     "mate-explore-change/references/openspec-explore.md": "3cf63d55e3d2",
     "mate-grill-me/SKILL.md": "ab55b002ba24",
     "mate-grill-with-docs/SKILL.md": "b542b610c484",
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "044b098d5e19",
+    "mate-propose-change/SKILL.md": "371e31803cc5",
     "mate-propose-change/references/mate-revise.md": "1f90002ee95d",
     "mate-propose-change/references/openspec-propose.md": "dbd00207ffa4",
     "mate-propose-change/references/openspec-update-change.md": "0b0f6dee9f1e",
-    "mate-publish-artifact/SKILL.md": "3949b7486a14",
+    "mate-publish-artifact/SKILL.md": "4332053cc80d",
     "mate-publish-artifact/references/openspec.md": "83196c70960c",
-    "mate-show-me/SKILL.md": "78de9f9ecadd",
-    "mate-simplify-code/SKILL.md": "d3c7287ce35e",
-    "mate-submit-change/SKILL.md": "78d379618f2b",
+    "mate-show-me/SKILL.md": "4cb867ba9740",
+    "mate-simplify-code/SKILL.md": "740c2b533c6a",
+    "mate-submit-change/SKILL.md": "4595ca11960e",
   },
   "opencodeConfig": null,
   "opencodePlugins": {},
@@ -6208,6 +6588,58 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
       },
       {
         "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -6363,31 +6795,31 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
   "opencodeSkills": {},
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-apply-change/SKILL.md": "f7d77753982d",
+    "mate-apply-change/SKILL.md": "6c3f42b0ace2",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "c132265690b4",
     "mate-archive-change/SKILL.md": "675ef32ae065",
     "mate-backfill-spec/SKILL.md": "d07cd4a60169",
-    "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
+    "mate-clarify-intent/SKILL.md": "7f7d768be634",
     "mate-create-report/SKILL.md": "b4d92b44719a",
     "mate-domain-modeling/SKILL.md": "92f3e1f5faa2",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-explore-change/SKILL.md": "564a76ff5424",
+    "mate-explore-change/SKILL.md": "66158c617ed4",
     "mate-explore-change/references/openspec-explore.md": "5bfcc2eefbd8",
     "mate-grill-me/SKILL.md": "ab55b002ba24",
     "mate-grill-with-docs/SKILL.md": "b542b610c484",
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "044b098d5e19",
+    "mate-propose-change/SKILL.md": "371e31803cc5",
     "mate-propose-change/references/mate-revise.md": "1f90002ee95d",
     "mate-propose-change/references/openspec-propose.md": "c1f1d1291283",
     "mate-propose-change/references/openspec-update-change.md": "098ef729c37f",
-    "mate-publish-artifact/SKILL.md": "3949b7486a14",
+    "mate-publish-artifact/SKILL.md": "4332053cc80d",
     "mate-publish-artifact/references/openspec.md": "83196c70960c",
-    "mate-show-me/SKILL.md": "78de9f9ecadd",
-    "mate-simplify-code/SKILL.md": "d3c7287ce35e",
-    "mate-submit-change/SKILL.md": "78d379618f2b",
+    "mate-show-me/SKILL.md": "4cb867ba9740",
+    "mate-simplify-code/SKILL.md": "740c2b533c6a",
+    "mate-submit-change/SKILL.md": "4595ca11960e",
   },
 }
 `;
@@ -6778,31 +7210,31 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     },
   },
   "claudeSkills": {
-    "mate-apply-change/SKILL.md": "f7d77753982d",
+    "mate-apply-change/SKILL.md": "6c3f42b0ace2",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "fa61cbd0bc83",
     "mate-archive-change/SKILL.md": "675ef32ae065",
     "mate-backfill-spec/SKILL.md": "d07cd4a60169",
-    "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
+    "mate-clarify-intent/SKILL.md": "7f7d768be634",
     "mate-create-report/SKILL.md": "b4d92b44719a",
     "mate-domain-modeling/SKILL.md": "92f3e1f5faa2",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-explore-change/SKILL.md": "564a76ff5424",
+    "mate-explore-change/SKILL.md": "66158c617ed4",
     "mate-explore-change/references/openspec-explore.md": "3cf63d55e3d2",
     "mate-grill-me/SKILL.md": "ab55b002ba24",
     "mate-grill-with-docs/SKILL.md": "b542b610c484",
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "044b098d5e19",
+    "mate-propose-change/SKILL.md": "371e31803cc5",
     "mate-propose-change/references/mate-revise.md": "1f90002ee95d",
     "mate-propose-change/references/openspec-propose.md": "dbd00207ffa4",
     "mate-propose-change/references/openspec-update-change.md": "0b0f6dee9f1e",
-    "mate-publish-artifact/SKILL.md": "3949b7486a14",
+    "mate-publish-artifact/SKILL.md": "4332053cc80d",
     "mate-publish-artifact/references/openspec.md": "83196c70960c",
-    "mate-show-me/SKILL.md": "78de9f9ecadd",
-    "mate-simplify-code/SKILL.md": "d3c7287ce35e",
-    "mate-submit-change/SKILL.md": "78d379618f2b",
+    "mate-show-me/SKILL.md": "4cb867ba9740",
+    "mate-simplify-code/SKILL.md": "740c2b533c6a",
+    "mate-submit-change/SKILL.md": "4595ca11960e",
   },
   "opencodeConfig": {
     "$schema": "https://opencode.ai/config.json",
@@ -6825,31 +7257,31 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
   "opencodeSkills": {},
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-apply-change/SKILL.md": "f7d77753982d",
+    "mate-apply-change/SKILL.md": "6c3f42b0ace2",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "c132265690b4",
     "mate-archive-change/SKILL.md": "675ef32ae065",
     "mate-backfill-spec/SKILL.md": "d07cd4a60169",
-    "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
+    "mate-clarify-intent/SKILL.md": "7f7d768be634",
     "mate-create-report/SKILL.md": "b4d92b44719a",
     "mate-domain-modeling/SKILL.md": "92f3e1f5faa2",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-explore-change/SKILL.md": "564a76ff5424",
+    "mate-explore-change/SKILL.md": "66158c617ed4",
     "mate-explore-change/references/openspec-explore.md": "5bfcc2eefbd8",
     "mate-grill-me/SKILL.md": "ab55b002ba24",
     "mate-grill-with-docs/SKILL.md": "b542b610c484",
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "044b098d5e19",
+    "mate-propose-change/SKILL.md": "371e31803cc5",
     "mate-propose-change/references/mate-revise.md": "1f90002ee95d",
     "mate-propose-change/references/openspec-propose.md": "c1f1d1291283",
     "mate-propose-change/references/openspec-update-change.md": "098ef729c37f",
-    "mate-publish-artifact/SKILL.md": "3949b7486a14",
+    "mate-publish-artifact/SKILL.md": "4332053cc80d",
     "mate-publish-artifact/references/openspec.md": "83196c70960c",
-    "mate-show-me/SKILL.md": "78de9f9ecadd",
-    "mate-simplify-code/SKILL.md": "d3c7287ce35e",
-    "mate-submit-change/SKILL.md": "78d379618f2b",
+    "mate-show-me/SKILL.md": "4cb867ba9740",
+    "mate-simplify-code/SKILL.md": "740c2b533c6a",
+    "mate-submit-change/SKILL.md": "4595ca11960e",
   },
 }
 `;
@@ -7065,6 +7497,58 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -7610,33 +8094,33 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 "Outputs land in $GRAPHIFY_OUT by default.
 "
 ,
-    "mate-apply-change/SKILL.md": "f7d77753982d",
+    "mate-apply-change/SKILL.md": "6c3f42b0ace2",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "fa61cbd0bc83",
     "mate-archive-change/SKILL.md": "675ef32ae065",
     "mate-backfill-spec/SKILL.md": "d07cd4a60169",
-    "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
+    "mate-clarify-intent/SKILL.md": "7f7d768be634",
     "mate-create-report/SKILL.md": "b4d92b44719a",
     "mate-domain-modeling/SKILL.md": "92f3e1f5faa2",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-explore-change/SKILL.md": "564a76ff5424",
+    "mate-explore-change/SKILL.md": "66158c617ed4",
     "mate-explore-change/references/openspec-explore.md": "3cf63d55e3d2",
     "mate-grill-me/SKILL.md": "ab55b002ba24",
     "mate-grill-with-docs/SKILL.md": "b542b610c484",
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "044b098d5e19",
+    "mate-propose-change/SKILL.md": "371e31803cc5",
     "mate-propose-change/references/mate-revise.md": "1f90002ee95d",
     "mate-propose-change/references/openspec-propose.md": "dbd00207ffa4",
     "mate-propose-change/references/openspec-update-change.md": "0b0f6dee9f1e",
-    "mate-publish-artifact/SKILL.md": "3949b7486a14",
+    "mate-publish-artifact/SKILL.md": "4332053cc80d",
     "mate-publish-artifact/references/openspec.md": "83196c70960c",
     "mate-react-doctor/SKILL.md": "2ecf137679df",
     "mate-react-doctor/references/explain.md": "86754a7e5436",
-    "mate-show-me/SKILL.md": "78de9f9ecadd",
-    "mate-simplify-code/SKILL.md": "d3c7287ce35e",
-    "mate-submit-change/SKILL.md": "78d379618f2b",
+    "mate-show-me/SKILL.md": "4cb867ba9740",
+    "mate-simplify-code/SKILL.md": "740c2b533c6a",
+    "mate-submit-change/SKILL.md": "4595ca11960e",
   },
   "opencodeConfig": {
     "$schema": "https://opencode.ai/config.json",
@@ -7695,33 +8179,33 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   },
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-apply-change/SKILL.md": "f7d77753982d",
+    "mate-apply-change/SKILL.md": "6c3f42b0ace2",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "c132265690b4",
     "mate-archive-change/SKILL.md": "675ef32ae065",
     "mate-backfill-spec/SKILL.md": "d07cd4a60169",
-    "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
+    "mate-clarify-intent/SKILL.md": "7f7d768be634",
     "mate-create-report/SKILL.md": "b4d92b44719a",
     "mate-domain-modeling/SKILL.md": "92f3e1f5faa2",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-explore-change/SKILL.md": "564a76ff5424",
+    "mate-explore-change/SKILL.md": "66158c617ed4",
     "mate-explore-change/references/openspec-explore.md": "5bfcc2eefbd8",
     "mate-grill-me/SKILL.md": "ab55b002ba24",
     "mate-grill-with-docs/SKILL.md": "b542b610c484",
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "044b098d5e19",
+    "mate-propose-change/SKILL.md": "371e31803cc5",
     "mate-propose-change/references/mate-revise.md": "1f90002ee95d",
     "mate-propose-change/references/openspec-propose.md": "c1f1d1291283",
     "mate-propose-change/references/openspec-update-change.md": "098ef729c37f",
-    "mate-publish-artifact/SKILL.md": "3949b7486a14",
+    "mate-publish-artifact/SKILL.md": "4332053cc80d",
     "mate-publish-artifact/references/openspec.md": "83196c70960c",
     "mate-react-doctor/SKILL.md": "2ecf137679df",
     "mate-react-doctor/references/explain.md": "86754a7e5436",
-    "mate-show-me/SKILL.md": "78de9f9ecadd",
-    "mate-simplify-code/SKILL.md": "d3c7287ce35e",
-    "mate-submit-change/SKILL.md": "78d379618f2b",
+    "mate-show-me/SKILL.md": "4cb867ba9740",
+    "mate-simplify-code/SKILL.md": "740c2b533c6a",
+    "mate-submit-change/SKILL.md": "4595ca11960e",
   },
 }
 `;
@@ -7989,6 +8473,14 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
           {
             "hooks": [
               {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
                 "args": [
                   "hook-prompt-submit",
                 ],
@@ -8002,10 +8494,36 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
       {
         "at": [
           "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
           "Stop",
         ],
         "kind": "list",
         "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
           {
             "hooks": [
               {

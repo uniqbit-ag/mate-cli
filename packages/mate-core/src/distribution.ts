@@ -22,6 +22,8 @@ export interface DistributionConfig {
   assetRoots?: string[];
   /** Optional update source; defaults to `@uniqbit/mate` on public npm. */
   update?: DistributionUpdateConfig;
+  /** GitHub repository (`owner/name`) that `mate triage` files issues against; none ends triage with a local report. */
+  issueRepository?: string;
 }
 
 export interface ActiveDistribution {

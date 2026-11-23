@@ -1,7 +1,10 @@
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "./framework";
+import { REPORT_KINDS } from "./friction-vocabulary";
 import { GUIDANCE_FILE_VERSION, type MateGuidanceFile } from "./guidance";
+import { readWorkflow } from "./workflow/declaration";
+import type { DeclaredArtifactType } from "./workflow/workflow";
 
 /**
  * The guidance builders, on the session-runtime side of core.
@@ -32,9 +35,91 @@ export interface GuidanceContext {
    * a caller that cannot tell never drops the rule.
    */
   secretGuardrails?: boolean;
+  /** The artifact types the companion's workflow declares; each gets its reading rule. */
+  artifactTypes?: readonly GuidanceArtifactType[];
+  /** The skill stages the companion declares; absent when it declares none. */
+  stages?: readonly GuidanceStage[];
+}
+
+/** The paths of a declared artifact type its reading rule is built from. */
+export type GuidanceArtifactType = Pick<
+  DeclaredArtifactType,
+  "name" | "change" | "published" | "archive"
+>;
+
+/** A declared stage as the rule names it: its id, its skills in order, or that people review. */
+export interface GuidanceStage {
+  id: string;
+  steps: string[];
+  review?: true;
+  optional?: true;
+}
+
+export interface DeclaredGuidance {
+  artifactTypes: GuidanceArtifactType[];
+  stages?: GuidanceStage[];
+}
+
+/**
+ * What `companionPath`'s workflow adds to the guidance: its artifact types, and its declared
+ * stages when one runs a skill of the companion's own; Mate's stage skills report themselves, so
+ * a path of those alone needs no rule. An invalid declaration adds nothing, which keeps the
+ * built-in rules alone; the session banner names its problems.
+ */
+export function declaredGuidance(companionPath: string): DeclaredGuidance {
+  const verdict = readWorkflow(companionPath);
+  if (!verdict.ok) return { artifactTypes: [] };
+  const { artifacts, stages } = verdict.workflow;
+  const ownSkills = stages.some(
+    (stage) => stage.kind === "skill" && stage.steps.some((step) => !step.own),
+  );
+  if (!ownSkills) return { artifactTypes: artifacts };
+  return {
+    artifactTypes: artifacts,
+    stages: stages.map((stage) => ({
+      id: stage.id,
+      steps: stage.kind === "skill" ? stage.steps.map((step) => step.skill) : [],
+      ...(stage.kind === "review" ? { review: true as const } : {}),
+      ...(stage.optional ? { optional: true as const } : {}),
+    })),
+  };
+}
+
+/**
+ * The declared Delivery Path, and the one thing a skill its author wrote does not do: report
+ * itself. Everything else, change or none, comes from what `workflow done` prints.
+ */
+function stagesRule(stages: readonly GuidanceStage[]): string {
+  const order = stages
+    .map((stage) => {
+      const what = stage.review ? "reviewed by people" : stage.steps.join(", then ");
+      return `${stage.id} (${what}${stage.optional ? ", optional" : ""})`;
+    })
+    .join("; ");
+  return `    <rule id="workflow-stages" severity="critical">This companion's Delivery Path, declared in .mate/config/workflow.yaml, in order: ${order}. When one of these skills finishes without running ${FRAMEWORK_NAME} workflow done itself, run ${FRAMEWORK_NAME} workflow done "<skill>", adding the change name when there is one, and end your response with a final "## Next steps" section listing the actions it prints, running none of them.</rule>`;
+}
+
+/** `notes/{name}/` → `notes/`. */
+const folderOf = (template: string): string => template.replace(/\{[a-z]+\}\/?$/, "");
+
+/**
+ * What agents read as current for a declared type, on the model of the built-in
+ * `openspec-publish` rule. Its submitted folders have no `touches`, so one is read only when named.
+ */
+function artifactTypeRule(type: GuidanceArtifactType): string {
+  const history = type.archive ? ` ${folderOf(type.archive)} is history.` : "";
+  return `    <rule id="artifact-${type.name}" severity="critical">${type.name}: ${type.published.join(", ")} is current. A submitted folder under ${folderOf(type.change)} is not the truth until publication lands it on the companion's default branch and is never current: read one only when the user names it, and revise one only when named (${FRAMEWORK_NAME} artifact take "<name>" when it is missing, then resubmit).${history}</rule>`;
 }
 
 const SECRET_HANDLING_RULE = `    <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>`;
+
+export const FRICTION_GUIDANCE = `## Friction
+
+When ${FRAMEWORK_NAME} gets in your way without a refusal or error to point at, such as a skill step that does not fit or missing guidance, record it when it happens: \`${FRAMEWORK_NAME} friction report --kind <${REPORT_KINDS.join("|")}> --subject <type>:<name> --expected "<what you expected>" --evidence "<what you saw>"\`. Record one report per problem, then keep working on your task. When nothing went wrong, record nothing.`;
+
+function withFriction(policy: string, friction: boolean | undefined): string {
+  return friction ? `${policy}\n\n${FRICTION_GUIDANCE}` : policy;
+}
 
 export function hasGraphifyCapability(capabilities: GuidanceCapability[] = []): boolean {
   return capabilities.some((capability) => capability.name === "graphify");
@@ -192,6 +277,10 @@ export function buildCompanionPolicyXml(
     );
   }
 
+  for (const type of context.artifactTypes ?? []) lines.push(artifactTypeRule(type));
+
+  if (context.stages?.length) lines.push(stagesRule(context.stages));
+
   if (options.enteredWorktreeGit && hasRtkCapability(context.capabilities)) {
     lines.push(ENTERED_WORKTREE_GIT_RULE);
   }
@@ -204,17 +293,21 @@ export function buildCompanionPolicyXml(
 }
 
 /**
- * Build the merged single-string guidance: the companion-policy XML plus
- * codebase-exploration guidance appended when graphify or tokensave is
- * enabled. Used by providers (e.g. Claude) that inject one combined prompt
+ * Build the merged single-string guidance: the companion-policy XML, the
+ * friction section while the Friction Switch is on, and codebase-exploration
+ * guidance appended when graphify or tokensave is enabled. Used by providers (e.g. Claude) that inject one combined prompt
  * fragment rather than delivering exploration guidance separately; only that
  * form carries the Claude-only `entered-worktree-git` rule.
  */
 export function buildCompanionGuidance(
   context: GuidanceContext,
-  options: { wrapperBinPath: string },
+  options: { wrapperBinPath: string; friction?: boolean },
 ): string {
-  const lines = [buildCompanionPolicyXml(context, { ...options, enteredWorktreeGit: true })];
+  const policy = buildCompanionPolicyXml(context, {
+    wrapperBinPath: options.wrapperBinPath,
+    enteredWorktreeGit: true,
+  });
+  const lines = [withFriction(policy, options.friction)];
 
   const graphifyEnabled = hasGraphifyCapability(context.capabilities);
   const tokensaveEnabled = hasTokensaveCapability(context.capabilities);
@@ -248,19 +341,30 @@ export function buildCompanionGuidance(
  */
 export function buildOpenCodeGuidance(
   capabilities: GuidanceCapability[],
-  options: { companionScoped?: boolean; secretGuardrails?: boolean } = {},
+  options: {
+    companionScoped?: boolean;
+    secretGuardrails?: boolean;
+    friction?: boolean;
+    artifactTypes?: readonly GuidanceArtifactType[];
+    stages?: readonly GuidanceStage[];
+  } = {},
 ): MateGuidanceFile {
   const repository = options.companionScoped
     ? undefined
     : { id: "$MATE_REPO_ID", path: "$MATE_REPO_PATH" };
-  const companionGuidance = buildCompanionPolicyXml(
-    {
-      companionPath: "$MATE_ARTIFACT_PATH",
-      repository,
-      capabilities,
-      secretGuardrails: options.secretGuardrails,
-    },
-    { wrapperBinPath: "$MATE_WRAPPER_BIN_PATH" },
+  const companionGuidance = withFriction(
+    buildCompanionPolicyXml(
+      {
+        companionPath: "$MATE_ARTIFACT_PATH",
+        repository,
+        capabilities,
+        secretGuardrails: options.secretGuardrails,
+        ...(options.artifactTypes ? { artifactTypes: options.artifactTypes } : {}),
+        ...(options.stages ? { stages: options.stages } : {}),
+      },
+      { wrapperBinPath: "$MATE_WRAPPER_BIN_PATH" },
+    ),
+    options.friction,
   );
   const graphifyEnabled = hasGraphifyCapability(capabilities);
   const tokensaveEnabled = hasTokensaveCapability(capabilities);

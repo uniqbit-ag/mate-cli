@@ -1,6 +1,8 @@
 import { main } from "./cli/main";
 import { setActiveDistribution, type DistributionConfig } from "./distribution";
 import { FRAMEWORK_NAME } from "./framework";
+import { currentSession } from "./lib/session-attribution";
+import { runRecordingFailure } from "./runtime/command-friction";
 import { createBunPlugin } from "./tools/setup/package-managers/bun";
 import { createUvPlugin } from "./tools/setup/package-managers/uv";
 import type { PluginRegistration } from "./tools/setup/plugin";
@@ -39,10 +41,14 @@ export function createMate({ config, plugins, main: runMain = main }: CreateMate
   return {
     config,
     registry,
-    run: (argv = process.argv) =>
-      runMain(argv).catch((error) => {
-        console.error(error instanceof Error ? error.message : String(error));
-        process.exitCode = 1;
-      }),
+    run: async (argv = process.argv) =>
+      runRecordingFailure(
+        {
+          args: argv.slice(2),
+          session: currentSession(process.env),
+          mateVersion: config.version,
+        },
+        () => runMain(argv),
+      ),
   };
 }

@@ -38,14 +38,15 @@ import type { ArtifactType, StalePart } from "./artifact-type";
 import type { DeltaFailure } from "./replay";
 import { deliveryGroupFor } from "./naming";
 import {
-  anchorsAt,
   defaultRef,
   fetchPendingBranches,
   lastFetchedAt,
   mapLimited,
   pendingRef,
+  recordsAt,
   stagingRemote,
   type StagingRemote,
+  type TrailerRecord,
 } from "./refs";
 import { defaultArtifactType } from "./registry";
 
@@ -278,7 +279,8 @@ async function contentAt(
 /**
  * The record on `defaultRef` that change `name` at `pendingRef` was published as: an archive of
  * that name holding the same files, line endings and its Delivery Record aside (publication
- * settles it). Null while unpublished. `anchors` are the records on `defaultRef`, when the caller listed them.
+ * settles it). Null while unpublished. `records` are those on `defaultRef`, when the caller
+ * listed them with {@link recordsAt}.
  */
 export async function publishedAs(
   git: CompanionGit,
@@ -286,22 +288,68 @@ export async function publishedAs(
   pendingTip: string,
   type: ArtifactType,
   name: string,
-  anchors?: readonly string[],
+  records?: readonly TrailerRecord[],
 ): Promise<string | null> {
-  const records = (anchors ?? (await anchorsAt(git, defaultTip, type))).filter(
-    (id) => type.recordName(id) === name,
+  const named = (records ?? (await recordsAt(git, defaultTip, type))).filter(
+    (record) => type.recordName(record.id) === name,
   );
-  if (records.length === 0) return null;
+  if (named.length === 0) return null;
+  const { archiveRoot } = type;
+  if (archiveRoot === undefined) return publishedByTrailer(git, pendingTip, type, name, named);
   return matchingArchive(
-    records,
+    named.map((record) => record.id),
     await contentAt(git, pendingTip, sourcePathOf(type, name), type),
-    (record) => contentAt(git, defaultTip, `${type.archiveRoot}/${record}`, type),
+    (record) => contentAt(git, defaultTip, `${archiveRoot}/${record}`, type),
     async (source, archived) => {
       const texts = await git.readBlobs([source, archived]);
       const [mine, theirs] = [texts?.get(source), texts?.get(archived)];
       return mine !== undefined && theirs !== undefined && sameTextBesidesLineEndings(mine, theirs);
     },
   );
+}
+
+/** The commit on `ref` that last changed the folder `folder`, its Delivery Record aside. */
+async function folderWrittenBy(
+  git: CompanionGit,
+  ref: string,
+  folder: string,
+  type: Pick<ArtifactType, "deliveryFile">,
+): Promise<string | null> {
+  const written = await git.run([
+    "log",
+    "-1",
+    "--format=%H",
+    "--end-of-options",
+    ref,
+    "--",
+    `:(literal)${folder}/`,
+    `:(exclude,literal)${folder}/${type.deliveryFile}`,
+  ]);
+  return written.status === 0 ? (outputLines(written.stdout)[0] ?? null) : null;
+}
+
+/**
+ * {@link publishedAs} for a type that keeps no archive: the newest of `records`, those of that
+ * name, published from an inbox commit that already held the folder as `pendingTip` holds it.
+ * Ancestry, not commit dates: submitter and publisher clocks may disagree. A later change of
+ * the same name was written after that commit, so it does not count.
+ */
+async function publishedByTrailer(
+  git: CompanionGit,
+  pendingTip: string,
+  type: ArtifactType,
+  name: string,
+  records: readonly TrailerRecord[],
+): Promise<string | null> {
+  const written = await folderWrittenBy(git, pendingTip, sourcePathOf(type, name), type);
+  if (written === null) return null;
+  for (const record of records) {
+    if (record.inbox === null) continue;
+    // oxlint-disable-next-line no-await-in-loop -- newest first, usually the first
+    const held = await git.run(["merge-base", "--is-ancestor", written, record.inbox]);
+    if (held.status === 0) return record.id;
+  }
+  return null;
 }
 
 /** How far ahead of this clock an inbox commit's date may be and still date a delta. */
@@ -634,9 +682,9 @@ async function withoutPublished(
   type: ArtifactType,
   changes: SubmittedChange[],
 ): Promise<SubmittedChange[]> {
-  const anchors = await anchorsAt(git, defaultRef(remote), type);
+  const records = await recordsAt(git, defaultRef(remote), type);
   const published = await mapLimited(changes, READ_CONCURRENCY, (change) =>
-    publishedAs(git, defaultRef(remote), ref, type, change.name, anchors),
+    publishedAs(git, defaultRef(remote), ref, type, change.name, records),
   );
   return changes.filter((_, index) => published[index] === null);
 }

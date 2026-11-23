@@ -18,7 +18,7 @@ import { useTerminalUi } from "../stores/terminal-ui";
 /** Navigation order; core decides which views a mode offers. */
 const MODE_ORDER: readonly StudioView[] = ["dashboard", "workflow", "skills", "getting-started"];
 const LIBRARY_ORDER: readonly StudioView[] = ["specs", "vault", "graph"];
-const INSIGHTS_ORDER: readonly StudioView[] = ["usage", "reports"];
+const INSIGHTS_ORDER: readonly StudioView[] = ["usage", "friction", "reports"];
 
 export const VIEW_ICONS: Record<StudioView, IconName> = {
   dashboard: "home",
@@ -29,6 +29,7 @@ export const VIEW_ICONS: Record<StudioView, IconName> = {
   vault: "folder",
   reports: "chart",
   usage: "chart",
+  friction: "alert",
   graph: "graph",
 };
 

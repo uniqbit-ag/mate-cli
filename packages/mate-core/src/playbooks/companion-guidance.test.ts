@@ -5,6 +5,7 @@ import {
   GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT,
 } from "./companion-guidance";
 import { getWrapperBinPath } from "../lib/package-paths";
+import { FRICTION_GUIDANCE } from "../runtime/companion-guidance";
 
 describe("buildCompanionGuidance", () => {
   test("carries the secret-handling rule while guardrails are active", () => {
@@ -397,5 +398,37 @@ describe("buildCompanionGuidance", () => {
 
     expect(guidance).toContain("MANDATORY RULES");
     expect(guidance).toContain("NON-NEGOTIABLE");
+  });
+});
+
+describe("the friction section", () => {
+  const context = {
+    companionPath: "/Users/acme/code/companions/acme-companion",
+    repository: { id: "acme", path: "/Users/acme/code/projects/acme.worktrees/acme-feature" },
+    capabilities: ["openspec", "rtk", "graphify", "tokensave"].map((name) => ({ name })),
+  };
+
+  test("has at most 80 words and names the report command with the Invocation Name", () => {
+    expect(FRICTION_GUIDANCE.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(80);
+    expect(FRICTION_GUIDANCE).toContain("`mate friction report");
+  });
+
+  test("follows the companion policy only while recording is on", () => {
+    const on = buildCompanionGuidance(context, { friction: true });
+
+    expect(on.indexOf(FRICTION_GUIDANCE)).toBeGreaterThan(on.indexOf("</companion-policy>"));
+    expect(buildCompanionGuidance(context)).not.toContain("## Friction");
+  });
+
+  test("keeps the guidance with every capability-gated rule under Claude Code's 10,000-character cap", () => {
+    const guidance = buildCompanionGuidance(context, {
+      wrapperBinPath: "/Users/acme/.mate/runtime/wrappers/bin",
+      friction: true,
+    });
+
+    expect(guidance).toContain("openspec-publish");
+    expect(guidance).toContain("entered-worktree-git");
+    expect(guidance).toContain("codebase-exploration-rules");
+    expect(guidance.length).toBeLessThan(10_000);
   });
 });

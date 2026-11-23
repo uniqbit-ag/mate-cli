@@ -440,17 +440,20 @@ async function groupedSubmittedChanges(
   const refs = await trackingRefs(companionPath);
   if (!refs) return [];
   const ref = refs.pendingRef;
-  const archiveName = path.posix.basename(layout.archiveRoot);
+  // A type without an archive lists none here: its inbox folders count until they are cleared.
+  const { archiveRoot } = layout;
   const names = (await foldersAt(companionPath, ref, layout.source)).filter(
     (name) =>
       isSubmittedName(name) &&
-      (path.posix.dirname(layout.archiveRoot) !== layout.source || name !== archiveName),
+      (archiveRoot === undefined ||
+        path.posix.dirname(archiveRoot) !== layout.source ||
+        name !== path.posix.basename(archiveRoot)),
   );
   if (names.length === 0) return [];
   const specs = names.map((name) => `${ref}:${layout.source}/${name}/${DELIVERY_FILE}`);
   const [blobs, archives] = await Promise.all([
     readBlobs(companionPath, specs),
-    foldersAt(companionPath, refs.defaultRef, layout.archiveRoot),
+    archiveRoot === undefined ? [] : foldersAt(companionPath, refs.defaultRef, archiveRoot),
   ]);
   const sameBlob = async (a: string, b: string): Promise<boolean> => {
     const texts = await readBlobs(companionPath, [a, b]);
@@ -463,7 +466,7 @@ async function groupedSubmittedChanges(
     if (ids.length === 0) return false;
     const source = await blobsBelow(companionPath, ref, `${layout.source}/${name}`);
     const archived = (id: string) =>
-      blobsBelow(companionPath, refs.defaultRef, `${layout.archiveRoot}/${id}`);
+      blobsBelow(companionPath, refs.defaultRef, `${archiveRoot}/${id}`);
     return (await matchingArchive(ids, source, archived, sameBlob)) !== null;
   };
   const submitted = names.flatMap((name, index) => {

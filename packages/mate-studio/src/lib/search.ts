@@ -1,13 +1,28 @@
 import {
   COMPANION_DIGEST_PATTERN,
   COMPANION_PARAM,
+  frictionViewDays,
   LEGACY_ROLE_PARAM,
+  REPORT_KINDS,
   requestedMode,
+  STATE_FILTERS,
   STUDIO_MODE_PARAM,
+  SUBJECT_TYPES,
   viewsFor,
+  type FrictionViewDays,
+  type ReportKind,
+  type StateFilter,
+  type SubjectType,
   type StudioMode,
   type StudioView,
 } from "@uniqbit/mate-core/studio";
+
+const FRICTION_SORTS = ["repeats", "recent"] as const;
+export type FrictionSort = (typeof FRICTION_SORTS)[number];
+
+/** The option `value` names, or `undefined`. */
+export const oneOf = <T extends string>(options: readonly T[], value: unknown): T | undefined =>
+  options.find((option) => option === value);
 
 /** The address every view shares: which companion, through which Studio mode. */
 export interface StudioSearch {
@@ -16,6 +31,13 @@ export interface StudioSearch {
   studioMode?: StudioMode;
   usageDays?: number;
   usageRepository?: string;
+  /** Absent for any other period; the view then shows its default. */
+  frictionDays?: FrictionViewDays;
+  /** Absent, or a value naming no option, means the control's default. */
+  frictionState?: StateFilter;
+  frictionType?: SubjectType;
+  frictionKind?: ReportKind;
+  frictionSort?: FrictionSort;
 }
 
 /**
@@ -28,6 +50,11 @@ export function validateStudioSearch(raw: {
   role?: unknown;
   usageDays?: unknown;
   usageRepository?: unknown;
+  frictionDays?: unknown;
+  frictionState?: unknown;
+  frictionType?: unknown;
+  frictionKind?: unknown;
+  frictionSort?: unknown;
 }): StudioSearch {
   const search: StudioSearch = {};
   if (typeof raw.companion === "string" && COMPANION_DIGEST_PATTERN.test(raw.companion)) {
@@ -43,6 +70,16 @@ export function validateStudioSearch(raw: {
     search.usageDays = days;
   if (typeof raw.usageRepository === "string" && /^[a-zA-Z0-9_-]{1,64}$/.test(raw.usageRepository))
     search.usageRepository = raw.usageRepository;
+  const frictionDays = frictionViewDays(raw.frictionDays);
+  if (frictionDays) search.frictionDays = frictionDays;
+  const frictionState = oneOf(STATE_FILTERS, raw.frictionState);
+  if (frictionState) search.frictionState = frictionState;
+  const frictionType = oneOf(SUBJECT_TYPES, raw.frictionType);
+  if (frictionType) search.frictionType = frictionType;
+  const frictionKind = oneOf(REPORT_KINDS, raw.frictionKind);
+  if (frictionKind) search.frictionKind = frictionKind;
+  const frictionSort = oneOf(FRICTION_SORTS, raw.frictionSort);
+  if (frictionSort) search.frictionSort = frictionSort;
   return search;
 }
 

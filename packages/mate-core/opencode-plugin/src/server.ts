@@ -10,6 +10,7 @@ import { readContext } from "../../src/opencode/companion-policy";
 import { registerEnterWorktree } from "../../src/opencode/enter-worktree";
 import { registerSessionPrepare } from "../../src/opencode/session-prepare";
 import { registerOpenCodeSessions } from "../../src/opencode/session-register";
+import { registerTurnHook, spawnNextHandoff } from "../../src/opencode/turn-hook";
 import { hasLaunchEnvironment } from "../../src/runtime/env";
 import { guardLaunchEnvironment } from "../../src/runtime/launch-env-guard";
 import { spawnPrepareRunner } from "../../src/runtime/session-prepare-runner";
@@ -43,6 +44,26 @@ async function registerPrepare(api: Context, companionPath: string, env: LaunchE
 }
 
 /**
+ * The turn hook, with `mate workflow next` run by the runtime launcher. Its switch is the
+ * server's own environment: a wrapped session has no launch environment.
+ */
+async function registerTurns(api: Context, companionPath: string, env: LaunchEnvironment) {
+  const mateBin = resolveMateBin();
+  if (!mateBin) return undefined;
+  const runEnv = {
+    ...process.env,
+    ...env,
+    MATE_ARTIFACT_PATH: companionPath,
+    MATE_AGENT_RUNTIME: "opencode",
+  };
+  return registerTurnHook(api, {
+    companionPath,
+    nextHandoff: spawnNextHandoff(mateBin, runEnv),
+    env: process.env,
+  });
+}
+
+/**
  * Mate OpenCode server plugin (OpenCode 2.x). Loaded through the package's
  * `./server` export; stays inert when no companion resolves from the launch
  * environment or a Projection Root above the session directory. The launch
@@ -65,18 +86,21 @@ export const MateOpenCodePlugin = Plugin.define({
     await registerCompanion(api, context, env);
     const worktreeCleanup = await registerEnterWorktree(api, context);
     const sessionsCleanup = await registerOpenCodeSessions(api).catch(() => undefined);
+    const turnCleanup = await registerTurns(api, context.companionPath, env).catch(() => undefined);
     if (sessionsCleanup) server?.onStop(() => sessionsCleanup());
     /** Last: the guardrails above are live while the local phase holds `setup`. */
     const prepareCleanup = await registerPrepare(api, context.companionPath, env).catch(
       (error: unknown) => {
         /** A failed setup returns no cleanup: end the subscription that would move sessions. */
         worktreeCleanup();
+        turnCleanup?.();
         throw error;
       },
     );
     return async () => {
       server?.dispose();
       worktreeCleanup();
+      turnCleanup?.();
       /** A Mate OpenCode server's sessions outlive a location; its idle stop ends them. */
       await sessionsCleanup?.({ keepSessions: Boolean(server) });
       await prepareCleanup?.();
