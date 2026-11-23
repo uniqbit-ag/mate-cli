@@ -906,7 +906,9 @@ print the new state in one line and exit 0, also when the state does not
 change. `mate friction off` names the folder that keeps the records. Both
 refuse inside an agent session, exit 1 and change nothing. They,
 `mate friction status` and `mate friction mark` run in any folder, without a linked companion or a
-complete installation.
+complete installation. `mate friction report` needs a linked companion, but it
+also runs while an update is required or the installation is incomplete, so the
+command a nudge names is not blocked by the failure it reports.
 
 `mate friction status` prints whether recording is on and the log folder. With
 `--json` it prints one document with `kind` `friction-status`, `version` 1, a
@@ -947,7 +949,9 @@ companions with their event counts, and the JSON `companion` is `null`. Without
 `--all`, in a folder that resolves no companion, it lists nothing and exits 1
 with a message that names `--all` and the affected repository; with `--json` it
 prints `kind` `error` with the code `no-companion`. With `--json`, a bad argument
-exits 1 and prints `kind` `error` with the code `usage`. While
+exits 1 and prints `kind` `error` with the code `usage`; when a required update,
+companion selection or an incomplete installation blocks the command, it prints
+`kind` `error` with the code `PREFLIGHT_FAILED`. While
 recording is off, the list still shows what was recorded, after a first line
 that says recording is off and names `mate friction on`; the `--json` document
 changes only in `recording`.
@@ -998,9 +1002,10 @@ target and its new state. It changes no record in the Friction Log.
 
 Note and link are cut to 1,000 characters and refused when they hold a secret.
 You run `mark` in your own terminal and it records `by` `person`. An agent may
-run it only inside a [`mate triage`](/docs/scenarios/triage-a-mate-problem)
-session folder, where it records `by` `triage`; anywhere else it refuses, so an
-agent cannot hide the friction it causes. With `--json` it prints `kind`
+run it only from the session folder of the running
+[`mate triage`](/docs/scenarios/triage-a-mate-problem) that started it, where it
+records `by` `triage`; anywhere else it refuses, so an agent cannot hide the
+friction it causes. With `--json` it prints `kind`
 `friction-state`, `version` 1, the `target`, and the new `state` with its fields,
 or `null` after `--state open`. A refusal exits 1 and changes nothing; with
 `--json` it prints `kind` `error` with one of these codes:
@@ -1012,7 +1017,7 @@ or `null` after `--state open`. A refusal exits 1 and changes nothing; with
 | `report-on-event`                     | The id is a report on an event; it follows its fingerprint, which the message names.             |
 | `link-needs-reported`, `invalid-link` | `--link` was given without `--state reported`, or is no `http` or `https` URL.                   |
 | `secret`, `scan-failed`               | The note or link holds a secret, or could not be scanned. The text is not printed.               |
-| `agent-session`                       | An agent ran it outside a triage session folder.                                                 |
+| `agent-session`                       | An agent ran it outside the session folder of the `mate triage` that started it.                 |
 | `state-file-damaged`, `write-failed`  | The state file is malformed and was kept unchanged, or it could not be written.                  |
 
 ## Usage And Reports

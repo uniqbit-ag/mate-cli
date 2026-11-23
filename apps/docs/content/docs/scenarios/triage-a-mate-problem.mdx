@@ -39,7 +39,8 @@ starts the agent's own CLI directly, not through `mate claude` or
 
 To start your agent yourself, run `mate triage --no-launch`. It prints the
 session paths. Open your agent in the session folder and give it the text of
-`prompt.md`.
+`prompt.md`. An agent you start this way cannot record the outcome: run
+`mate friction mark` in your own terminal.
 
 When `mate doctor` reports friction events, it names `mate triage` as the next
 action.
