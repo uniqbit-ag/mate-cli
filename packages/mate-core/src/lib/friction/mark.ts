@@ -102,7 +102,7 @@ export async function markFriction(
     const known = readFrictionStates(deps.homeDir);
     const family = resolveTarget(target, known, deps.homeDir);
     if (note !== null || link !== null) await refuseSecrets("The mark", [note, link], deps.scan);
-    // Read before the lock, so the lock never waits on the log.
+    // Read before the lock, so the lock never waits on the log; null prunes nothing.
     const retained =
       Object.keys(known.reports).length > 0 ? readReportIds({ homeDir: deps.homeDir }) : null;
     if (family === "reports" && retained && !retained.has(target)) {

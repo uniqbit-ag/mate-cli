@@ -8,6 +8,7 @@ import {
   appendEvent,
   appendReport,
   frictionLogDir,
+  frictionReportFile,
   type NewFrictionReport,
 } from "../../runtime/friction-log";
 import { frictionStateFile, readFrictionStates } from "../../runtime/friction-state";
@@ -198,5 +199,18 @@ describe("markFriction", () => {
 
     expect(await mark(report.id, "dismissed")).toMatchObject({ ok: true });
     expect(Object.keys(readFrictionStates(home).reports)).toEqual([report.id]);
+  });
+
+  test("keeps a report's state when its line cannot be parsed", async () => {
+    const report = recordReport();
+    const newer = recordReport();
+    await mark(newer.id, "dismissed");
+    // As a newer Mate would write it: this Mate cannot tell the report is still there.
+    const file = frictionReportFile("2027-03", home);
+    const text = fs.readFileSync(file, "utf8");
+    fs.writeFileSync(file, text.replace(`{"v":1,"id":"${newer.id}"`, `{"v":2,"id":"${newer.id}"`));
+
+    expect(await mark(report.id, "dismissed")).toMatchObject({ ok: true });
+    expect(readFrictionStates(home).reports[newer.id]?.state).toBe("dismissed");
   });
 });

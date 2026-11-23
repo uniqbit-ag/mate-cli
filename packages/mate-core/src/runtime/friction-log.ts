@@ -103,7 +103,7 @@ interface AppendOptions {
   now?: Date;
 }
 
-/** Throws on a failed write; the first record of a month prunes its family's old files. */
+/** Throws on a failed append only; a month's first record prunes old files, best effort. */
 function appendRecord<T extends object>(
   family: Family,
   fields: T,
@@ -119,7 +119,11 @@ function appendRecord<T extends object>(
   fs.appendFileSync(file, `${JSON.stringify(record)}\n`, "utf8");
   if (created) {
     const oldestKept = monthOf(new Date(now.getTime() - FRICTION_RETENTION_DAYS * DAY_MS));
-    pruneBefore(family, oldestKept, options.homeDir);
+    try {
+      pruneBefore(family, oldestKept, options.homeDir);
+    } catch {
+      // The record is on disk, so the caller must not retry; a later month prunes again.
+    }
   }
   return record;
 }
@@ -214,6 +218,28 @@ function companionFilter(target: string): (candidate: string) => boolean {
   };
 }
 
+const isMissing = (error: unknown) => (error as NodeJS.ErrnoException)?.code === "ENOENT";
+
+/** A month's records in file order, and whether nothing was skipped; a missing file is complete. */
+function scanMonth<T>(
+  family: Family,
+  month: string,
+  accept: (value: unknown) => value is T,
+  homeDir?: string,
+): { records: T[]; complete: boolean } {
+  let text: string;
+  try {
+    text = fs.readFileSync(familyFile(family, month, homeDir), "utf8");
+  } catch (error) {
+    return { records: [], complete: isMissing(error) };
+  }
+  const lines = text.split("\n").filter((line) => line.trim());
+  const records = lines
+    .map((line) => parseLine(line, accept))
+    .filter((record): record is T => record !== null);
+  return { records, complete: records.length === lines.length };
+}
+
 /** A month's records in file order; an unreadable file or an unparseable line is skipped. */
 function readMonth<T>(
   family: Family,
@@ -221,17 +247,7 @@ function readMonth<T>(
   accept: (value: unknown) => value is T,
   homeDir?: string,
 ): T[] {
-  let text: string;
-  try {
-    text = fs.readFileSync(familyFile(family, month, homeDir), "utf8");
-  } catch {
-    return [];
-  }
-  return text
-    .split("\n")
-    .filter((line) => line.trim())
-    .map((line) => parseLine(line, accept))
-    .filter((record): record is T => record !== null);
+  return scanMonth(family, month, accept, homeDir).records;
 }
 
 function readFamily<T extends { at: string }>(
@@ -327,19 +343,24 @@ export function findReport(id: string, options: { homeDir?: string } = {}): Fric
   return findRecord("reports", isFrictionReport, (report) => report.id === id, options.homeDir);
 }
 
-/** The ids of every report in the retained months. */
-export function readReportIds(options: { homeDir?: string } = {}): Set<string> {
+/**
+ * The ids of every report in the retained months; null when a file could not be read or a line
+ * not parsed, since a report missing from the set may then still exist.
+ */
+export function readReportIds(options: { homeDir?: string } = {}): Set<string> | null {
   let months: string[];
   try {
     months = logMonths(frictionLogDir(options.homeDir), "reports");
-  } catch {
-    return new Set();
+  } catch (error) {
+    return isMissing(error) ? new Set() : null;
   }
-  return new Set(
-    months.flatMap((month) =>
-      readMonth("reports", month, isFrictionReport, options.homeDir).map((report) => report.id),
-    ),
-  );
+  const ids = new Set<string>();
+  for (const month of months) {
+    const { records, complete } = scanMonth("reports", month, isFrictionReport, options.homeDir);
+    if (!complete) return null;
+    for (const report of records) ids.add(report.id);
+  }
+  return ids;
 }
 
 /** Whether no earlier line of the event's month holds the same session and fingerprint. */

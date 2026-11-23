@@ -187,6 +187,21 @@ describe("appendReport", () => {
       "reports-2027-04.jsonl",
     ]);
   });
+
+  test("returns the written report when an old file cannot be pruned", () => {
+    const home = tempHome();
+    // rmSync without `recursive` refuses a folder, so the prune fails after the append.
+    fs.mkdirSync(frictionReportFile("2026-12", home), { recursive: true });
+
+    const written = appendReport(report(), {
+      homeDir: home,
+      now: new Date("2027-05-01T00:00:00Z"),
+    });
+
+    expect(lines(frictionReportFile("2027-05", home)).map((line) => JSON.parse(line).id)).toEqual([
+      written.id,
+    ]);
+  });
 });
 
 describe("readReports", () => {
