@@ -6,6 +6,7 @@ import path from "node:path";
 import { record, text } from "../json-fields";
 import { runtimeMateBin } from "../runtime-directory";
 import { isInvocationChange } from "../skill-prefix";
+import { withoutSessionIds } from "../session-id";
 import { launcherInvocation } from "../session-prepare-runner";
 import type { PrintedHandoff } from "./turn";
 
@@ -57,7 +58,7 @@ export function spawnNextHandoff(
       try {
         child = spawn(launch.command, launch.args, {
           cwd: folder,
-          env: env as NodeJS.ProcessEnv,
+          env: withoutSessionIds(env),
           shell: false,
           windowsHide: true,
           windowsVerbatimArguments: launch.verbatim,

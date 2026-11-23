@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 
+import { currentSession } from "../runtime/session-id";
 import {
   patchSession,
   type RegisteredSession,
@@ -12,15 +13,10 @@ import {
  * agent session, or for an unregistered id, nothing changes. Never throws.
  */
 
-/** Set by Claude Code and OpenCode for the processes their sessions start; undocumented. */
-const SESSION_ID_VARIABLES = ["CLAUDE_CODE_SESSION_ID", "OPENCODE_SESSION_ID"] as const;
+export { currentSession };
 
 export function currentSessionId(env: Record<string, string | undefined>): string | null {
-  for (const name of SESSION_ID_VARIABLES) {
-    const value = env[name]?.trim();
-    if (value) return value;
-  }
-  return null;
+  return currentSession(env)?.id ?? null;
 }
 
 export interface Attribution {

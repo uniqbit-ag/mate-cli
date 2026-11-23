@@ -142,6 +142,8 @@ export interface StudioServerDeps {
   vault?: VaultManager;
   reports?: ReportStore;
   usage?: UsageCache;
+  /** Where the Friction Log and Switch live; the user's home when absent. */
+  homeDir?: string;
   terminal?: Partial<TerminalRegistryOptions>;
   launchableAgents?: typeof launchableAgents;
   /** The plugin services Studio mounts; the registered plugins' when absent. */
@@ -611,6 +613,30 @@ export function createStudioFetch(
           throw error;
         });
       return (await usage).read(companionPath, request);
+    },
+    friction: async (digest, { days }) => {
+      const companionPath = await companionPathOf(digest);
+      const { readFrictionView } = await import("../../../lib/friction/view/read");
+      return readFrictionView({ companion: companionPath }, { days, homeDir: deps.homeDir });
+    },
+    frictionRecording: async () => {
+      const { readFrictionSwitch } = await import("../../../runtime/friction-switch");
+      return { recording: readFrictionSwitch(deps.homeDir) };
+    },
+    setFrictionRecording: async (recording) => {
+      const { writeFrictionSwitch } = await import("../../../runtime/friction-switch");
+      writeFrictionSwitch(recording, deps.homeDir);
+      return { recording };
+    },
+    markFriction: async (target, state, { note, link }) => {
+      const { markFriction } = await import("../../../lib/friction/mark");
+      const marked = await markFriction(
+        target,
+        state,
+        { note, link, by: "studio" },
+        { homeDir: deps.homeDir },
+      );
+      return marked.ok ? { ok: true, state: marked.state } : { ok: false, reason: marked.reason };
     },
     skillPreview: async (digest, agent, name, file) => {
       const { readSkillPreview } = await import("./skill-files");

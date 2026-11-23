@@ -5,6 +5,7 @@ const fs = await import("node:fs/promises");
 const path = await import("node:path");
 
 import { MATE_ENV } from "../../../runtime/env";
+import { readFrictionSwitch } from "../../../runtime/friction-switch";
 import { SESSION_ORIGIN_ENV } from "../../../runtime/session-registry";
 import { mainCheckoutOf } from "../../../runtime/git-layout";
 import { OPENCODE_PASSWORD } from "../../../runtime/opencode-server-record";
@@ -172,6 +173,7 @@ export class OpenCodeAdapter extends LaunchAdapter {
     return buildOpenCodeGuidance(context.capabilities, {
       companionScoped: !context.repository,
       secretGuardrails: resolveSecretPolicy(context.companionPath).guardrails,
+      friction: readFrictionSwitch(),
       ...declaredGuidance(context.companionPath),
     });
   }

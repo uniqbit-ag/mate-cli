@@ -136,6 +136,7 @@ describe("the command palette", () => {
     for (const entry of [
       "Overview",
       "Workflow",
+      "Friction",
       "Acme board",
       "archive-spec-drift-check",
       "Copy next step: /mate-apply-change archive-spec-drift-check",
@@ -178,6 +179,7 @@ describe("the command palette", () => {
     const listed = options(doc);
     expect(listed.some((entry) => /^(Workflow|Skills)View$/.test(entry ?? ""))).toBe(false);
     expect(listed.some((entry) => entry?.startsWith("Overview"))).toBe(true);
+    expect(listed).toContain("FrictionView");
     page.unmount();
   });
 });

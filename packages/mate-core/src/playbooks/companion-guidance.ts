@@ -26,11 +26,11 @@ export { GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT } from "../runtime/companion-gu
  */
 export function buildCompanionGuidance(
   context: GuidanceContext,
-  options: { wrapperBinPath?: string } = {},
+  options: { wrapperBinPath?: string; friction?: boolean } = {},
 ): string {
   return buildCompanionGuidanceWith(
     // The companion's declared artifact types and stages, read live like its other predicates.
     { ...declaredGuidance(context.companionPath), ...context },
-    { wrapperBinPath: options.wrapperBinPath ?? getWrapperBinPath() },
+    { wrapperBinPath: options.wrapperBinPath ?? getWrapperBinPath(), friction: options.friction },
   );
 }

@@ -31,6 +31,7 @@ const PATHS = {
   // Three round dots: zero-length segments drawn by the round line cap.
   more: "M5 10h.01M10 10h.01M15 10h.01",
   trash: "M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10M9 9v4m2-4v4",
+  alert: "M10 3.5 17 16H3zM10 8.5v3.5m0 2h.01",
 } as const;
 
 export type IconName = keyof typeof PATHS;
