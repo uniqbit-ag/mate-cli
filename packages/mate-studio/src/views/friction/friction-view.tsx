@@ -380,13 +380,11 @@ function Overview({
   view,
   shown,
   empty,
-  days,
   onShowAll,
 }: {
   view: FrictionView;
   shown: FrictionShown;
   empty: boolean;
-  days: number;
   onShowAll: () => void;
 }) {
   const sections = [
@@ -397,8 +395,8 @@ function Overview({
     <section aria-label="Overview" className="grid gap-2 text-sm">
       <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
         <p className="m-0">
-          {plural(view.events, "event")} in {plural(view.sessions, "session")} in the last {days}{" "}
-          days for the selected companion.
+          {plural(view.events, "event")} in {plural(view.sessions, "session")} in the last{" "}
+          {view.days} days for the selected companion.
         </p>
         <nav aria-label="Friction sections" className="flex flex-wrap gap-x-4 gap-y-1">
           {sections.map(([{ id, title }, count]) =>
@@ -642,7 +640,7 @@ export function FrictionPanel({
   const recorded = view.events > 0 || view.freeReports.length > 0;
   const shown = selectFriction(view, filters);
   const [marked, setMarked] = useState<{
-    id: number;
+    announcementKey: number;
     key: string;
     next: string | null;
     message: string;
@@ -681,7 +679,7 @@ export function FrictionPanel({
       }
       if (!result.ok) return result.reason;
       setMarked((last) => ({
-        id: (last?.id ?? 0) + 1,
+        announcementKey: (last?.announcementKey ?? 0) + 1,
         key,
         next,
         message: `${name}: ${state === "open" ? "reopened" : `marked ${state}`}.`,
@@ -720,7 +718,7 @@ export function FrictionPanel({
         ) : null}
       </div>
       <div aria-live="polite" className="sr-only">
-        {marked ? <p key={marked.id}>{marked.message}</p> : null}
+        {marked ? <p key={marked.announcementKey}>{marked.message}</p> : null}
       </div>
       {recorded ? (
         <>
@@ -730,7 +728,7 @@ export function FrictionPanel({
               on.
             </p>
           )}
-          <Overview view={view} shown={shown} empty={empty} days={view.days} onShowAll={showAll} />
+          <Overview view={view} shown={shown} empty={empty} onShowAll={showAll} />
           <Lists shown={shown} empty={empty} markItem={markItem} onShowAll={showAll} />
         </>
       ) : (

@@ -18,19 +18,23 @@ import {
 export const DEFAULT_FRICTION_DAYS: FrictionViewDays = 30;
 
 const SCOPE = "friction";
+const MACHINE_WIDE = "machine";
 
-export const isFrictionQuery = (query: Query) => query.queryKey[1] === SCOPE;
+const frictionKey = <const Rest extends readonly unknown[]>(owner: string, ...rest: Rest) =>
+  [owner, SCOPE, ...rest] as const;
+
+export const isFrictionQuery = ({ queryKey: [, scope] }: Query) => scope === SCOPE;
 
 export const frictionQuery = (companion: string, days: FrictionViewDays) =>
   queryOptions({
-    queryKey: [companion, SCOPE, days] as const,
+    queryKey: frictionKey(companion, days),
     queryFn: () => getFriction({ data: { companion, days } }),
     retry: false,
     refetchOnWindowFocus: false,
   });
 
 export const frictionRecordingQuery = queryOptions({
-  queryKey: ["machine", SCOPE, "recording"] as const,
+  queryKey: frictionKey(MACHINE_WIDE, "recording"),
   queryFn: () => getFrictionRecording(),
   retry: false,
   refetchOnWindowFocus: false,

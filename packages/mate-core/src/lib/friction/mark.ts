@@ -1,6 +1,7 @@
 import { findEvent, findFingerprint, findReport, readReportIds } from "../../runtime/friction-log";
 import {
   FrictionStateFileError,
+  type FrictionStatesFile,
   readFrictionStates,
   updateFrictionStates,
 } from "../../runtime/friction-state";
@@ -84,6 +85,16 @@ function resolveTarget(
   return "reports";
 }
 
+function forgetExpiredReports(
+  states: FrictionStatesFile,
+  idsReadBeforeScan: string[],
+  retained: Set<string>,
+): void {
+  for (const id of idsReadBeforeScan) {
+    if (!retained.has(id)) delete states.reports[id];
+  }
+}
+
 /**
  * Sets or, with `open`, clears the Friction State of a fingerprint or a Free Report. The checks
  * live here once for every caller; the Friction Log is never written.
@@ -118,11 +129,7 @@ export async function markFriction(
           };
     await updateFrictionStates(
       (states) => {
-        if (retained) {
-          for (const id of Object.keys(known.reports)) {
-            if (!retained.has(id)) delete states.reports[id];
-          }
-        }
+        if (retained) forgetExpiredReports(states, Object.keys(known.reports), retained);
         if (next) states[family][target] = next;
         else delete states[family][target];
       },

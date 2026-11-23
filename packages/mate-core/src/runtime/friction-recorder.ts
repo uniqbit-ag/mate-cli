@@ -191,7 +191,8 @@ export function recordCommandFailure(failure: CommandFailureRecord): string | nu
       },
       { homeDir: failure.env.HOME },
     );
-    return detail.command === "friction" ? null : nudgeFor(recorded, failure.env);
+    const nudgeWouldLoop = detail.command === "friction";
+    return nudgeWouldLoop ? null : nudgeFor(recorded, failure.env);
   } catch {
     return null;
   }

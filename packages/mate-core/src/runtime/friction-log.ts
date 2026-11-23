@@ -85,10 +85,13 @@ function logMonths(dir: string, family: Family): string[] {
     .filter((month): month is string => Boolean(month));
 }
 
-function pruneBefore(family: Family, oldestKept: string, homeDir?: string): void {
-  for (const month of logMonths(frictionLogDir(homeDir), family)) {
-    if (month < oldestKept) fs.rmSync(familyFile(family, month, homeDir), { force: true });
-  }
+function pruneExpiredMonths(family: Family, now: Date, homeDir?: string): void {
+  const oldestKept = monthOf(new Date(now.getTime() - FRICTION_RETENTION_DAYS * DAY_MS));
+  try {
+    for (const month of logMonths(frictionLogDir(homeDir), family)) {
+      if (month < oldestKept) fs.rmSync(familyFile(family, month, homeDir), { force: true });
+    }
+  } catch {}
 }
 
 interface AppendOptions {
@@ -107,14 +110,9 @@ function appendRecord<T extends object>(
   const file = familyFile(family, month, options.homeDir);
   const record = { v: 1 as const, id: crypto.randomUUID(), at: now.toISOString(), ...fields };
   fs.mkdirSync(dir, { recursive: true });
-  const created = !fs.existsSync(file);
+  const startsMonth = !fs.existsSync(file);
   fs.appendFileSync(file, `${JSON.stringify(record)}\n`, "utf8");
-  if (created) {
-    const oldestKept = monthOf(new Date(now.getTime() - FRICTION_RETENTION_DAYS * DAY_MS));
-    try {
-      pruneBefore(family, oldestKept, options.homeDir);
-    } catch {}
-  }
+  if (startsMonth) pruneExpiredMonths(family, now, options.homeDir);
   return record;
 }
 

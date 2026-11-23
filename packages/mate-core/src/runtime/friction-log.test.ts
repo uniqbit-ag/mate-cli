@@ -246,6 +246,13 @@ describe("readFriction", () => {
     expect(here.reports).toEqual([]);
     expect(readFriction("all", { ...window, homeDir: home }).reports).toHaveLength(1);
   });
+
+  test("an empty companion matches no record, not the current folder's", () => {
+    const home = tempHome();
+    appendReport(report({ companion: process.cwd() }), { homeDir: home, now });
+
+    expect(readFriction({ companion: "" }, { ...window, homeDir: home }).reports).toEqual([]);
+  });
 });
 
 describe("findEvent", () => {

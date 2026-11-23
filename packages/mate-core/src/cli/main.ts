@@ -80,11 +80,16 @@ const mainDeps: MainDeps = {
   refreshRuntimeDirectory,
 };
 
-function printPreflightError(message: string): void {
+function printPreflightErrorDocument(message: string): void {
   console.log(
     JSON.stringify({ kind: "error", version: 1, error: { code: "PREFLIGHT_FAILED", message } }),
   );
 }
+
+const FRICTION_GATE_NEEDS = new Map<string | undefined, GateNeeds>([
+  ["list", { updateGuard: true, companion: true, install: true }],
+  ["report", { companion: true }],
+]);
 
 export async function main(argv = process.argv, deps: MainDeps = mainDeps): Promise<void> {
   const [, , command, subcommand, ...rest] = argv;
@@ -136,8 +141,9 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
   // scheduleBackgroundCheck() has been observed to race a large final stdout
   // write against process exit, truncating it.
   const ownsStdout = isPluginCommand;
-  const skipsBackgroundCheck =
-    ownsStdout || command === "report" || command === "friction" || command === "workflow";
+  const printsJsonContract =
+    command === "report" || command === "friction" || command === "workflow";
+  const skipsBackgroundCheck = ownsStdout || printsJsonContract;
 
   // Every dispatch case opens with a gate() call declaring what the command
   // needs before it may run. Declared gates run in fixed order — update
@@ -298,7 +304,9 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       return;
     case "report":
       if (!(await gate({ updateGuard: true, install: true }))) {
-        printPreflightError("Mate must be updated or installed before reporting; see stderr");
+        printPreflightErrorDocument(
+          "Mate must be updated or installed before reporting; see stderr",
+        );
         return;
       }
       await runReportCommand(argv.slice(3));
@@ -320,15 +328,11 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       await runDoctorCommand(argv.slice(3));
       return;
     case "friction": {
-      const needs: GateNeeds =
-        subcommand === "list"
-          ? { updateGuard: true, companion: true, install: true }
-          : subcommand === "report"
-            ? { companion: true }
-            : {};
-      if (!(await gate(needs))) {
+      if (!(await gate(FRICTION_GATE_NEEDS.get(subcommand) ?? {}))) {
         if (rest.includes("--json")) {
-          printPreflightError("Mate must be updated, installed or given one companion; see stderr");
+          printPreflightErrorDocument(
+            "Mate must be updated, installed or given one companion; see stderr",
+          );
         }
         return;
       }
