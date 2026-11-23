@@ -1375,7 +1375,7 @@ describe("doctor friction", () => {
       runDoctorCommand(argv, {
         cwd: fixture.root,
         globalConfigStore: fixture.globalConfigStore,
-        inspectPlugins: async () => ({ failures: [], capabilities: [] }),
+        inspectPlugins: async () => ({ failures: [], capabilities: [], deprecations: [] }),
         env: { HOME: fixture.home },
         now,
       }),
