@@ -78,6 +78,12 @@ function recordingRunner(result: PrepareRun = { ok: true, notes: [] }) {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
 
+/** Waits for what a background sync does once it ends; a loaded run takes longer than a tick. */
+async function until(condition: () => boolean): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (!condition() && Date.now() < deadline) await settle();
+}
+
 const base = {
   directory: "/work/acme",
   repoPath: "/work/acme",
@@ -151,7 +157,7 @@ describe("registerSessionPrepare", () => {
     expect(lines).toEqual([]);
 
     finish({ ok: true, notes: ["companion Git synchronization unfinished: offline"] });
-    await settle();
+    await until(() => lines.join("\n").includes("offline"));
 
     expect(lines.join("\n")).toContain("offline");
   });
@@ -176,7 +182,7 @@ describe("registerSessionPrepare", () => {
     expect(reloads).toHaveLength(1);
 
     finish({ ok: true, notes: [], changed: true });
-    await settle();
+    await until(() => reloads.length > 1 && lines.join("\n").includes("companion updated"));
 
     expect(reloads).toHaveLength(2);
     expect(reloads.at(-1)?.tokensave?.disabled).toBeUndefined();
@@ -229,13 +235,13 @@ describe("registerSessionPrepare", () => {
     const options = { ...base, repoPath, mateServers: [], run, log: () => {} };
 
     cleanups.push(await registerSessionPrepare(fakeApi({}).api, options));
-    await settle();
+    await until(() => readSessionNotes(repoPath).length > 0);
     expect(readSessionNotes(repoPath)).toEqual(["preflight: acme"]);
 
     resetPrepareDebounce();
     result = { ok: true, notes: [] };
     cleanups.push(await registerSessionPrepare(fakeApi({}).api, options));
-    await settle();
+    await until(() => readSessionNotes(repoPath).length === 0);
     expect(readSessionNotes(repoPath)).toEqual([]);
   });
 

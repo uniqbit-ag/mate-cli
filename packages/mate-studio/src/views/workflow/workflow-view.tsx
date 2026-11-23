@@ -1,32 +1,40 @@
-import type { StudioChange, StudioCompanionPayload } from "@uniqbit/mate-core/studio";
+import {
+  defaultWorkflow,
+  type StudioChange,
+  type StudioCompanionPayload,
+  type Workflow as DeliveryWorkflow,
+} from "@uniqbit/mate-core/studio";
 
-import { changeStep } from "../overview/change-group";
+import { changePath, changeStep } from "../overview/change-group";
 import { Warnings } from "../warnings";
 import { DeliveryPathView, type StageChanges, type StageCounts } from "./delivery-path";
+import { reviewNode } from "./steps";
 
 interface WorkflowProps {
-  payload: Pick<StudioCompanionPayload, "skills" | "topology" | "warnings">;
+  payload: Pick<StudioCompanionPayload, "skills" | "topology" | "warnings"> &
+    Partial<Pick<StudioCompanionPayload, "workflow">>;
   /** The companion's active changes, placed on the graph at the stage the Overview names. */
   changes?: StudioChange[];
 }
 
-/** Graph node per change stage, in path order; matches the stage the Overview panel names. */
-const STAGE_NODES: { node: string; label: string }[] = [
-  { node: "propose", label: "Propose change" },
-  { node: "reviews", label: "Human review" },
-  { node: "apply", label: "Apply change" },
-  { node: "submit", label: "Submit change" },
-];
+const DEFAULT_WORKFLOW = defaultWorkflow();
 
-function stagesOf(changes: StudioChange[]): {
+/** The changes at each stage a change can be at, in path order, as the Overview places them. */
+function stagesOf(
+  changes: StudioChange[],
+  workflow: DeliveryWorkflow,
+): {
   counts: StageCounts;
   byStage: StageChanges[];
 } {
-  const byStage: StageChanges[] = STAGE_NODES.map((stage) => ({
-    ...stage,
-    changes: changes.flatMap((change) =>
-      changeStep(change).stage === stage.label ? [change.name] : [],
-    ),
+  const at = changes.map((change) => ({
+    name: change.name,
+    stage: changeStep(change, workflow).stageId,
+  }));
+  const byStage: StageChanges[] = changePath(workflow).map((stage) => ({
+    node: stage.kind === "review" ? reviewNode(stage.id) : stage.id,
+    label: stage.label,
+    changes: at.flatMap((change) => (change.stage === stage.id ? [change.name] : [])),
   }));
   const counts: StageCounts = {};
   for (const stage of byStage)
@@ -37,7 +45,8 @@ function stagesOf(changes: StudioChange[]): {
 const NO_CHANGES: StudioChange[] = [];
 
 export function Workflow({ payload, changes = NO_CHANGES }: WorkflowProps) {
-  const { counts, byStage } = stagesOf(changes);
+  // An invalid declaration draws the default path; the warning above names its problems.
+  const { counts, byStage } = stagesOf(changes, payload.workflow ?? DEFAULT_WORKFLOW);
   return (
     <>
       <Warnings warnings={payload.warnings} />

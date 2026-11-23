@@ -1,6 +1,6 @@
 {
   "name": "@uniqbit/mate-core",
-  "version": "0.21.1",
+  "version": "1.0.0-canary.7",
   "description": "Core framework and plugin APIs for Mate.",
   "license": "MIT",
   "repository": {
@@ -32,7 +32,8 @@
     "./opencode/tui": "./src/opencode/tui.tsx",
     "./tui": "./src/tui.ts",
     "./brand": "./src/brand/index.ts",
-    "./studio": "./src/studio.ts"
+    "./studio": "./src/studio.ts",
+    "./factory-host": "./src/factory-host.ts"
   },
   "publishConfig": {
     "access": "public",

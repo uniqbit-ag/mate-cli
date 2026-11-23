@@ -104,6 +104,8 @@ async function run(
 beforeEach(async () => {
   companion = await fs.mkdtemp(path.join(os.tmpdir(), "artifact-submit-"));
   await fs.mkdir(changeDir("x"), { recursive: true });
+  // Every task checked, so no stage before submit is open.
+  await fs.writeFile(path.join(changeDir("x"), "tasks.md"), "- [x] 1.1 Acme\n");
   pushed = [];
   process.exitCode = 0;
 });

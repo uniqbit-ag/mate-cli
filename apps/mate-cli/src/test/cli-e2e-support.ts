@@ -695,7 +695,7 @@ export async function writeOpenSpecStub(scenario: E2EScenario): Promise<string> 
     "  process.exit(0);",
     "}",
     "if (command === 'status') {",
-    "  console.log(JSON.stringify({ changes: [{ changeName: 'add-acme-checkout', schemaName: 'mate-v1', planningHome: { root: process.cwd(), defaultSchema: 'mate-v1' }, artifacts: [{ id: 'proposal', status: 'done' }] }] }));",
+    "  console.log(JSON.stringify({ changes: [{ changeName: 'add-acme-checkout', schemaName: 'mate-full', planningHome: { root: process.cwd(), defaultSchema: 'mate-full' }, artifacts: [{ id: 'proposal', status: 'done' }] }] }));",
     "  process.exit(0);",
     "}",
     "if (command === 'validate') {",

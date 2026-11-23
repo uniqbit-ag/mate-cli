@@ -11,6 +11,7 @@ import * as companionCmd from "./commands/companion/companion";
 import * as hubCmd from "./commands/companion/hub";
 import * as configCmd from "./commands/config";
 import * as doctorCmd from "./commands/doctor";
+import * as frictionCmd from "./commands/friction";
 import * as installCmd from "./commands/install";
 import * as claudeCmd from "./commands/launch/claude";
 import * as opencodeCmd from "./commands/launch/opencode";
@@ -19,7 +20,9 @@ import * as reportCmd from "./commands/report";
 import * as sessionCmd from "./commands/session/prepare";
 import * as sessionContextCmd from "./commands/session/context";
 import * as studioCmd from "./commands/studio";
+import * as triageCmd from "./commands/triage";
 import * as updateCmd from "./commands/update";
+import * as workflowCmd from "./commands/workflow/workflow";
 import * as workingCmd from "./commands/working/working";
 import * as unwrapCmd from "./commands/unwrap";
 import * as wrapCmd from "./commands/wrap";
@@ -29,6 +32,7 @@ const BUILT_IN_COMMANDS = [
   "install",
   "plugin",
   "artifact",
+  "workflow",
   "companion",
   "hub",
   "claude",
@@ -37,12 +41,14 @@ const BUILT_IN_COMMANDS = [
   "studio",
   "config",
   "doctor",
+  "friction",
   "cap",
   "update",
   "working",
   "wrap",
   "unwrap",
   "session",
+  "triage",
 ];
 
 describe("command gating", () => {
@@ -61,15 +67,18 @@ describe("command gating", () => {
     spies.push(
       spyOn(updateCmd, "runUpdateCommand").mockImplementation(record("update")),
       spyOn(doctorCmd, "runDoctorCommand").mockImplementation(record("doctor")),
+      spyOn(frictionCmd, "runFrictionCommand").mockImplementation(record("friction")),
       spyOn(companionCmd, "runCompanionCommand").mockImplementation(record("companion")),
       spyOn(hubCmd, "runHubCommand").mockImplementation(record("hub")),
       spyOn(configCmd, "runConfigCommand").mockImplementation(record("config")),
       spyOn(reportCmd, "runReportCommand").mockImplementation(record("report")),
       spyOn(sessionCmd, "runSessionCommand").mockImplementation(record("session")),
       spyOn(studioCmd, "runStudioCommand").mockImplementation(record("studio")),
+      spyOn(triageCmd, "runTriageCommand").mockImplementation(record("triage")),
       spyOn(claudeCmd, "runLaunchClaudeCommand").mockImplementation(record("claude")),
       spyOn(opencodeCmd, "runLaunchOpenCodeCommand").mockImplementation(record("opencode")),
       spyOn(artifactCmd, "runArtifactCommand").mockImplementation(record("artifact")),
+      spyOn(workflowCmd, "runWorkflowCommand").mockImplementation(record("workflow")),
       spyOn(capCmd, "runCapCommand").mockImplementation(record("cap")),
       spyOn(workingCmd, "runWorkingCommand").mockImplementation(record("working")),
       spyOn(wrapCmd, "runWrapCommand").mockImplementation(record("wrap")),
@@ -206,6 +215,30 @@ describe("command gating", () => {
     expect(updateChecker.enforceUpdateIfRequired).toHaveBeenCalled();
   });
 
+  test("workflow skips the background update check; done keeps update enforcement", async () => {
+    const { deps } = recordingDeps();
+
+    await main(["node", "mate", "workflow", "done", "acme-build", "acme-fix"], deps);
+
+    expect(dispatched).toEqual(["workflow"]);
+    expect(updateChecker.scheduleBackgroundCheck).not.toHaveBeenCalled();
+    expect(updateChecker.enforceUpdateIfRequired).toHaveBeenCalled();
+  });
+
+  test("workflow next runs while an update is required, for the turn hooks", async () => {
+    const enforce = spyOn(updateChecker, "enforceUpdateIfRequired").mockImplementation(
+      async () => true,
+    );
+    spies.push(enforce);
+    const { deps } = recordingDeps();
+
+    await main(["node", "mate", "workflow", "next", "acme-fix", "--json"], deps);
+
+    expect(dispatched).toEqual(["workflow"]);
+    expect(enforce).not.toHaveBeenCalled();
+    expect(updateChecker.scheduleBackgroundCheck).not.toHaveBeenCalled();
+  });
+
   test("session context runs before the runtime refresh, plugin loading and update checks", async () => {
     const received: string[][] = [];
     spies.push(
@@ -233,6 +266,27 @@ describe("command gating", () => {
     expect(updateChecker.scheduleBackgroundCheck).not.toHaveBeenCalled();
     expect(updateChecker.showUpdateBannerIfAvailable).not.toHaveBeenCalled();
     expect(updateChecker.enforceUpdateIfRequired).not.toHaveBeenCalled();
+  });
+
+  test("triage runs with an enforced update, a failing runtime refresh and no companion", async () => {
+    spies.push(
+      spyOn(updateChecker, "enforceUpdateIfRequired").mockImplementation(async () => true),
+    );
+    const { gateCalls, deps } = recordingDeps({
+      companion: false,
+      installOk: false,
+      runtimeDirectoryFails: true,
+    });
+    deps.hydrateDynamicPlugins = async () => {
+      gateCalls.push("hydrate");
+    };
+
+    await main(["node", "mate", "triage", "--no-launch"], deps);
+
+    expect(dispatched).toEqual(["triage"]);
+    expect(gateCalls).toEqual([]);
+    expect(updateChecker.enforceUpdateIfRequired).not.toHaveBeenCalled();
+    expect(process.exitCode || 0).toBe(0);
   });
 
   test("forwards studio subcommand arguments", async () => {
@@ -289,6 +343,46 @@ describe("command gating", () => {
     await main(["node", "mate", "working", "cleanup"], deps);
     expect(gateCalls).toEqual([]);
     expect(dispatched).toEqual(["working"]);
+  });
+
+  test("friction on, off, status and mark run without companion selection or install preflight", async () => {
+    for (const subcommand of ["on", "off", "status", "mark"]) {
+      const { gateCalls, deps } = recordingDeps({ companion: false, installOk: false });
+      await main(["node", "mate", "friction", subcommand], deps);
+      expect(gateCalls).toEqual([]);
+    }
+    expect(dispatched).toEqual(["friction", "friction", "friction", "friction"]);
+  });
+
+  test("friction list keeps companion selection and install preflight", async () => {
+    const { gateCalls, deps } = recordingDeps();
+    await main(["node", "mate", "friction", "list"], deps);
+    expect(gateCalls).toEqual(["companion", "install"]);
+  });
+
+  test("friction report runs while an update is required and installation is incomplete", async () => {
+    spies.push(
+      spyOn(updateChecker, "enforceUpdateIfRequired").mockImplementation(async () => true),
+    );
+    const { gateCalls, deps } = recordingDeps({ installOk: false });
+    await main(["node", "mate", "friction", "report", "F-acme"], deps);
+    expect(gateCalls).toEqual(["companion"]);
+    expect(dispatched).toEqual(["friction"]);
+  });
+
+  test("friction list --json prints an error document when a gate blocks it", async () => {
+    const output = spyOn(console, "log").mockImplementation(() => {});
+    spies.push(
+      output,
+      spyOn(console, "error").mockImplementation(() => {}),
+    );
+    const { deps } = recordingDeps({ installOk: false });
+    await main(["node", "mate", "friction", "list", "--json"], deps);
+    expect(dispatched).toEqual([]);
+    expect(process.exitCode).toBe(1);
+    expect(output.mock.calls.map(([line]) => JSON.parse(String(line)))).toMatchObject([
+      { kind: "error", version: 1, error: { code: "PREFLIGHT_FAILED" } },
+    ]);
   });
 
   test("wrap declares companion selection and install preflight", async () => {
@@ -430,6 +524,27 @@ describe("command gating", () => {
         expect(process.exitCode).toBe(1);
       }
       expect(dispatched).toEqual([]);
+    } finally {
+      process.exitCode = originalExitCode ?? 0;
+    }
+  });
+
+  test("workflow carries the gates of artifact", async () => {
+    const { gateCalls, deps } = recordingDeps();
+    await main(["node", "mate", "workflow", "steps", "apply", "--json"], deps);
+    expect(gateCalls).toEqual(["companion", "install"]);
+    expect(dispatched).toEqual(["workflow"]);
+  });
+
+  test("an ambiguous companion blocks workflow before it resolves a stage", async () => {
+    const originalExitCode = process.exitCode;
+    try {
+      const { gateCalls, deps } = recordingDeps({ companion: false });
+      process.exitCode = 0;
+      await main(["node", "mate", "workflow", "done", "apply", "acme-fix"], deps);
+      expect(gateCalls).toEqual(["companion"]);
+      expect(dispatched).toEqual([]);
+      expect(process.exitCode).toBe(1);
     } finally {
       process.exitCode = originalExitCode ?? 0;
     }
@@ -723,6 +838,51 @@ describe("plugin CLI commands", () => {
     resetActiveDistribution();
   });
 
+  test("dispatches a service's own command without gating it on a companion", async () => {
+    const received: string[][] = [];
+    const plugin = makePlugin("acme");
+    plugin.service = {
+      apiVersion: 1,
+      id: "acme",
+      label: "Acme",
+      command: {
+        name: "acme",
+        usage: ["acme serve"],
+        run: async (argv) => void received.push(argv),
+      },
+    };
+    activate(plugin);
+    let companionChecks = 0;
+    await main(["node", "mate", "acme", "serve", "--socket", "/run/acme.sock"], {
+      ...okDeps,
+      ensureUnambiguousCompanion: async () => {
+        companionChecks++;
+        return false;
+      },
+    });
+    expect(received).toEqual([["serve", "--socket", "/run/acme.sock"]]);
+    expect(companionChecks).toBe(0);
+  });
+
+  test("a built-in command wins over a service command of the same name", async () => {
+    const received: string[][] = [];
+    const plugin = makePlugin("acme");
+    plugin.service = {
+      apiVersion: 1,
+      id: "acme",
+      label: "Acme",
+      command: { name: "doctor", usage: [], run: async (argv) => void received.push(argv) },
+    };
+    activate(plugin);
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await main(["node", "mate", "doctor"], okDeps).catch(() => {});
+    } finally {
+      logSpy.mockRestore();
+    }
+    expect(received).toEqual([]);
+  });
+
   test("dispatches `<distribution> cap <pluginId> <name>` to the plugin's run with remaining argv", async () => {
     const received: string[][] = [];
     activate(
@@ -813,6 +973,25 @@ describe("plugin CLI commands", () => {
 
       await main(["node", "mate", "cap", "acme-discovery", "mcp"], okDeps);
       expect(received).toEqual([[]]);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      stderrSpy.mockRestore();
+      process.exitCode = originalExitCode ?? 0;
+    }
+  });
+
+  test("cap friction names no command", async () => {
+    const originalExitCode = process.exitCode;
+    const writes: string[] = [];
+    const stderrSpy = spyOn(process.stderr, "write").mockImplementation((chunk: unknown) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    activate(makePlugin("acme"));
+
+    try {
+      await main(["node", "mate", "cap", "friction", "list"], okDeps);
+      expect(writes.join("")).toContain("unknown capability command: friction");
       expect(process.exitCode).toBe(1);
     } finally {
       stderrSpy.mockRestore();

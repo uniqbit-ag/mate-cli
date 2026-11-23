@@ -20,7 +20,7 @@ export interface ShellCompanion {
   missing?: boolean;
   /** Linked Working Repositories by identity. */
   pairings: string[];
-  /** Removing it only unregisters it: the factory deletes folders only in its companions directory. */
+  /** Removing it only unregisters it: a service's companion source deletes folders only in its own folder. */
   keepsFolder?: boolean;
 }
 
@@ -36,10 +36,23 @@ export interface ShellData {
   collectedAt: number | null;
   metrics: { changes: number; done: number; specs: number } | null;
   writable: boolean;
-  /** The factory broker runs: only then is the Factory view offered. */
-  factoryMode: boolean;
+  /** A plugin service adds companions by Git URL: only then can the picker add one. */
+  addsCompanions: boolean;
+  /** Views plugin services ship as their own modules, in navigation order. */
+  pluginViews: ShellPluginView[];
   /** The agent terminal; `null` when Studio runs without it. */
   terminal: ShellTerminal | null;
+}
+
+export interface ShellPluginView {
+  service: string;
+  view: string;
+  label: string;
+  description?: string;
+  /** Where Studio serves the view's module. */
+  moduleUrl: string;
+  /** The service route answering how many things in the view wait on the person. */
+  attentionUrl?: string;
 }
 
 export interface ShellTerminal {
@@ -90,7 +103,23 @@ export const getShell = createServerFn({ method: "GET" })
           }
         : null,
       writable: page.writable,
-      factoryMode: context.studio.factoryMode,
+      addsCompanions: context.studio.addsCompanions(),
+      pluginViews: context.studio.services().flatMap((service) =>
+        service.views.flatMap((view) =>
+          view.moduleUrl
+            ? [
+                {
+                  service: service.id,
+                  view: view.id,
+                  label: view.label,
+                  ...(view.description ? { description: view.description } : {}),
+                  moduleUrl: view.moduleUrl,
+                  ...(view.attentionUrl ? { attentionUrl: view.attentionUrl } : {}),
+                },
+              ]
+            : [],
+        ),
+      ),
       terminal: page.terminal
         ? {
             pinned: page.terminal.pinned,

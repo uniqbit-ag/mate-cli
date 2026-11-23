@@ -35,7 +35,11 @@ export async function runArtifactTakeCommand(
   }
   const environment = await resolveDeliveryEnvironment(deps);
   if ("error" in environment) return refuse(environment.error);
-  const result: TakeResult = await (deps.take ?? takeSubmitted)(environment.companionPath, change);
+  const take = deps.take ?? takeSubmitted;
+  const { companionPath, artifactType } = environment;
+  const result: TakeResult = await (artifactType
+    ? take(companionPath, change, { artifactType })
+    : take(companionPath, change));
   if (result.status === "refused") process.exitCode = 1;
   emitOut(flags.json === true ? JSON.stringify(result) : result.message);
 }

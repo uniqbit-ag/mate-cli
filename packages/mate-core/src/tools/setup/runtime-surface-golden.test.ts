@@ -140,9 +140,8 @@ async function installStubs(root: string): Promise<string> {
     ].join("\n"),
   );
 
-  // The rtk capability is disabled in every matrix cell, and its provider
-  // teardown runs `rtk init -g --uninstall` against whatever `rtk` is on PATH.
-  // Stub it so the developer's real global RTK integration is never touched.
+  // The rtk capability is disabled in every matrix cell, so no cell should run
+  // `rtk`. Stub it so a regression cannot touch the developer's real global setup.
   await writeStub(binDir, "rtk", ["#!/bin/sh", "exit 0", ""].join("\n"));
 
   await writeStub(

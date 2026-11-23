@@ -89,6 +89,42 @@ describe("mergeDir", () => {
 
     await fs.access(dest);
   });
+
+  test("rewrites each copied file's text through the transform", async () => {
+    const root = await makeTempDir("mate-mergeDir-transform-");
+    const src = path.join(root, "src");
+    const dest = path.join(root, "dest");
+
+    await fs.mkdir(path.join(src, "sub"), { recursive: true });
+    await fs.writeFile(path.join(src, "sub", "f.txt"), "acme", "utf8");
+
+    await mergeDir(src, dest, (fileName, content) => `${fileName}:${content}`);
+
+    expect(await fs.readFile(path.join(dest, "sub", "f.txt"), "utf8")).toBe("f.txt:acme");
+  });
+
+  test("replaces symlinks at copied paths instead of writing through them", async () => {
+    const root = await makeTempDir("mate-mergeDir-symlink-");
+    const src = path.join(root, "src");
+    const dest = path.join(root, "dest");
+    const outside = path.join(root, "outside");
+
+    await fs.mkdir(path.join(src, "sub"), { recursive: true });
+    await fs.writeFile(path.join(src, "f.txt"), "new", "utf8");
+    await fs.writeFile(path.join(src, "sub", "g.txt"), "new", "utf8");
+    await fs.mkdir(outside);
+    await fs.writeFile(path.join(outside, "target.txt"), "keep", "utf8");
+    await fs.mkdir(dest);
+    await fs.symlink(path.join(outside, "target.txt"), path.join(dest, "f.txt"));
+    await fs.symlink(outside, path.join(dest, "sub"));
+
+    await mergeDir(src, dest);
+
+    expect(await fs.readFile(path.join(outside, "target.txt"), "utf8")).toBe("keep");
+    await expect(fs.access(path.join(outside, "g.txt"))).rejects.toThrow();
+    expect((await fs.lstat(path.join(dest, "f.txt"))).isSymbolicLink()).toBe(false);
+    expect(await fs.readFile(path.join(dest, "sub", "g.txt"), "utf8")).toBe("new");
+  });
 });
 
 describe("pruneEmptyAncestors", () => {

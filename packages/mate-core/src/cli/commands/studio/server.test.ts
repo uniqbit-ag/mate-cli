@@ -590,9 +590,11 @@ describe("createStudioFetch", () => {
     try {
       await fs.writeFile(path.join(root, "note.md"), "one");
       let listener: ((event: string, filename: string | Buffer | null) => void) | undefined;
+      const { promise: watching, resolve: watched } = Promise.withResolvers<void>();
       const manager = createVaultManager({
         watch: (_root, next) => {
           listener = next;
+          watched();
           return { close() {} };
         },
       });
@@ -608,6 +610,8 @@ describe("createStudioFetch", () => {
       );
       const reader = response.body!.getReader();
       await reader.read();
+      /** The manager watches once it resolved the root, after the stream's greeting. */
+      await watching;
       await fs.writeFile(path.join(root, "note.md"), "two");
       listener?.("change", "note.md");
       const changed = await reader.read();

@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 
-import { getWrapperBinPath } from "./lib/package-paths";
+import { refreshRuntimeDirectory } from "./lib/runtime-directory-refresh";
 import { runtimeWrapperBinPath } from "./runtime/runtime-directory";
 import { openSpecCliDeps } from "./lib/openspec-cli";
 import { checkStoreRegistration, openSpecStoreDeps } from "./lib/orchestrator/openspec-store";
@@ -27,13 +27,11 @@ setDefaultTimeout(30_000);
 
 const SCHEMA_SOURCE = path.join(import.meta.dirname, "templates", "capabilities", "openspec-cap");
 /**
- * Where a projection says the wrappers live, under the test run's HOME; linked
- * to the package's wrappers the way the runtime directory is.
+ * Where a projection says the wrappers live, under the test run's HOME. The refresh links them to
+ * the package's wrappers without the link ever going missing for the files sharing that HOME.
  */
 const WRAPPER_BIN = runtimeWrapperBinPath();
-fs.mkdirSync(path.dirname(path.dirname(WRAPPER_BIN)), { recursive: true });
-fs.rmSync(path.dirname(WRAPPER_BIN), { recursive: true, force: true });
-fs.symlinkSync(path.dirname(getWrapperBinPath()), path.dirname(WRAPPER_BIN));
+await refreshRuntimeDirectory();
 
 const REAL_OPENSPEC = findRealOpenSpec();
 const NODE_DIR = path.dirname(
@@ -58,20 +56,20 @@ interface Sandbox {
   registrations: () => number;
 }
 
-/** Isolated OpenSpec state and a companion that is a `mate-v1` OpenSpec root. */
+/** Isolated OpenSpec state and a companion that is a `mate-full` OpenSpec root. */
 function makeSandbox(): Sandbox {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "openspec-e2e-")));
   tempRoots.push(root);
   const companion = path.join(root, "acme-companion");
   fs.mkdirSync(path.join(companion, "openspec", "schemas"), { recursive: true });
   fs.cpSync(
-    path.join(SCHEMA_SOURCE, "mate-v1"),
-    path.join(companion, "openspec", "schemas", "mate-v1"),
+    path.join(SCHEMA_SOURCE, "mate-full"),
+    path.join(companion, "openspec", "schemas", "mate-full"),
     {
       recursive: true,
     },
   );
-  fs.writeFileSync(path.join(companion, "openspec", "config.yaml"), "schema: mate-v1\n");
+  fs.writeFileSync(path.join(companion, "openspec", "config.yaml"), "schema: mate-full\n");
 
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
@@ -189,7 +187,7 @@ describe.skipIf(!REAL_OPENSPEC)("the OpenSpec store pointer with the real CLI", 
       acme.path,
       sandbox.companion,
     ]);
-    expect(openspec(sandbox, web, ["templates", "--json"])).toContain("mate-v1");
+    expect(openspec(sandbox, web, ["templates", "--json"])).toContain("mate-full");
   });
 
   test("two checkouts of one companion share a single registration", async () => {

@@ -91,11 +91,11 @@ export async function runArtifactResolveCommand(
 
   const environment = await resolveDeliveryEnvironment(deps);
   if ("error" in environment) return refuse(environment.error);
-  const result: ResolveResult = await (deps.resolve ?? resolveSubmitted)(
-    environment.companionPath,
-    change,
-    parts,
-  );
+  const resolve = deps.resolve ?? resolveSubmitted;
+  const { companionPath, artifactType } = environment;
+  const result: ResolveResult = await (artifactType
+    ? resolve(companionPath, change, parts, { artifactType })
+    : resolve(companionPath, change, parts));
   if (result.status === "refused") process.exitCode = 1;
   emitOut(flags.json === true ? JSON.stringify(result) : result.message);
 }

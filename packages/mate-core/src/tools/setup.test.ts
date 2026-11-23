@@ -27,9 +27,9 @@ import type { Plugin, SetupContext } from "./setup/plugin";
 
 const tempRoots: string[] = [];
 
-// Guard stubs: executeSetup runs teardown for every deselected capability, and
-// the rtk/tokensave teardowns shell out to whatever binary is on PATH
-// (`rtk init -g --uninstall` edits the developer's real global agent config).
+// Guard stubs: executeSetup runs apply or teardown for every capability, and the
+// rtk/tokensave handlers shell out to whatever binary is on PATH (`rtk init -g`
+// edits the developer's real global agent config).
 // Shadow both binaries for the whole file so no test can reach the real ones.
 // Restored in afterAll: Bun runs every test file in one process, so a leaked
 // stub `tokensave` breaks later files that start a real `tokensave serve`.
@@ -251,6 +251,35 @@ describe("executeSetup", () => {
 
     // No plugins are declared, so there is no install phase.
     expect(phases).toEqual(["Applying capabilities", "Registering companion"]);
+  });
+
+  test("removes the global RTK integration only when setup ends its use", async () => {
+    const root = await makeTempDir("mate-setup-rtk-transition-");
+    const globalConfigStore = new GlobalConfigStore(
+      path.join(root, "home", ".mate", "config.yaml"),
+    );
+    await installOpenSpecStub(root);
+    const log = path.join(root, "rtk.log");
+    await fs.writeFile(path.join(root, "bin", "rtk"), `#!/bin/sh\necho "$*" >> "${log}"\n`, {
+      mode: 0o755,
+    });
+    const uninstalls = async () =>
+      (await fs.readFile(log, "utf8")).split("\n").filter((line) => line.includes("--uninstall"));
+    const setup = (capabilities: { name: string }[]) =>
+      executeSetup({ allowedAgents: ["claude"], capabilities }, { cwd: root, globalConfigStore });
+
+    await setup([{ name: "rtk" }]);
+    expect(await uninstalls()).toEqual([]);
+
+    await syncCompanionFiles(root, {
+      allowedAgents: ["claude"],
+      packageManagers: ["bun"],
+      capabilities: [],
+    });
+    expect(await uninstalls()).toEqual([]);
+
+    await setup([]);
+    expect(await uninstalls()).toEqual(["init -g --uninstall"]);
   });
 
   test("replaces saved providers and capabilities with the selected set", async () => {
@@ -951,8 +980,8 @@ describe("executeSetup", () => {
     expect(config.packageManagers).toEqual(["bun"]);
   });
 
-  test("setup with the openspec capability activates mate-v1 in companion-local openspec config", async () => {
-    const root = await makeTempDir("mate-setup-openspec-mate-v1-");
+  test("setup with the openspec capability activates mate-full in companion-local openspec config", async () => {
+    const root = await makeTempDir("mate-setup-openspec-mate-full-");
     const globalConfigStore = new GlobalConfigStore(
       path.join(root, "home", ".mate", "config.yaml"),
     );
@@ -969,10 +998,12 @@ describe("executeSetup", () => {
     expect(config.capabilities).toContainEqual({ name: "openspec" });
     expect(
       parseYaml(await fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")),
-    ).toEqual({ schema: "mate-v1", rules: { specs: [MATE_SPECS_RULE] } });
-    await expect(
-      fs.access(path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml")),
-    ).resolves.toBeNull();
+    ).toEqual({ schema: "mate-full", rules: { specs: [MATE_SPECS_RULE] } });
+    for (const name of ["mate-full", "mate-v1"]) {
+      await expect(
+        fs.access(path.join(root, "openspec", "schemas", name, "schema.yaml")),
+      ).resolves.toBeNull();
+    }
 
     await executeSetup(
       {
@@ -984,9 +1015,9 @@ describe("executeSetup", () => {
 
     expect(
       parseYaml(await fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")),
-    ).toEqual({ schema: "mate-v1", rules: { specs: [MATE_SPECS_RULE] } });
+    ).toEqual({ schema: "mate-full", rules: { specs: [MATE_SPECS_RULE] } });
     await expect(
-      fs.access(path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml")),
+      fs.access(path.join(root, "openspec", "schemas", "mate-full", "schema.yaml")),
     ).resolves.toBeNull();
     await expect(
       fs.access(path.join(root, "openspec", "schemas", "mate-minimal", "schema.yaml")),
@@ -1049,6 +1080,34 @@ describe("executeSetup", () => {
     expect(gitignore).toContain(`# ${FRAMEWORK_NAME} managed: start`);
     expect(gitignore).not.toContain(".venv/");
     expect(gitignore).not.toContain("__pycache__/");
+  });
+
+  test("setup and sync leave the workflow declaration alone and tracked", async () => {
+    const root = await makeTempDir("mate-setup-workflow-");
+    const globalConfigStore = new GlobalConfigStore(
+      path.join(root, "home", ".mate", "config.yaml"),
+    );
+    await installOpenSpecStub(root);
+    const declaration = path.join(root, ".mate", "config", "workflow.yaml");
+    // Written by the owner, with a comment and spacing no rewrite would keep.
+    const source =
+      "version: 1\n\n# acme's path\nstages:\n  - id: submit\n    artifact: openspec\n    steps: [ { skill: mate-submit-change } ]\n  - id: publish\n    steps: [ { skill: mate-publish-artifact } ]\n";
+    await fs.mkdir(path.dirname(declaration), { recursive: true });
+    await fs.writeFile(declaration, source, "utf8");
+    const config = { allowedAgents: ["claude" as const], capabilities: [{ name: "openspec" }] };
+
+    await executeSetup(config, { cwd: root, globalConfigStore });
+    expect(await fs.readFile(declaration, "utf8")).toBe(source);
+
+    // `mate companion update` synchronizes through the same call.
+    await syncCompanionFiles(root, config);
+    expect(await fs.readFile(declaration, "utf8")).toBe(source);
+
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    expect(() =>
+      execFileSync("git", ["check-ignore", "-q", ".mate/config/workflow.yaml"], { cwd: root }),
+    ).toThrow();
+    expect(await fs.readFile(path.join(root, ".gitignore"), "utf8")).not.toContain("workflow");
   });
 
   test("setup writes the rtk capability to config when the rtk binary is present", async () => {
@@ -1969,6 +2028,32 @@ describe("applySetupCompatibilities — managed-output report", () => {
       { path: ".claude/skills/mate-acme", change: "written", owner: "mate" },
       { path: ".agents/skills/openspec-acme", change: "removed", owner: "openspec" },
     ]);
+  });
+
+  test("the earlier selection counts only the providers it saved", async () => {
+    const root = await makeTempDir("mate-setup-previous-providers-");
+    const seen: SetupContext["previousSetup"][] = [];
+    const requiredProvider: Plugin = {
+      ...recordingPlugin(() => {}),
+      id: "acme-provider",
+      kind: "provider",
+      isEnabled: () => false,
+    };
+
+    await applySetupCompatibilities(
+      root,
+      { allowedAgents: [] },
+      "setup",
+      [
+        { plugin: requiredProvider, policy: "required" },
+        recordingPlugin((ctx) => seen.push(ctx.previousSetup)),
+      ],
+      undefined,
+      undefined,
+      { previousConfig: { allowedAgents: [] } },
+    );
+
+    expect(seen[0]?.activeProviders).toEqual([]);
   });
 
   test("returns an empty report when nothing is recorded", async () => {

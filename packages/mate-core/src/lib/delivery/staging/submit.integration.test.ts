@@ -543,6 +543,28 @@ describe("submitGroups", () => {
   );
 
   test(
+    "a submit drops the recorded submit steps and keeps the other stages'",
+    async () => {
+      const fixture = await setup();
+      const companion = fixture.clone("acme-companion");
+      const change = changeLocally(companion, "acme-login");
+      const record = (await readDeliveryRecord(change))!;
+      await writeDeliveryRecord(change, {
+        ...record,
+        stages: { apply: ["mate-apply-change"], submit: ["acme-pr-check"] },
+      });
+
+      await submitGroups(companion, ["acme-login"], deps(fixture));
+
+      const pushed = showAt(fixture.remote, INBOX, "openspec/changes/acme-login/delivery.yaml")!;
+      expect(pushed).toContain("state: submitted");
+      expect(pushed).not.toContain("acme-pr-check");
+      expect((await readDeliveryRecord(change))?.stages).toEqual({ apply: ["mate-apply-change"] });
+    },
+    TIMEOUT,
+  );
+
+  test(
     "a delta base on a local commit is recorded where it left the default branch",
     async () => {
       const fixture = await setup();
@@ -951,6 +973,7 @@ describe("submitChanges", () => {
       const product = makeProductRepo(fixture.root);
       const first = product.commitOn("workset/acme-login", "login.txt", "login\n");
       const change = changeLocally(companion, "acme-login", { branch: "workset/acme-login" });
+      fs.writeFileSync(path.join(change, "tasks.md"), "- [x] 1.1 acme\n");
       const linked = await readDeliveryRecord(change);
       await writeDeliveryRecord(change, upsertDelivery(linked!, PRODUCT, { head: first }));
       // A review fix after the branch was linked.
@@ -1432,6 +1455,7 @@ describe("takeSubmitted", () => {
       product.commitOn("workset/acme-login", "login.txt", "login\n");
       product.squashMerge("workset/acme-login", "Login");
       const change = changeLocally(companion, "acme-login", { branch: "workset/acme-login" });
+      fs.writeFileSync(path.join(change, "tasks.md"), "- [x] 1.1 acme\n");
       const before = fs.readFileSync(path.join(change, "delivery.yaml"), "utf8");
       const submit = () =>
         submitChanges(

@@ -1,10 +1,7 @@
 import { parseAnchor } from "./change-layout";
 
-/**
- * Commit trailer naming the artifact a commit stages or publishes, as `<type>/<id>`, so one
- * key serves every artifact type. Revert lookup, resume and sync reconciliation read it.
- */
-export const ARTIFACT_TRAILER = "Mate-Artifact";
+// Revert lookup, resume and sync reconciliation read the artifact trailer too.
+export { ARTIFACT_TRAILER, INBOX_TRAILER } from "../runtime/artifact-trailers";
 
 /** Commit trailer with a unique id per commit attempt; settles whether a cut-off push landed. */
 export const TRANSACTION_TRAILER = "Mate-Transaction";

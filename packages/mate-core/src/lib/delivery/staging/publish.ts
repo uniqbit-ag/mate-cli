@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { ARTIFACT_TRAILER, TRANSACTION_TRAILER } from "../../artifact-trailer";
+import { ARTIFACT_TRAILER, INBOX_TRAILER, TRANSACTION_TRAILER } from "../../artifact-trailer";
 import type { RunOpenSpec } from "../../openspec-cli";
 import {
   companionGit,
@@ -65,6 +65,7 @@ import {
   pendingPlace,
   pendingRef,
   pushPending,
+  recordsAt,
   stagingRemote,
   transactionsAt,
   type StagingRemote,
@@ -462,10 +463,10 @@ async function resolveTarget(
     };
   }
   // An earlier publication the inbox was not emptied after: only taken out of the inbox.
-  const anchors = await anchorsAt(git, defaultRef(remote), type);
+  const records = await recordsAt(git, defaultRef(remote), type);
   const published = await Promise.all(
     group.changes.map((change) =>
-      publishedAs(git, defaultRef(remote), pendingRef(remote), type, change.name, anchors),
+      publishedAs(git, defaultRef(remote), pendingRef(remote), type, change.name, records),
     ),
   );
   return {
@@ -492,10 +493,10 @@ async function publishDependencies(
     submitted,
   );
   // Published, but the inbox was not emptied yet: no longer waited for.
-  const anchors = depended.length > 0 ? await anchorsAt(git, defaultRef(remote), type) : [];
+  const records = depended.length > 0 ? await recordsAt(git, defaultRef(remote), type) : [];
   const archived = await Promise.all(
     depended.map((change) =>
-      publishedAs(git, defaultRef(remote), pendingRef(remote), type, change.name, anchors),
+      publishedAs(git, defaultRef(remote), pendingRef(remote), type, change.name, records),
     ),
   );
   const waiting = depended.filter((_, index) => archived[index] === null);
@@ -771,6 +772,8 @@ async function publishIn(run: Run, input: PublishIn): Promise<Outcome | "retry">
       ...applied.records.map(
         (record) => `${ARTIFACT_TRAILER}: ${artifactTrailerValue(type, record)}`,
       ),
+      // Without an archive, how a later submission of the same name is told apart.
+      ...(type.archiveRoot === undefined ? [`${INBOX_TRAILER}: ${pendingCommit}`] : []),
       `${TRANSACTION_TRAILER}: ${transaction}`,
     ].join("\n"),
   ]);
@@ -905,10 +908,10 @@ async function clearInbox(
     `${run.transaction}-clear`,
     async (work) => {
       const present = await submittedAt(work, "HEAD", type, run.deps.tmpRoot, names);
-      const anchors = present.length > 0 ? await anchorsAt(work, defaultRef(remote), type) : [];
+      const records = present.length > 0 ? await recordsAt(work, defaultRef(remote), type) : [];
       const published = await Promise.all(
         present.map((change) =>
-          publishedAs(work, defaultRef(remote), "HEAD", type, change.name, anchors),
+          publishedAs(work, defaultRef(remote), "HEAD", type, change.name, records),
         ),
       );
       const paths = present.filter((_, index) => published[index] !== null).map((c) => c.path);

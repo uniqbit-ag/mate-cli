@@ -4,7 +4,6 @@ import type { StudioInventory, StudioInventoryCompanion } from "./inventory";
 
 export type StudioView =
   | "dashboard"
-  | "factory"
   | "workflow"
   | "getting-started"
   | "specs"
@@ -12,11 +11,11 @@ export type StudioView =
   | "vault"
   | "reports"
   | "usage"
+  | "friction"
   | "graph";
 
 export const STUDIO_VIEWS: readonly StudioView[] = [
   "dashboard",
-  "factory",
   "workflow",
   "getting-started",
   "specs",
@@ -24,6 +23,7 @@ export const STUDIO_VIEWS: readonly StudioView[] = [
   "vault",
   "reports",
   "usage",
+  "friction",
   "graph",
 ];
 
@@ -34,13 +34,20 @@ export const STUDIO_MODES: readonly StudioMode[] = ["engineering", "analysis"];
 
 /** Views only the mode is offered, in navigation order. */
 export const MODE_VIEWS: Readonly<Record<StudioMode, readonly StudioView[]>> = {
-  engineering: ["dashboard", "factory", "workflow", "skills", "getting-started"],
+  engineering: ["dashboard", "workflow", "skills", "getting-started"],
   // The same `dashboard` id; `Content` renders each mode's own Overview.
   analysis: ["dashboard"],
 };
 
 /** Views every mode is offered, in navigation order. */
-export const SHARED_VIEWS: readonly StudioView[] = ["vault", "specs", "reports", "graph", "usage"];
+export const SHARED_VIEWS: readonly StudioView[] = [
+  "vault",
+  "specs",
+  "reports",
+  "graph",
+  "usage",
+  "friction",
+];
 
 /** Where a mode lands when its URL names no view, or one it is not offered. */
 export const LANDING_VIEW: Readonly<Record<StudioMode, StudioView>> = {
