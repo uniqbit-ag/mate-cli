@@ -1,3 +1,5 @@
+import { type Ref, useEffect, useRef } from "react";
+
 import type { RecordingToggle } from "../lib/friction-query";
 import { Button } from "./ui/button";
 import { StatusWord } from "./view-parts";
@@ -21,16 +23,36 @@ export function RecordingReach() {
   );
 }
 
+/** A successful Retry removes itself; focus then goes to the recording button. */
+export function useRetryFocus(isSuccess: boolean) {
+  const button = useRef<HTMLButtonElement>(null);
+  const retried = useRef(false);
+  useEffect(() => {
+    if (!isSuccess || !retried.current) return;
+    retried.current = false;
+    button.current?.focus();
+  }, [isSuccess]);
+  return {
+    button,
+    retried: () => {
+      retried.current = true;
+    },
+  };
+}
+
 /** With `recording` unknown, the button is disabled and claims neither state. */
 export function RecordingButton({
   recording,
   toggle,
+  ref,
 }: {
   recording: boolean | undefined;
   toggle: RecordingToggle;
+  ref?: Ref<HTMLButtonElement>;
 }) {
   return (
     <Button
+      ref={ref}
       size="sm"
       variant={recording === false ? "primary" : "default"}
       disabled={recording === undefined || toggle.pending}

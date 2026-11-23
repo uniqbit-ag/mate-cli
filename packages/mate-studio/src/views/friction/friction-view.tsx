@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   FRAMEWORK_NAME,
   FRICTION_VIEW_DAYS,
@@ -13,12 +13,21 @@ import {
   type FrictionItemState,
   type StateFilter,
 } from "@uniqbit/mate-core/studio";
-import { type CSSProperties, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  type Ref,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 
 import {
   RecordingButton,
   RecordingReach,
   RecordingState,
+  useRetryFocus,
 } from "../../components/friction-recording";
 import { Icon } from "../../components/icon";
 import { Button } from "../../components/ui/button";
@@ -393,7 +402,7 @@ function Overview({
   view: FrictionView;
   shown: FrictionShown;
   empty: boolean;
-  days: FrictionViewDays;
+  days: number;
   onShowAll: () => void;
 }) {
   const sections = [
@@ -439,12 +448,20 @@ function Overview({
   );
 }
 
-function Recording({ recording, toggle }: { recording: boolean; toggle: RecordingToggle }) {
+function Recording({
+  recording,
+  toggle,
+  button,
+}: {
+  recording: boolean;
+  toggle: RecordingToggle;
+  button?: Ref<HTMLButtonElement>;
+}) {
   return (
     <div className="grid gap-1">
       <div className="flex flex-wrap items-center gap-3">
         <RecordingState recording={recording} />
-        <RecordingButton recording={recording} toggle={toggle} />
+        <RecordingButton ref={button} recording={recording} toggle={toggle} />
       </div>
       <RecordingReach />
       {toggle.error ? (
@@ -632,6 +649,7 @@ export function FrictionPanel({
   filters,
   onFilters,
   mark,
+  recordingButton,
 }: {
   view: FrictionView;
   days: FrictionViewDays;
@@ -640,6 +658,7 @@ export function FrictionPanel({
   filters: FrictionFilters;
   onFilters: (filters: FrictionFilters) => void;
   mark: MarkFriction;
+  recordingButton?: Ref<HTMLButtonElement>;
 }) {
   const recorded = view.events > 0 || view.freeReports.length > 0;
   const shown = selectFriction(view, filters);
@@ -693,12 +712,17 @@ export function FrictionPanel({
       }));
       return null;
     };
-  const showAll = () => onFilters({ state: "all", sort: filters.sort });
+  // Show all removes itself, so focus goes to the State filter's All.
+  const showAll = () => {
+    const states = panel.current?.querySelectorAll<HTMLElement>('[aria-label="State"] button');
+    [...(states ?? [])].find((button) => button.textContent === "All")?.focus();
+    onFilters({ state: "all", sort: filters.sort });
+  };
   const empty = shown.groups.length === 0 && shown.freeReports.length === 0;
 
   return (
     <div ref={panel} className={cn(PAGE_PAD, "grid min-w-0 gap-4 pt-3 pb-6")}>
-      <Recording recording={view.recording} toggle={toggle} />
+      <Recording recording={view.recording} toggle={toggle} button={recordingButton} />
       <div className="grid gap-2">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
           <Pills
@@ -732,13 +756,14 @@ export function FrictionPanel({
               on.
             </p>
           )}
-          <Overview view={view} shown={shown} empty={empty} days={days} onShowAll={showAll} />
+          {/* view.days, not days: a period still loading shows the last one read. */}
+          <Overview view={view} shown={shown} empty={empty} days={view.days} onShowAll={showAll} />
           <Lists shown={shown} empty={empty} markItem={markItem} onShowAll={showAll} />
         </>
       ) : (
         <EmptyNote>
           {view.recording
-            ? `No friction was recorded in the last ${days} days.`
+            ? `No friction was recorded in the last ${view.days} days.`
             : `Friction recording shows where Mate gets in an agent's way: its refusals and the ${FRAMEWORK_NAME} commands that fail in agent sessions on this machine. Recording is off; turn it on to start.`}
         </EmptyNote>
       )}
@@ -759,14 +784,27 @@ export function Friction({
   filters: FrictionFilters;
   onFilters: (filters: FrictionFilters) => void;
 }) {
-  const query = useQuery({ ...frictionQuery(companion, days), enabled: useBrowser() });
+  // The previous period stays shown while another loads, so the period control keeps focus.
+  const query = useQuery({
+    ...frictionQuery(companion, days),
+    enabled: useBrowser(),
+    placeholderData: keepPreviousData,
+  });
   const toggle = useSetFrictionRecording();
   const mark = useMarkFriction();
+  const { button: recordingButton, retried } = useRetryFocus(query.isSuccess);
   if (!query.data && !query.isError) return <ViewLoading title="Reading the Friction Log…" />;
   const failed = query.isError ? (
     <div className={cn(PAGE_PAD, "pt-3 text-sm")} role="alert">
       <p className="m-0 text-bad">The Friction Log could not be read.</p>
-      <Button className="mt-3" onClick={() => void query.refetch()} disabled={query.isFetching}>
+      <Button
+        className="mt-3"
+        onClick={() => {
+          retried();
+          void query.refetch();
+        }}
+        disabled={query.isFetching}
+      >
         Retry
       </Button>
     </div>
@@ -783,6 +821,7 @@ export function Friction({
         filters={filters}
         onFilters={onFilters}
         mark={mark}
+        recordingButton={recordingButton}
       />
     </>
   );

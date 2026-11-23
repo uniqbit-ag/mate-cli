@@ -228,11 +228,15 @@ describe("the global features", () => {
     expect(section.getByRole("alert").textContent).toContain("could not be read");
     expect(section.getAllByRole("button").map((button) => button.textContent)).toEqual(["Retry"]);
     expect(page.container.querySelector<HTMLButtonElement>(".picker-card")!.disabled).toBe(false);
-    frictionServer.read = async () => ({ recording: true });
+    const retried = Promise.withResolvers<{ recording: boolean }>();
+    frictionServer.read = () => retried.promise;
     fireEvent.click(control("Retry"));
+    await settle();
+    retried.resolve({ recording: true });
     await settle();
     expect(section.queryByRole("alert")).toBeNull();
     expect(section.getByText("Recording is on")).toBeDefined();
+    expect(document.activeElement).toBe(control("Turn recording off"));
   });
 });
 

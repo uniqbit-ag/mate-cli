@@ -89,15 +89,24 @@ export function MarkActions({
   const [refusal, setRefusal] = useState<string | null>(null);
   const fieldId = useId();
   const field = useRef<HTMLInputElement>(null);
+  const openers = useRef<Partial<Record<FrictionStateName, HTMLButtonElement | null>>>({});
+  const cancelled = useRef<FrictionStateName | null>(null);
 
   useEffect(() => {
     if (draft) field.current?.focus();
+    else if (cancelled.current) openers.current[cancelled.current]?.focus();
+    cancelled.current = null;
   }, [draft]);
 
   const close = () => {
     setDraft(null);
     setText("");
     setRefusal(null);
+  };
+  const cancel = () => {
+    if (pending) return;
+    cancelled.current = draft;
+    close();
   };
 
   async function submit(state: MarkState, input: { note?: string; link?: string } = {}) {
@@ -120,7 +129,7 @@ export function MarkActions({
             void submit(draft, { [MARKS[draft].field.key]: text });
           }}
           onKeyDown={(event) => {
-            if (event.key === "Escape") close();
+            if (event.key === "Escape") cancel();
           }}
         >
           <label htmlFor={fieldId} className="grid gap-1 text-xs text-muted">
@@ -137,14 +146,22 @@ export function MarkActions({
           <Button size="sm" variant="primary" type="submit" disabled={pending}>
             {MARKS[draft].action}
           </Button>
-          <Button size="sm" onClick={close} disabled={pending}>
+          <Button size="sm" onClick={cancel} disabled={pending}>
             Cancel
           </Button>
         </form>
       ) : (
         <div role="group" aria-label={`Mark ${name}`} className="flex flex-wrap gap-2">
           {FRICTION_STATES.map((state) => (
-            <Button key={state} size="sm" disabled={pending} onClick={() => setDraft(state)}>
+            <Button
+              key={state}
+              ref={(button) => {
+                openers.current[state] = button;
+              }}
+              size="sm"
+              disabled={pending}
+              onClick={() => setDraft(state)}
+            >
               {MARKS[state].action}
             </Button>
           ))}

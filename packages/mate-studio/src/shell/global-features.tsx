@@ -1,7 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
-import { RecordingButton, RecordingReach, RecordingState } from "../components/friction-recording";
+import {
+  RecordingButton,
+  RecordingReach,
+  RecordingState,
+  useRetryFocus,
+} from "../components/friction-recording";
 import { Button } from "../components/ui/button";
 import { ListCard } from "../components/view-parts";
 import { frictionRecordingQuery, useSetFrictionRecording } from "../lib/friction-query";
@@ -35,6 +40,7 @@ export function GlobalFeatures() {
   // Browser only, so the companion list never waits for the switch.
   const query = useQuery({ ...frictionRecordingQuery, enabled: useBrowser() });
   const toggle = useSetFrictionRecording();
+  const { button: recordingButton, retried } = useRetryFocus(query.isSuccess);
   const recording = query.data?.recording;
   return (
     <ListCard title="Global features">
@@ -47,7 +53,14 @@ export function GlobalFeatures() {
             </p>
           }
           action={
-            <Button size="sm" disabled={query.isFetching} onClick={() => void query.refetch()}>
+            <Button
+              size="sm"
+              disabled={query.isFetching}
+              onClick={() => {
+                retried();
+                void query.refetch();
+              }}
+            >
               Retry
             </Button>
           }
@@ -62,7 +75,7 @@ export function GlobalFeatures() {
             )
           }
           note={<RecordingReach />}
-          action={<RecordingButton recording={recording} toggle={toggle} />}
+          action={<RecordingButton ref={recordingButton} recording={recording} toggle={toggle} />}
         />
       )}
       {toggle.error ? (

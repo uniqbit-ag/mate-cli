@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { useState } from "react";
 import type {
   FrictionFreeReport,
   FrictionMarkResult,
@@ -311,11 +312,15 @@ describe("the friction states", () => {
     const page = mount();
     await settle();
     expect(page.getByRole("alert").textContent).toContain("could not be read");
-    server.read = async () => frictionFixture();
+    const retried = Promise.withResolvers<FrictionView>();
+    server.read = () => retried.promise;
     fireEvent.click(page.getByRole("button", { name: "Retry" }));
+    await settle();
+    retried.resolve(frictionFixture());
     await settle();
     expect(reads).toBe(1);
     expect(page.getByText("Recording is on")).toBeDefined();
+    expect(document.activeElement).toBe(page.getByRole("button", { name: "Turn recording off" }));
   });
 
   test("a failed reload shows the error and Retry above the records it keeps", async () => {
@@ -369,6 +374,35 @@ describe("the period", () => {
     expect(page.getByRole("button", { name: "30 days" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(page.getByRole("button", { name: "90 days" }));
     expect(chosen).toEqual([90]);
+  });
+
+  test("choosing a period not yet read keeps the period control in place and focused", async () => {
+    server.read = async () => frictionFixture();
+    const client = new QueryClient();
+    function Periods() {
+      const [days, setDays] = useState<30 | 90>(30);
+      return (
+        <QueryClientProvider client={client}>
+          <Friction
+            companion="0123456789"
+            days={days}
+            onDays={(next) => setDays(next as 30 | 90)}
+            filters={DEFAULT_FRICTION_FILTERS}
+            onFilters={() => {}}
+          />
+        </QueryClientProvider>
+      );
+    }
+    const page = render(<Periods />);
+    await settle();
+    server.read = () => new Promise(() => {});
+    const ninety = page.getByRole("button", { name: "90 days" });
+    ninety.focus();
+    fireEvent.click(ninety);
+    await settle();
+    expect(document.activeElement).toBe(ninety);
+    expect(page.getByRole("region", { name: "Overview" }).textContent).toContain("last 30 days");
+    client.clear();
   });
 
   test("a late answer for one companion never fills another's view", async () => {
@@ -603,6 +637,31 @@ describe("the hidden items", () => {
     expect(chosen).toEqual([{ state: "all", sort: "repeats" }]);
   });
 
+  test("Show all moves focus to the State filter's All, also when only the type hid items", () => {
+    const view = frictionFixture();
+    function Filtered() {
+      const [filters, setFilters] = useState<FrictionFilters>({
+        state: "all",
+        type: "hook",
+        sort: "repeats",
+      });
+      return (
+        <FrictionPanel
+          view={view}
+          days={30}
+          onDays={() => {}}
+          toggle={idle}
+          filters={filters}
+          onFilters={setFilters}
+          mark={unmarked}
+        />
+      );
+    }
+    const page = render(<Filtered />);
+    fireEvent.click(page.getAllByRole("button", { name: /Show all/ })[0]!);
+    expect(document.activeElement).toBe(page.getByRole("button", { name: "All" }));
+  });
+
   test("with everything handled says no item matches, not that nothing was recorded", () => {
     const fixed = { state: frictionState(), open: false };
     const page = panel(
@@ -806,6 +865,15 @@ describe("marking", () => {
     expect(row.getByRole("alert").textContent).not.toContain(note);
     expect(groupRow(page).textContent).not.toContain("Dismissed in Studio");
     client.clear();
+  });
+
+  test("Escape closes the mark form and returns focus to the action that opened it", () => {
+    const page = panel(frictionFixture());
+    const row = within(openGroup(page));
+    fireEvent.click(row.getByRole("button", { name: "Dismiss" }));
+    fireEvent.keyDown(page.getByLabelText("Note (optional)"), { key: "Escape" });
+    expect(page.queryByLabelText("Note (optional)")).toBeNull();
+    expect(document.activeElement).toBe(row.getByRole("button", { name: "Dismiss" }));
   });
 
   test("Mark fixed is reached and confirmed from the keyboard once the row is open", async () => {
