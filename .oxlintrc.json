@@ -76,7 +76,14 @@
           {
             "patterns": [
               {
-                "group": ["**", "!./model", "!**/friction-retention", "!**/friction-vocabulary"],
+                "group": [
+                  "**",
+                  "!./model",
+                  "!./friction-retention",
+                  "!./friction-vocabulary",
+                  "!../../../runtime/friction-retention",
+                  "!../../../runtime/friction-vocabulary"
+                ],
                 "allowTypeImports": true,
                 "message": "Studio's browser client imports this module: import only the other browser-safe friction modules, or types."
               }
