@@ -264,6 +264,29 @@ describe("createMate records a failed agent-run command as friction", () => {
     expect(readEvents({ sinceDays: 1, homeDir: home })).toHaveLength(4);
   });
 
+  test("a removed working folder leaves the command's message and exit code unchanged", async () => {
+    const { home, companion } = companionSelectingFriction();
+    const originalCwd = process.cwd;
+
+    try {
+      const { printed } = await runFailing(
+        { ...noSession, HOME: home, MATE_ARTIFACT_PATH: companion, CLAUDE_CODE_SESSION_ID: "s1" },
+        1,
+        undefined,
+        () => {
+          process.cwd = () => {
+            throw new Error("ENOENT: uv_cwd");
+          };
+          console.error("ENOENT: uv_cwd");
+        },
+      );
+
+      expect(printed).toEqual(["ENOENT: uv_cwd"]);
+    } finally {
+      process.cwd = originalCwd;
+    }
+  });
+
   test("records nothing without an agent session id", async () => {
     const { home, companion } = companionSelectingFriction();
 

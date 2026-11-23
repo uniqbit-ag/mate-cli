@@ -25,16 +25,20 @@ export async function runRecordingFailure(
     : null;
   const record = (exitCode: number) => {
     if (!session || !errors || exitCode === 0) return;
-    const nudge = recordCommandFailure({
-      args,
-      exitCode,
-      errorText: errors.text(),
-      session,
-      mateVersion,
-      env: process.env,
-      cwd: process.cwd(),
-    });
-    if (nudge) process.stderr.write(`${nudge}\n`);
+    try {
+      const nudge = recordCommandFailure({
+        args,
+        exitCode,
+        errorText: errors.text(),
+        session,
+        mateVersion,
+        env: process.env,
+        cwd: process.cwd(),
+      });
+      if (nudge) process.stderr.write(`${nudge}\n`);
+    } catch {
+      // e.g. `process.cwd()` in a removed folder; recording never changes the command's outcome
+    }
   };
   // Some commands end with `process.exit()`, so `run` never settles for them.
   if (session) process.once("exit", record);
