@@ -29,7 +29,6 @@ export function frictionReport(fields: Partial<FrictionReport> = {}): FrictionRe
   };
 }
 
-/** A Free Report: a report on no event, unmarked unless `state` is given. */
 export function frictionFreeReport(fields: Partial<FrictionFreeReport> = {}): FrictionFreeReport {
   const report = frictionReport({ eventId: null, ...fields });
   return {
@@ -41,7 +40,6 @@ export function frictionFreeReport(fields: Partial<FrictionFreeReport> = {}): Fr
   };
 }
 
-/** A Friction State as a group carries it; `fixed` by a person, with no later event. */
 export function frictionState(fields: Partial<FrictionGroupState> = {}): FrictionGroupState {
   return {
     state: "fixed",
@@ -76,7 +74,6 @@ export function frictionGroup(fields: Partial<FrictionGroup> = {}): FrictionGrou
   };
 }
 
-/** Synthetic friction for component tests; never reads the Friction Log. */
 export function frictionFixture(fields: Partial<FrictionView> = {}): FrictionView {
   return {
     recording: true,

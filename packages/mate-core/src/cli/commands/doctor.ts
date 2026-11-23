@@ -149,10 +149,6 @@ export interface DoctorFriction {
 
 const DOCTOR_FRICTION_DAYS = 7;
 
-/**
- * Counts open fingerprints only, as `friction list` shows them. The readers skip what they
- * cannot read, so an unreadable log or state file counts as no events or no state.
- */
 function collectFriction(
   companionPath: string,
   env: Record<string, string | undefined>,

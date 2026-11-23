@@ -1346,7 +1346,6 @@ describe("Claude plugins of a distribution's Capabilities", () => {
 describe("doctor friction", () => {
   const now = new Date("2027-03-14T12:00:00Z");
 
-  /** The configuration lists no friction capability: the switch alone decides. */
   async function companion(capabilities: FrameworkConfig["capabilities"] = [], recording = true) {
     const root = await makeTempDir("doctor-friction-");
     const home = path.join(root, "home");

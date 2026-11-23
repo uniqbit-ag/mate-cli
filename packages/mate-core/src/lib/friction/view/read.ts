@@ -67,11 +67,9 @@ export function readFrictionRecords(scope: FrictionScope, window: FrictionWindow
 const newestFirst = (reports: FrictionReport[]) =>
   reports.toSorted((a, b) => b.at.localeCompare(a.at));
 
-/** The fields inside `detail` are not validated on read. */
 const strings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 
-/** Counts each name once per event. */
 function tally(counts: Record<string, number>, names: string[]): void {
   for (const name of new Set(names)) counts[name] = (counts[name] ?? 0) + 1;
 }

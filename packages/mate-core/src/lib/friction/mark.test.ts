@@ -205,7 +205,6 @@ describe("markFriction", () => {
     const report = recordReport();
     const newer = recordReport();
     await mark(newer.id, "dismissed");
-    // As a newer Mate would write it: this Mate cannot tell the report is still there.
     const file = frictionReportFile("2027-03", home);
     const text = fs.readFileSync(file, "utf8");
     fs.writeFileSync(file, text.replace(`{"v":1,"id":"${newer.id}"`, `{"v":2,"id":"${newer.id}"`));

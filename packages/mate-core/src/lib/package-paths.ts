@@ -6,7 +6,6 @@ import { getActiveDistribution } from "../distribution";
 
 const require = createRequire(import.meta.url);
 
-/** `relative` under the first distribution asset root that ships it, else `bundled`. */
 function resolveAsset(relative: string, bundled: string): string {
   for (const root of getActiveDistribution().config.assetRoots ?? []) {
     const candidate = path.join(root, relative);

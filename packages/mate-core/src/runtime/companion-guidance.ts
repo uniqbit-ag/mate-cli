@@ -113,12 +113,10 @@ function artifactTypeRule(type: GuidanceArtifactType): string {
 
 const SECRET_HANDLING_RULE = `    <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>`;
 
-/** The only trigger for friction that has no event, so it stays short. */
 export const FRICTION_GUIDANCE = `## Friction
 
 When ${FRAMEWORK_NAME} gets in your way without a refusal or error to point at, such as a skill step that does not fit or missing guidance, record it when it happens: \`${FRAMEWORK_NAME} friction report --kind <${REPORT_KINDS.join("|")}> --subject <type>:<name> --expected "<what you expected>" --evidence "<what you saw>"\`. Record one report per problem, then keep working on your task. When nothing went wrong, record nothing.`;
 
-/** Delivered per session, never written to a file: the Friction Switch is one person's choice. */
 function withFriction(policy: string, friction: boolean | undefined): string {
   return friction ? `${policy}\n\n${FRICTION_GUIDANCE}` : policy;
 }

@@ -7,11 +7,6 @@ import { FRICTION_STATE_ORIGINS, FRICTION_STATES, type FrictionState } from "./f
 import { withLock, type LockOptions } from "./session-registry";
 import { writeAtomic } from "./write-atomic";
 
-/**
- * The Friction States of this machine, one file beside the Friction Log. Only an
- * explicit mark writes it, under a lock; readers and recording hooks never lock.
- */
-
 export interface FrictionStatesFile {
   v: 1;
   /** Fingerprint → its Friction State. */
@@ -82,7 +77,6 @@ export function readFrictionStates(homeDir?: string): FrictionStatesFile {
   }
 }
 
-/** Missing reads as empty; anything else unreadable throws, so a damaged file is never overwritten. */
 async function readStrictly(file: string): Promise<FrictionStatesFile> {
   let text: string;
   try {

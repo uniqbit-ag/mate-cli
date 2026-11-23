@@ -19,10 +19,8 @@ export const DEFAULT_FRICTION_DAYS: FrictionViewDays = 30;
 
 const SCOPE = "friction";
 
-/** Every query holding the machine-wide switch; keys start with their owner. */
 export const isFrictionQuery = (query: Query) => query.queryKey[1] === SCOPE;
 
-/** Deliberately outside eager view prefetch, so opening Studio reads no log. */
 export const frictionQuery = (companion: string, days: FrictionViewDays) =>
   queryOptions({
     queryKey: [companion, SCOPE, days] as const,
@@ -31,7 +29,6 @@ export const frictionQuery = (companion: string, days: FrictionViewDays) =>
     refetchOnWindowFocus: false,
   });
 
-/** The switch without a companion; "machine" can never equal a companion digest. */
 export const frictionRecordingQuery = queryOptions({
   queryKey: ["machine", SCOPE, "recording"] as const,
   queryFn: () => getFrictionRecording(),
@@ -49,7 +46,6 @@ const RECORDING_CHANGE = [SCOPE, "set-recording"] as const;
 
 export function useSetFrictionRecording(): RecordingToggle {
   const client = useQueryClient();
-  // Counted across pages: a change outlives the page that started it.
   const pending = useIsMutating({ mutationKey: RECORDING_CHANGE }) > 0;
   const change = useMutation({
     mutationKey: RECORDING_CHANGE,
@@ -86,7 +82,6 @@ export function useMarkFriction(): MarkFriction {
     mutationFn: (mark: FrictionMarkInput) => markFriction({ data: mark }),
     onSuccess: async (result) => {
       if (!result.ok) return;
-      // A mark is machine-wide: every companion's view and period may hold the item.
       await client.cancelQueries({ predicate: isFrictionQuery });
       await client.invalidateQueries({ predicate: isFrictionQuery });
     },

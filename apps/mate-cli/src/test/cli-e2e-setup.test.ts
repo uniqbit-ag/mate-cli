@@ -69,7 +69,6 @@ describe("mate CLI e2e: setup, link and doctor", () => {
     expect(config).not.toContain("react-doctor");
   });
 
-  /** Setup saves an unknown name as given; no plugin acts on it. */
   test("setup offers no friction capability: selecting it writes no friction guidance", async () => {
     const scenario = await createScenario("mate-cli-e2e-setup-retired-capability-");
 
@@ -82,7 +81,6 @@ describe("mate CLI e2e: setup, link and doctor", () => {
 
     const read = (name: string) =>
       fs.readFile(path.join(scenario.companion, name), "utf8").catch(() => "");
-    // rtk's entry shows that capability contributions were reconciled.
     expect(await read(".claude/settings.local.json")).toContain("Bash(rtk:*)");
     expect(await read(".claude/settings.local.json")).not.toContain("cap friction");
     for (const name of ["CLAUDE.md", "AGENTS.md"]) {

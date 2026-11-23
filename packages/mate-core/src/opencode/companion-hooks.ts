@@ -258,7 +258,6 @@ export async function registerCompanionHooks(
   });
 }
 
-/** Names only: the paths a call targets, never its shell command or written content. */
 function recordToolRefusal(
   refusal: GuardRefusal,
   event: { tool: string; sessionID: string; input: unknown },

@@ -68,7 +68,6 @@ const STATES: PillOption<StateFilter>[] = [
   { value: "handled", label: "Handled" },
   { value: "all", label: "All" },
 ];
-/** The type and kind selects' value for no filter. */
 const ANY = "any";
 const KINDS = [
   { value: ANY, label: "All kinds" },
@@ -90,7 +89,6 @@ function FrictionTime({ at }: { at: string }) {
   return <time dateTime={at}>{browser ? DATE_TIME.format(Date.parse(at)) : ""}</time>;
 }
 
-/** A fixed label column, so values start on one edge in every group and report; a narrow list keeps the width for values. */
 const DETAILS =
   "m-0 grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 @md:grid-cols-[6rem_minmax(0,1fr)]";
 
@@ -138,7 +136,6 @@ function ItemFooter({
   );
 }
 
-/** Labelled text; empty fields are left out. */
 function Fields({ fields }: { fields: readonly (readonly [string, string | null])[] }) {
   const shown = fields.filter(([, text]) => text);
   if (shown.length === 0) return null;
@@ -153,7 +150,6 @@ function Fields({ fields }: { fields: readonly (readonly [string, string | null]
   );
 }
 
-/** One list item that opens in place; `focusKey` makes it a mark's focus target. */
 function Row({
   focusKey,
   line,
@@ -161,7 +157,6 @@ function Row({
   children,
 }: {
   focusKey: string;
-  /** The summary line's layout once its list is wide enough for columns. */
   line: string;
   summary: ReactNode;
   children: ReactNode;
@@ -186,24 +181,17 @@ function Row({
   );
 }
 
-/**
- * A row's facts. In a narrow list they wrap after the title; once the list is wide enough each
- * fact takes a track of `--friction-facts`, so the facts line up as columns across rows.
- */
 const FACTS =
   "flex flex-wrap items-baseline gap-x-3 gap-y-0.5 font-mono text-xs whitespace-nowrap text-muted tabular-nums";
-/** Mono `ch` tracks; "last seen " plus a medium date and short time fits 32ch in common locales. */
 const LAST_SEEN_TRACK = "minmax(32ch,max-content)";
 const AT_TRACK = "minmax(22ch,max-content)";
 const STATE_TRACK = "11ch";
 
-/** Which optional fact columns any row of the list fills; the others get no track. */
 interface Columns {
   reports: boolean;
   state: boolean;
 }
 
-/** Holds an optional column's track in a row that has no value for it. */
 function Gap({ wide }: { wide: string }) {
   return <span aria-hidden="true" className={cn("hidden", wide)} />;
 }
@@ -217,7 +205,6 @@ function groupCounts(group: FrictionGroup): [string, string, string, string | nu
   ];
 }
 
-/** Each count column is as wide as its longest value in the list. */
 function groupTracks(groups: FrictionGroup[], columns: Columns): string {
   const counts = groups.map(groupCounts);
   const widest = (column: number) => Math.max(...counts.map((row) => row[column]?.length ?? 0), 0);
@@ -234,7 +221,6 @@ function reportTracks(stateColumn: boolean): string {
 
 const factsStyle = (tracks: string) => ({ "--friction-facts": tracks }) as CSSProperties;
 
-/** The state word keeps the sans face inside the mono facts. */
 function StateCell({
   state,
   column,
@@ -374,7 +360,6 @@ function FreeReportItem({
   );
 }
 
-/** How many items the filters hide, with Show all. */
 function Hidden({ hidden, onShowAll }: { hidden: number; onShowAll: () => void }) {
   return (
     <>
@@ -391,7 +376,6 @@ function Hidden({ hidden, onShowAll }: { hidden: number; onShowAll: () => void }
   );
 }
 
-/** With `empty`, the hidden count is left to the empty message. */
 function Overview({
   view,
   shown,
@@ -473,7 +457,6 @@ function Recording({
   );
 }
 
-/** A select with a visible label beside it; `note` describes what it applies to. */
 function FilterSelect<T extends string>({
   label,
   options,
@@ -527,7 +510,6 @@ function FilterSelect<T extends string>({
   );
 }
 
-/** The selects; the state pills sit with the period. */
 function Filters({
   view,
   shown,
@@ -558,7 +540,6 @@ function Filters({
         value={filters.kind ?? ANY}
         onChange={(kind) => onFilters({ ...filters, kind: oneOf(REPORT_KINDS, kind) })}
         note="Agent reports only"
-        // A chosen kind stays clearable.
         disabled={noReports && filters.kind === undefined}
       />
       <FilterSelect
@@ -571,7 +552,6 @@ function Filters({
   );
 }
 
-/** Both sections, or one message when the filters hide every item. */
 function Lists({
   shown,
   empty,
@@ -583,7 +563,6 @@ function Lists({
   markItem: (key: string, name: string) => MarkItem;
   onShowAll: () => void;
 }) {
-  // Rendered only with records, so here the filters hide all of them.
   if (empty) {
     return (
       <EmptyNote className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -662,9 +641,7 @@ export function FrictionPanel({
 }) {
   const recorded = view.events > 0 || view.freeReports.length > 0;
   const shown = selectFriction(view, filters);
-  // The last mark: its announcement, and the item after it to take focus when the filter hides it.
   const [marked, setMarked] = useState<{
-    /** Counts saves, so a repeated identical announcement still remounts and is read. */
     id: number;
     key: string;
     next: string | null;
@@ -680,7 +657,6 @@ export function FrictionPanel({
         : panel.current?.querySelector<HTMLElement>(
             `[data-friction-item="${CSS.escape(key)}"] summary`,
           );
-    // With no row left, the hidden items' Show all keeps focus in the view.
     (
       row(marked.key) ??
       row(marked.next) ??
@@ -712,7 +688,6 @@ export function FrictionPanel({
       }));
       return null;
     };
-  // Show all removes itself, so focus goes to the State filter's All.
   const showAll = () => {
     const states = panel.current?.querySelectorAll<HTMLElement>('[aria-label="State"] button');
     [...(states ?? [])].find((button) => button.textContent === "All")?.focus();
@@ -744,7 +719,6 @@ export function FrictionPanel({
           <Filters view={view} shown={shown} filters={filters} onFilters={onFilters} />
         ) : null}
       </div>
-      {/* Out of the grid flow: an empty region would add a second gap. */}
       <div aria-live="polite" className="sr-only">
         {marked ? <p key={marked.id}>{marked.message}</p> : null}
       </div>
@@ -756,7 +730,6 @@ export function FrictionPanel({
               on.
             </p>
           )}
-          {/* view.days, not days: a period still loading shows the last one read. */}
           <Overview view={view} shown={shown} empty={empty} days={view.days} onShowAll={showAll} />
           <Lists shown={shown} empty={empty} markItem={markItem} onShowAll={showAll} />
         </>
@@ -784,7 +757,6 @@ export function Friction({
   filters: FrictionFilters;
   onFilters: (filters: FrictionFilters) => void;
 }) {
-  // The previous period stays shown while another loads, so the period control keeps focus.
   const query = useQuery({
     ...frictionQuery(companion, days),
     enabled: useBrowser(),

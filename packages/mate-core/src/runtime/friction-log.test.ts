@@ -92,7 +92,6 @@ describe("appendEvent", () => {
   test("an append to an existing file deletes nothing", () => {
     const home = tempHome();
     appendEvent(event(), { homeDir: home, now: new Date("2027-04-01T00:00:00Z") });
-    // An old file that only a new month's first event would prune.
     fs.writeFileSync(frictionLogFile("2026-01", home), "");
     appendEvent(event(), { homeDir: home, now: new Date("2027-04-02T00:00:00Z") });
 

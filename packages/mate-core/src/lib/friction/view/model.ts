@@ -2,8 +2,6 @@ import type { FrictionReport } from "../../../runtime/friction-log";
 import { FRICTION_RETENTION_DAYS } from "../../../runtime/friction-retention";
 import type { FrictionState, SubjectType } from "../../../runtime/friction-vocabulary";
 
-// Free of node imports: Studio's client imports this file.
-
 export const FRICTION_VIEW_DAYS = [7, 30, FRICTION_RETENTION_DAYS] as const;
 export type FrictionViewDays = (typeof FRICTION_VIEW_DAYS)[number];
 
@@ -20,13 +18,11 @@ export interface FrictionGroupState extends FrictionState {
   reopened: boolean;
 }
 
-/** Either item's state: a group's carries `eventsSince` and `reopened`. */
 export type FrictionItemState = FrictionState &
   Partial<Pick<FrictionGroupState, "eventsSince" | "reopened">>;
 
 export interface FrictionGroup {
   fingerprint: string;
-  /** The fingerprint as a plain sentence. */
   title: string;
   /** The subject type a report on its events takes: `hook` for a refusal, `command` otherwise. */
   subjectType: SubjectType;
@@ -60,7 +56,6 @@ export interface FrictionFreeReport extends FrictionReport {
 
 /** The Friction View of a scope and period; `mate friction list --json` and Studio carry it. */
 export interface FrictionView {
-  /** Whether the Friction Switch is on. */
   recording: boolean;
   days: number;
   events: number;

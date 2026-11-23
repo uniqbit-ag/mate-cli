@@ -61,7 +61,6 @@ function checkLink(link: string | null, state: MarkState): void {
   }
 }
 
-/** Which family the target belongs to; reads the log only when the state file does not know it. */
 function resolveTarget(
   target: string,
   known: { fingerprints: object; reports: object },
@@ -102,7 +101,6 @@ export async function markFriction(
     const known = readFrictionStates(deps.homeDir);
     const family = resolveTarget(target, known, deps.homeDir);
     if (note !== null || link !== null) await refuseSecrets("The mark", [note, link], deps.scan);
-    // Read before the lock, so the lock never waits on the log; null prunes nothing.
     const retained =
       Object.keys(known.reports).length > 0 ? readReportIds({ homeDir: deps.homeDir }) : null;
     if (family === "reports" && retained && !retained.has(target)) {
@@ -121,7 +119,6 @@ export async function markFriction(
     await updateFrictionStates(
       (states) => {
         if (retained) {
-          // Only ids known before the scan: a report appended since may already hold a state.
           for (const id of Object.keys(known.reports)) {
             if (!retained.has(id)) delete states.reports[id];
           }

@@ -46,7 +46,6 @@ function kindForConfig(config: FrameworkConfig): Exclude<RootKind, "core"> {
   return config.type === "hub" ? "hub" : config.type === "working" ? "working" : "companion";
 }
 
-/** Loading a missing config creates it, so `write: false` reports it and uses the defaults. */
 async function loadRootConfig(
   rootPath: string,
   write?: boolean,

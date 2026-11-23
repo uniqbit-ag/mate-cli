@@ -3,8 +3,6 @@ import path from "node:path";
 
 import { frictionLogDir } from "./friction-log";
 
-/** The Friction Switch: one machine-local setting beside the log; off unless a person turned it on. */
-
 export function frictionSwitchFile(homeDir?: string): string {
   return path.join(frictionLogDir(homeDir), "settings.json");
 }

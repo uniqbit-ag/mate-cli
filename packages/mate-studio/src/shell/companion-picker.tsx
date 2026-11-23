@@ -460,7 +460,6 @@ export function CompanionSwitcher({
   );
 }
 
-/** The page while no companion is selected: global features, every companion, how to add one. */
 export function CompanionPicker({
   companions,
   writable = false,

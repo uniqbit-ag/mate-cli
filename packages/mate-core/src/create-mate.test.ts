@@ -130,7 +130,6 @@ describe("createMate records a failed agent-run command as friction", () => {
     return { home, companion };
   }
 
-  /** Runs `argv` with a main that prints and exits `exitCode`; returns what went to stderr and stdout. */
   async function runFailing(
     env: Record<string, string | undefined>,
     exitCode: number,
@@ -300,7 +299,6 @@ describe("createMate records a failed agent-run command as friction", () => {
     const cli = createMate({
       config: acmeConfig,
       plugins: [],
-      // What `process.exit(1)` does before the process ends, without ending the test.
       main: async () => void process.emit("exit", 1),
     });
 

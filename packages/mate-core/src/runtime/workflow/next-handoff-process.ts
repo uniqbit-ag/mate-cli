@@ -58,7 +58,6 @@ export function spawnNextHandoff(
       try {
         child = spawn(launch.command, launch.args, {
           cwd: folder,
-          // Started by a hook, not by the agent: a failure here is not agent friction.
           env: withoutSessionIds(env),
           shell: false,
           windowsHide: true,

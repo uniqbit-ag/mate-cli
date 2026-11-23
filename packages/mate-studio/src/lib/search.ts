@@ -17,7 +17,6 @@ import {
   type StudioView,
 } from "@uniqbit/mate-core/studio";
 
-/** Most repeated in one session (the summary's order) or most recent. */
 const FRICTION_SORTS = ["repeats", "recent"] as const;
 export type FrictionSort = (typeof FRICTION_SORTS)[number];
 

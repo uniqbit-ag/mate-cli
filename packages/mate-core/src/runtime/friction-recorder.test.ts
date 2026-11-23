@@ -27,7 +27,6 @@ afterEach(() => {
   for (const dir of tempRoots.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-/** A companion whose configuration lists no capability. */
 function companion(): string {
   const dir = tempDir("mate-friction-companion-");
   fs.mkdirSync(path.join(dir, ".mate", "config"), { recursive: true });

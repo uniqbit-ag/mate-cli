@@ -87,7 +87,6 @@ const counted = (counts: Record<string, number>) =>
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 const minute = (at: string) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`;
 
-/** The Friction State as one line, or nothing for an unmarked item. */
 function stateLines(state: FrictionItemState | null): string[] {
   if (!state) return [];
   const words = [
@@ -108,7 +107,6 @@ function renderGroup(group: FrictionGroup, all: boolean): string {
   const named = (label: string, counts: Record<string, number>) =>
     Object.keys(counts).length > 0 ? [`    ${label}: ${counted(counts)}`] : [];
   return [
-    // Quoted, ready for `friction mark`: a failed command's fingerprint holds spaces.
     `  ${JSON.stringify(group.fingerprint)} · ${group.title}`,
     ...stateLines(group.state),
     `    ${plural(group.events, "event")} in ${plural(group.sessions, "session")}, at most ${group.maxPerSession} in one session`,
@@ -213,7 +211,6 @@ export async function runFrictionListCommand(
     console.log(`Free reports: ${shown.freeReports.length}`);
     for (const report of shown.freeReports) console.log(renderFreeReport(report, args.all));
   }
-  // Triage copies only the current companion's friction and starts no agent inside an agent session.
   console.log(
     `Next: run ${FRAMEWORK_NAME} triage in your own terminal, inside the affected repository.`,
   );
@@ -232,11 +229,9 @@ const REPORT_FLAGS = {
 const MARK_FLAGS = { "--state": "state", "--note": "note", "--link": "link" } as const;
 
 type ValueArgs<F extends Record<string, string>> = Partial<Record<F[keyof F], string>> & {
-  /** The one argument that is no flag. */
   positional?: string;
 };
 
-/** `--flag value` or `--flag=value` for each of `flags`, one positional argument, and `--json`. */
 function parseValueArgs<F extends Record<string, string>>(argv: string[], flags: F): ValueArgs<F> {
   const args: Record<string, string> = {};
   for (let index = 0; index < argv.length; index++) {
@@ -410,7 +405,6 @@ export async function runFrictionReportCommand(
   }
 }
 
-/** Prints a refusal to stderr, and with `--json` one error document to stdout; rethrows anything else. */
 async function printRefusal(error: unknown, json: boolean): Promise<void> {
   if (!(error instanceof FrictionRefusal)) throw error;
   console.error(error.message);

@@ -262,7 +262,6 @@ describe("friction", () => {
       { homeDir: home },
     );
 
-  /** Like the Studio server functions: `/_serverFn/mark` dismisses, any other call turns recording on. */
   const switching = (): StudioApp => ({
     clientDir: root,
     fetch: async (request, { context }) =>

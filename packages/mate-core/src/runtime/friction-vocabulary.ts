@@ -1,5 +1,3 @@
-/** Friction names shared with Studio's client; free of node imports. */
-
 export const REPORT_KINDS = ["bug", "unclear", "missing"] as const;
 export const REPORT_COSTS = ["blocker", "detour", "papercut"] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];

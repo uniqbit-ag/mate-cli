@@ -308,7 +308,6 @@ export function CommandLine({
   );
 }
 
-/** A view's first load: a centred spinner with what it reads. */
 export function ViewLoading({ title, detail }: { title: string; detail?: string }) {
   return (
     <div className="grid min-h-64 flex-1 place-items-center px-6 py-12" role="status">

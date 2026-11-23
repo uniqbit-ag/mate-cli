@@ -4,7 +4,6 @@ import type { RecordingToggle } from "../lib/friction-query";
 import { Button } from "./ui/button";
 import { StatusWord } from "./view-parts";
 
-/** One id is enough: the start page and the Friction view are never shown together. */
 const REACH = "friction-recording-reach";
 
 export function RecordingState({ recording }: { recording: boolean }) {

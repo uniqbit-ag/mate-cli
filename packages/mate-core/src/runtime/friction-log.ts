@@ -8,13 +8,6 @@ import { realPath } from "./git-layout";
 import { mateHome } from "./runtime-directory";
 import type { SessionRuntime } from "./session-registry";
 
-/**
- * Machine-local, append-only record of the refusals and failed commands Mate
- * caused in agent sessions, and of the agents' reports on them. One JSON line
- * per record, one file per family and UTC month; a single append per record,
- * so concurrent hooks need no lock.
- */
-
 type FrictionKind = "refusal" | "command-failure";
 export type FrictionRuntime = SessionRuntime;
 
@@ -103,7 +96,6 @@ interface AppendOptions {
   now?: Date;
 }
 
-/** Throws on a failed append only; a month's first record prunes old files, best effort. */
 function appendRecord<T extends object>(
   family: Family,
   fields: T,
@@ -121,9 +113,7 @@ function appendRecord<T extends object>(
     const oldestKept = monthOf(new Date(now.getTime() - FRICTION_RETENTION_DAYS * DAY_MS));
     try {
       pruneBefore(family, oldestKept, options.homeDir);
-    } catch {
-      // The record is on disk, so the caller must not retry; a later month prunes again.
-    }
+    } catch {}
   }
   return record;
 }
@@ -136,7 +126,6 @@ export function appendEvent(
   try {
     return appendRecord("events", event, options);
   } catch {
-    // recording never changes the outcome it records
     return null;
   }
 }
@@ -149,7 +138,6 @@ export function appendReport(
   return appendRecord("reports", report, options);
 }
 
-/** A version-1 record whose `fields` are strings. */
 function recordOf<T>(fields: string[]): (value: unknown) => value is T {
   return (value): value is T => {
     if (!value || typeof value !== "object") return false;
@@ -166,7 +154,6 @@ const hasEventStrings = recordOf<FrictionEvent>([
   "companion",
 ]);
 
-/** Readers index into `detail`, so a line without one counts as unparseable. */
 function isFrictionEvent(value: unknown): value is FrictionEvent {
   return hasEventStrings(value) && typeof value.detail === "object" && value.detail !== null;
 }
@@ -195,15 +182,9 @@ interface ReadOptions {
   now?: Date;
 }
 
-/** One companion's records, or every companion's. */
 export type FrictionScope = { companion: string } | "all";
 
-/**
- * Whether a recorded companion is this one. The guard records the companion as it
- * resolved it, which may be a link to the one asked for.
- */
 function companionFilter(target: string): (candidate: string) => boolean {
-  // An empty path would resolve to the current folder.
   if (!target) return () => false;
   const wanted = realPath(target);
   const seen = new Map<string, boolean>();
@@ -220,7 +201,6 @@ function companionFilter(target: string): (candidate: string) => boolean {
 
 const isMissing = (error: unknown) => (error as NodeJS.ErrnoException)?.code === "ENOENT";
 
-/** A month's records in file order, and whether nothing was skipped; a missing file is complete. */
 function scanMonth<T>(
   family: Family,
   month: string,
@@ -240,7 +220,6 @@ function scanMonth<T>(
   return { records, complete: records.length === lines.length };
 }
 
-/** A month's records in file order; an unreadable file or an unparseable line is skipped. */
 function readMonth<T>(
   family: Family,
   month: string,
@@ -300,7 +279,6 @@ export function readFriction(
   return { events, reports };
 }
 
-/** The first record, newest month first, that `match` accepts; null when none or no log. */
 function findRecord<T>(
   family: Family,
   accept: (value: unknown) => value is T,

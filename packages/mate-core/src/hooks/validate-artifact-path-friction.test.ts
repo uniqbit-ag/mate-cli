@@ -17,7 +17,6 @@ afterEach(() => {
   for (const dir of tempRoots.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-/** A wrapped repository and no launch environment: the guard resolves the companion from the projection. */
 function fixture(recording: boolean) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "mate-hook-friction-"));
   tempRoots.push(root);

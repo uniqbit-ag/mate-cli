@@ -16,27 +16,16 @@ import { readFrictionSwitch } from "./friction-switch";
 import { mateVersion } from "./install";
 import { maskSecretValues } from "./secret-values";
 
-/**
- * Turns Mate's own refusals and failed agent-run commands into Friction Events.
- * Called only on the failure path, so an allowed call or a successful command
- * never reads the Friction Switch or the log. Never throws.
- */
-
 const MESSAGE_LIMIT = 1_000;
 const PATH_LIMIT = 5;
 
 type Env = Record<string, string | undefined>;
 
-/**
- * One line to append after a refusal or a failed command's own output: only for a
- * session's first event of a fingerprint, null otherwise.
- */
 function nudgeFor(event: FrictionEvent | null, env: Env): string | null {
   if (!event || !firstInSession(event, { homeDir: env.HOME })) return null;
   return `Wrong or unclear? Run: ${FRAMEWORK_NAME} friction report ${event.id} --kind <bug|unclear> --expected "<what you expected>". Then continue with your task.`;
 }
 
-/** An event without a companion would be unreachable: the list and triage filter by companion. */
 export function recordingFor(companionPath: string | undefined | null, env: Env): boolean {
   return Boolean(companionPath) && readFrictionSwitch(env.HOME);
 }
@@ -91,7 +80,6 @@ export function recordRefusal(refusal: RefusalRecord): string | null {
     );
     return nudgeFor(recorded, refusal.env);
   } catch {
-    // recording never changes the refusal
     return null;
   }
 }
@@ -112,7 +100,6 @@ interface CommandDetail {
   errorText: string;
 }
 
-/** A flag's value may start with a dash too, so only the shape of a flag name is kept. */
 const FLAG_NAME = /^(?:-[A-Za-z]|--[a-z][a-z0-9-]*)$/;
 
 /** Command, subcommand and flag names only: a flag's value or a positional is never kept. */
@@ -132,22 +119,17 @@ export function commandDetail(failure: CommandFailure): CommandDetail {
 }
 
 const COMMAND_WORD = /^[a-z][a-z0-9-]*$/;
-/** Their arguments go to the Agent Runtime (paths, prompts), so none is a subcommand. */
 const RUNTIME_LAUNCHES = new Set(["claude", "opencode"]);
-/** `cap` namespaces whose first argument is no command: graphify takes a path, index and sync only flags. */
 const CAP_WITHOUT_COMMAND = new Set(["graphify", "index", "sync"]);
-/** Shorter values are left alone: replacing them garbles the text and leaks little. */
 const REDACTED_VALUE_MIN = 3;
 
 function commandWords(args: string[]): { command: string | null; subcommand: string | null } {
-  // A command word; a path or a prompt in that position is not kept.
   const positional = (index: number) => {
     const value = args[index];
     return value && COMMAND_WORD.test(value) ? value : null;
   };
   const command = positional(0);
   const subcommand = command && !RUNTIME_LAUNCHES.has(command) ? positional(1) : null;
-  // The namespace alone would give every command of `cap <namespace> <command>` one fingerprint.
   const capCommand =
     command === "cap" && subcommand && !CAP_WITHOUT_COMMAND.has(subcommand) ? positional(2) : null;
   return { command, subcommand: capCommand ? `${subcommand} ${capCommand}` : subcommand };
@@ -155,7 +137,6 @@ function commandWords(args: string[]): { command: string | null; subcommand: str
 
 const WORD_CHAR = /[\p{L}\p{N}]/u;
 
-/** Matches the value only where no letter or digit continues it, so `all` stays in `install`. */
 function wholeValue(value: string): RegExp {
   const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const before = WORD_CHAR.test(value.at(0) ?? "") ? "(?<![\\p{L}\\p{N}])" : "";
@@ -163,7 +144,6 @@ function wholeValue(value: string): RegExp {
   return new RegExp(`${before}${escaped}${after}`, "gu");
 }
 
-/** A command may echo its arguments: every flag value and positional except the command words is replaced. */
 function withoutArgumentValues(text: string, args: string[]): string {
   const { command, subcommand } = commandWords(args);
   const kept = new Set([command, ...(subcommand?.split(" ") ?? [])]);
@@ -211,10 +191,8 @@ export function recordCommandFailure(failure: CommandFailureRecord): string | nu
       },
       { homeDir: failure.env.HOME },
     );
-    // A failed friction command gets no nudge, so reporting cannot loop.
     return detail.command === "friction" ? null : nudgeFor(recorded, failure.env);
   } catch {
-    // recording never changes the command's outcome
     return null;
   }
 }

@@ -15,7 +15,6 @@ const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query
 const { frictionFixture, frictionFreeReport, frictionGroup, frictionReport, frictionState } =
   await import("./fixture");
 
-/** What the server answers; tests replace them per case. */
 const server = {
   read: async (_input: { companion: string; days: number }): Promise<FrictionView> =>
     frictionFixture(),
@@ -97,7 +96,6 @@ function openRow(row: HTMLDetailsElement) {
   return row.lastElementChild as HTMLElement;
 }
 const openGroup = (page: ReturnType<typeof panel>) => openRow(groupRow(page));
-/** Each labelled field as "Label: value", in order. */
 const fields = (element: HTMLElement) =>
   [...element.querySelectorAll("dt")]
     .map((term) => `${term.textContent}: ${term.nextElementSibling!.textContent}`)
@@ -722,7 +720,6 @@ describe("an item's Friction State", () => {
 describe("marking", () => {
   const LINK = "https://github.com/acme/mate/issues/7";
   const OTHER_GROUP = "mate artifact archive failed with exit code 1";
-  /** The item's opened row: a person opens it before marking. */
   const opened = (page: ReturnType<typeof mount>, heading: string) =>
     within(openRow(rowOf(page, heading)));
 

@@ -352,7 +352,6 @@ function toolCall(payload: unknown): ToolCall {
   };
 }
 
-/** Names only: the paths a call targets, never its shell command or written content. */
 function recordHookRefusal(
   check: FrictionCheck,
   stderr: string,

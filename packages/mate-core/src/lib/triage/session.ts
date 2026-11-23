@@ -8,12 +8,10 @@ import { isWithin } from "../../runtime/physical-path";
 import { mateHome } from "../../runtime/runtime-directory";
 
 const TRIAGE_RETENTION_DAYS = 30;
-/** Holds the pid of the `mate triage` process while the agent it started runs. */
 const LAUNCHER_FILE = ".mate-triage.pid";
 const MAX_ANCESTORS = 64;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** `2026-11-16T09-30-00-123Z`, with `-<n>` for runs within one millisecond; names sort as times. */
 const SESSION_NAME = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z(?:-\d+)?$/;
 
 export function triageRoot(homeDir?: string): string {
@@ -94,7 +92,6 @@ function sessionName(date: Date): string {
   return date.toISOString().replace(/[:.]/g, "-");
 }
 
-/** Only folders named like a triage session go, so a stray file there survives. */
 function pruneTriageSessions(root: string, now: Date): void {
   let entries: fs.Dirent[];
   try {

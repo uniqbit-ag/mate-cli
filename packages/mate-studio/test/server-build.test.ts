@@ -15,7 +15,6 @@ import {
 
 const SERVER = path.join(import.meta.dir, "../dist/server/server.js");
 
-/** Newest change to code the server bundles; plain `bun test` skips the build `bun run test` does. */
 function newestSource() {
   let newest = 0;
   for (const dir of ["../src", "../../mate-core/src"]) {

@@ -568,7 +568,6 @@ describe("mate friction on, off and status", () => {
   });
 });
 
-/** Marks as a person would, `minutes` before the list's now. */
 async function setState(
   target: string,
   state: "fixed" | "reported" | "dismissed",

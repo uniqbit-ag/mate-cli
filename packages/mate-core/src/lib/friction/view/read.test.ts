@@ -18,7 +18,6 @@ import { readFrictionRecords, readFrictionView } from "./read";
 const COMPANION = "/acme/companion";
 const now = new Date("2027-03-14T12:00:00Z");
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** Three days ago: between `record`'s default of one day and five days ago. */
 const MARKED_AT = new Date(now.getTime() - 3 * DAY_MS).toISOString();
 let home: string;
 

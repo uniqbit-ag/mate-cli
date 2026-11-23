@@ -40,7 +40,6 @@ export const getFrictionRecording = createServerFn({ method: "GET" }).handler(
   ({ context }): Promise<{ recording: boolean }> => context.studio.frictionRecording(),
 );
 
-/** A write by method, so core's guard asks for Studio's own page and the token; no `--writable`. */
 export const setFrictionRecording = createServerFn({ method: "POST" })
   .validator(validateRecordingInput)
   .handler(({ data, context }) => context.studio.setFrictionRecording(data.recording));
@@ -59,7 +58,6 @@ const optionalText = (value: unknown, name: string): string | undefined => {
   return value;
 };
 
-/** Shape only: core checks the target, link and secrets, as `mate friction mark` does. */
 function validateMarkInput(input: FrictionMarkInput): FrictionMarkInput {
   if (typeof input?.target !== "string" || input.target === "")
     throw new Error("A mark names a fingerprint or a report");
@@ -73,7 +71,6 @@ function validateMarkInput(input: FrictionMarkInput): FrictionMarkInput {
   };
 }
 
-/** A write by method, like the switch: Studio's own page and the token; no `--writable`. */
 export const markFriction = createServerFn({ method: "POST" })
   .validator(validateMarkInput)
   .handler(({ data, context }): Promise<FrictionMarkResult> =>

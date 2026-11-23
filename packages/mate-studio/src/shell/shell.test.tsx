@@ -26,7 +26,6 @@ mock.module("../server/companions", () => ({
     return answers.shift() ?? { ok: true, digest: "abcdef0123", existing: false };
   },
 }));
-/** What the fake server answers about the Friction Switch; tests replace them per case. */
 const switchAnswers = () => ({
   read: async () => ({ recording: false }),
   write: async ({ recording }: { recording: boolean }) => ({ recording }),

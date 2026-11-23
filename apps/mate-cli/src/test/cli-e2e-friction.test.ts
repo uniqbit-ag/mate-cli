@@ -14,7 +14,6 @@ import {
 setDefaultTimeout(DEFAULT_TEST_TIMEOUT_MS * 2);
 afterEach(removeScenarios);
 
-/** Your own terminal: no Agent Runtime session id, whatever session runs the tests. */
 const person = { CLAUDE_CODE_SESSION_ID: "", OPENCODE_SESSION_ID: "" };
 
 describe("mate CLI e2e: friction", () => {

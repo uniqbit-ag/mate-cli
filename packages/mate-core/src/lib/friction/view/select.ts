@@ -6,8 +6,6 @@ import {
 } from "../../../runtime/friction-vocabulary";
 import type { FrictionFreeReport, FrictionGroup, FrictionView } from "./model";
 
-// Free of node imports: Studio's client selects without a new read.
-
 export interface FrictionFilters {
   state: StateFilter;
   /** Absent means every type. */

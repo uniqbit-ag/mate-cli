@@ -494,7 +494,6 @@ describe("OpenCode tokensave routing", () => {
 });
 
 describe("OpenCode companion hooks record refusals as friction", () => {
-  /** A wrapped repository and no launch environment, as in a plain `opencode` run. */
   async function wrappedWithFriction(recording: boolean) {
     const root = await makeTempDir("mate-opencode-friction-");
     const repo = path.join(root, "repo");

@@ -12,7 +12,6 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
-/** A fake agent CLI that records its folder and arguments, then exits 7. */
 async function fakeAgent(name: string) {
   const root = await createTempDir("mate-triage-launch-");
   roots.push(root);

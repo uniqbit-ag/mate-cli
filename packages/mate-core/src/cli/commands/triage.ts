@@ -124,7 +124,6 @@ export async function runTriageCommand(argv: string[] = [], deps: TriageDeps = {
   });
   printPaths(files);
   if (!args.launch) return;
-  // Inside an agent session nobody could give the playbook's yes.
   if (currentSession(env)) {
     console.log(
       `No agent started: this is an agent session. Run \`${FRAMEWORK_NAME} triage\` in your own terminal.`,
@@ -139,7 +138,6 @@ export async function runTriageCommand(argv: string[] = [], deps: TriageDeps = {
     process.exitCode = 1;
     return;
   }
-  // `friction mark` accepts an agent's mark only while this process runs that agent.
   const release = recordTriageLauncher(files.dir);
   try {
     process.exitCode = await (deps.launch ?? launchAgent)({

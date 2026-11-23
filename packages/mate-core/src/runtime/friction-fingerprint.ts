@@ -1,10 +1,5 @@
 import type { SecretToolCall } from "./secret-guard";
 
-/**
- * The fingerprint of a Friction Event: `refusal:<check>:<tool kind>` or
- * `command:<command words>:<exit code>`. Stored in the log, so the format never changes.
- */
-
 export type FrictionCheck = "secret" | "attribution" | "artifact" | "fork";
 /** The adapters' secret-guard classification; "other" for a tool it does not classify. */
 export type ToolKind = SecretToolCall["kind"] | "other";

@@ -13,7 +13,6 @@ const ISSUE_FORM = path.resolve(
   "../../../../../.github/ISSUE_TEMPLATE/via-triage.yml",
 );
 
-/** One stable phrase per rule of the triage-playbook spec; the prose around it may change. */
 const RULE_MARKERS: Record<string, string> = {
   "ask what went wrong": "Ask what went wrong",
   "read the context file": "Read `context.md`",

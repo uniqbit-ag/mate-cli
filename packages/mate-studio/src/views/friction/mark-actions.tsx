@@ -60,7 +60,6 @@ export function ItemState({ state, time }: { state: FrictionItemState; time: Rea
 
 const NOTE = { label: "Note (optional)", key: "note", type: "text" } as const;
 const LINK = { label: "Issue link (optional)", key: "link", type: "url" } as const;
-/** Each mark's action label and its optional field. */
 const MARKS: Record<FrictionStateName, { action: string; field: typeof NOTE | typeof LINK }> = {
   fixed: { action: "Mark fixed", field: NOTE },
   reported: { action: "Mark reported", field: LINK },
@@ -73,7 +72,6 @@ export type MarkItem = (
   input: { note?: string; link?: string },
 ) => Promise<string | null>;
 
-/** Mark actions of one item; a handled item also offers Reopen. */
 export function MarkActions({
   name,
   handled,

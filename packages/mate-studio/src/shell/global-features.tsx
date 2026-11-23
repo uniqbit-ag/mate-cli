@@ -35,9 +35,7 @@ function RecordingRow({
   );
 }
 
-/** Machine-wide settings, offered before a companion is chosen. */
 export function GlobalFeatures() {
-  // Browser only, so the companion list never waits for the switch.
   const query = useQuery({ ...frictionRecordingQuery, enabled: useBrowser() });
   const toggle = useSetFrictionRecording();
   const { button: recordingButton, retried } = useRetryFocus(query.isSuccess);

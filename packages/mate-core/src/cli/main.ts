@@ -80,7 +80,6 @@ const mainDeps: MainDeps = {
   refreshRuntimeDirectory,
 };
 
-/** For a command whose caller parses stdout as JSON: the gate's reason stays on stderr. */
 function printPreflightError(message: string): void {
   console.log(
     JSON.stringify({ kind: "error", version: 1, error: { code: "PREFLIGHT_FAILED", message } }),
@@ -100,7 +99,6 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     return;
   }
 
-  // Triage diagnoses a broken install, update, companion or runtime directory, so no gate may stop it.
   if (command === "triage") {
     await runTriageCommand(argv.slice(3));
     return;
@@ -138,9 +136,6 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
   // scheduleBackgroundCheck() has been observed to race a large final stdout
   // write against process exit, truncating it.
   const ownsStdout = isPluginCommand;
-  // `report`, `friction list` and `workflow` print JSON contracts other
-  // processes parse (the turn hooks parse `workflow next`), so they skip the
-  // background check too but keep update enforcement and their stderr banner.
   const skipsBackgroundCheck =
     ownsStdout || command === "report" || command === "friction" || command === "workflow";
 
@@ -325,7 +320,6 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       await runDoctorCommand(argv.slice(3));
       return;
     case "friction": {
-      // Only the log needs a companion; the nudge names `report` after an update or install refusal too.
       const needs: GateNeeds =
         subcommand === "list"
           ? { updateGuard: true, companion: true, install: true }

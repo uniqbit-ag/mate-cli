@@ -87,7 +87,6 @@ function prepareSpawn(mateBin: string, repoPath: string, sync: boolean) {
   ]);
   const options = {
     cwd: repoPath,
-    // Started by a hook, not by the agent: a failure here is not agent friction.
     env: withoutSessionIds(process.env),
     shell: false,
     detached: sync,

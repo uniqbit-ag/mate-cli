@@ -36,11 +36,8 @@ export async function runRecordingFailure(
         cwd: process.cwd(),
       });
       if (nudge) process.stderr.write(`${nudge}\n`);
-    } catch {
-      // e.g. `process.cwd()` in a removed folder; recording never changes the command's outcome
-    }
+    } catch {}
   };
-  // Some commands end with `process.exit()`, so `run` never settles for them.
   if (session) process.once("exit", record);
   try {
     await run();
@@ -56,11 +53,6 @@ export async function runRecordingFailure(
 
 const ERROR_TAIL_LIMIT = 1_000;
 
-/**
- * Copies `console.error` and `process.stderr.write` text into a bounded tail;
- * the original still prints first. Each piece is redacted before the tail is
- * cut, so a cut never leaves an unmatched fragment of an argument value.
- */
 function captureErrorTail(redact: (text: string) => string): {
   text(): string;
   restore(): void;
@@ -73,9 +65,7 @@ function captureErrorTail(redact: (text: string) => string): {
   const append = (piece: () => string) => {
     try {
       tail = `${tail}${redact(piece())}`.slice(-ERROR_TAIL_LIMIT);
-    } catch {
-      // capture never changes output
-    }
+    } catch {}
   };
   const error = (...args: unknown[]) => {
     inConsoleError = true;
@@ -99,7 +89,6 @@ function captureErrorTail(redact: (text: string) => string): {
   process.stderr.write = write;
   return {
     text: () => tail,
-    // A command that replaced either itself keeps its replacement.
     restore: () => {
       if (console.error === error) console.error = originalError;
       if (process.stderr.write === write) process.stderr.write = originalWrite;
