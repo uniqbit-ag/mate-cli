@@ -12,6 +12,7 @@ import { useStudioClicks } from "../lib/page-actions";
 import { usePrefetchViews } from "../lib/prefetch-views";
 import { useAppearance } from "../stores/appearance";
 import { usePageUi } from "../stores/page-ui";
+import { heldBy, useTerminalUi } from "../stores/terminal-ui";
 import { CommandPalette } from "./command-palette";
 import { CompanionPicker } from "./companion-picker";
 import { ConnectionBanner } from "./connection-banner";
@@ -23,21 +24,19 @@ import { TopBar } from "./top-bar";
 import { VIEW_DESCRIPTIONS, VIEW_TITLES } from "./views";
 import { TerminalSidebar } from "../terminal/terminal-sidebar";
 
-/** Cmd/Ctrl+Backslash collapses the sidebar to icons and back; a held one it expands. */
-function useRailKey(heldBy: string | null): void {
+/** Cmd/Ctrl+Backslash collapses the sidebar to icons and back. */
+function useRailKey(): void {
   const toggleRail = useAppearance((state) => state.toggleRail);
-  const release = useAppearance((state) => state.release);
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === "\\") {
         event.preventDefault();
-        if (heldBy) release(heldBy);
-        else toggleRail();
+        toggleRail();
       }
     };
     document.addEventListener("keydown", keydown, true);
     return () => document.removeEventListener("keydown", keydown, true);
-  }, [toggleRail, release, heldBy]);
+  }, [toggleRail]);
 }
 
 /** The top bar, sidebar and page header around every view; the view comes from the matched route. */
@@ -57,15 +56,17 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
     : undefined;
   const workspace = pluginView?.layout === "workspace";
   const workspaceKey = pluginView ? `${pluginView.service}/${pluginView.view}` : null;
-  const released = useAppearance((state) => state.released);
-  // A workspace view holds the sidebar at icons until the person expands it.
-  const heldBy =
-    workspace && workspaceKey && !released.includes(workspaceKey) ? workspaceKey : null;
+  const released = useTerminalUi((state) => state.released);
+  // A workspace view holds the agent terminal collapsed until the person expands it.
+  const held = heldBy(workspace ? workspaceKey : null, released);
   const digest = shell.selected?.digest;
   useStudioEvents(digest);
   useStudioClicks();
-  useRailKey(heldBy);
+  useRailKey();
   usePrefetchViews(shell.selected ? search : {}, shell.studioMode, shell.enabledModes);
+  useEffect(() => {
+    useTerminalUi.getState().setWorkspace(workspace ? workspaceKey : null);
+  }, [workspace, workspaceKey]);
   useEffect(() => {
     if (!digest) return;
     try {
@@ -81,14 +82,12 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
         data-companion={digest}
         data-terminal={shell.terminal ? "" : undefined}
         data-picker={shell.selected ? undefined : ""}
-        data-rail={heldBy ? "min" : undefined}
+        data-terminal-held={held ? "" : undefined}
       >
         <NavigationProgress />
         <TopBar shell={shell} search={search} />
         {/* Choosing a companion is the whole page: no views to navigate yet. */}
-        {shell.selected ? (
-          <Sidebar shell={shell} search={search} view={view} heldBy={heldBy} />
-        ) : null}
+        {shell.selected ? <Sidebar shell={shell} search={search} view={view} /> : null}
         <main className="studio-main flex min-h-0 min-w-0 flex-col overflow-auto" id="studio-main">
           <ConnectionBanner />
           {shell.selected && workspace ? (
@@ -115,7 +114,7 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
             />
           )}
         </main>
-        {shell.terminal ? <TerminalSidebar terminal={shell.terminal} /> : null}
+        {shell.terminal ? <TerminalSidebar terminal={shell.terminal} heldBy={held} /> : null}
       </div>
       <CommandPalette shell={shell} search={search} />
       <Toasts search={search} />

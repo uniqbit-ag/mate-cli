@@ -189,8 +189,8 @@ export interface StudioView {
   attention?: string;
   /**
    * `"workspace"`: the view fills Studio's main area edge to edge, without Studio's page header
-   * (the view shows its own), and the sidebar shows icons only while the view is shown, until the
-   * person expands it. Default `"page"`.
+   * (the view shows its own), and the agent terminal stays collapsed while the view is shown, until
+   * the person expands it. Default `"page"`.
    */
   layout?: StudioViewLayout;
 }

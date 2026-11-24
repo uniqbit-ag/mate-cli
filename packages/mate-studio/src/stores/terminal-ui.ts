@@ -20,13 +20,25 @@ interface TerminalUiState {
   /** The agent this tab views, or "pending" until a stored session reattaches; run buttons hide while set. */
   viewing: string | null;
   controller: TerminalController | null;
+  /** The workspace view (`<service>/<view>`) shown now; it holds the sidebar collapsed. */
+  workspace: string | null;
+  /** Workspace views whose held sidebar the person expanded this page load. */
+  released: string[];
   setCollapsed(collapsed: boolean): void;
   setDrawerOpen(open: boolean): void;
   setWidth(px: number, save: boolean): void;
   setViewing(agent: string | null): void;
   register(controller: TerminalController | null): void;
+  setWorkspace(view: string | null): void;
+  /** Expands the sidebar a workspace view holds collapsed; a remembered collapse is undone too. */
+  release(view: string): void;
   /** Expands the sidebar, or opens the drawer below the side-by-side breakpoint. */
   reveal(): void;
+}
+
+/** The workspace view holding the sidebar collapsed, if any. */
+export function heldBy(workspace: string | null, released: readonly string[]): string | null {
+  return workspace && !released.includes(workspace) ? workspace : null;
 }
 
 function clampWidth(px: number): number {
@@ -52,6 +64,8 @@ export const useTerminalUi = create<TerminalUiState>((set, get) => ({
   drawerOpen: false,
   viewing: null,
   controller: null,
+  workspace: null,
+  released: [],
   setCollapsed: (collapsed) => {
     document.documentElement.toggleAttribute("data-terminal-collapsed", collapsed);
     save(TERMINAL_COLLAPSED_KEY, String(collapsed));
@@ -69,7 +83,14 @@ export const useTerminalUi = create<TerminalUiState>((set, get) => ({
     set({ viewing });
   },
   register: (controller) => set({ controller }),
+  setWorkspace: (workspace) => set({ workspace }),
+  release: (view) => {
+    if (get().collapsed) get().setCollapsed(false);
+    if (!get().released.includes(view)) set({ released: [...get().released, view] });
+  },
   reveal: () => {
+    const held = heldBy(get().workspace, get().released);
+    if (held) get().release(held);
     if (get().collapsed) get().setCollapsed(false);
     if (window.matchMedia?.("(max-width: 1200px)").matches) set({ drawerOpen: true });
   },

@@ -157,8 +157,7 @@
     height: 100dvh;
     transition: grid-template-columns 220ms cubic-bezier(0.16, 1, 0.3, 1);
   }
-  :root[data-rail="min"] .studio-frame,
-  .studio-frame[data-rail="min"] {
+  :root[data-rail="min"] .studio-frame {
     --rail-w: 56px;
   }
   /* The companion picker has no sidebar; its column closes. */
@@ -179,8 +178,7 @@
   }
   @media (max-width: 900px) {
     .studio-frame,
-    :root[data-rail="min"] .studio-frame,
-    .studio-frame[data-rail="min"] {
+    :root[data-rail="min"] .studio-frame {
       --rail-w: auto;
       display: flex;
       flex-direction: column;
@@ -323,14 +321,19 @@
           70vw
         );
     }
-    :root[data-terminal-collapsed] .studio-frame[data-terminal] {
+    /* A workspace view holds the terminal collapsed until the person expands it. */
+    :root[data-terminal-collapsed] .studio-frame[data-terminal],
+    .studio-frame[data-terminal][data-terminal-held] {
       grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--terminal-strip, 44px);
     }
     :root[data-terminal-collapsed] .studio-frame[data-terminal] .terminal-body,
-    :root[data-terminal-collapsed] .studio-frame[data-terminal] .terminal-resize {
+    :root[data-terminal-collapsed] .studio-frame[data-terminal] .terminal-resize,
+    .studio-frame[data-terminal][data-terminal-held] .terminal-body,
+    .studio-frame[data-terminal][data-terminal-held] .terminal-resize {
       display: none;
     }
-    :root[data-terminal-collapsed] .studio-frame[data-terminal] .terminal-strip {
+    :root[data-terminal-collapsed] .studio-frame[data-terminal] .terminal-strip,
+    .studio-frame[data-terminal][data-terminal-held] .terminal-strip {
       display: flex;
     }
   }
