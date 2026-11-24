@@ -495,7 +495,7 @@ describe("createHostSandbox", () => {
     const proc = await box.spawn({ command: `sleep 30 & echo $! > '${pidFile}'` });
     const pid = Number(await waitForFile(pidFile));
     await proc.kill();
-    expect(() => process.kill(pid, 0)).toThrow();
+    expect(await gone(pid)).toBe(true);
   }, 10_000);
 
   test("stop ends a group whose leader exited and whose member let go of the pipes", async () => {
@@ -509,7 +509,7 @@ describe("createHostSandbox", () => {
     expect(() => process.kill(pid, 0)).not.toThrow();
     await box.stop();
     sandbox = null;
-    expect(() => process.kill(pid, 0)).toThrow();
+    expect(await gone(pid)).toBe(true);
   }, 10_000);
 
   test("refuses reads that a link inside the companion leads outside it", async () => {
@@ -555,7 +555,7 @@ describe("createHostSandbox", () => {
     const pid = Number(await waitForFile(pidFile));
     await box.stop();
     sandbox = null;
-    expect(() => process.kill(pid, 0)).toThrow();
+    expect(await gone(pid)).toBe(true);
   });
 
   test("stop ends even when a process that left the group holds the output", async () => {
@@ -574,6 +574,20 @@ describe("createHostSandbox", () => {
     }
   }, 10_000);
 });
+
+/** A signalled process answers signal 0 until its parent has reaped it, a few ms on Linux. */
+async function gone(pid: number): Promise<boolean> {
+  for (let tries = 0; tries < 50; tries += 1) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return true;
+    }
+    // oxlint-disable-next-line no-await-in-loop -- polling for the reaper
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return false;
+}
 
 async function waitForFile(file: string): Promise<string> {
   for (let tries = 0; tries < 100; tries += 1) {
