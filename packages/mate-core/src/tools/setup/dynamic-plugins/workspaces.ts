@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { raiseEngineFloor } from "../../../lib/orchestrator/engine-floor";
-import { audienceInstallCommand, audiencePluginPackages, pluginInstallTargets } from "./audiences";
+import { audiencePluginPackages, pluginInstallCommand, pluginInstallTargets } from "./audiences";
 import { installDeclaredPluginsFrozen, type FrozenInstallDeps } from "./frozen";
 import {
   installDeclaredPlugins,
@@ -10,14 +10,15 @@ import {
   type PluginInstallDeps,
   type PluginInstallResult,
 } from "./install";
-import { audienceWorkspacesRoot, dynamicPluginsWorkspaceRoot } from "./paths";
+import { installLocalPlugins } from "./local";
+import { audienceOrigin, audienceWorkspacesRoot, dynamicPluginsWorkspaceRoot } from "./paths";
 
 /** First Mate release with per-audience plugin workspaces; the `engines.mate` floor a migration sets. */
 export const AUDIENCE_WORKSPACES_VERSION = "0.21.0";
 
 /** One line per audience whose installed plugins a run removed. */
 export function describeRemovedAudience(audience: string): string {
-  return `removed the installed plugins of audience "${audience}"; run \`${audienceInstallCommand(audience)}\` to install them again`;
+  return `removed the installed plugins of audience "${audience}"; run \`${pluginInstallCommand(audienceOrigin(audience))}\` to install them again`;
 }
 
 /**
@@ -53,7 +54,7 @@ export async function removeUnselectedAudienceTrees(
  */
 export async function linkSharedNpmrc(companionPath: string, audience: string): Promise<void> {
   const shared = path.join(dynamicPluginsWorkspaceRoot(companionPath), ".npmrc");
-  const workspaceRoot = dynamicPluginsWorkspaceRoot(companionPath, audience);
+  const workspaceRoot = dynamicPluginsWorkspaceRoot(companionPath, audienceOrigin(audience));
   const link = path.join(workspaceRoot, ".npmrc");
 
   const existing = await fs.lstat(link).catch(() => null);
@@ -94,7 +95,9 @@ export interface PluginWorkspacesOutcome {
  * The plugin step of every setup/install run: removes the installed trees of
  * unselected audiences, then installs the shared workspace from the base
  * plugins and, when `audience` selects one, that audience's own workspace.
- * No other audience's manifest or lockfile is read or written.
+ * No other audience's manifest or lockfile is read or written. An ordinary
+ * install then installs this machine's local plugins; a frozen restore never
+ * looks at them.
  *
  * A shared manifest still listing an audience package marks a companion from
  * before audience workspaces: the ordinary install rewrites it to base only
@@ -121,7 +124,8 @@ export async function installPluginWorkspaces(
   const results: PluginInstallResult[] = [];
   let sharedFailed = false;
   for (const target of targets) {
-    const workspaceRoot = dynamicPluginsWorkspaceRoot(companionPath, target.audience);
+    const origin = audienceOrigin(target.audience);
+    const workspaceRoot = dynamicPluginsWorkspaceRoot(companionPath, origin);
     if (target.audience !== null && target.declarations.length > 0) {
       // oxlint-disable-next-line no-await-in-loop -- workspaces install in order, shared first
       await linkSharedNpmrc(companionPath, target.audience);
@@ -130,7 +134,7 @@ export async function installPluginWorkspaces(
     const installed = await (options.frozen
       ? installDeclaredPluginsFrozen(workspaceRoot, target.declarations, {
           ...options.frozenDeps,
-          relockCommand: audienceInstallCommand(target.audience),
+          relockCommand: pluginInstallCommand(origin),
           audiencePackages: target.audience === null ? audiencePackages : undefined,
         })
       : installDeclaredPlugins(workspaceRoot, target.declarations, options.installDeps));
@@ -140,6 +144,11 @@ export async function installPluginWorkspaces(
     results.push(...installed);
   }
 
+  const local = options.frozen
+    ? { results: [], declared: false }
+    : await installLocalPlugins(companionPath, config, options.installDeps);
+  results.push(...local.results);
+
   const migrated =
     unmigrated &&
     !sharedFailed &&
@@ -147,7 +156,7 @@ export async function installPluginWorkspaces(
   return {
     results,
     removed,
-    declared: targets.some((target) => target.declarations.length > 0),
+    declared: local.declared || targets.some((target) => target.declarations.length > 0),
     migrated,
   };
 }

@@ -2,6 +2,8 @@ import { getActiveDistribution } from "../../../distribution";
 import { FRAMEWORK_NAME } from "../../../framework";
 import { audiencePluginPackages } from "../dynamic-plugins/audiences";
 import {
+  LOCAL_PLUGINS_FILE_GITIGNORE_ENTRY,
+  LOCAL_PLUGINS_WORKSPACE_GITIGNORE_ENTRY,
   PLUGIN_AUDIENCE_NPMRC_GITIGNORE_ENTRY,
   PLUGIN_LOCAL_OVERRIDES_GITIGNORE_ENTRY,
   PLUGIN_WORKSPACE_NPMRC_GITIGNORE_ENTRY,
@@ -29,6 +31,12 @@ function stripManagedBlock(content: string, start: string, end: string): string 
   return merged ? `${merged}\n` : "";
 }
 
+function appendManagedBlock(content: string, frameworkName: string, entries: string[]): string {
+  const block = [MANAGED_START(frameworkName), ...entries, MANAGED_END(frameworkName)].join("\n");
+  const kept = content.trimEnd();
+  return kept ? `${kept}\n\n${block}\n` : `${block}\n`;
+}
+
 export async function writeManagedGitignoreBlock(
   gitignorePath: string,
   frameworkName: string,
@@ -51,14 +59,38 @@ export async function writeManagedGitignoreBlock(
     content = stripManagedBlock(content, s, e);
   }
 
-  if (entries.length > 0) {
-    const block = [start, ...entries, end].join("\n");
-    content = content.trimEnd() ? `${content.trimEnd()}\n\n${block}\n` : `${block}\n`;
-  }
+  if (entries.length > 0) content = appendManagedBlock(content, frameworkName, entries);
 
   if (content !== existing) {
     await writeFile(gitignorePath, content, "utf8");
   }
+}
+
+/**
+ * Adds `entries` the file does not list yet, inside the managed block when it
+ * has one. Every other line stays where it is.
+ */
+export async function addManagedGitignoreEntries(
+  gitignorePath: string,
+  entries: string[],
+): Promise<void> {
+  const { readFile, writeFile } = await import("node:fs/promises");
+  const existing = await readFile(gitignorePath, "utf8").catch(() => "");
+  const eol = existing.includes("\r\n") ? "\r\n" : "\n";
+  const lines = existing.split(/\r?\n/);
+  const missing = entries.filter((entry) => !lines.includes(entry));
+  if (missing.length === 0) return;
+
+  const start = lines.indexOf(MANAGED_START(FRAMEWORK_NAME));
+  const end = start === -1 ? -1 : lines.indexOf(MANAGED_END(FRAMEWORK_NAME), start);
+  if (end !== -1) {
+    lines.splice(end, 0, ...missing);
+    await writeFile(gitignorePath, lines.join(eol), "utf8");
+    return;
+  }
+  // A start marker without an end is left for the next setup to repair.
+  const appended = appendManagedBlock(lines.join("\n"), FRAMEWORK_NAME, missing);
+  await writeFile(gitignorePath, appended.replaceAll("\n", eol), "utf8");
 }
 
 export function collectManagedGitignoreEntries(ctx: SetupContext, plugins: Plugin[]): string[] {
@@ -76,23 +108,24 @@ export function collectManagedGitignoreEntries(ctx: SetupContext, plugins: Plugi
     // across machines or committed to the companion repo.
     `.${FRAMEWORK_NAME}/config/registry.yaml`,
     ".mcp.json.bak",
+    // Listed before a member's first local plugin, so that one never shows in `git status`.
+    LOCAL_PLUGINS_FILE_GITIGNORE_ENTRY,
+    LOCAL_PLUGINS_WORKSPACE_GITIGNORE_ENTRY,
+    // Unconditional: it can name a local plugin that `framework.yaml` does not declare.
+    PLUGIN_LOCAL_OVERRIDES_GITIGNORE_ENTRY,
     ...plugins
       .filter((p) => p.kind !== "root" && (p.isEnabled(ctx.config) || p.persistGitignoreEntries))
       .flatMap((p) => p.gitignoreEntries?.(ctx) ?? []),
   ];
-  // Dynamic-plugin loading artifacts: the local override file and the local
-  // registry credentials (the shared workspace's file and its link in every
-  // audience workspace) never version. A workspace's installed tree
+  // Dynamic-plugin loading artifacts: the local registry credentials (the
+  // shared workspace's file and its link in every audience workspace) never
+  // version. A workspace's installed tree
   // (node_modules) is already covered by the baseline node_modules/ rule
   // above, since the workspaces live outside the dependencies tree wildcard;
   // each package.json and committed package-lock.json is the
   // pin/reproducibility record and is never touched by any ignore rule.
   if (ctx.config.plugins?.length || audiencePluginPackages(ctx.config).size > 0) {
-    entries.push(
-      PLUGIN_WORKSPACE_NPMRC_GITIGNORE_ENTRY,
-      PLUGIN_AUDIENCE_NPMRC_GITIGNORE_ENTRY,
-      PLUGIN_LOCAL_OVERRIDES_GITIGNORE_ENTRY,
-    );
+    entries.push(PLUGIN_WORKSPACE_NPMRC_GITIGNORE_ENTRY, PLUGIN_AUDIENCE_NPMRC_GITIGNORE_ENTRY);
   }
   return entries;
 }

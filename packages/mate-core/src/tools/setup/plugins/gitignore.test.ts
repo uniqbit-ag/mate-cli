@@ -53,6 +53,9 @@ describe("collectManagedGitignoreEntries with declared plugins", () => {
       ".mate/plugins/.local/",
       ".mate/config/registry.yaml",
       ".mcp.json.bak",
+      ".mate/config/framework.local.yaml",
+      ".mate/local-plugins/",
+      ".mate/config/plugins.local.yaml",
     ]);
   });
 
