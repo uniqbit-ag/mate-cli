@@ -1,9 +1,14 @@
 import path from "node:path";
 
+import {
+  linkedDeliveryEnvironment,
+  type DeliveryEnvironment,
+} from "../../../../lib/delivery/environment";
 import { readDeliveryState, type DeliveryState } from "../../../../lib/delivery/record";
 import {
   discoverSubmitted,
   type DiscoverSubmittedOptions,
+  type MergeCheck,
   type MergeClaim,
   type SubmittedChangeView,
   type SubmittedDiscovery,
@@ -44,12 +49,31 @@ export interface PendingCommandDeps {
   ) => Promise<SubmittedDiscovery>;
   /** True when the companion's Git mode is `auto`. */
   loadGitAutoMode?: (context: LaunchContext) => Promise<boolean>;
+  /** The checkouts linked on this machine that the merge check inspects. */
+  deliveryEnvironment?: (
+    context: LaunchContext,
+    capabilities: CapabilityConfig[],
+  ) => Promise<DeliveryEnvironment>;
   stdout?: (line: string) => void;
   stderr?: (line: string) => void;
 }
 
 /** Presence-only flags; every other `--flag` consumes the following token as its value. */
-const BOOLEAN_FLAGS: BooleanFlagSet = new Set(["json"]);
+const BOOLEAN_FLAGS: BooleanFlagSet = new Set(["json", "no-merge-check"]);
+
+/** After this, the merge check starts no further delivery. */
+const MERGE_CHECK_BUDGET_MS = 30_000;
+
+function defaultDeliveryEnvironment(
+  context: LaunchContext,
+  capabilities: CapabilityConfig[],
+): Promise<DeliveryEnvironment> {
+  return linkedDeliveryEnvironment(
+    context,
+    capabilities,
+    context.repository?.path ?? process.env.MATE_REPO_PATH,
+  );
+}
 
 /**
  * Whether `mate artifact publish --all` would publish this entry. Discovery does not know
@@ -148,7 +172,29 @@ function renderClaim(claim: MergeClaim): string {
     : `answered by ${who}, not checked by Git`;
 }
 
+/** Deliveries the merge check left unchecked and why it failed; empty when neither. */
+function renderMergeCheck(check: MergeCheck | undefined): string[] {
+  if (!check || (check.unchecked.length === 0 && !check.warning)) return [];
+  return [
+    ...(check.unchecked.length > 0
+      ? [
+          "Not checked for a merge on this machine, stored state shown:",
+          ...check.unchecked.map(
+            (entry) =>
+              `  ${inboxText(entry.change)}: ${inboxText(entry.branch)} in ${inboxText(entry.repository)}`,
+          ),
+        ]
+      : []),
+    ...(check.warning ? [`Merge check: ${inboxText(check.warning)}`] : []),
+    "",
+  ];
+}
+
 function renderSubmitted(submitted: SubmittedDiscovery): string[] {
+  return [...renderGroups(submitted), ...renderMergeCheck(submitted.mergeCheck)];
+}
+
+function renderGroups(submitted: SubmittedDiscovery): string[] {
   const fetched = submitted.fetchedAt ? `fetched ${submitted.fetchedAt}` : "never fetched";
   const freshness = submitted.stale
     ? `last known state, ${fetched}${submitted.error ? `: ${submitted.error}` : ""}`
@@ -169,6 +215,10 @@ function renderSubmitted(submitted: SubmittedDiscovery): string[] {
         ...change.touches.map(
           (part) =>
             `         touches ${inboxText(part.capability)} › ${inboxText(part.requirement)}`,
+        ),
+        ...(change.found ?? []).map(
+          (found) =>
+            `         merged in ${inboxText(found.repository)}: found by Git on this machine, not recorded yet`,
         ),
         ...change.merges
           .filter((claim) => !claim.yours)
@@ -216,7 +266,11 @@ function renderHuman(result: PendingResult): string[] {
  * the pending branch: `git show <submitted.ref>:<path>/<file>` reads a file of it. Each group
  * carries `publishable`, `blocked` and `heldBy` (unpublished dependencies whose group cannot
  * publish). In Git mode `auto` the default and pending branches are fetched first; otherwise, or
- * when the fetch fails, the last fetched state is reported as `stale`. Separately, `pending` lists archives an earlier Mate left uncommitted, publishable
+ * when the fetch fails, the last fetched state is reported as `stale`. Then each unsettled branch
+ * delivery in a repository linked on this machine is checked for a merge by local Git, starting
+ * none after 30 s: a proven merge counts in `delivery` and `publishable`, is named in the change's
+ * `found` and sets its group's `needsRefresh`, since nothing records it; `submitted.mergeCheck`
+ * names the deliveries left `unchecked`, whose stored state stands. Separately, `pending` lists archives an earlier Mate left uncommitted, publishable
  * from this checkout only: archived OpenSpec changes whose own files — the archive directory or
  * the active directory archiving deleted — are still uncommitted in the companion working
  * tree, each with the uncommitted canonical specs it applied to, so the publication
@@ -227,6 +281,7 @@ function renderHuman(result: PendingResult): string[] {
  * nothing is validated, produced, committed, or pushed.
  * @flags
  * - `--json` — emit a machine-readable {@link PendingResult} instead of human-readable text.
+ * - `--no-merge-check` — skip the merge check and report only stored merge results.
  * @remarks No-ops (with a message on stderr) when the openspec capability is disabled for
  * this repo. Exits non-zero only when the companion, launch context, or Git guard rejects.
  */
@@ -236,7 +291,9 @@ export async function runArtifactPendingCommand(
 ): Promise<void> {
   const emitOut = deps.stdout ?? ((line: string) => process.stdout.write(`${line}\n`));
   const emitErr = deps.stderr ?? ((line: string) => process.stderr.write(`${line}\n`));
-  const json = parseFlags(argv, BOOLEAN_FLAGS).json === true;
+  const flags = parseFlags(argv, BOOLEAN_FLAGS);
+  const json = flags.json === true;
+  const mergeCheck = flags["no-merge-check"] !== true;
 
   const ensureCompanion = deps.ensureUnambiguousCompanion ?? ensureUnambiguousCompanion;
   if (!(await ensureCompanion(process.cwd()))) {
@@ -258,7 +315,8 @@ export async function runArtifactPendingCommand(
   }
 
   const loadCapabilities = deps.loadCapabilities ?? defaultLoadCapabilities;
-  if (!hasOpenspecCapability(await loadCapabilities(context))) {
+  const capabilities = await loadCapabilities(context);
+  if (!hasOpenspecCapability(capabilities)) {
     emitErr("mate: the openspec capability must be enabled to list pending artifacts.");
     return;
   }
@@ -286,12 +344,27 @@ export async function runArtifactPendingCommand(
   // The local listing stands on its own; a failed discovery is reported, not fatal.
   // A declared type's submitted changes are listed in place of the built-in type's; an invalid
   // declaration is reported with the discovery.
+  // Without an environment the listing still stands, with the check reported as not run.
+  let environmentFailure: MergeCheck | undefined;
+  const environment = mergeCheck
+    ? await (deps.deliveryEnvironment ?? defaultDeliveryEnvironment)(context, capabilities).catch(
+        (error: unknown) => {
+          const warning = `merge check failed: ${errorMessage(error)}`;
+          environmentFailure = { ran: false, unchecked: [], warning };
+          return undefined;
+        },
+      )
+    : undefined;
   const submitted = await declaredSubmitType(context.companionPath)
     .then((type) =>
       (deps.discoverSubmitted ?? discoverSubmitted)(context.companionPath, {
         fetch: gitAutoMode,
         ...(type ? { type } : {}),
+        ...(environment ? { checkMerges: { environment, budgetMs: MERGE_CHECK_BUDGET_MS } } : {}),
       }),
+    )
+    .then((discovery) =>
+      environmentFailure ? { ...discovery, mergeCheck: environmentFailure } : discovery,
     )
     .catch((error: unknown): SubmittedDiscovery => ({
       pendingBranch: null,

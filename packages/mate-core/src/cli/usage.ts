@@ -40,7 +40,7 @@ export function usage(): string {
     ` ${n} artifact publish <group|change|anchor>|--specs [<path>...]|--all [--refresh]`,
     "   [--confirm-merged|--confirm-open|--confirm-dropped] [--type openspec] [--no-push] [--json]",
     "   target: a Delivery Group or submitted change, or a dated archive anchor of an earlier Mate",
-    ` ${n} artifact pending [--json]`,
+    ` ${n} artifact pending [--no-merge-check] [--json]`,
     ` ${n} artifact link <change>... [--repository <org/repo>] [--branch <b> [--direct]]`,
     "   [--not-applicable <reason>] [--pr <url>] [--ticket <KEY>] [--refresh]",
     "   [--confirm-merged|--confirm-open|--confirm-dropped] [--spec-base] [--json]",

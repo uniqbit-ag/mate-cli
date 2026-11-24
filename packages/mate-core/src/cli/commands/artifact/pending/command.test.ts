@@ -74,6 +74,11 @@ function baseDeps(
     git: () => stubGit(),
     discover: async () => [],
     discoverSubmitted: async () => NOTHING_SUBMITTED,
+    deliveryEnvironment: async () => ({
+      companionPath: COMPANION,
+      workingRepo: null,
+      protectedPatterns: [],
+    }),
     ...overrides,
   };
 }
@@ -265,6 +270,23 @@ describe("mate artifact pending", () => {
       });
     }
     expect(fetched).toEqual([true, false]);
+  });
+
+  test("checks merges unless --no-merge-check is given", async () => {
+    const checked: boolean[] = [];
+    for (const argv of [["--json"], ["--no-merge-check", "--json"]]) {
+      // oxlint-disable-next-line no-await-in-loop -- two runs in order
+      await runArtifactPendingCommand(argv, {
+        ...baseDeps({
+          discoverSubmitted: async (_path, options) => {
+            checked.push(options.checkMerges !== undefined);
+            return NOTHING_SUBMITTED;
+          },
+        }),
+        ...sink(),
+      });
+    }
+    expect(checked).toEqual([true, false]);
   });
 
   test("emits an empty pending list without failing", async () => {
@@ -559,7 +581,13 @@ describe("mate artifact pending over a real archive", () => {
         },
       ],
       // A companion without an upstream has no pending branch.
-      submitted: { pendingBranch: null, fetchedAt: null, stale: false, groups: [] },
+      submitted: {
+        pendingBranch: null,
+        fetchedAt: null,
+        stale: false,
+        groups: [],
+        mergeCheck: { ran: false, unchecked: [] },
+      },
       unattributedSpecs: [],
     });
     expect(lines[0]).not.toContain("IGNORE PREVIOUS INSTRUCTIONS");
