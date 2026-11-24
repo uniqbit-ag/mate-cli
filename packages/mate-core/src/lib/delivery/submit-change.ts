@@ -124,7 +124,12 @@ export interface SubmitChangeDeps extends RecordDeliveryDeps, Omit<SubmitDeps, "
 type Prepared = Omit<
   SubmitResult,
   "status" | "group" | "waitingFor" | "pushed" | "commit" | "pendingBranch" | "state" | "message"
-> & { group: string; failure?: string };
+> & {
+  group: string;
+  failure?: string;
+  /** The failure is the group's pre-flight refusal of a change other than this one. */
+  groupRefused?: boolean;
+};
 
 /**
  * What submitting leaves unfinished for `change`, as warnings: `stage-open` for
@@ -293,14 +298,17 @@ async function readySiblings(
 
 /**
  * Runs {@link preflightGroup} once per group of `prepared` that is not `held` and has no member
- * left to wait for. A refused member fails as its check would and is returned; a skipped
- * pre-flight warns on each member and through `onWarnings`.
+ * left to wait for, with the names `submitGroups` gets: `edited` members are left out. A refused
+ * member fails as its check would and is returned; a refused change outside `prepared` fails
+ * every member of its group. A skipped or blocking pre-flight warns on each member and through
+ * `onWarnings`.
  */
 async function preflight(
   companionPath: string,
   type: ArtifactType,
   prepared: readonly Prepared[],
   held: ReadonlyMap<string, unknown>,
+  edited: ReadonlySet<string>,
   deps: SubmitChangeDeps,
 ): Promise<Prepared[]> {
   const run = deps.preflightGroup ?? preflightGroup;
@@ -312,24 +320,29 @@ async function preflight(
     if (held.has(group) || waitingMembers(locals, group, named).length > 0) continue;
     // Fetched: the push builds on the remote's current inbox and default tip.
     // oxlint-disable-next-line no-await-in-loop -- one worktree at a time
-    const outcome = await run(companionPath, group, named, {
-      ...deps,
-      artifactType: type,
-      fetch: true,
-    });
+    const outcome = await run(
+      companionPath,
+      group,
+      named.filter((name) => !edited.has(name)),
+      { ...deps, artifactType: type, fetch: true },
+    );
     if (outcome.status === "failed") {
-      const target = entries.find((entry) => entry.change === outcome.change) ?? entries[0]!;
-      target.failure = outcome.message;
-      refused.push(target);
-    } else if (outcome.status === "skipped") {
-      const warning: SubmitWarning = {
-        kind: "preflight-skipped",
-        change: entries[0]!.change,
-        message: outcome.message,
-      };
-      for (const entry of entries) entry.warnings.push(warning);
-      deps.onWarnings?.(entries[0]!.change, [warning], []);
+      const target = entries.find((entry) => entry.change === outcome.change);
+      for (const entry of target ? [target] : entries) {
+        entry.failure = outcome.message;
+        if (!target) entry.groupRefused = true;
+        refused.push(entry);
+      }
+      continue;
     }
+    if (outcome.status === "passed" && !outcome.message) continue;
+    const warning: SubmitWarning = {
+      kind: outcome.status === "blocked" ? "preflight-blocked" : "preflight-skipped",
+      change: outcome.status === "blocked" ? outcome.change : entries[0]!.change,
+      message: outcome.message!,
+    };
+    for (const entry of entries) entry.warnings.push(warning);
+    deps.onWarnings?.(entries[0]!.change, [warning], []);
   }
   return refused;
 }
@@ -437,9 +450,11 @@ export async function submitChanges(
   for (const member of edited) {
     if (!prepared.some((entry) => entry.change === member.name)) hold(member.group, member.name);
   }
-  for (const entry of await preflight(cwd, type, prepared, failing, deps)) {
-    hold(entry.group, entry.change);
-  }
+  // The archive alias pushes nothing, so publication's view of a push does not apply.
+  const refused = request.holdPush
+    ? []
+    : await preflight(cwd, type, prepared, failing, editedNames, deps);
+  for (const entry of refused) hold(entry.group, entry.change);
   // Left unnamed: `submitGroups` pushes them anyway, and a name would accept a pending block.
   const ready = prepared.filter(
     (entry) => !failing.has(entry.group) && !editedNames.has(entry.change),
@@ -468,7 +483,7 @@ export async function submitChanges(
 
   const results = new Map<Prepared, SubmitResult>();
   for (const entry of prepared) {
-    const { failure, ...fields } = entry;
+    const { failure, groupRefused, ...fields } = entry;
     const base = { ...fields, waitingFor: [], pushed: false, commit: null, pendingBranch: null };
     // oxlint-disable-next-line no-await-in-loop -- a few changes per run
     const current = await submissionState(sourceDir(cwd, type, entry.change));
@@ -478,7 +493,9 @@ export async function submitChanges(
         status: "failed",
         state: current,
         reason: "check-failed",
-        message: `mate: ${entry.change} failed its check; nothing was pushed.\n${failure}`,
+        message: groupRefused
+          ? `mate: ${entry.change} was not submitted: publication would refuse its group ${entry.group}; nothing was pushed.\n${failure}`
+          : `mate: ${entry.change} failed its check; nothing was pushed.\n${failure}`,
       });
       continue;
     }

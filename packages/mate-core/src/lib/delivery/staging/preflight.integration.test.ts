@@ -18,7 +18,7 @@ import {
   type StagingFixture,
 } from "../../../../test/staging-fixture";
 import { submitChanges, type SubmitResult } from "../submit-change";
-import { submitGroups } from "./submit";
+import { dropSubmitted, submitGroups } from "./submit";
 
 const TIMEOUT = 90_000;
 const LOGIN_BRANCH = "workset/acme-login";
@@ -164,6 +164,68 @@ describe.skipIf(!REAL_OPENSPEC)("the publication pre-flight at submit", () => {
       const skipped = result.warnings.filter((warning) => warning.kind === "preflight-skipped");
       expect(skipped).toHaveLength(1);
       expect(skipped[0]!.message).toContain("acme-login-api");
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "a stale delta pushed for the first time is submitted with a warning, as only its pending copy can be resolved",
+    async () => {
+      const fixture = await setup();
+      const checkout = loginCheckout(fixture);
+      const seed = git(checkout.companion, "rev-parse", "HEAD").trim();
+      const teammate = fixture.clone("acme-teammate");
+      const spec = path.join(teammate, "openspec", "specs", "widget", "spec.md");
+      fs.writeFileSync(
+        spec,
+        fs.readFileSync(spec, "utf8").replace("The widget SHALL work.", "The widget SHALL hum."),
+      );
+      git(teammate, "commit", "-qam", "hum");
+      git(teammate, "push", "-q", "origin", "HEAD");
+      proposeLocally(fixture, checkout.companion, "acme-login-ui", {
+        branch: LOGIN_BRANCH,
+        specBase: seed,
+        deltas: {
+          widget:
+            "## MODIFIED Requirements\n\n### Requirement: Widget renders\nThe widget SHALL glow.\n**Area:** `packages/web`\n\n#### Scenario: Works\n- **WHEN** used\n- **THEN** it works\n",
+        },
+      });
+
+      const result = await submit(fixture, checkout, "acme-login-ui");
+
+      expect(result).toMatchObject({ status: "submitted", pushed: true });
+      const blocked = result.warnings.filter((warning) => warning.kind === "preflight-blocked");
+      expect(blocked).toHaveLength(1);
+      expect(blocked[0]!.message).toContain("mate artifact resolve");
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "a member dropped from another machine is not applied, as the push and publication leave it out",
+    async () => {
+      const fixture = await setup();
+      const checkout = loginCheckout(fixture);
+      proposeLocally(fixture, checkout.companion, "acme-login-old", {
+        branch: LOGIN_BRANCH,
+        deltas: { widget: requirement("MODIFIED", "Widget hums", "The widget SHALL hum.") },
+      });
+      await submitGroups(checkout.companion, ["acme-login-old"], storage(fixture));
+      const other = fixture.clone("acme-other");
+      expect(
+        await dropSubmitted(other, "acme-login-old", {
+          tmpRoot: fixture.root,
+          stateHome: path.join(fixture.root, "home-other"),
+        }),
+      ).toMatchObject({ status: "dropped", pushed: true });
+      proposeLocally(fixture, checkout.companion, "acme-login-api", {
+        branch: LOGIN_BRANCH,
+        deltas: { "acme-auth": requirement("ADDED", "Login", "The acme SHALL log in.") },
+      });
+
+      const result = await submit(fixture, checkout, "acme-login-api");
+
+      expect(result).toMatchObject({ status: "submitted", pushed: true });
     },
     TIMEOUT,
   );

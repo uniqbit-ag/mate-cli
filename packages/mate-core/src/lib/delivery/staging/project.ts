@@ -242,7 +242,7 @@ export async function runChain<T>(
       // The worktree checked only the base; the pending branch's folders arrived since.
       await assertNoLinkedContent(work, "HEAD", [type], "the projected chain");
       const baseOf = async (member: RunMember): Promise<string | null> => {
-        if (member.submitted && remote && pending) {
+        if (member.source === "submitted" && member.submitted && remote && pending) {
           return deltaBase(git, defaultRef(remote), pending, member.submitted, type);
         }
         const record = await readDeliveryRecord(sourceDir(dir, type, member.name)).catch(
@@ -250,8 +250,10 @@ export async function runChain<T>(
         );
         const base = record?.specBase;
         if (!base || !isCommitId(base)) return null;
-        const held = await work.run(["merge-base", "--is-ancestor", base, start]);
-        return held.status === 0 ? base : null;
+        // Where submit's record puts it, and publication reads it from.
+        const shared = await work.run(["merge-base", base, start]);
+        const commit = shared.stdout.trim();
+        return shared.status === 0 && isCommitId(commit) ? commit : null;
       };
       const bases = await Promise.all(
         applying.map(async (member) => {

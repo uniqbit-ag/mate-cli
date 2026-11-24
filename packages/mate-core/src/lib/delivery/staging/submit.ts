@@ -704,6 +704,82 @@ export async function editedSubmittedMembers(
   return edited;
 }
 
+/** What {@link submitGroups} hands {@link pushGroup} for one group. */
+interface PushPlan {
+  /** The local members it pushes. */
+  pushed: string[];
+  /** Those of {@link pushed} staged only when the pending branch lacks them. */
+  ifMissing: string[];
+  /** Members Git cannot judge: the group fails. */
+  unknown: string[];
+}
+
+async function planPush(
+  git: CompanionGit,
+  companionPath: string,
+  type: ArtifactType,
+  inGroup: readonly LocalMember[],
+  names: readonly string[],
+  submitted: Record<string, SubmittedFolder>,
+): Promise<PushPlan> {
+  const plan: PushPlan = { pushed: [], ifMissing: [], unknown: [] };
+  for (const member of inGroup) {
+    const named = names.includes(member.name);
+    if (member.state === "dropped" && !named) continue;
+    const edited =
+      (named && member.state !== "submitted") ||
+      // oxlint-disable-next-line no-await-in-loop -- a few members per group
+      (await editedSinceSubmit(git, companionPath, sourcePathOf(type, member.name), submitted));
+    if (edited === null) plan.unknown.push(member.name);
+    else if (edited || named) plan.pushed.push(member.name);
+    if (edited === false && named) plan.ifMissing.push(member.name);
+  }
+  return plan;
+}
+
+/**
+ * The members of `group` whose local folder submitting `names` puts on the pending branch, as
+ * {@link submitGroups} and {@link pushGroup} decide: pushed, and not kept as the pending branch
+ * has it (`onPending`), which a folder named unchanged is, and one whose content equals what this
+ * checkout last submitted. Null when Git cannot tell, as the push then fails.
+ */
+export async function localPushes(
+  companionPath: string,
+  group: string,
+  names: readonly string[],
+  onPending: ReadonlySet<string>,
+  deps: Pick<SubmitDeps, "git" | "artifactType" | "stateHome"> = {},
+): Promise<string[] | null> {
+  const type = deps.artifactType ?? defaultArtifactType();
+  const git = (deps.git ?? defaultGit)(companionPath);
+  const inGroup = (await localMembers(companionPath, type)).filter(
+    (member) => member.group === group,
+  );
+  const submitted = readSubmittedFolders(companionPath, deps.stateHome);
+  const plan = await planPush(git, companionPath, type, inGroup, names, submitted);
+  if (plan.unknown.length > 0) return null;
+  const carried: string[] = [];
+  for (const name of plan.pushed) {
+    const relative = sourcePathOf(type, name);
+    const mine = submitted[relative]?.content;
+    if (onPending.has(name)) {
+      if (plan.ifMissing.includes(name)) continue;
+      if (mine !== undefined) {
+        // oxlint-disable-next-line no-await-in-loop -- a few members per group
+        const files = await ownFiles(git, companionPath, relative);
+        if (files === null) return null;
+        const own = files.filter((file) => file !== DELIVERY_FILE);
+        // oxlint-disable-next-line no-await-in-loop -- same member
+        if ((await folderDigest(path.join(companionPath, ...relative.split("/")), own)) === mine) {
+          continue;
+        }
+      }
+    }
+    carried.push(name);
+  }
+  return carried;
+}
+
 export type GroupStatus = "pushed" | "unchanged" | "waiting" | "failed";
 
 export interface GroupSubmission {
@@ -745,21 +821,16 @@ export async function submitGroups(
       submissions.push({ group, status: "waiting", waitingFor });
       continue;
     }
-    const pushed: string[] = [];
-    const ifMissing: string[] = [];
-    const unknown: string[] = [];
     const submitted = readSubmittedFolders(companionPath, options.stateHome);
-    for (const member of inGroup) {
-      const named = names.includes(member.name);
-      if (member.state === "dropped" && !named) continue;
-      const edited =
-        (named && member.state !== "submitted") ||
-        // oxlint-disable-next-line no-await-in-loop -- a few members per group
-        (await editedSinceSubmit(local, companionPath, sourcePathOf(type, member.name), submitted));
-      if (edited === null) unknown.push(member.name);
-      else if (edited || named) pushed.push(member.name);
-      if (edited === false && named) ifMissing.push(member.name);
-    }
+    // oxlint-disable-next-line no-await-in-loop -- one group at a time
+    const { pushed, ifMissing, unknown } = await planPush(
+      local,
+      companionPath,
+      type,
+      inGroup,
+      names,
+      submitted,
+    );
     if (unknown.length > 0) {
       const detail = `Git could not tell whether ${unknown.join(", ")} changed locally; nothing was pushed.`;
       const push: GroupPush = { ...failed("failed", detail, null), group, changes: [] };

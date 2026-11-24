@@ -44,8 +44,17 @@ export type CountedWarning = {
   message: string;
 };
 
-/** Submit could not archive the change's Delivery Group as publication would. */
-export type PreflightWarning = { kind: "preflight-skipped"; change: string; message: string };
+/**
+ * - `preflight-skipped`: submit could not archive the change's Delivery Group as publication
+ *   would, or only against the last fetched refs
+ * - `preflight-blocked`: publication will block the group on the stale delta of `change` until it
+ *   is resolved on the pending branch
+ */
+export type PreflightWarning = {
+  kind: "preflight-skipped" | "preflight-blocked";
+  change: string;
+  message: string;
+};
 
 export type SubmitWarning =
   | { kind: "overlap"; change: string; capability: string; requirement: string; message: string }
