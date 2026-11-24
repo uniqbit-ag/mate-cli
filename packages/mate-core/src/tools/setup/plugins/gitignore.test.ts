@@ -25,12 +25,26 @@ describe("collectManagedGitignoreEntries with declared plugins", () => {
 
     expect(entries).toContain(".mate/config/plugins.local.yaml");
     expect(entries).toContain(".mate/plugins/.npmrc");
+    expect(entries).toContain(".mate/plugins/audiences/*/.npmrc");
     expect(entries.some((entry) => entry.includes("plugins.lock.yaml"))).toBe(false);
     expect(entries.some((entry) => entry.includes("package.json"))).toBe(false);
     expect(entries.some((entry) => entry.includes("package-lock.json"))).toBe(false);
     // The workspace's node_modules is covered by the baseline node_modules/
     // rule below, not a plugin-specific entry.
     expect(entries.some((entry) => entry.includes("dependencies/plugins"))).toBe(false);
+  });
+
+  test("a companion declaring plugins only under an audience ignores the registry files too", () => {
+    const entries = collectManagedGitignoreEntries(
+      makeContext({
+        audiences: { ba: { plugins: [{ package: "@acme/reader", version: "^1.0.0" }] } },
+      }),
+      [],
+    );
+
+    expect(entries).toContain(".mate/plugins/.npmrc");
+    expect(entries).toContain(".mate/plugins/audiences/*/.npmrc");
+    expect(entries.some((entry) => entry.includes("package"))).toBe(false);
   });
 
   test("always contributes the node_modules, local distribution-workspace, and companion registry baseline", () => {

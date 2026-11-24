@@ -15,6 +15,7 @@ import type { ProviderPlugin } from "../plugin";
 import { PluginRegistry } from "../registry";
 import { hydrateDynamicPlugins, resetDynamicPluginHydration } from "./hydrate";
 import { installDeclaredPlugins, type NpmInstallRunner } from "./install";
+import { dynamicPluginsWorkspaceRoot } from "./paths";
 
 const tempRoots: string[] = [];
 let restoreEnvironment: () => void;
@@ -145,7 +146,7 @@ describe("dynamic plugins end to end", () => {
 
     // Install into the shared workspace.
     const installResults = await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       (await new ConfigStore(path.join(companionPath, ".mate", "config", "framework.yaml")).load())
         .plugins ?? [],
       fakePluginInstallDeps({ runNpmInstall: fakeNpmInstall }),
@@ -179,7 +180,7 @@ describe("dynamic plugins end to end", () => {
     const env = { ACME_GREETING: "hi" };
     activateDistribution();
     await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [{ package: PACKAGE, version: "^1.0.0" }],
       fakePluginInstallDeps({
         runNpmInstall: fakeNpmInstall,
@@ -239,7 +240,7 @@ describe("dynamic plugins end to end", () => {
     );
     const registry = activateDistribution();
     await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [{ package: PACKAGE, version: "^1.0.0" }],
       fakePluginInstallDeps({
         runNpmInstall: fakeNpmInstall,
@@ -334,7 +335,7 @@ describe("dynamic plugin Claude plugin folders", () => {
       "utf8",
     );
     await installDeclaredPlugins(
-      companionPath,
+      dynamicPluginsWorkspaceRoot(companionPath),
       [{ package: SHIPPER, version: "^1.0.0" }],
       fakePluginInstallDeps({
         runNpmInstall: shipperNpmInstall,

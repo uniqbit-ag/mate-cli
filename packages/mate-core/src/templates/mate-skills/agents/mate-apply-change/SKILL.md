@@ -12,8 +12,14 @@ metadata:
 # Mate Apply Change
 
 The Apply change stage of the Delivery Path. Before any code changes, it records the
-Working Repository branch the change is delivered through, so archive and publication
+Working Repository branch the change is delivered through, so submit and publication
 later know which merge to wait for. Then it runs the OpenSpec apply workflow.
+
+**Selecting the change.** `openspec list` also names changes awaiting
+publication. A change whose `openspec/changes/<name>/delivery.yaml` says
+`state: submitted` is finished: when the user named no change, leave it out of
+auto-selection and of the choices you offer, and never pick it because it is the only
+one. Check only that `state` line. Apply one only when the user names it.
 
 ## Step 1: Read the branch and the record
 
@@ -68,8 +74,8 @@ a mismatch is informational, and relinking requires explicit user confirmation.
 
 A branch is **protected** when it is the repository's default branch or matches a configured
 protected pattern; `mate artifact link` refuses a
-protected branch unless it is recorded as a direct delivery. Mate never asks the forge,
-so a branch only the forge protects looks unprotected; hence the menu below.
+protected branch unless it is recorded as a direct delivery. Mate never asks the Git host,
+so a branch only the host protects looks unprotected; hence the menu below.
 
 **Isolated session.** When the link result's `session.isolated` is `true` (a Claude
 Code background session outside a linked worktree), Claude Code refuses writes here, so
@@ -169,7 +175,16 @@ its message and ask; never work around it.
 When its result lists `warnings`, a `dependsOn` change is not implemented yet, so this
 change would be built without the code it builds on. Report each warning and ask
 whether to apply the dependency first or continue here. A dependency that is
-implemented but unarchived is no such warning; it only affects archive order.
+implemented but unsubmitted is no such warning; it only affects submit order. A
+submitted or locally active dependency counts as satisfied. For a change with
+`dependsOn`, read the specs it builds on with `mate artifact project "<change-name>" --json`:
+its requirements are not in the canonical specs until the chain is published.
+
+**Earlier steps.** Run `mate workflow next "<change-name>"`. A step of an earlier
+stage it names, as an action or counted, that the request or the user says ran: record
+it with `mate workflow done <skill> "<change-name>"`; otherwise name it above the hand-off.
+Being asked to apply settles what comes before it: a review or earlier step the command
+names never stops this skill and is never recorded to get past it; continue at Step 3.
 
 ## Step 3: Apply
 
@@ -179,12 +194,24 @@ Retrieve its instructions the ordinary way. Only when the user explicitly asks f
 apply, also read [references/mate-compact-apply.md](references/mate-compact-apply.md) and
 use its transport.
 
-## Step 4: Hand off
+## Step 4: Close the stage
 
-End the response with a final `## Next steps` section: numbered required actions in
-execution order, with exact commands and known change names, prerequisites first.
-Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
-follows it. Listing an action never invokes it. Never offer the user an optional command, in or above the section; optional work appears above it only as a skill invocation labelled optional.
+At the end of every run of this skill, also with tasks still open or after a blocker,
+run:
+
+```bash
+mate workflow done mate-apply-change "<change-name>"
+```
+
+It prints the next actions for the change. End the response with a final `## Next steps`
+section: numbered required actions in execution order, with exact commands and known
+change names, prerequisites first: required work of this run that is still open, then
+the actions the command printed, in its order. Summaries, evidence, warnings, optional
+work, and deferred context go above it; nothing follows it. Listing an action never
+invokes it. Never offer the user an optional command, in or above the section; optional
+work appears above it only as a skill invocation labelled optional, as the command's
+`optional:` line names it. If the command fails, report its problems and end without a
+`Next steps` section.
 
 **Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
 and Cursor and the fallback. When the current runtime uses another syntax, swap only
@@ -193,25 +220,16 @@ user's statement or the harness's own identity sets the runtime, never a skill's
 folder or an older example. Arguments, commands, paths, and order stay, and naming
 never invokes.
 
-- Above the section, label `/mate-show-me` and `/mate-simplify-code` as optional, in
-  any order; they are not prerequisites for archive.
-- In the section, list `/mate-archive-change <change-name>`, after any required work
-  still open (a failing check, an unanswered question). Name the archive action only
-  there: omit the reference's completion sentence that also points to
-  `/mate-archive-change`.
-- Several changes on one branch: list their archives in dependency order, and say above
-  the section that this order avoids an advisory archive warning; it is not a gate.
+Add only this skill's own required actions to the section:
 
-```text
-Optional, any order: /mate-show-me acme-queue, /mate-simplify-code.
+- Required work still open (a failing check, an unanswered question) comes first.
+- Several changes on one branch: run the command for each, list their actions in
+  dependency order, and say above the section that this order avoids an advisory submit
+  warning; it is not a gate.
 
-## Next steps
-1. /mate-archive-change acme-queue
-```
+Omit the reference's completion sentence.
 
 ## Guardrails
 
 - Never push, open a PR, or merge on the user's behalf.
 - Never record a protected branch except as an explicit direct delivery.
-- The forge token, when one is used by `mate artifact link`, is never printed or
-  written; do not read or echo `MATE_GIT_TOKEN`.

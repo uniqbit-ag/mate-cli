@@ -11,7 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChatRouteImport } from './routes/chat'
-import { Route as FactoryRouteImport } from './routes/factory'
+import { Route as FrictionRouteImport } from './routes/friction'
 import { Route as GettingStartedRouteImport } from './routes/getting-started'
 import { Route as GraphRouteImport } from './routes/graph'
 import { Route as ReportsRouteImport } from './routes/reports'
@@ -22,6 +22,7 @@ import { Route as VaultRouteImport } from './routes/vault'
 import { Route as WorkflowRouteImport } from './routes/workflow'
 import { Route as GettingStartedIndexRouteImport } from './routes/getting-started.index'
 import { Route as GettingStartedTopicRouteImport } from './routes/getting-started.$topic'
+import { Route as PluginsServiceViewRouteImport } from './routes/plugins.$service.$view'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -33,9 +34,9 @@ const ChatRoute = ChatRouteImport.update({
   path: '/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
-const FactoryRoute = FactoryRouteImport.update({
-  id: '/factory',
-  path: '/factory',
+const FrictionRoute = FrictionRouteImport.update({
+  id: '/friction',
+  path: '/friction',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GettingStartedRoute = GettingStartedRouteImport.update({
@@ -88,11 +89,16 @@ const GettingStartedTopicRoute = GettingStartedTopicRouteImport.update({
   path: '/$topic',
   getParentRoute: () => GettingStartedRoute,
 } as any)
+const PluginsServiceViewRoute = PluginsServiceViewRouteImport.update({
+  id: '/plugins/$service/$view',
+  path: '/plugins/$service/$view',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/chat': typeof ChatRoute
-  '/factory': typeof FactoryRoute
+  '/friction': typeof FrictionRoute
   '/getting-started': typeof GettingStartedRouteWithChildren
   '/graph': typeof GraphRoute
   '/reports': typeof ReportsRoute
@@ -103,11 +109,12 @@ export interface FileRoutesByFullPath {
   '/workflow': typeof WorkflowRoute
   '/getting-started/$topic': typeof GettingStartedTopicRoute
   '/getting-started/': typeof GettingStartedIndexRoute
+  '/plugins/$service/$view': typeof PluginsServiceViewRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/chat': typeof ChatRoute
-  '/factory': typeof FactoryRoute
+  '/friction': typeof FrictionRoute
   '/graph': typeof GraphRoute
   '/reports': typeof ReportsRoute
   '/skills': typeof SkillsRoute
@@ -117,12 +124,13 @@ export interface FileRoutesByTo {
   '/workflow': typeof WorkflowRoute
   '/getting-started/$topic': typeof GettingStartedTopicRoute
   '/getting-started': typeof GettingStartedIndexRoute
+  '/plugins/$service/$view': typeof PluginsServiceViewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/chat': typeof ChatRoute
-  '/factory': typeof FactoryRoute
+  '/friction': typeof FrictionRoute
   '/getting-started': typeof GettingStartedRouteWithChildren
   '/graph': typeof GraphRoute
   '/reports': typeof ReportsRoute
@@ -133,13 +141,14 @@ export interface FileRoutesById {
   '/workflow': typeof WorkflowRoute
   '/getting-started/$topic': typeof GettingStartedTopicRoute
   '/getting-started/': typeof GettingStartedIndexRoute
+  '/plugins/$service/$view': typeof PluginsServiceViewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/chat'
-    | '/factory'
+    | '/friction'
     | '/getting-started'
     | '/graph'
     | '/reports'
@@ -150,11 +159,12 @@ export interface FileRouteTypes {
     | '/workflow'
     | '/getting-started/$topic'
     | '/getting-started/'
+    | '/plugins/$service/$view'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/chat'
-    | '/factory'
+    | '/friction'
     | '/graph'
     | '/reports'
     | '/skills'
@@ -164,11 +174,12 @@ export interface FileRouteTypes {
     | '/workflow'
     | '/getting-started/$topic'
     | '/getting-started'
+    | '/plugins/$service/$view'
   id:
     | '__root__'
     | '/'
     | '/chat'
-    | '/factory'
+    | '/friction'
     | '/getting-started'
     | '/graph'
     | '/reports'
@@ -179,12 +190,13 @@ export interface FileRouteTypes {
     | '/workflow'
     | '/getting-started/$topic'
     | '/getting-started/'
+    | '/plugins/$service/$view'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ChatRoute: typeof ChatRoute
-  FactoryRoute: typeof FactoryRoute
+  FrictionRoute: typeof FrictionRoute
   GettingStartedRoute: typeof GettingStartedRouteWithChildren
   GraphRoute: typeof GraphRoute
   ReportsRoute: typeof ReportsRoute
@@ -193,6 +205,7 @@ export interface RootRouteChildren {
   UsageRoute: typeof UsageRoute
   VaultRoute: typeof VaultRoute
   WorkflowRoute: typeof WorkflowRoute
+  PluginsServiceViewRoute: typeof PluginsServiceViewRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -211,11 +224,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/factory': {
-      id: '/factory'
-      path: '/factory'
-      fullPath: '/factory'
-      preLoaderRoute: typeof FactoryRouteImport
+    '/friction': {
+      id: '/friction'
+      path: '/friction'
+      fullPath: '/friction'
+      preLoaderRoute: typeof FrictionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/getting-started': {
@@ -288,6 +301,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GettingStartedTopicRouteImport
       parentRoute: typeof GettingStartedRoute
     }
+    '/plugins/$service/$view': {
+      id: '/plugins/$service/$view'
+      path: '/plugins/$service/$view'
+      fullPath: '/plugins/$service/$view'
+      preLoaderRoute: typeof PluginsServiceViewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -308,7 +328,7 @@ const GettingStartedRouteWithChildren = GettingStartedRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ChatRoute: ChatRoute,
-  FactoryRoute: FactoryRoute,
+  FrictionRoute: FrictionRoute,
   GettingStartedRoute: GettingStartedRouteWithChildren,
   GraphRoute: GraphRoute,
   ReportsRoute: ReportsRoute,
@@ -317,6 +337,7 @@ const rootRouteChildren: RootRouteChildren = {
   UsageRoute: UsageRoute,
   VaultRoute: VaultRoute,
   WorkflowRoute: WorkflowRoute,
+  PluginsServiceViewRoute: PluginsServiceViewRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

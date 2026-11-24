@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { git, initRepo } from "../../../test/git-checkouts";
+import type { DeliveryRecord } from "../delivery/record";
 import { ARTIFACT_REFUSAL_HEADLINE } from "../../runtime/artifact-refusal";
 import { MATE_ENV } from "../../runtime/env-names";
 import { readProjectionFile } from "../../runtime/projection";
@@ -548,6 +549,104 @@ describe("createWorksetWorktrees", () => {
     expect(fs.existsSync(path.join(target, ".env"))).toBe(false);
     expect(fs.existsSync(path.join(target, "apps", "acme", ".env.local"))).toBe(false);
     expect(JSON.stringify(result)).not.toContain("fake-value");
+    expect(result.repositories[0]!.include).toEqual({ sources: [], copied: [], failed: [] });
+  });
+
+  describe("include files", () => {
+    const target = () => path.join(root, "src", "web.worktrees", "acme-login");
+
+    /** A linked `acme/web` whose committed `.worktreeinclude` holds `patterns`. */
+    function included(patterns: string): string {
+      const web = checkout("web", {
+        ".gitignore": ".env*\n.npmrc\n",
+        ".worktreeinclude": patterns,
+        "bun.lock": "",
+        "apps/acme/.keep": "",
+      });
+      fs.writeFileSync(path.join(web, ".env"), "ACME_TOKEN=fake-value\n");
+      fs.writeFileSync(path.join(web, ".npmrc"), "//registry.acme.test/:_authToken=fake-value\n");
+      fs.writeFileSync(path.join(web, "apps", "acme", ".env.local"), "ACME_TOKEN=fake-value\n");
+      link(web);
+      workset("acme-login", "acme/web");
+      return web;
+    }
+
+    test("copies selected files before install; copied env files are not reported missing", async () => {
+      included(".env\n.npmrc\n");
+      let npmrcAtInstall = false;
+      const result = await createWorksetWorktrees(companion, "acme-login", options, {
+        install: async (cwd) => ((npmrcAtInstall = fs.existsSync(path.join(cwd, ".npmrc"))), true),
+      });
+      const entry = result.repositories[0]!;
+      expect(result.ok).toBe(true);
+      expect(npmrcAtInstall).toBe(true);
+      expect(entry.include).toEqual({
+        sources: [".worktreeinclude"],
+        copied: [".env", ".npmrc"],
+        failed: [],
+      });
+      expect(entry.missingEnv).toEqual(["apps/acme/.env.local"]);
+      expect(fs.readFileSync(path.join(target(), ".env"), "utf8")).toBe("ACME_TOKEN=fake-value\n");
+      expect(JSON.stringify(result)).not.toContain("fake-value");
+    });
+
+    test("a reused worktree gets only missing files and keeps its own", async () => {
+      const web = included(".env\n");
+      await createWorksetWorktrees(companion, "acme-login", options, {
+        install: installs().install,
+      });
+      fs.writeFileSync(path.join(target(), ".env"), "ACME_TOKEN=worktree\n");
+      fs.writeFileSync(path.join(web, ".worktreeinclude"), ".env\n.npmrc\n");
+      const result = await createWorksetWorktrees(companion, "acme-login", options);
+      expect(result.repositories[0]!.action).toBe("reused");
+      expect(result.repositories[0]!.include.copied).toEqual([".npmrc"]);
+      expect(fs.readFileSync(path.join(target(), ".env"), "utf8")).toBe("ACME_TOKEN=worktree\n");
+    });
+
+    test("a failed copy keeps the worktree and the other copies, still installs, and fails", async () => {
+      const web = included(".env\n.npmrc\n");
+      fs.chmodSync(path.join(web, ".env"), 0o000);
+      const run = installs();
+      const result = await createWorksetWorktrees(companion, "acme-login", options, {
+        install: run.install,
+      });
+      const entry = result.repositories[0]!;
+      expect(result.ok).toBe(false);
+      expect(entry.error).toBe("copying .env failed");
+      expect(entry.include.copied).toEqual([".npmrc"]);
+      expect(entry.include.failed).toEqual([{ path: ".env", reason: "EACCES" }]);
+      expect(run.calls).toHaveLength(1);
+      expect(fs.existsSync(target())).toBe(true);
+      expect(fs.existsSync(path.join(target(), ".env"))).toBe(false);
+    });
+
+    test("a local include file Git does not ignore is skipped with a warning", async () => {
+      const web = included(".npmrc\n");
+      // Re-included over Mate's exclude entry.
+      fs.appendFileSync(path.join(web, ".gitignore"), "!/.worktreeinclude.local\n");
+      fs.writeFileSync(path.join(web, ".worktreeinclude.local"), ".env\n");
+      const result = await createWorksetWorktrees(companion, "acme-login", options, {
+        install: installs().install,
+      });
+      expect(result.repositories[0]!.include.copied).toEqual([".npmrc"]);
+      expect(result.warnings).toContain(
+        "acme/web: .worktreeinclude.local skipped: Git does not ignore it",
+      );
+    });
+
+    test("an untracked local include file is used with no .gitignore entry", async () => {
+      const web = included(".npmrc\n");
+      fs.writeFileSync(path.join(web, ".worktreeinclude.local"), ".env\n");
+      const result = await createWorksetWorktrees(companion, "acme-login", options, {
+        install: installs().install,
+      });
+      expect(result.repositories[0]!.include).toEqual({
+        sources: [".worktreeinclude", ".worktreeinclude.local"],
+        copied: [".env", ".npmrc"],
+        failed: [],
+      });
+      expect(result.warnings.join("\n")).not.toContain(".worktreeinclude.local");
+    });
   });
 });
 
@@ -803,6 +902,45 @@ describe("pruneWorksetWorktrees", () => {
     );
     const result = await pruneWorksetWorktrees(companion, await done("acme-login"));
     expect(result.removed.map((entry) => entry.path)).toEqual([target]);
+  });
+
+  test("uses a Delivery Record already read for a change archived only elsewhere", async () => {
+    const { target } = await prepared();
+    fs.rmSync(path.join(companion, "openspec", "changes", "acme-login"), { recursive: true });
+    const anchor = "2026-11-05-acme-login";
+    const delivery: DeliveryRecord = {
+      version: 1,
+      change: "acme-login",
+      deliveries: [{ repository: "acme/web", branch: "workset/acme-login" }],
+    };
+    const result = await pruneWorksetWorktrees(companion, [
+      { id: "acme-login", changes: [anchor], records: new Map([[anchor, delivery]]) },
+    ]);
+    expect(result.removed.map((entry) => entry.path)).toEqual([target]);
+  });
+
+  test("reads an anchor not archived here from its active change", async () => {
+    const { target } = await prepared();
+    const result = await pruneWorksetWorktrees(companion, [
+      { id: "acme-login", changes: ["2026-11-05-acme-login"] },
+    ]);
+    expect(result.removed.map((entry) => entry.path)).toEqual([target]);
+  });
+
+  test("warns about a change whose Delivery Record is nowhere", async () => {
+    const { target } = await prepared();
+    fs.rmSync(path.join(companion, "openspec", "changes", "acme-login"), { recursive: true });
+    const result = await pruneWorksetWorktrees(companion, [
+      { id: "acme-login", changes: ["2026-11-05-acme-login"] },
+    ]);
+    expect(result).toEqual({
+      removed: [],
+      kept: [],
+      warnings: [
+        "2026-11-05-acme-login: no Delivery Record found, its worktrees were not cleaned up",
+      ],
+    });
+    expect(fs.existsSync(target)).toBe(true);
   });
 
   test("leaves the main checkout on the Delivery Branch", async () => {

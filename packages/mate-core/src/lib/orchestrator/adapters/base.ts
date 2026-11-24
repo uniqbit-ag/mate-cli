@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 
@@ -193,11 +193,39 @@ export abstract class LaunchAdapter<C extends AdapterContext = AdapterContext> {
     const launch = await this.prepareLaunch(context, args);
 
     return new Promise((resolve, reject) => {
-      const child = spawn(launch.command, launch.args, {
-        cwd: context.launchWorkingDirectory,
-        env: launch.env,
-        stdio: this.interactive ? "inherit" : "pipe",
-      });
+      /**
+       * Installed before the spawn: the agent runs before `spawn` returns, and a signal in that gap
+       * would end the launch with the agent left running.
+       */
+      let child: ChildProcess | undefined;
+      const forward = this.forwardsSignals();
+      const handlers = new Map<NodeJS.Signals, () => void>();
+      for (const signal of FORWARDED_SIGNALS) {
+        const handler = () => {
+          /** Installing a handler at all is what keeps the launch alive to wait for the agent. */
+          if (forward && child && child.exitCode === null && child.signalCode === null) {
+            child.kill(signal);
+          }
+        };
+        handlers.set(signal, handler);
+        process.on(signal, handler);
+      }
+      const removeHandlers = () => {
+        for (const [signal, handler] of handlers) process.off(signal, handler);
+        handlers.clear();
+      };
+
+      try {
+        child = spawn(launch.command, launch.args, {
+          cwd: context.launchWorkingDirectory,
+          env: launch.env,
+          stdio: this.interactive ? "inherit" : "pipe",
+        });
+      } catch (error) {
+        removeHandlers();
+        reject(error);
+        return;
+      }
 
       let stdout = "";
       let stderr = "";
@@ -210,23 +238,6 @@ export abstract class LaunchAdapter<C extends AdapterContext = AdapterContext> {
           stderr += chunk.toString();
         });
       }
-
-      const forward = this.forwardsSignals();
-      const handlers = new Map<NodeJS.Signals, () => void>();
-      for (const signal of FORWARDED_SIGNALS) {
-        const handler = () => {
-          /** Installing a handler at all is what keeps the launch alive to wait for the agent. */
-          if (forward && child.exitCode === null && child.signalCode === null) {
-            child.kill(signal);
-          }
-        };
-        handlers.set(signal, handler);
-        process.on(signal, handler);
-      }
-      const removeHandlers = () => {
-        for (const [signal, handler] of handlers) process.off(signal, handler);
-        handlers.clear();
-      };
 
       child.on("error", (error) => {
         removeHandlers();

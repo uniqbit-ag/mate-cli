@@ -25,7 +25,7 @@ export function extractRepoName(url: string): string | null {
     repositoryPath = cleaned.replace(/^https?:\/\//i, "");
   }
 
-  const lastPart = repositoryPath.split("/").filter(Boolean).at(-1);
+  const lastPart = repositoryPath.split("/").findLast(Boolean);
   if (!lastPart) {
     return null;
   }

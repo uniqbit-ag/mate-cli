@@ -1,16 +1,13 @@
-import { QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
 import { setupRouterSsrQueryIntegration } from "@tanstack/react-router-ssr-query";
 
 import { routeTree } from "./route-tree.gen";
 import { ViewPlaceholder } from "./shell/navigation-progress";
+import { createStudioQueryClient } from "./lib/query-client";
 
 /** One router and query client per request on the server, one per page in the browser. */
 export function getRouter() {
-  // Held for the page's life: a revisit shows its data at once and refreshes it if stale.
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { staleTime: 5_000, gcTime: Infinity } },
-  });
+  const queryClient = createStudioQueryClient();
   const router = createRouter({
     routeTree,
     context: { queryClient },

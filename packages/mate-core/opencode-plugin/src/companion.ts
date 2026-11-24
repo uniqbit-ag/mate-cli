@@ -3,6 +3,7 @@ import path from "node:path";
 
 import type { Context } from "@opencode/plugin/promise/plugin";
 import { MATE_ENV } from "../../src/runtime/env";
+import { AGENT_RUNTIME_ENV } from "../../src/runtime/skill-prefix";
 import { COMPANION_POLICY_MARKER, type MateGuidanceFile } from "../../src/runtime/guidance";
 
 import type { CompanionContext } from "../../src/opencode/companion-policy";
@@ -13,6 +14,7 @@ import {
   runtimeMateBin,
   runtimeWrapperBinPath,
 } from "../../src/runtime/runtime-directory";
+import { umbrellaChildrenBlock } from "../../src/runtime/umbrella-children";
 
 function prependPathEntry(pathValue: string | undefined, entry: string): string {
   const entries = (pathValue ?? "").split(path.delimiter).filter(Boolean);
@@ -79,6 +81,8 @@ function buildSystemPrompt(
   wrapperBinPath: string,
 ): string[] {
   const lines = [materializeCompanionGuidance(guidance.companionGuidance, context, wrapperBinPath)];
+  const children = context.repositoryPath ? umbrellaChildrenBlock(context.repositoryPath) : "";
+  if (children) lines.push("", children);
 
   if (guidance.codebaseExplorationGuidance.trim()) {
     lines.push("", guidance.codebaseExplorationGuidance);
@@ -118,6 +122,8 @@ function applyCompanionShellEnv(
   env.MATE_POLICY_JSON = context.policyJson;
   env.MATE_GRAPHIFY_ENABLED = context.graphifyEnabled ? "1" : "0";
   env.MATE_GIT_AUTO_MODE = context.gitAutoModeEnabled ? "1" : "0";
+  // `mate workflow` hand-offs name steps as `@skill` here.
+  env[AGENT_RUNTIME_ENV] = "opencode";
   /**
    * Session-scoped payload consumed at plugin startup: masked so the multi-KB
    * guidance JSON never leaks into spawned shells (and a nested `mate` launch

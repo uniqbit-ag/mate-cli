@@ -1,8 +1,8 @@
 import { describe, expect, test } from "claude-code/testing";
 import type { Engine } from "claude-code/testing";
 import type { PromptMentionInput } from "claude-code";
-import { type PolicyOptions, contextReply, policyJson } from "./policy.ts";
-import { type Setup, world } from "./world.ts";
+import { type PolicyOptions, contextReply, policyJson } from "./policy";
+import { type Setup, world } from "./world";
 
 const ROOT = "/companions/app";
 

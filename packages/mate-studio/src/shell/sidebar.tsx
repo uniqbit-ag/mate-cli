@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
   STUDIO_MODES,
   viewsFor,
@@ -14,11 +14,10 @@ import { Tooltip } from "../components/ui/tooltip";
 import { cn } from "../lib/cn";
 import { useBrowser } from "../lib/use-browser";
 import type { StudioSearch } from "../lib/search";
-import { companionViewQuery, factoryQuery, holdShellForMode } from "../lib/studio-queries";
-import type { ShellData } from "../server/shell";
+import { companionViewQuery, holdShellForMode, pluginAttentionQuery } from "../lib/studio-queries";
+import type { ShellData, ShellPluginView } from "../server/shell";
 import { useAppearance } from "../stores/appearance";
 import { usePageUi } from "../stores/page-ui";
-import { factoryHome } from "../views/factory/outcome";
 import { groupChanges } from "../views/overview/change-group";
 import { insightViews, libraryViews, modeViews, VIEW_ICONS } from "./frame";
 import { MODE_TITLES, VIEW_PATHS, VIEW_TITLES } from "./views";
@@ -38,16 +37,9 @@ function useNeedsYou(shell: ShellData, search: StudioSearch): Partial<Record<Stu
     ...companionViewQuery("dashboard", search),
     enabled: engineering,
   });
-  const factory = useQuery({
-    ...factoryQuery(shell.selected?.digest ?? ""),
-    enabled: engineering && shell.factoryMode,
-  });
   const counts: Partial<Record<StudioView, number>> = {};
   if (overview.data?.changes)
     counts.dashboard = groupChanges(overview.data.changes)["needs-you"].length;
-  if (factory.data?.payload) {
-    counts.factory = factoryHome(factory.data.payload.worksets, factory.data.runs).attention.length;
-  }
   return counts;
 }
 
@@ -67,7 +59,7 @@ export function Sidebar({ shell, search, view }: SidebarProps) {
         <>
           <NavGroup
             label={MODE_TITLES[mode]}
-            views={modeViews(mode, shell.factoryMode, shell.chat)}
+            views={modeViews(mode, shell.chat)}
             search={search}
             current={view}
             counts={counts}
@@ -89,6 +81,7 @@ export function Sidebar({ shell, search, view }: SidebarProps) {
             counts={counts}
             collapsed={collapsed}
           />
+          <PluginNavGroup shell={shell} search={search} collapsed={collapsed} />
         </>
       ) : null}
       <div className="sidebar-footer mt-auto grid gap-1 border-t border-rule-soft pt-2 max-[900px]:mt-0 max-[900px]:ml-auto max-[900px]:flex max-[900px]:border-0 max-[900px]:pt-0">
@@ -148,6 +141,117 @@ function NavGroup(props: {
   );
 }
 
+/** Views plugin services ship as their own modules. */
+function PluginNavGroup({
+  shell,
+  search,
+  collapsed,
+}: {
+  shell: ShellData;
+  search: StudioSearch;
+  collapsed: boolean;
+}) {
+  // Hooks below need the router, so a Studio without plugin views renders nothing first.
+  if (shell.pluginViews.length === 0) return null;
+  return <PluginNavLinks shell={shell} search={search} collapsed={collapsed} />;
+}
+
+function PluginNavLinks({
+  shell,
+  search,
+  collapsed,
+}: {
+  shell: ShellData;
+  search: StudioSearch;
+  collapsed: boolean;
+}) {
+  const params = useParams({ strict: false }) as { service?: string; view?: string };
+  return (
+    <div
+      className="grid gap-px max-[900px]:flex max-[900px]:min-w-0 max-[900px]:max-w-full max-[900px]:flex-wrap max-[900px]:items-center"
+      role="group"
+      aria-label="Services"
+      data-studio-nav-section="Services"
+    >
+      <h2
+        className="m-0 px-2.5 pt-3.5 pb-1.5 text-[0.68rem] leading-none font-semibold text-muted first:pt-1.5 rail-min:mx-2 rail-min:my-2.5 rail-min:h-px rail-min:overflow-hidden rail-min:bg-rule-soft rail-min:p-0 rail-min:text-[0px] max-[900px]:sr-only"
+        aria-hidden="true"
+      >
+        Services
+      </h2>
+      {shell.pluginViews.map((entry) => (
+        <PluginNavLink
+          key={`${entry.service}/${entry.view}`}
+          entry={entry}
+          companion={shell.selected?.digest ?? null}
+          search={search}
+          current={params.service === entry.service && params.view === entry.view}
+          collapsed={collapsed}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** How many things a plugin view says wait on the person; asked in the browser only. */
+function usePluginAttention(entry: ShellPluginView, companion: string | null): number | undefined {
+  const browser = useBrowser();
+  const attention = useQuery({
+    ...pluginAttentionQuery(companion ?? "", entry.attentionUrl ?? ""),
+    enabled: browser && companion !== null && entry.attentionUrl !== undefined,
+  });
+  return attention.data;
+}
+
+function PluginNavLink({
+  entry,
+  companion,
+  search,
+  current,
+  collapsed,
+}: {
+  entry: ShellPluginView;
+  companion: string | null;
+  search: StudioSearch;
+  current: boolean;
+  collapsed: boolean;
+}) {
+  const count = usePluginAttention(entry, companion);
+  const needs = count !== undefined && count > 0;
+  return (
+    <Tooltip label={entry.label} disabled={!collapsed}>
+      <Link
+        to="/plugins/$service/$view"
+        params={{ service: entry.service, view: entry.view }}
+        search={search}
+        className={cn(
+          "sidebar-nav-link relative flex h-8 items-center gap-2.5 rounded-[6px] px-2.5 text-sm whitespace-nowrap text-[color-mix(in_srgb,var(--text)_82%,var(--muted))] no-underline hover:bg-surface hover:text-text rail-min:justify-center rail-min:px-0",
+          current && "bg-surface font-semibold text-text ring-1 ring-rule ring-inset",
+        )}
+        aria-current={current ? "page" : undefined}
+        aria-label={
+          collapsed ? (needs ? `${entry.label}, ${count} need you` : entry.label) : undefined
+        }
+      >
+        <Icon name="spark" className={current ? "text-accent" : "text-muted"} />
+        <span className="truncate rail-min:hidden">{entry.label}</span>
+        {needs ? <NeedsYouCount count={count} /> : null}
+      </Link>
+    </Tooltip>
+  );
+}
+
+function NeedsYouCount({ count }: { count: number }) {
+  return (
+    <Count
+      value={count}
+      tone="warn"
+      className="ml-auto rail-min:absolute rail-min:top-1 rail-min:right-1.5 rail-min:size-[7px] rail-min:min-w-0 rail-min:bg-warn rail-min:p-0 rail-min:text-[0px]"
+      label={`${count} need you`}
+    />
+  );
+}
+
 function NavLink({
   view,
   search,
@@ -179,14 +283,7 @@ function NavLink({
         <Icon name={VIEW_ICONS[view]} className={current ? "text-accent" : "text-muted"} />
         <span className="truncate rail-min:hidden">{title}</span>
         {view === "reports" ? <ReportsBadge /> : null}
-        {needs ? (
-          <Count
-            value={count}
-            tone="warn"
-            className="ml-auto rail-min:absolute rail-min:top-1 rail-min:right-1.5 rail-min:size-[7px] rail-min:min-w-0 rail-min:bg-warn rail-min:p-0 rail-min:text-[0px]"
-            label={`${count} need you`}
-          />
-        ) : null}
+        {needs ? <NeedsYouCount count={count} /> : null}
       </Link>
     </Tooltip>
   );

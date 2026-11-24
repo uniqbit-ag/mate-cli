@@ -1,5 +1,12 @@
-import { describe, expect, it } from "bun:test";
-import type { StudioChange, StudioCompanionPayload } from "@uniqbit/mate-core/studio";
+import { describe, expect, it, mock } from "bun:test";
+import {
+  defaultWorkflow,
+  pathPosition,
+  type StudioChange,
+  type StudioCompanionPayload,
+} from "@uniqbit/mate-core/studio";
+
+import { positioned } from "../../../test/positioned";
 
 await import("../../../test/dom");
 const { act, render } = await import("@testing-library/react");
@@ -9,17 +16,64 @@ const { staticMarkup } = await import("../../../test/render");
 const { Dashboard } = await import("./dashboard");
 const { vaultQuery } = await import("../../lib/studio-queries");
 
+/**
+ * The dashboard reads the vault only through seeded query caches, so its suite pins the server
+ * functions to refusals: whichever files bun happens to run first, a vault fixture mocked
+ * elsewhere (bun's mock.module overrides are process-wide) must not feed this suite's documents.
+ */
+mock.module("../../server/vault", () => ({
+  getVault: async ({ data }: { data: { path?: string } }) => {
+    throw new Error(`the dashboard reads no vault file (${data.path ?? "no path"})`);
+  },
+  getVaultChildren: async () => ({ entries: [], generation: 0 }),
+  getVaultMatches: async () => ({ shown: [], total: 0, generation: 0 }),
+  previewVaultFile: async () => {
+    throw new Error("the dashboard previews no vault file");
+  },
+  saveVaultFile: async () => {
+    throw new Error("the dashboard saves no vault file");
+  },
+}));
+
 const change = (
   name: string,
   done: number | undefined,
   total: number | undefined,
   extra: Partial<StudioChange> = {},
+): StudioChange =>
+  positioned({
+    name,
+    completedTasks: done,
+    totalTasks: total,
+    artifacts: [],
+    ...extra,
+  });
+
+const DEFAULT = defaultWorkflow();
+
+/** Every step before `submit`, recorded: a change without a plan is then at `submit`. */
+const RECORDED_TO_SUBMIT = Object.fromEntries(
+  DEFAULT.stages
+    .slice(
+      0,
+      DEFAULT.stages.findIndex((stage) => stage.id === "submit"),
+    )
+    .flatMap((stage) =>
+      stage.kind === "skill" ? [[stage.id, stage.steps.map((step) => step.skill)]] : [],
+    ),
+);
+
+/** A change of a type without a plan, as the payload places it from its recorded steps. */
+const unplanned = (
+  name: string,
+  steps: Record<string, string[]>,
+  artifacts: StudioChange["artifacts"] = [],
 ): StudioChange => ({
   name,
-  completedTasks: done,
-  totalTasks: total,
-  artifacts: [],
-  ...extra,
+  artifacts,
+  planned: false,
+  steps,
+  position: pathPosition(DEFAULT, { steps }, { name }),
 });
 
 const changes = [
@@ -69,7 +123,7 @@ const panel = (doc: Document) => doc.querySelector('[data-slot="sheet-content"]'
 describe("Dashboard", () => {
   it("lists each change once under what it needs, in order, and no specs or skills", () => {
     const markup = staticMarkup(<Dashboard payload={payload(changes)} />);
-    const order = ["Needs you", "Implementation started", "Ready to archive"].map((title) =>
+    const order = ["Needs you", "Implementation started", "Ready to submit"].map((title) =>
       markup.indexOf(`>${title}</h2>`),
     );
     expect(order.every((index) => index !== -1)).toBe(true);
@@ -82,6 +136,51 @@ describe("Dashboard", () => {
     );
     expect(markup).not.toContain("Specs by Area");
     expect(markup).not.toContain("mate-apply-change");
+  });
+
+  it("lists submitted changes awaiting publication, marking the user's own and naming others", () => {
+    const markup = staticMarkup(
+      <Dashboard
+        payload={{
+          ...payload([change("acme-ready", 7, 7), change("acme-login", 5, 5)]),
+          submitted: [
+            {
+              name: "acme-login",
+              group: "acme/product@workset/acme-login",
+              blocked: false,
+              mine: true,
+              author: "Acme Me",
+            },
+            { name: "acme-theirs", group: "", blocked: true, mine: false, author: "Acme Dev" },
+          ],
+        }}
+      />,
+    );
+    expect(markup.indexOf(">Ready to submit</h2>")).toBeLessThan(
+      markup.indexOf(">Awaiting publication</h2>"),
+    );
+    // A local copy of a submitted change is not also listed as active.
+    expect(markup).not.toContain('data-change="acme-login"');
+    expect(markup).toContain('data-submitted="acme-login"');
+    expect(markup).toContain("Yours");
+    expect(markup).toContain("acme/product@workset/acme-login");
+    expect(markup).toContain("Acme Dev");
+    expect(markup).toContain("Blocked");
+    expect(markup).toContain("/mate-publish-artifact");
+  });
+
+  it("shows only submitted changes when nothing else is in flight", () => {
+    const markup = staticMarkup(
+      <Dashboard
+        payload={{
+          ...payload([]),
+          submitted: [{ name: "acme-theirs", group: "", blocked: false, mine: false }],
+        }}
+      />,
+    );
+    expect(markup).not.toContain("No change is in flight");
+    expect(markup).toContain("Someone else");
+    expect(markup).toContain("no delivery branch");
   });
 
   it("shows a change's progress as done of total with a bar", () => {
@@ -135,15 +234,38 @@ describe("Dashboard", () => {
     expect(markup).toContain(">Needs you</h2>");
   });
 
-  it("puts a change with a validation issue under Needs you, naming the issue count", () => {
+  it("labels and groups a change without a plan by its stage, never by tasks", () => {
+    const markup = staticMarkup(
+      <Dashboard
+        payload={payload([
+          unplanned("acme-glossary", {}),
+          unplanned("acme-notes", RECORDED_TO_SUBMIT, [
+            { id: "brief", path: "notes/acme-notes/brief.md" },
+          ]),
+        ])}
+      />,
+    );
+    expect(markup).not.toContain("No tasks");
+    expect(markup).not.toContain('role="progressbar"');
+    expect(markup.indexOf('data-change="acme-glossary"')).toBeLessThan(
+      markup.indexOf(">Ready to submit</h2>"),
+    );
+    expect(markup.indexOf('data-change="acme-notes"')).toBeGreaterThan(
+      markup.indexOf(">Ready to submit</h2>"),
+    );
+    const submit = DEFAULT.stages.find((stage) => stage.id === "submit")!;
+    expect(markup).toContain(`>${submit.label}<`);
+  });
+
+  it("puts a change with a validation issue under Needs you, saying it does not validate", () => {
     const markup = staticMarkup(
       <Dashboard
         payload={payload([change("acme-broken", 7, 7, { valid: false, issueCount: 2 })])}
       />,
     );
     expect(markup).toContain(">Needs you</h2>");
-    expect(markup).not.toContain(">Ready to archive</h2>");
-    expect(markup).toContain("2 validation issues");
+    expect(markup).not.toContain(">Ready to submit</h2>");
+    expect(markup).toContain("the change does not validate");
     expect(markup).toContain("Invalid");
   });
 
@@ -171,7 +293,7 @@ describe("Dashboard", () => {
       "All3",
       "Needs you1",
       "Implementation started1",
-      "Ready to archive1",
+      "Ready to submit1",
     ]);
     await act(async () => filter[2]!.click());
     expect(groups(doc)).toEqual(["Implementation started"]);

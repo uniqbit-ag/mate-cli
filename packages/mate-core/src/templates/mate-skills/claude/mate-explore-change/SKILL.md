@@ -21,7 +21,14 @@ large for one change is suggested as several.
    [references/openspec-explore.md](references/openspec-explore.md) and follow it for the
    exploration itself. When a `PRE-EXPLORE HANDOFF` block is in this conversation, treat
    its Confirmed points as settled and start from its Unresolved questions and
-   Assumptions.
+   Assumptions. `openspec list` also names changes awaiting publication: a change whose `openspec/changes/<name>/delivery.yaml` says
+   `state: submitted` is not what the user is working on and never the current
+   behaviour. Run `mate artifact pending --json` once: each submitted change lists its
+   `author` and `touches` (the capability and requirement it rewrites or removes). When
+   one touches what this exploration is about, name the change and its author to the
+   user and read only that change's delta for that capability, from the companion with
+   `git show <ref>:<path>/specs/<capability>/spec.md` (`submitted.ref` and the change's
+   `path`); read any other submitted change only when the user names it.
 
 2. **Resolve scope from the context map.** Before reading code, identify the canonical
    Working Repository (`org/repository` from its Git remote) and the repository-relative
@@ -30,6 +37,15 @@ large for one change is suggested as several.
    and load only the contexts it maps to that Area. Use their vocabulary in the
    exploration. When the map has no entry for the Area, say so instead of borrowing
    another Area's context.
+
+   **Umbrella Repository.** When the Working Repository has no `.git` of its own and its
+   direct child folders are Git checkouts, it is an Umbrella Repository: each child is a
+   Working Repository of its own. Take the children from the session's
+   `umbrella-children` block; without a list there, read each child's identity with
+   `git -C <child> config --get remote.origin.url`. Before reading code, resolve the
+   children the work concerns, read the repository-scoped map of each of them only, and
+   name one scope per concerned child and Area. When it is unclear which child the work
+   concerns, ask the user before loading any context.
 
 3. **Suggest slicing when the feature is large.** Slicing test: a feature needs
    slicing only when it holds more work than one review can hold (roughly more
@@ -42,16 +58,28 @@ large for one change is suggested as several.
    Suggest slices only when the test clearly passes; a
    borderline case stays one change. When the explored direction clearly passes the
    test, propose slices: one change per slice,
-   each reviewable and archivable on its own, in dependency order. Name the
+   each reviewable and shippable on its own, in dependency order. Name the
    dependencies between slices; they become `dependsOn` entries when the changes are
    proposed. Several slices may share one delivery branch. Slicing is a suggestion;
    the user decides.
 
-4. **Hand off.**
-   End the response with a final `## Next steps` section: numbered required actions in
-   execution order, with exact commands and known change names, prerequisites first.
-   Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
-   follows it. Listing an action never invokes it. Never offer the user an optional command, in or above the section; optional work appears above it only as a skill invocation labelled optional.
+4. **Close the stage.** At the end of every run of this skill, run the first command
+   while no change folder exists, else the second:
+
+   ```bash
+   mate workflow done mate-explore-change
+   mate workflow done mate-explore-change "<change-name>"
+   ```
+
+   It prints the next actions for the change. End the response with a final `## Next
+   steps` section: numbered required actions in execution order, with exact commands and
+   known change names, prerequisites first: required work of this run that is still
+   open, then the actions the command printed, in its order. Summaries, evidence,
+   warnings, optional work, and deferred context go above it; nothing follows it.
+   Listing an action never invokes it. Never offer the user an optional command, in or
+   above the section; optional work appears above it only as a skill invocation labelled
+   optional, as the command's `optional:` line names it. If the command fails, report its
+   problems and end without a `Next steps` section.
 
    **Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
    and Cursor and the fallback. When the current runtime uses another syntax, swap only
@@ -60,9 +88,9 @@ large for one change is suggested as several.
    folder or an older example. Arguments, commands, paths, and order stay, and naming
    never invokes.
 
-   List `/mate-propose-change <change-name>`, or one `/mate-propose-change <slice>` per
-   agreed slice in dependency order. A slice deferred for later is context above the
-   section, not an action in it.
+   Add only what this skill knows: the agreed change name on the printed action, or
+   that action once per agreed slice in dependency order. A slice deferred for later is
+   context above the section, not an action in it.
 
 ## Boundary
 

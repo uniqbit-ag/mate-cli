@@ -79,7 +79,7 @@ mate cap openspec <subcommand> [args...]
 Mate ships two schema profiles and installs both into the companion. Schema choice
 selects the artifact set; both profiles still explore before proposing:
 
-- `mate-v1`: the complete `proposal → specs → design → tasks` artifact set
+- `mate-full`: the complete `proposal → specs → design → tasks` artifact set
 - `mate-minimal`: the short `specs → tasks` artifact set, with parser-compatible
   requirements written as user stories and Given/When/Then acceptance criteria
 
@@ -90,26 +90,32 @@ Choose `mate-minimal` only when every gate is true:
 - no public API change or breaking behavior
 - no cross-cutting architecture or unresolved technical decision
 
-If any gate is false or unclear, use `mate-v1`. Its proposal, specs, design, and tasks
-artifacts are required, but they can stay concise for simple changes. `mate-v1` is
-always the companion default: setup writes `schema: mate-v1` into
+If any gate is false or unclear, use `mate-full`. Its proposal, specs, design, and tasks
+artifacts are required, but they can stay concise for simple changes. `mate-full` is
+the default of a new companion: setup writes `schema: mate-full` into
 `openspec/config.yaml`, replacing the default `openspec init` writes, and leaves the
-file's other keys alone. `mate-minimal` is never the companion default.
+file's other keys alone. A schema already set there stays. `mate-minimal` is never set
+as the companion default.
 
 Either profile can be named for one change:
 
 ```sh
-mate cap openspec new change <name> --schema mate-v1
+mate cap openspec new change <name> --schema mate-full
 mate cap openspec new change <name> --schema mate-minimal
 ```
 
 OpenSpec records the selected profile in the change's `.openspec.yaml`.
 
+`mate-v1` is the earlier name of `mate-full` and keeps working without migration. Every
+companion keeps `openspec/schemas/mate-v1/`, generated from `mate-full` with only the
+name changed, so a change, archive or `openspec/config.yaml` that names `mate-v1` resolves
+as before, and `--schema mate-v1` still works.
+
 #### OpenSpec Version And Generated Files
 
 Mate ships the OpenSpec CLI (`@fission-ai/openspec`) at one exact version per
 Mate release. Every OpenSpec process Mate starts runs that copy: setup,
-`mate companion update`, `mate cap openspec`, `mate artifact archive`, and the
+`mate companion update`, `mate cap openspec`, `mate artifact submit` and `publish`, and the
 `openspec` wrapper agents call. Mate does not install, upgrade, or use a
 globally installed `openspec`; a global install of another version stays as it
 is for your other projects. A new OpenSpec version arrives with a new Mate
@@ -146,11 +152,16 @@ Do not edit canonical specs while planning a change.
 
 `openspec archive` is the bridge: it merges the delta requirement blocks into the
 canonical spec and moves the change into `openspec/changes/archive/<date>-<name>/`.
-Use `mate-archive-change` (`mate artifact archive`) to archive: it also records
-the change's delivery branch in `delivery.yaml`, and it may run before that
-branch is merged. `mate-publish-artifact`, built on `mate artifact publish`, is
-the sanctioned terminal flow for the archive and its follow-up Git work; it
-holds an archive back until its delivery branch is merged. The whole sequence,
+Mate runs it at publication, never before the merge. Use `mate-submit-change`
+(`mate artifact submit`) when a change is done: it records the change's delivery
+branch in `delivery.yaml`, validates the change, and pushes its folder to the
+companion's pending branch before that branch is merged; `mate-archive-change`
+remains as a deprecated alias. `mate-publish-artifact`, built on
+`mate artifact publish`, is the sanctioned terminal flow, from any machine: it
+archives the submitted changes of a Delivery Group once its delivery branch is
+merged and pushes them in one commit, without tags. For a change that builds on
+an unpublished one, `mate artifact project` shows the canonical specs as they
+will be. The whole sequence,
 from clarifying intent to publication, is walked through in
 [Your First Change](/docs/scenarios/first-change).
 
@@ -200,6 +211,19 @@ worktree's own index instead:
 RTK compacts command output: its own hook, which Mate sets up for each
 selected agent runtime, rewrites a command such as `git status` to
 `rtk git status`.
+
+#### Removing RTK
+
+RTK's integration is global: every companion on the machine shares it.
+
+- A sync leaves it alone, even in a companion that does not select RTK.
+- `mate companion setup` removes it when the run deselects RTK, or the last agent
+  runtime that used RTK in this companion. The `rtk` binary stays installed.
+- Removing RTK from `framework.yaml` by hand changes nothing global, and a later
+  `mate companion setup` no longer sees it as deselected. Remove the integration
+  yourself with `rtk init -g --uninstall` (add `--opencode` for OpenCode).
+
+If another companion still selects RTK, its next launch sets the integration up again.
 
 #### RTK in worktrees
 

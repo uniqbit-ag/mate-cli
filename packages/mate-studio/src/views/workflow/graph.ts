@@ -1,4 +1,10 @@
-import { PHASE_LABELS, type WorkflowPath, type WorkflowPhaseId, type WorkflowStep } from "./steps";
+import {
+  nodeOf,
+  PHASE_LABELS,
+  type WorkflowPath,
+  type WorkflowPhaseId,
+  type WorkflowStep,
+} from "./steps";
 
 /** Slot on the graph grid: a column per sequential position, a row per stacked peer. */
 interface GraphSlot {
@@ -10,7 +16,8 @@ interface GraphSlot {
 type ColumnNode =
   | { id: "start"; kind: "start" }
   | { id: string; kind: "stage"; step: WorkflowStep }
-  | { id: "reviews"; kind: "review-group"; steps: WorkflowStep[] };
+  /** `reviews` for the default review stage; see {@link nodeOf}. */
+  | { id: string; kind: "review-group"; steps: WorkflowStep[] };
 
 export type WorkflowGraphNode = GraphSlot & ColumnNode;
 
@@ -39,7 +46,7 @@ export interface WorkflowGraph {
   nodes: WorkflowGraphNode[];
   edges: WorkflowGraphEdge[];
   bands: WorkflowGraphBand[];
-  /** Columns each change of a feature repeats, from the start to Archive change; `to` exclusive. */
+  /** Columns each change of a feature repeats, from the start to Submit change; `to` exclusive. */
   cycle: { from: number; to: number } | null;
 }
 
@@ -62,8 +69,8 @@ function columnsOf(path: WorkflowPath): Column[] {
     }
     if (entry.group === "human") {
       return {
-        nodes: [{ id: "reviews", kind: "review-group", steps: entry.steps }],
-        optional: false,
+        nodes: [{ id: nodeOf(entry.steps[0]), kind: "review-group", steps: entry.steps }],
+        optional: entry.steps[0].optional,
         phase: entry.steps[0].phase,
       };
     }
@@ -123,10 +130,10 @@ function bandsOf(columns: readonly Column[]): WorkflowGraphBand[] {
   return bands;
 }
 
-/** Changes archive before they publish, so everything up to Archive change repeats per change. */
+/** Changes submit before they publish, so everything up to Submit change repeats per change. */
 function cycleOf(columns: readonly Column[]): WorkflowGraph["cycle"] {
-  const archive = columns.findIndex((column) => column.nodes.some((node) => node.id === "archive"));
-  return archive === -1 ? null : { from: 0, to: archive + 1 };
+  const submit = columns.findIndex((column) => column.nodes.some((node) => node.id === "submit"));
+  return submit === -1 ? null : { from: 0, to: submit + 1 };
 }
 
 /** The path's node graph. Single nodes span every row; peers take a row each. */

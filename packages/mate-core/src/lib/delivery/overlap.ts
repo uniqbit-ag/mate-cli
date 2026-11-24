@@ -1,3 +1,4 @@
+// oxlint-disable no-await-in-loop -- a few small files, read in order
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -10,6 +11,8 @@ import {
   isChangeName,
 } from "../change-layout";
 import { readFrontmatter } from "../frontmatter";
+import { pendingSubmittedChanges } from "../../runtime/pending-records";
+import { readDeliveryRecord } from "./record";
 import { isMateSchema } from "./stages";
 
 export interface RequirementEdit {
@@ -27,10 +30,27 @@ export type PlanningWarning = {
   message: string;
 };
 
-export type ArchiveWarning =
+/** The record names a branch that is no branch name, or different branches per repository. */
+export type GroupWarning = { kind: "group"; change: string; message: string };
+
+/** A required stage of the Delivery Path before submit is unfinished for the change. */
+export type StageWarning = { kind: "stage-open"; change: string; stage: string; message: string };
+
+/** Submitting counts steps before `mate-submit-change` nobody reported; `steps` by stage id. */
+export type CountedWarning = {
+  kind: "step-counted";
+  change: string;
+  steps: Record<string, string[]>;
+  message: string;
+};
+
+export type SubmitWarning =
   | { kind: "overlap"; change: string; capability: string; requirement: string; message: string }
   | DependencyWarning
-  | PlanningWarning;
+  | PlanningWarning
+  | GroupWarning
+  | StageWarning
+  | CountedWarning;
 
 const SECTION = /^##\s+(ADDED|MODIFIED|REMOVED|RENAMED)\s+Requirements\s*$/;
 const REQUIREMENT = /^###\s+Requirement:\s*(.+?)\s*$/;
@@ -107,6 +127,23 @@ async function tasksComplete(changeDir: string): Promise<boolean> {
   return marks.length > 0 && marks.every((mark) => mark !== " ");
 }
 
+/** The tasks in the change's `tasks.md` and how many are unchecked; none without the file. */
+export async function taskCounts(changeDir: string): Promise<{ total: number; open: number }> {
+  let source: string;
+  try {
+    source = await fs.readFile(path.join(changeDir, "tasks.md"), "utf8");
+  } catch {
+    return { total: 0, open: 0 };
+  }
+  const marks = source.split(/\r?\n/).flatMap((line) => TASK.exec(line)?.[1] ?? []);
+  return { total: marks.length, open: marks.filter((mark) => mark === " ").length };
+}
+
+/** The unchecked tasks in the change's `tasks.md`; none without the file. */
+export async function openTasks(changeDir: string): Promise<number> {
+  return (await taskCounts(changeDir)).open;
+}
+
 /**
  * Warnings shown before applying `change`: declared dependencies neither archived nor fully
  * implemented, so the change would be built without the code it builds on. Never blocks.
@@ -133,9 +170,10 @@ export async function applyWarnings(
 
 /**
  * Warning for schema artifacts that `openspec status --change <change> --json` reports neither
- * done nor skipped, e.g. a design missing after a `mate-minimal` change moved to `mate-v1`.
- * Only Mate's schemas require every artifact; OpenSpec reports another schema's conditional
- * artifacts (spec-driven's design) as `ready`, so those yield no warning, as does unparsable output.
+ * done nor skipped, e.g. a design missing after a `mate-minimal` change moved to `mate-full`.
+ * Only Mate's schemas, legacy aliases included, require every artifact; OpenSpec reports another
+ * schema's conditional artifacts (spec-driven's design) as `ready`, so those yield no warning, as
+ * does unparsable output.
  */
 export function planningWarning(change: string, statusJson: string): PlanningWarning | null {
   let status: { schemaName?: unknown; artifacts?: unknown };
@@ -151,7 +189,7 @@ export function planningWarning(change: string, statusJson: string): PlanningWar
     .filter((artifact): artifact is { id: string; status?: unknown } => {
       return typeof artifact?.id === "string";
     })
-    .filter(({ status }) => status !== "done" && status !== "skipped")
+    .filter((artifact) => artifact.status !== "done" && artifact.status !== "skipped")
     .map(({ id }) => id);
   if (missing.length === 0) return null;
   return {
@@ -166,23 +204,29 @@ function requirementKey(edit: RequirementEdit): string {
   return JSON.stringify([edit.capability, edit.requirement]);
 }
 
+/** The local state of change `name`'s Delivery Record; `active` when unreadable or absent. */
+async function stateOf(changesDir: string, name: string): Promise<string> {
+  const record = await readDeliveryRecord(path.join(changesDir, name)).catch(() => null);
+  return record?.state ?? "active";
+}
+
 /**
- * Warnings shown before archiving `change`: another active change MODIFYing or REMOVing a
- * requirement this change also MODIFIES or REMOVES, and declared dependencies that are not
- * archived yet. Warnings inform; they never block archive.
+ * Warnings shown before submitting `change`: another change MODIFYing or REMOVing a requirement
+ * this change also MODIFIES or REMOVES, and declared dependencies neither submitted, here or on
+ * the inbox as last fetched, nor published. Dropped changes are ignored. Warnings inform; they never block submit.
  */
-export async function archiveWarnings(
+export async function submitWarnings(
   companionPath: string,
   change: string,
-): Promise<ArchiveWarning[]> {
+): Promise<SubmitWarning[]> {
   const changesDir = changesDirOf(companionPath);
-  const warnings: ArchiveWarning[] = [];
+  const warnings: SubmitWarning[] = [];
 
   const own = await deltaRequirementEdits(path.join(changesDir, change));
   if (own.length > 0) {
     const ownKeys = new Set(own.map(requirementKey));
     for (const other of await activeChanges(companionPath)) {
-      if (other === change) continue;
+      if (other === change || (await stateOf(changesDir, other)) === "dropped") continue;
       for (const edit of await deltaRequirementEdits(path.join(changesDir, other))) {
         if (!ownKeys.has(requirementKey(edit))) continue;
         warnings.push({
@@ -190,19 +234,27 @@ export async function archiveWarnings(
           change: other,
           capability: edit.capability,
           requirement: edit.requirement,
-          message: `${other} also changes ${edit.capability} › ${edit.requirement}; archiving ${other} later will replace this change's version of that requirement.`,
+          message: `${other} also changes ${edit.capability} › ${edit.requirement}; unless both publish in one Delivery Group, the one published second is refused as a conflict until it is resolved.`,
         });
       }
     }
   }
 
   const archived = await archivedChangeNames(companionPath);
+  // A teammate's submitted change is on the inbox only; read once, when a dependency needs it.
+  let inbox: Set<string> | undefined;
   for (const dependency of await declaredDependencies(path.join(changesDir, change))) {
-    if (archived.has(dependency)) continue;
+    if (archived.has(dependency) || (await stateOf(changesDir, dependency)) === "submitted") {
+      continue;
+    }
+    inbox ??= new Set(
+      (await pendingSubmittedChanges(companionPath).catch(() => [])).map((entry) => entry.name),
+    );
+    if (inbox.has(dependency)) continue;
     warnings.push({
       kind: "dependency",
       change: dependency,
-      message: `${change} depends on ${dependency}, which is not archived yet; archive ${dependency} first.`,
+      message: `${change} depends on ${dependency}, which is neither submitted nor published; submit ${dependency} with it or first.`,
     });
   }
   return warnings;

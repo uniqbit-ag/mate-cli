@@ -1,25 +1,20 @@
+import type { WorkingRepoGit } from "../../../../lib/delivery/branches";
 import {
-  workingRepoGit,
-  configuredProtectedPatterns,
-  configuredTicketFormat,
-  type WorkingRepoGit,
-} from "../../../../lib/delivery/branches";
-import type { DeliveryEnvironment, WorkingRepoInfo } from "../../../../lib/delivery/environment";
-import { parseRemote, repositoryPath, type ForgeRepo } from "../../../../lib/delivery/forge";
-import { sameRepository } from "../../../../lib/delivery/record";
+  linkedDeliveryEnvironment,
+  type DeliveryEnvironment,
+} from "../../../../lib/delivery/environment";
 import { hasOpenspecCapability } from "../../../../lib/orchestrator/capabilities";
 import {
   resolveForCapability,
   type LaunchContext,
 } from "../../../../lib/orchestrator/framework-context";
 import type { CapabilityConfig, LinkedRepository } from "../../../../lib/orchestrator/types";
-import {
-  linkedCheckoutsOf,
-  umbrellaChildrenOf,
-  type EntryCheckout,
-  type OriginReader,
-} from "../../../../lib/orchestrator/umbrella-checkouts";
+import type { OriginReader } from "../../../../lib/orchestrator/umbrella-checkouts";
 import { WorkingRepoRequiredError } from "../../../../lib/orchestrator/types";
+import type { ArtifactType } from "../../../../lib/delivery/staging/artifact-type";
+import { loadSubmitWorkflow } from "../../../../lib/delivery/staging/registry";
+import type { Workflow } from "../../../../lib/workflow/declaration";
+import { errorMessage } from "../../../../runtime/error-message";
 import { ensureUnambiguousCompanion } from "../../shared/companion-selection";
 
 export interface DeliveryEnvironmentDeps {
@@ -32,25 +27,6 @@ export interface DeliveryEnvironmentDeps {
   readChildOrigin?: OriginReader;
   /** True when the companion's Git mode is `auto`. */
   loadGitAutoMode?: (context: LaunchContext) => Promise<boolean>;
-}
-
-async function defaultLoadLinkedRepositories(context: LaunchContext): Promise<LinkedRepository[]> {
-  return (await context.workingRepoStore.load()).repos;
-}
-
-/** A linked repository's checkout with its parsed `origin` remote. */
-interface LinkedCheckout {
-  remote: ForgeRepo;
-  path: string;
-}
-
-/** The checkouts whose `origin` names a forge repository. */
-function withRemotes(checkouts: readonly EntryCheckout[]): LinkedCheckout[] {
-  return checkouts.flatMap(({ path, remote }) => (remote ? [{ remote, path }] : []));
-}
-
-async function defaultLoadGitAutoMode(context: LaunchContext): Promise<boolean> {
-  return (await context.configStore.load()).git === "auto";
 }
 
 async function defaultLoadCapabilities(context: LaunchContext): Promise<CapabilityConfig[]> {
@@ -84,64 +60,28 @@ export async function resolveDeliveryEnvironment(
     return { error: "mate: the openspec capability must be enabled to record delivery." };
   }
 
-  const openGit = deps.workingRepoGit ?? workingRepoGit;
-  const repoPath = context.repository?.path ?? process.env.MATE_REPO_PATH;
-  const readOrigin = (checkout: string) => openGit(checkout).remoteUrl();
-  let workingRepo: WorkingRepoInfo | null = null;
-  // An Umbrella Repository has no `origin` of its own; its children name the repositories.
-  const ownChildren = repoPath
-    ? withRemotes(await umbrellaChildrenOf(repoPath, deps.readChildOrigin))
-    : [];
-  if (repoPath) {
-    const git = openGit(repoPath);
-    const remote = ownChildren.length > 0 ? null : await git.remoteUrl();
-    const forgeRepo = remote ? parseRemote(remote) : null;
-    workingRepo = {
-      path: repoPath,
-      slug: forgeRepo ? repositoryPath(forgeRepo) : null,
-      forgeRepo,
-      git,
-      ...(ownChildren.length > 0
-        ? { umbrellaChildren: ownChildren.map((child) => repositoryPath(child.remote)) }
-        : {}),
-    };
+  // An invalid declaration stops here: the built-in type would work on the wrong folders.
+  let declared: { workflow: Workflow; artifactType?: ArtifactType };
+  try {
+    declared = await loadSubmitWorkflow(context.companionPath);
+  } catch (err) {
+    return { error: `mate: ${errorMessage(err)}` };
   }
+  const { workflow, artifactType } = declared;
 
-  let linkedRemotes: Promise<LinkedCheckout[]> | undefined;
-  // Read once, and only when a repository other than the Working Repository is looked up.
-  const linked = (): Promise<LinkedCheckout[]> =>
-    (linkedRemotes ??= (async () => {
-      // An unreadable registry only loses hints; the Working Repository remains.
-      const repositories = await (deps.loadLinkedRepositories ?? defaultLoadLinkedRepositories)(
-        context,
-      ).catch(() => []);
-      // The Working Repository's own entry is skipped; an umbrella's children are in `ownChildren`.
-      const checkouts = await Promise.all(
-        repositories
-          .filter((repository) => repository.path !== repoPath)
-          .map((repository) => linkedCheckoutsOf(repository, readOrigin, deps.readChildOrigin)),
-      );
-      return [...ownChildren, ...withRemotes(checkouts.flat())];
-    })());
-  const linkedMatch = async (repository: string) =>
-    (await linked()).find(({ remote }) => sameRepository(repositoryPath(remote), repository));
-  const hostOf = async (repository: string): Promise<string | null> =>
-    (await linkedMatch(repository))?.remote.host ?? workingRepo?.forgeRepo?.host ?? null;
-  const checkoutOf = async (repository: string): Promise<string | null> => {
-    if (workingRepo?.slug && sameRepository(workingRepo.slug, repository)) return workingRepo.path;
-    return (await linkedMatch(repository))?.path ?? null;
-  };
-  const gitAutoMode = await (deps.loadGitAutoMode ?? defaultLoadGitAutoMode)(context).catch(
-    () => false,
+  const { loadLinkedRepositories, loadGitAutoMode } = deps;
+  const environment = await linkedDeliveryEnvironment(
+    context,
+    capabilities,
+    context.repository?.path ?? process.env.MATE_REPO_PATH,
+    {
+      ...(deps.workingRepoGit ? { workingRepoGit: deps.workingRepoGit } : {}),
+      ...(deps.readChildOrigin ? { readChildOrigin: deps.readChildOrigin } : {}),
+      ...(loadLinkedRepositories
+        ? { loadLinkedRepositories: () => loadLinkedRepositories(context) }
+        : {}),
+      ...(loadGitAutoMode ? { loadGitAutoMode: () => loadGitAutoMode(context) } : {}),
+    },
   );
-
-  return {
-    companionPath: context.companionPath,
-    workingRepo,
-    protectedPatterns: configuredProtectedPatterns(capabilities),
-    ticket: configuredTicketFormat(capabilities),
-    hostOf,
-    checkoutOf,
-    gitAutoMode,
-  };
+  return { ...environment, workflow, ...(artifactType ? { artifactType } : {}) };
 }

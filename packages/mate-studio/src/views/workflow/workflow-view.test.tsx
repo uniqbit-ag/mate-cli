@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { type StudioChange, type StudioCompanionPayload } from "@uniqbit/mate-core/studio";
 
+import { positioned } from "../../../test/positioned";
 import type { WorkflowMapNode, WorkflowPath } from "./steps";
 
 await import("../../../test/dom");
@@ -21,7 +22,7 @@ const ALL_SKILLS = [
   "mate-apply-change",
   "mate-show-me",
   "mate-simplify-code",
-  "mate-archive-change",
+  "mate-submit-change",
   "mate-publish-artifact",
 ];
 
@@ -42,12 +43,13 @@ function render(data: StudioCompanionPayload = payload(), changes: StudioChange[
   return staticMarkup(<Workflow payload={data} changes={changes} />);
 }
 
-const change = (name: string, done: number, total: number): StudioChange => ({
-  name,
-  completedTasks: done,
-  totalTasks: total,
-  artifacts: [],
-});
+const change = (
+  name: string,
+  done: number,
+  total: number,
+  extra: Partial<StudioChange> = {},
+): StudioChange =>
+  positioned({ name, completedTasks: done, totalTasks: total, artifacts: [], ...extra });
 
 /** The Workflow view in a browser, for the stage panel. */
 async function mount(changes: StudioChange[] = []) {
@@ -111,7 +113,7 @@ const ACME_TOPOLOGY = {
 describe("workflowPlan", () => {
   it("presents the full and minimal paths in Delivery Path order", () => {
     const plan = workflowPlan({ skills: ALL_SKILLS });
-    expect(plan.paths.map((path) => path.schema)).toEqual(["mate-v1", "mate-minimal"]);
+    expect(plan.paths.map((path) => path.schema)).toEqual(["mate-full", "mate-minimal"]);
     expect(labels(plan.paths[0])).toEqual([
       "Clarify intent",
       "Explore change",
@@ -123,7 +125,7 @@ describe("workflowPlan", () => {
       "Apply change",
       "Inspect outcome",
       "Refine code",
-      "Archive change",
+      "Submit change",
       "Publish companion artifacts",
     ]);
     expect(labels(plan.paths[1])).toEqual([
@@ -135,7 +137,7 @@ describe("workflowPlan", () => {
       "Apply change",
       "Inspect outcome",
       "Refine code",
-      "Archive change",
+      "Submit change",
       "Publish companion artifacts",
     ]);
   });
@@ -164,7 +166,7 @@ describe("workflowPlan", () => {
     const openspec = workflowPlan({ skills: ALL_SKILLS })
       .paths[0].steps.filter((step) => step.badges.includes("openspec"))
       .map((step) => step.id);
-    expect(openspec).toEqual(["explore", "propose", "apply", "archive"]);
+    expect(openspec).toEqual(["explore", "propose", "apply", "submit"]);
   });
 
   it("names each skill stage's Mate skill in its prompt", () => {
@@ -177,17 +179,17 @@ describe("workflowPlan", () => {
       "/mate-apply-change for <change-name>",
       "/mate-show-me for <change-name>",
       "/mate-simplify-code for <change-name>",
-      "/mate-archive-change for <change-name>",
+      "/mate-submit-change for <change-name>",
       "/mate-publish-artifact for <change-name>",
     ]);
   });
 
   it("reports a missing stage skill instead of hiding the stage", () => {
     const steps = workflowPlan({
-      skills: ALL_SKILLS.filter((skill) => skill !== "mate-archive-change"),
+      skills: ALL_SKILLS.filter((skill) => skill !== "mate-submit-change"),
     }).paths[0].steps;
-    const archive = steps.find((step) => step.id === "archive");
-    expect(archive?.missingSkill).toBe("mate-archive-change");
+    const submit = steps.find((step) => step.id === "submit");
+    expect(submit?.missingSkill).toBe("mate-submit-change");
   });
 
   it("reports a missing optional peer skill instead of hiding the stage", () => {
@@ -219,6 +221,28 @@ describe("workflowPlan", () => {
     const brief = plan.paths[0].steps.find((step) => step.id === "review-brief");
     expect(brief?.what).toBe("States the outcome.");
   });
+
+  it("shows a companion serving the legacy mate-v1 name as the mate-full path", () => {
+    const plan = workflowPlan({
+      skills: ALL_SKILLS,
+      topology: {
+        ...ACME_TOPOLOGY,
+        schemaName: "mate-v1",
+        artifacts: [
+          { id: "proposal", description: "Says why.", requires: [] },
+          { id: "specs", requires: ["proposal"] },
+          { id: "design", requires: ["proposal"] },
+          { id: "tasks", requires: ["specs", "design"] },
+        ],
+      },
+    });
+    expect(plan.paths.map((path) => path.schema)).toEqual(["mate-full", "mate-minimal"]);
+    expect(plan.paths[0].tagline).toBe("full planning");
+    const proposal = plan.paths[0].steps.find((step) => step.id === "review-proposal");
+    expect(proposal?.what).toBe("Says why.");
+    const propose = plan.paths[0].steps.find((step) => step.id === "propose");
+    expect(propose?.prompt).toBe("/mate-propose-change for <change-name>");
+  });
 });
 
 describe("workflowPlan phases and map", () => {
@@ -228,7 +252,7 @@ describe("workflowPlan phases and map", () => {
       ["plan", ["clarify-intent", "explore", "propose"]],
       ["review", ["review-proposal", "review-specs", "review-design", "review-tasks"]],
       ["build", ["apply", "inspect-outcome", "refine-code"]],
-      ["ship", ["archive", "publish"]],
+      ["ship", ["submit", "publish"]],
     ]);
     expect(mapShape(path)).toEqual([
       "clarify-intent",
@@ -237,7 +261,7 @@ describe("workflowPlan phases and map", () => {
       { human: ["review-proposal", "review-specs", "review-design", "review-tasks"] },
       "apply",
       { optional: ["inspect-outcome", "refine-code"] },
-      "archive",
+      "submit",
       "publish",
     ]);
   });
@@ -267,7 +291,7 @@ describe("Workflow view", () => {
   it("renders the graph on the page, without a change picker or a card around it", () => {
     const markup = render();
     expect(markup).toContain("workflow-delivery-path");
-    expect(markup).toContain("Archive change");
+    expect(markup).toContain("Submit change");
     expect(markup).not.toContain('name="change"');
     const graph = markup.indexOf('aria-label="Delivery Path map"');
     expect(markup.lastIndexOf("list-card", graph)).toBe(-1);
@@ -277,7 +301,7 @@ describe("Workflow view", () => {
     const markup = render();
     expect(markup).not.toContain("OpenSpec schema");
     expect(markup).not.toContain("data-workflow-schema-root");
-    expect(markup).toContain('data-workflow-schema-panel="mate-v1"');
+    expect(markup).toContain('data-workflow-schema-panel="mate-full"');
     expect(markup).not.toContain('data-workflow-schema-panel="mate-minimal"');
     expect(markup).not.toContain("name the change after pasting");
   });
@@ -289,9 +313,9 @@ describe("Workflow view", () => {
     expect(markup).not.toContain("the whole run");
   });
 
-  /** The markup of the mate-v1 path. */
+  /** The markup of the mate-full path. */
   const fullPanel = (markup: string): string =>
-    markup.slice(markup.indexOf('data-workflow-schema-panel="mate-v1"'));
+    markup.slice(markup.indexOf('data-workflow-schema-panel="mate-full"'));
 
   const attributes = (markup: string, name: string): string[] =>
     [...markup.matchAll(new RegExp(`${name}="([^"]+)"`, "g"))].map((match) => match[1]!);
@@ -340,11 +364,11 @@ describe("Workflow view", () => {
       expect.arrayContaining([
         "apply>inspect-outcome",
         "apply>refine-code",
-        "inspect-outcome>archive",
-        "refine-code>archive",
+        "inspect-outcome>submit",
+        "refine-code>submit",
       ]),
     );
-    expect(edgeKeys(graph, "bypass")).toEqual(["start>explore", "apply>archive"]);
+    expect(edgeKeys(graph, "bypass")).toEqual(["start>explore", "apply>submit"]);
     expect(attributes(graph, "data-session-mark")).toEqual(["apply"]);
     expect(attributes(graph, "data-band")).toEqual(["plan", "review", "build", "ship"]);
     expect(graph).toMatch(/data-band="review"[^>]*>Review</);
@@ -428,14 +452,14 @@ describe("Workflow view", () => {
     expect(counts).toEqual([
       ["6 changes wait for review", "6"],
       ["3 changes at Apply change", "3"],
-      ["2 changes at Archive change", "2"],
+      ["2 changes at Submit change", "2"],
     ]);
     expect(panel).toContain("Where your changes are");
   });
 
   it("places invalid and taskless changes at Propose change, as the Overview names them", () => {
     const changes = [
-      { ...change("acme-invalid", 0, 4), valid: false },
+      change("acme-invalid", 0, 4, { valid: false }),
       change("acme-empty", 0, 0),
       change("acme-review", 0, 4),
     ];
@@ -488,7 +512,7 @@ describe("Workflow view", () => {
     await choose("mate-minimal");
     expect(panel().textContent).toContain("Review specs yourself");
     expect(doc.querySelector('[data-map-stage="review-proposal"]')).toBeNull();
-    await choose("mate-v1");
+    await choose("mate-full");
     expect(panel().textContent).toContain("Review specs yourself");
     expect(doc.querySelector('[data-map-stage="review-proposal"]')).not.toBeNull();
     page.unmount();

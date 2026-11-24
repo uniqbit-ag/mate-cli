@@ -71,9 +71,9 @@ describe("the stylesheet", () => {
   });
 
   it("declares no colour literal outside the terminal, which stays black in both appearances", () => {
-    const own = FLAT.replace(rule(".terminal-view, .outcome-terminal"), "");
+    const own = FLAT.replace(rule(".terminal-view"), "");
     expect(own).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/);
-    expect(rule(".terminal-view, .outcome-terminal")).toContain("background: #000;");
+    expect(rule(".terminal-view")).toContain("background: #000;");
   });
 
   it("loads no resource from another host", () => {
@@ -126,6 +126,19 @@ describe("the views' class names", () => {
           allowed: true,
         });
       }
+    }
+  });
+
+  it("never pair outline-none with a focus outline, which then draws no ring", () => {
+    for (const [file, text] of sources) {
+      const ringless = text
+        .split(/["'`]/)
+        .find(
+          (classes) =>
+            /(?:^|\s)outline-none(?:\s|$)/.test(classes) &&
+            /(?:^|\s)focus(?:-visible)?:outline(?:-\d+)?(?:\s|$)/.test(classes),
+        );
+      expect({ file, ringless: ringless ?? null }).toEqual({ file, ringless: null });
     }
   });
 });

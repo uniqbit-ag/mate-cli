@@ -20,7 +20,8 @@ workflow:
 
 Companion files are managed by `mate companion setup`, installed when selected
 by `mate companion link`, and synchronized again at launch time. A companion
-can be linked to more than one working repository.
+can be linked to more than one working repository; run `mate companion list` in
+the companion root to see them.
 
 Usage collection does not write `REPORT.md` into the companion. The technical
 `mate report` command returns usage JSON for the companion and all its linked
@@ -158,8 +159,9 @@ longer need it.
 A plain folder that holds several Git checkouts can be linked once instead of
 each repository. Such a folder is an _Umbrella Repository_: each child checkout
 counts as a linked checkout of its own repository, and a session started in
-the folder can work on a change that spans them. Its Worksets get one mirrored
-worktree for all children.
+the folder can work on a change that spans them. That session is told each
+child by its repository identity, after the companion policy. Its Worksets get
+one mirrored worktree for all children.
 
 A session in a mirrored worktree records the Workset's Delivery Branch. `mate
 session list` reports it `done` once that branch is merged or gone in some
@@ -199,7 +201,9 @@ MATE_REPO_ID=my-repo \
 mate opencode
 ```
 
-Use `mate doctor` to inspect the active context and any ambiguity.
+Use `mate companion list` in the working repository to see every connected
+companion and the one Mate uses, and `mate doctor` to inspect the active context
+and any ambiguity.
 
 ## Editor Integration
 

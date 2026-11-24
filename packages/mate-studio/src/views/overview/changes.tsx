@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import type { StudioChange } from "@uniqbit/mate-core/studio";
+import type { StudioChange, StudioSubmittedChange, Workflow } from "@uniqbit/mate-core/studio";
 import { useState } from "react";
 
 import { PathSteps } from "../../components/path-steps";
@@ -21,8 +21,10 @@ import { cn } from "../../lib/cn";
 import { PanelHead, PanelSection, SidePanel } from "../../shell/panel";
 import { ArtifactReader, Artifacts } from "./artifacts";
 import {
+  activeChanges,
   CHANGE_GROUPS,
   changeGroup,
+  changePath,
   changeProgress,
   changeStep,
   GROUP_TITLES,
@@ -30,7 +32,11 @@ import {
   type ChangeGroup,
 } from "./change-group";
 
-type Filter = "all" | ChangeGroup;
+type Filter = "all" | ChangeGroup | "submitted";
+
+const SUBMITTED_TITLE = "Awaiting publication";
+
+const NONE_SUBMITTED: StudioSubmittedChange[] = [];
 
 const GROUP_HINTS: Record<ChangeGroup, string> = {
   "needs-you": "Review or fix before the build goes on",
@@ -42,6 +48,13 @@ const GROUP_HINTS: Record<ChangeGroup, string> = {
 function status(change: StudioChange): { marker: Marker; word: string } {
   if (change.valid === false) return { marker: "issue", word: "Invalid" };
   const group = changeGroup(change);
+  // Without a plan there are no tasks to count: its stage is its status.
+  if (change.planned === false) {
+    const stage = change.position?.stage;
+    if (!stage) return { marker: "idle", word: change.dropped ? "Dropped" : "Not placed" };
+    if (group === "ready") return { marker: "done", word: stage.label };
+    return { marker: stage.kind === "review" ? "review" : "build", word: stage.label };
+  }
   // Lilac is the Human review stage, as on the Workflow map; a plan without tasks is unfinished.
   if (group === "needs-you") {
     return (change.totalTasks ?? 0) === 0
@@ -52,21 +65,23 @@ function status(change: StudioChange): { marker: Marker; word: string } {
   return { marker: "done", word: "Ready" };
 }
 
-const PATH_STAGES = ["Propose change", "Human review", "Apply change", "Archive change"];
-
 function ChangeDetail({
   change,
+  workflow,
   companion,
   reading,
   onRead,
 }: {
   change: StudioChange;
+  /** The companion's Delivery Path; the built-in default when absent. */
+  workflow?: Workflow;
   companion?: string;
   /** The artifact open to read, or `null` for the change's summary. */
   reading: string | null;
   onRead: (path: string | null) => void;
 }) {
-  const step = changeStep(change);
+  const step = changeStep(change, workflow);
+  const path = changePath(workflow);
   const progress = changeProgress(change);
   const { marker, word } = status(change);
   const artifacts = (
@@ -102,21 +117,23 @@ function ChangeDetail({
           {review ? artifacts : null}
           <PanelSection title="Delivery Path" aside={step.stage}>
             <PathSteps
-              steps={PATH_STAGES}
-              current={PATH_STAGES.indexOf(step.stage)}
-              tone={step.stage === "Human review" ? "why" : "accent"}
+              steps={path.map((stage) => stage.label)}
+              current={path.findIndex((stage) => stage.id === step.stageId)}
+              tone={step.review ? "why" : "accent"}
             />
           </PanelSection>
           <PanelSection title="Next step">
             <p className="m-0 text-sm">{step.next}.</p>
             <CommandLine text={step.prompt} />
           </PanelSection>
-          <PanelSection
-            title={progress.unit === "tasks" ? "Tasks" : "Plan"}
-            aside={`${progress.done}/${progress.total}`}
-          >
-            <Progress {...progress} />
-          </PanelSection>
+          {change.planned === false ? null : (
+            <PanelSection
+              title={progress.unit === "tasks" ? "Tasks" : "Plan"}
+              aside={`${progress.done}/${progress.total}`}
+            >
+              <Progress {...progress} />
+            </PanelSection>
+          )}
           {review ? null : artifacts}
         </>
       )}
@@ -126,15 +143,17 @@ function ChangeDetail({
 
 function ChangeRow({
   change,
+  workflow,
   current,
   onOpen,
 }: {
   change: StudioChange;
+  workflow?: Workflow;
   current: boolean;
   onOpen: () => void;
 }) {
   const { marker, word } = status(change);
-  const step = changeStep(change);
+  const step = changeStep(change, workflow);
   return (
     <li>
       <button
@@ -157,7 +176,7 @@ function ChangeRow({
         </span>
         <StatusWord marker={marker}>{word}</StatusWord>
         <span className="@max-[640px]:hidden">
-          <Progress {...changeProgress(change)} />
+          {change.planned === false ? null : <Progress {...changeProgress(change)} />}
         </span>
         <Age at={change.lastModified} className="text-right @max-[640px]:hidden" />
       </button>
@@ -165,13 +184,82 @@ function ChangeRow({
   );
 }
 
-/** Active changes in up to three groups by what they need; detail opens in the panel. */
+/** A submitted change: whose it is, its delivery and whether its group is blocked. */
+function SubmittedRow({ change }: { change: StudioSubmittedChange }) {
+  return (
+    <li
+      className={cn(ROW, "grid grid-cols-[minmax(0,1fr)_max-content] hover:bg-transparent")}
+      data-submitted={change.name}
+    >
+      <span className="grid min-w-0 gap-0.5">
+        <span className="truncate font-mono text-sm">{change.name}</span>
+        <span className="truncate text-xs text-muted">
+          <span className={change.mine ? "font-semibold text-accent" : undefined}>
+            {change.mine ? "Yours" : (change.author ?? "Someone else")}
+          </span>
+          {` · ${change.group || "no delivery branch"}`}
+        </span>
+      </span>
+      {change.blocked ? (
+        <StatusWord marker="issue">Blocked</StatusWord>
+      ) : (
+        <StatusWord marker="idle">Submitted</StatusWord>
+      )}
+    </li>
+  );
+}
+
+/** Submitted changes awaiting publication; nothing when there are none. */
+function SubmittedCard({ submitted }: { submitted: StudioSubmittedChange[] }) {
+  if (submitted.length === 0) return null;
+  return (
+    <ListCard
+      title={SUBMITTED_TITLE}
+      count={submitted.length}
+      hint="Publish with /mate-publish-artifact once merged"
+    >
+      <ul className="m-0 list-none p-0">
+        {submitted.map((change) => (
+          <SubmittedRow key={change.name} change={change} />
+        ))}
+      </ul>
+    </ListCard>
+  );
+}
+
+/** The filter pills: all, each active group, and the submitted card when it has any. */
+function filterOptions(groups: Record<ChangeGroup, StudioChange[]>, submittedCount: number) {
+  const active = CHANGE_GROUPS.reduce((sum, group) => sum + groups[group].length, 0);
+  return [
+    { value: "all" as Filter, label: "All", count: active + submittedCount },
+    ...CHANGE_GROUPS.map((group) => ({
+      value: group as Filter,
+      label: GROUP_TITLES[group],
+      count: groups[group].length,
+      tone: group === "needs-you" ? ("warn" as const) : undefined,
+    })),
+    ...(submittedCount > 0
+      ? [{ value: "submitted" as Filter, label: SUBMITTED_TITLE, count: submittedCount }]
+      : []),
+  ];
+}
+
+/**
+ * Active changes in up to three groups by what they need, then submitted changes awaiting
+ * publication; an active change's detail opens in the panel.
+ */
 export function Changes({
-  changes,
+  changes: all,
+  submitted = NONE_SUBMITTED,
   selected,
   companion,
+  workflow,
 }: {
   changes: StudioChange[];
+  /** The companion's Delivery Path, which changes are placed on; the default when absent. */
+  workflow?: Workflow;
+  /** Submitted changes on the pending branch; a local copy is not listed as active too. */
+  submitted?: StudioSubmittedChange[];
   selected?: string;
   /** The selected companion; the panel reads artifacts through the vault. */
   companion?: string;
@@ -181,6 +269,7 @@ export function Changes({
   const [pass, setPass] = useState(false);
   // Keyed by change, so moving to another change shows its summary again.
   const [reading, setReading] = useState<{ change: string; path: string } | null>(null);
+  const changes = activeChanges(all, submitted);
   const groups = groupChanges(changes);
   const shown = CHANGE_GROUPS.filter((group) => filter === "all" || filter === group);
   const listed = shown.flatMap((group) => groups[group]);
@@ -196,7 +285,7 @@ export function Changes({
     });
   };
 
-  if (changes.length === 0) {
+  if (changes.length === 0 && submitted.length === 0) {
     return (
       <section className={cn(PAGE_PAD, "pb-10")} aria-label="Changes">
         <EmptyNote>No change is in flight in this companion.</EmptyNote>
@@ -213,15 +302,7 @@ export function Changes({
           label="Show changes"
           value={filter}
           onChange={setFilter}
-          options={[
-            { value: "all", label: "All", count: changes.length },
-            ...CHANGE_GROUPS.map((group) => ({
-              value: group,
-              label: GROUP_TITLES[group],
-              count: groups[group].length,
-              tone: group === "needs-you" ? ("warn" as const) : undefined,
-            })),
-          ]}
+          options={filterOptions(groups, submitted.length)}
         />
         {groups["needs-you"].length > 0 ? (
           <Button
@@ -252,6 +333,7 @@ export function Changes({
                 <ChangeRow
                   key={change.name}
                   change={change}
+                  workflow={workflow}
                   current={change.name === selected}
                   onOpen={() => {
                     setPass(false);
@@ -263,6 +345,7 @@ export function Changes({
           </ListCard>
         ),
       )}
+      {filter === "all" || filter === "submitted" ? <SubmittedCard submitted={submitted} /> : null}
       <SidePanel
         items={walk.map((change) => change.name)}
         current={current?.name ?? null}
@@ -274,6 +357,7 @@ export function Changes({
         {current ? (
           <ChangeDetail
             change={current}
+            workflow={workflow}
             companion={companion}
             reading={readingPath}
             onRead={(path) => setReading(path ? { change: current.name, path } : null)}

@@ -1,8 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import path from "node:path";
 
-import type { LiveSessions, SessionCloseReason } from "../../../lib/factory/outcomes/sessions";
 import { signalProcessGroup, within } from "../../../runtime/host-process";
+import type { LiveSessions, SessionCloseReason } from "./live-sessions";
 import { tokensEqual } from "./access";
 
 export const TERMINAL_AGENTS = ["claude", "opencode"] as const;

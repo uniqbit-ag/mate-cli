@@ -1,3 +1,4 @@
+// oxlint-disable no-await-in-loop -- one repository at a time
 import { readWrapState } from "../../runtime/wrap-state";
 import { GlobalConfigStore } from "./global-config-store";
 import { reconcileWorkingRepoClaudeCommandLinks } from "./projection-claude-commands";

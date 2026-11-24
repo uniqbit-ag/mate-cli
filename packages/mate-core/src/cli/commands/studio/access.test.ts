@@ -15,6 +15,7 @@ import { companionDigest } from "./selection";
 import { createStudioFetch, type StudioFetchOptions, type StudioServerDeps } from "./server";
 import type { StudioApp } from "./studio-app";
 import { createVaultManager, type VaultManager } from "./vault";
+import type { PluginService } from "../../../tools/setup/service";
 
 const PORT = 4097;
 const TOKEN = "t".repeat(43);
@@ -439,30 +440,42 @@ describe("Studio modes are not access control", () => {
 
 describe("guards by request kind", () => {
   const origin = `http://localhost:${PORT}`;
-  const credentialBroker = () => {
+  /** A plugin service with one write route, recording every write it was let through. */
+  const noteService = () => {
     const sets: string[] = [];
-    const status = { kind: null, source: null } as unknown;
-    return {
-      sets,
-      client: {
-        credential: {
-          status: async () => status,
-          set: async (kind: string) => void sets.push(kind),
-          clear: async () => void sets.push("clear"),
-        },
-      } as unknown as NonNullable<StudioServerDeps["factoryClient"]>,
+    const service: PluginService = {
+      apiVersion: 1,
+      id: "acme",
+      label: "Acme",
+      studio: () => ({
+        routes: [
+          {
+            path: "/note",
+            methods: {
+              GET: { kind: "read" },
+              PUT: { kind: "write", writable: "start Studio with --writable to change notes" },
+              DELETE: { kind: "write", writable: "start Studio with --writable to change notes" },
+            },
+            handle: async (request) => {
+              if (request.method !== "GET") sets.push(request.method);
+              return Response.json({ sets });
+            },
+          },
+        ],
+      }),
     };
+    return { sets, services: [service] };
   };
 
   test("a write from a foreign origin is refused before it acts", async () => {
     await withFixture(async (state) => {
-      const broker = credentialBroker();
+      const broker = noteService();
       const handler = createStudioFetch(
-        { ...state.deps, factoryClient: broker.client },
+        { ...state.deps, services: broker.services },
         { writable: true, access: access(), app: appFor(state) },
       );
       const response = (await handler(
-        new Request(`http://localhost:${PORT}/api/factory/credential`, {
+        new Request(`http://localhost:${PORT}/api/plugins/acme/note`, {
           method: "PUT",
           headers: { host: `localhost:${PORT}`, origin: "https://evil.test" },
           body: JSON.stringify({ kind: "api-key", value: "x" }),
@@ -477,13 +490,13 @@ describe("guards by request kind", () => {
 
   test("a write without the write path is refused, naming it", async () => {
     await withFixture(async (state) => {
-      const broker = credentialBroker();
+      const broker = noteService();
       const handler = createStudioFetch(
-        { ...state.deps, factoryClient: broker.client },
+        { ...state.deps, services: broker.services },
         { access: access({ token: TOKEN }), app: appFor(state) },
       );
       const credential = (await handler(
-        new Request(`http://localhost:${PORT}/api/factory/credential`, {
+        new Request(`http://localhost:${PORT}/api/plugins/acme/note`, {
           method: "DELETE",
           headers: { host: `localhost:${PORT}`, origin, cookie: COOKIE },
         }),
@@ -581,6 +594,49 @@ describe("guards by request kind", () => {
       expect((await end({ cookie: COOKIE, origin: "https://evil.test" }))!.status).toBe(403);
       expect((await end({ origin }))!.status).toBe(401);
       expect((await end({ origin, cookie: COOKIE }))!.status).toBe(404);
+      await handler.close();
+    });
+  });
+});
+
+describe("ping", () => {
+  test("answers 204 with no body and no caching to a reader with the cookie", async () => {
+    await withFixture(async (state) => {
+      const handler = serve(state, { access: access({ invocation: "serve", token: TOKEN }) });
+      for (const method of ["GET", "HEAD"]) {
+        const response = (await handler(
+          new Request(`http://localhost:${PORT}/api/ping`, {
+            method,
+            headers: { host: `localhost:${PORT}`, cookie: COOKIE },
+          }),
+        ))!;
+        expect(response.status).toBe(204);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        expect(await response.text()).toBe("");
+      }
+      expect(state.rendered).toBe(0);
+      await handler.close();
+    });
+  });
+
+  test("refuses a ping without the token where reading needs it", async () => {
+    await withFixture(async (state) => {
+      const handler = serve(state, { access: access({ invocation: "serve", token: TOKEN }) });
+      const response = (await handler(get("/api/ping")))!;
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({
+        reason:
+          "Studio's access token is required; open the address Studio printed when it started",
+      });
+      await handler.close();
+    });
+  });
+
+  test("refuses a ping to a host Studio does not serve", async () => {
+    await withFixture(async (state) => {
+      const handler = serve(state, { access: access() });
+      const response = (await handler(get("/api/ping", { host: `rebind.acme.test:${PORT}` })))!;
+      expect(response.status).toBe(421);
       await handler.close();
     });
   });

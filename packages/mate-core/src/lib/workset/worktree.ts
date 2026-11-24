@@ -11,7 +11,7 @@ import { repoLocalRegistryPath } from "../../runtime/repo-local";
 import type { WrapRuntime } from "../../runtime/runtime-document-manifest";
 import { readWrapState, WRAP_RUNTIMES } from "../../runtime/wrap-state";
 import { cleanupWorkingRepository } from "../../tools/setup/working-repo-cleanup";
-import { locateChange } from "../change-layout";
+import { changeNameOf, type ChangeLocation, locateChange } from "../change-layout";
 import { classifyBranch, configuredProtectedPatterns } from "../delivery/branches";
 import { deliveryCheckout } from "../delivery/checkout";
 import { type DeliveryRecord, readDeliveryRecord } from "../delivery/record";
@@ -21,7 +21,7 @@ import {
   worktreeAddArgs,
   type BranchSource,
 } from "../delivery/resolve-branch";
-import { repositoryPath } from "../delivery/forge";
+import { repositoryPath } from "../delivery/remote";
 import { scopedRepositories } from "../openspec-scopes";
 import { attendedLockOptions } from "../orchestrator/companion-git-sync";
 import { readCompanionConfig } from "../orchestrator/config-store";
@@ -40,13 +40,14 @@ import {
   type IndexOutcome,
   type TokensaveRunner,
 } from "./worktree-index";
+import { copyIncludedFiles, selectIncludedFiles, type IncludeOutcome } from "./worktree-include";
 import { findWorkset, readWorksets, resolveWorksetBranch, resolveWorksetOf } from "./record";
 
 /**
  * Workset worktrees outside the factory: one Git worktree per Working Repository at
  * `<main checkout>.worktrees/<workset-id>`, on the Workset's Delivery Branch, linked to
- * the companion, wrapped like its main checkout and installed. Env files are reported by
- * path, never opened.
+ * the companion, wrapped like its main checkout and installed. Ignored files named by the
+ * main checkout's include files are copied in; other env files are reported by path only.
  */
 
 export interface GitResult {
@@ -111,6 +112,8 @@ export interface WorktreeRepositoryResult {
   wrap: WrapOutcome;
   /** The worktree's tokensave index; a failure only warns. */
   index: IndexOutcome;
+  /** Ignored files copied from the main checkout by its include files. */
+  include: IncludeOutcome;
   /** Env files of the main checkout the worktree lacks, relative to the repository root. */
   missingEnv: string[];
   /** Set when a step for this repository failed. */
@@ -153,6 +156,8 @@ export interface PruneEntry {
 export interface PruneTarget {
   id: string;
   changes: readonly string[];
+  /** Delivery Records already read, by entry of `changes`; others are read from this checkout. */
+  records?: ReadonlyMap<string, DeliveryRecord>;
 }
 
 /** An Umbrella Repository's mirrored worktree of a Workset. */
@@ -182,7 +187,7 @@ function promptlessEnv(): NodeJS.ProcessEnv {
   } as NodeJS.ProcessEnv;
 }
 
-const runGit: GitRunner = (cwd, args, options = {}) =>
+export const runGit: GitRunner = (cwd, args, options = {}) =>
   new Promise<GitResult>((resolve) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     // Unbounded: a merge check pipes a whole `git log -p` range into `git patch-id`.
@@ -1031,6 +1036,7 @@ async function realize(
     install: { command: null, outcome: "skipped" },
     wrap: { runtimes: [], outcome: "skipped" },
     index: { outcome: "skipped" },
+    include: { sources: [], copied: [], failed: [] },
     missingEnv: [],
   };
   if (!plan.reuse) {
@@ -1061,6 +1067,13 @@ async function realize(
     result.wrap = linked.wrap;
     if (linked.error) result.error = linked.error;
     if (linked.warning) warnings.push(`${plan.repository}: ${linked.warning}`);
+  }
+  // Before install: a copied `.npmrc` may be what lets it reach a private registry.
+  const selection = await selectIncludedFiles(git, plan.checkout);
+  for (const warning of selection.warnings) warnings.push(`${plan.repository}: ${warning}`);
+  result.include = await copyIncludedFiles(plan.checkout, plan.target, selection);
+  if (result.include.failed.length > 0) {
+    result.error ??= `copying ${result.include.failed.map((entry) => entry.path).join(", ")} failed`;
   }
   const command = await installCommand(plan.target);
   result.install.command = command ? command.join(" ") : null;
@@ -1115,26 +1128,42 @@ async function keepReason(
   return null;
 }
 
+/**
+ * The folder of `change` in this checkout; an archive anchor not archived here falls back
+ * to its undated change name, which a checkout behind the published commit still holds.
+ */
+async function localChange(companionPath: string, change: string): Promise<ChangeLocation | null> {
+  const found = await locateChange(companionPath, change);
+  if (found) return found;
+  const name = changeNameOf(change);
+  return name === change ? null : await locateChange(companionPath, name);
+}
+
 /** Recorded Delivery Branches per Working Repository; not-applicable deliveries name none. */
 async function recordedBranches(
   companionPath: string,
-  changes: readonly string[],
+  { changes, records }: PruneTarget,
   warnings: string[],
 ): Promise<Map<string, Set<string>>> {
   const byRepository = new Map<string, Set<string>>();
   for (const change of changes) {
-    // oxlint-disable-next-line no-await-in-loop -- a few small files, in order
-    const location = await locateChange(companionPath, change);
-    if (!location) continue;
-    let record: DeliveryRecord | null;
-    try {
+    let record = records?.get(change) ?? null;
+    if (!record) {
       // oxlint-disable-next-line no-await-in-loop -- a few small files, in order
-      record = await readDeliveryRecord(location.dir);
-    } catch (error) {
-      warnings.push(`${change}: cannot read its Delivery Record: ${errorMessage(error)}`);
+      const location = await localChange(companionPath, change);
+      try {
+        // oxlint-disable-next-line no-await-in-loop -- a few small files, in order
+        record = location ? await readDeliveryRecord(location.dir) : null;
+      } catch (error) {
+        warnings.push(`${change}: cannot read its Delivery Record: ${errorMessage(error)}`);
+        continue;
+      }
+    }
+    if (!record) {
+      warnings.push(`${change}: no Delivery Record found, its worktrees were not cleaned up`);
       continue;
     }
-    for (const delivery of record?.deliveries ?? []) {
+    for (const delivery of record.deliveries) {
       if (!delivery.branch || delivery.notApplicable) continue;
       const branches = byRepository.get(delivery.repository) ?? new Set<string>();
       branches.add(delivery.branch);
@@ -1264,7 +1293,7 @@ export async function pruneWorksetWorktrees(
   let index: LinkedIndex | undefined;
   for (const workset of done) {
     // oxlint-disable-next-line no-await-in-loop -- Worksets one at a time
-    const branches = await recordedBranches(companionPath, workset.changes, result.warnings);
+    const branches = await recordedBranches(companionPath, workset, result.warnings);
     if (branches.size === 0) continue;
     // oxlint-disable-next-line no-await-in-loop -- read once, on first need
     index ??= await linkedIndex(companionPath, git, (deps.cwd ?? process.cwd)());

@@ -1,13 +1,15 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
 import type { WorkingRepoGit } from "./branches";
 import type { DeliveryEnvironment } from "./environment";
-import type { ForgeAdapter, ForgeOutcome, ForgeRepo } from "./forge";
-import { repositoryAccessFor } from "./repository-access";
+import type { MergeGit } from "./merge-git";
+import { unlinkedRecord, upsertDelivery } from "./record";
+import { refreshRecord } from "./refresh";
+import { repositoryAccessFor, type Checkout } from "./repository-access";
 
 const APP = "acme/acme-app";
 const LIB = "acme/acme-lib";
-const TOKEN = { token: "t", source: "MATE_GIT_TOKEN" as const };
+const HEAD = "a".repeat(40);
 
 function git(overrides: Partial<WorkingRepoGit> = {}): WorkingRepoGit {
   return {
@@ -21,207 +23,169 @@ function git(overrides: Partial<WorkingRepoGit> = {}): WorkingRepoGit {
   };
 }
 
-function environment(overrides: Partial<WorkingRepoGit> = {}): DeliveryEnvironment {
+function environment(
+  overrides: Partial<WorkingRepoGit> = {},
+  checkouts: Record<string, string> = {},
+): DeliveryEnvironment {
   return {
     companionPath: "/companion",
-    workingRepo: {
-      path: "/repo",
-      slug: APP,
-      forgeRepo: { host: "github.com", owner: "acme", repo: "acme-app" },
-      git: git(overrides),
-    },
+    workingRepo: { path: "/repo", slug: APP, git: git(overrides) },
     protectedPatterns: ["release/*"],
+    checkoutOf: async (repository) => checkouts[repository] ?? null,
   };
 }
 
-interface ForgeAnswers {
-  defaultBranch?: ForgeOutcome<string>;
+interface FakeCheckout {
+  isRepository?: boolean;
+  defaultBranch?: string;
+  origin?: string;
+  fetches?: string[];
+  listings?: string[];
 }
 
-/** Forge fetch stub answering the GitHub repository endpoint. */
-function forgeFetch(answers: ForgeAnswers, calls: string[] = []) {
-  return async (url: string): Promise<Response> => {
-    calls.push(url);
-    const answer = answers.defaultBranch;
-    if (!answer) return new Response("{}", { status: 404 });
-    if (!answer.ok) return new Response("{}", { status: 500 });
-    return new Response(JSON.stringify({ default_branch: answer.value }), { status: 200 });
+/** A checkout whose answers are fixed: the head is merged by a squash on the default branch. */
+function fakeCheckout(options: FakeCheckout = {}): Checkout {
+  const merge: MergeGit = {
+    isRepository: async () => options.isRepository ?? true,
+    originUrl: async () => options.origin ?? null,
+    tip: async () => HEAD,
+    localTip: async () => null,
+    remoteTip: async () => null,
+    dirtyWorktree: async () => null,
+    aheadOf: async () => false,
+    hasCommit: async () => false,
+    isAncestor: async () => false,
+    onFirstParent: async () => false,
+    patchMatch: async () => null,
+    supportsContainment: async () => true,
+    contains: async () => true,
+    firstContaining: async () => ({ commit: "b".repeat(40), committedAt: "t" }),
+    lastFetchedAt: async () => null,
+    fetch: async (_default, branch) => {
+      options.fetches?.push(branch);
+      return { ok: true };
+    },
+    pullRefs: async () => {
+      options.listings?.push("ls-remote");
+      return [{ number: 42, ref: "pull", commit: HEAD }];
+    },
+    fetchPullHead: async () => null,
   };
+  return { git: merge, defaultBranch: async () => options.defaultBranch ?? "trunk" };
 }
 
 describe("repositoryAccessFor", () => {
   test("the Working Repository reads its default branch from local Git", async () => {
-    const access = repositoryAccessFor(environment(), { resolveToken: async () => null })(APP);
-    expect(await access.defaultBranch()).toBe("trunk");
+    expect(await repositoryAccessFor(environment())(APP).defaultBranch()).toBe("trunk");
   });
 
-  test("another repository reads its default branch from the forge", async () => {
-    const access = repositoryAccessFor(environment(), {
-      resolveToken: async () => TOKEN,
-      forge: { fetch: forgeFetch({ defaultBranch: { ok: true, value: "develop" } }) },
-    })(LIB);
-    expect(await access.defaultBranch()).toBe("develop");
-  });
-
-  test("another repository falls back to main without a token or after a failed lookup", async () => {
-    const noToken = repositoryAccessFor(environment(), { resolveToken: async () => null })(LIB);
-    expect(await noToken.defaultBranch()).toBe("main");
-    const failed = repositoryAccessFor(environment(), {
-      resolveToken: async () => TOKEN,
-      forge: { fetch: forgeFetch({ defaultBranch: { ok: false } as ForgeOutcome<string> }) },
-    })(LIB);
-    expect(await failed.defaultBranch()).toBe("main");
-  });
-
-  test("protection: default branch and patterns, never the forge", async () => {
-    const calls: string[] = [];
-    const access = repositoryAccessFor(environment(), {
-      resolveToken: async () => TOKEN,
-      forge: { fetch: forgeFetch({}, calls) },
-    })(APP);
-    expect(await access.protection("trunk")).toEqual({ protected: true, reason: "default" });
-    expect(await access.protection("release/2")).toEqual({ protected: true, reason: "pattern" });
-    expect(await access.protection("change/x")).toEqual({ protected: false, reason: null });
-    expect(calls).toEqual([]);
-  });
-
-  test("another repository compares against its forge default branch, else main", async () => {
-    const noToken = repositoryAccessFor(environment(), { resolveToken: async () => null })(LIB);
-    expect(await noToken.protection("main")).toEqual({ protected: true, reason: "default" });
-    expect(await noToken.protection("develop")).toEqual({ protected: false, reason: null });
-    const known = repositoryAccessFor(environment(), {
-      resolveToken: async () => TOKEN,
-      forge: { fetch: forgeFetch({ defaultBranch: { ok: true, value: "develop" } }) },
-    })(LIB);
-    expect(await known.protection("develop")).toEqual({ protected: true, reason: "default" });
-    expect(await known.protection("change/x")).toEqual({ protected: false, reason: null });
-  });
-
-  test("forge access names the missing token or an unsupported host", async () => {
-    expect(
-      await repositoryAccessFor(environment(), { resolveToken: async () => null })(APP).forge(),
-    ).toEqual({ unavailable: "no-token" });
-    const gitlab = environment();
-    gitlab.workingRepo!.forgeRepo = { host: "gitlab.com", owner: "acme", repo: "acme-app" };
-    expect(
-      await repositoryAccessFor(gitlab, { resolveToken: async () => TOKEN })(APP).forge(),
-    ).toEqual({ unavailable: "unsupported-host" });
-  });
-
-  test("an unlinked repository takes the Working Repository's host", async () => {
-    const access = await repositoryAccessFor(environment(), { resolveToken: async () => TOKEN })(
-      LIB,
-    ).forge();
-    expect("repo" in access && access.repo).toEqual({
-      host: "github.com",
-      owner: "acme",
-      repo: "acme-lib",
-    } satisfies ForgeRepo);
-    expect("adapter" in access && (access.adapter as ForgeAdapter).id).toBe("github");
-  });
-
-  test("a linked repository's own host wins, so a GitLab repository sends no GitHub request", async () => {
-    const calls: string[] = [];
-    const linked = environment();
-    linked.hostOf = async (repository) => (repository === LIB ? "gitlab.acme.dev" : "github.com");
+  test("another repository reads its default branch from its linked checkout, else main", async () => {
+    const linked = environment({}, { [LIB]: "/lib" });
     const access = repositoryAccessFor(linked, {
-      resolveToken: async () => TOKEN,
-      forge: { fetch: forgeFetch({ defaultBranch: { ok: true, value: "develop" } }, calls) },
-    })(LIB);
-    expect(await access.forge()).toEqual({ unavailable: "unsupported-host" });
-    expect(await access.defaultBranch()).toBe("main");
-    expect(calls).toEqual([]);
-  });
-
-  test("a nested path is never split into a wrong owner", async () => {
-    const nested = environment();
-    nested.hostOf = async () => "gitlab.acme.dev";
-    const access = repositoryAccessFor(nested, { resolveToken: async () => TOKEN });
-    expect(await access("acme/platform/web").forge()).toEqual({ unavailable: "unsupported-host" });
-
-    const github = await repositoryAccessFor(environment(), {
-      resolveToken: async () => TOKEN,
-    })("acme/platform/web").forge();
-    expect("repo" in github && github.repo).toEqual({
-      host: "github.com",
-      owner: "acme/platform",
-      repo: "web",
-    } satisfies ForgeRepo);
-  });
-
-  test("without any known host another repository asks instead of assuming github.com", async () => {
-    let resolved = 0;
-    const bare: DeliveryEnvironment = { ...environment(), workingRepo: null };
-    const access = repositoryAccessFor(bare, {
-      resolveToken: async () => {
-        resolved += 1;
-        return TOKEN;
-      },
-    })(LIB);
-    expect(await access.forge()).toEqual({ unavailable: "unsupported-host" });
-    expect(resolved).toBe(0);
-  });
-
-  test("the token is resolved at most once, and only when a lookup needs it", async () => {
-    let resolved = 0;
-    const accessFor = repositoryAccessFor(environment(), {
-      resolveToken: async () => {
-        resolved += 1;
-        return TOKEN;
-      },
-      forge: { fetch: forgeFetch({ protected: { ok: true, value: false } }) },
+      openCheckout: () => fakeCheckout({ defaultBranch: "develop" }),
     });
-    await accessFor(APP).defaultBranch();
-    await accessFor(APP).protection("trunk");
-    expect(resolved).toBe(0);
-    await accessFor(APP).protection("change/x");
-    await accessFor(LIB).forge();
-    await accessFor(APP).forge();
-    expect(resolved).toBe(1);
+    expect(await access(LIB).defaultBranch()).toBe("develop");
+    expect(await repositoryAccessFor(environment())(LIB).defaultBranch()).toBe("main");
+  });
+
+  test("protection: default branch and patterns", async () => {
+    const access = repositoryAccessFor(environment())(APP);
+    expect(await access.protection("trunk")).toEqual({ protected: true, reason: "default" });
+    expect(await access.protection("release/1.0")).toEqual({
+      protected: true,
+      reason: "pattern",
+    });
+    expect((await access.protection("change/x")).protected).toBe(false);
+    // An unlinked repository compares against `main`.
+    expect(await repositoryAccessFor(environment())(LIB).protection("main")).toMatchObject({
+      protected: true,
+    });
   });
 });
 
 describe("repositoryAccessFor local checkouts", () => {
-  const fakeCheckout = (isRepository: boolean, fetches: string[]) => () => ({
-    defaultBranch: async () => "trunk",
-    git: {
-      isRepository: async () => isRepository,
-      tip: async () => null,
-      hasCommit: async () => false,
-      isAncestor: async () => false,
-      onFirstParent: async () => false,
-      patchMatch: async () => null,
-      lastFetchedAt: async () => null,
-      fetch: async (_default: string, branch: string) => {
-        fetches.push(branch);
-        return { ok: true };
-      },
-    },
-  });
-
   test("a repository without a checkout, or a path that is not a work tree, has none", async () => {
-    const env = {
-      ...environment(),
-      checkoutOf: async (repository: string) => (repository === APP ? "/repo" : null),
-    };
+    const env = environment({}, { [APP]: "/repo" });
     expect(
-      await repositoryAccessFor(env, { openCheckout: fakeCheckout(true, []) })(LIB).local?.(),
+      await repositoryAccessFor(env, { openCheckout: () => fakeCheckout() })(LIB).local?.(),
     ).toBeNull();
     expect(
-      await repositoryAccessFor(env, { openCheckout: fakeCheckout(false, []) })(APP).local?.(),
+      await repositoryAccessFor(env, {
+        openCheckout: () => fakeCheckout({ isRepository: false }),
+      })(APP).local?.(),
     ).toBeNull();
   });
 
-  test("the checkout's default branch is used and each branch is fetched once", async () => {
+  test("the checkout's default branch is used, each branch fetched and pull refs listed once", async () => {
     const fetches: string[] = [];
-    const env = { ...environment(), checkoutOf: async () => "/repo" };
-    const local = await repositoryAccessFor(env, { openCheckout: fakeCheckout(true, fetches) })(
-      APP,
-    ).local?.();
+    const listings: string[] = [];
+    const env = environment({}, { [APP]: "/repo" });
+    const local = await repositoryAccessFor(env, {
+      openCheckout: () => fakeCheckout({ fetches, listings }),
+    })(APP).local?.();
     expect(local?.defaultBranch).toBe("trunk");
     await local?.fetch("change/x");
     await local?.fetch("change/x");
     await local?.fetch("change/y");
     expect(fetches).toEqual(["change/x", "change/y"]);
+    await local?.pullRefs();
+    await local?.pullRefs();
+    expect(listings).toHaveLength(1);
+  });
+});
+
+describe("linked-only inspection", () => {
+  const savedFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = savedFetch;
+  });
+
+  test("a record naming an unlinked repository opens no checkout and sends no request", async () => {
+    const opened: string[] = [];
+    const requests: string[] = [];
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      requests.push(String(input));
+      throw new Error("no request expected");
+    }) as unknown as typeof fetch;
+    const access = repositoryAccessFor(environment(), {
+      openCheckout: (path) => {
+        opened.push(path);
+        return fakeCheckout();
+      },
+    });
+    const record = upsertDelivery(unlinkedRecord("x"), "acme/secret-service", {
+      branch: "change/x",
+    });
+    const { record: next, outcomes } = await refreshRecord(record, {
+      now: () => new Date(),
+      localAccess: async (repository) => (await access(repository).local?.()) ?? null,
+      fetch: true,
+    });
+    expect(outcomes[0]).toMatchObject({ needsAnswer: true, answerReason: "no-checkout" });
+    expect(next).toEqual(record);
+    expect(opened).toEqual([]);
+    expect(requests).toEqual([]);
+  });
+
+  test("the PR host comes only from the linked checkout's origin", async () => {
+    const refresh = async (origin: string) => {
+      const access = repositoryAccessFor(environment({}, { [LIB]: "/lib" }), {
+        openCheckout: () => fakeCheckout({ origin }),
+      });
+      const record = upsertDelivery(unlinkedRecord("x"), LIB, { branch: "change/x" });
+      return refreshRecord(record, {
+        now: () => new Date(),
+        localAccess: async (repository) => (await access(repository).local?.()) ?? null,
+        fetch: true,
+      });
+    };
+    const github = await refresh("git@github.com:acme/acme-lib.git");
+    expect(github.record.deliveries[0]).toMatchObject({
+      pr: "https://github.com/acme/acme-lib/pull/42",
+      merge: { state: "merged", source: "git" },
+    });
+    const selfHosted = await refresh("git@gitlab.acme.dev:acme/acme-lib.git");
+    expect(selfHosted.record.deliveries[0].merge).toMatchObject({ state: "merged" });
+    expect(selfHosted.record.deliveries[0].pr).toBeUndefined();
   });
 });

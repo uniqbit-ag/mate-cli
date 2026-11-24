@@ -18,40 +18,31 @@ import {
   deleteRegisteredCompanion,
 } from "./companion-removal";
 import { collectStudioInventory, type StudioInventory } from "./inventory";
-import {
-  assembleCompanionPayload,
-  readCompanionWorksetStages,
-  type StudioCompanionResponse,
-} from "./payload";
+import { assembleCompanionPayload, type StudioCompanionResponse } from "./payload";
 import { createReportStore, isReportId, REPORT_LIMITS, type ReportStore } from "./reports";
-import { isWorksetId, WorksetError } from "../../../lib/workset/record";
-import type { WorksetWithStage } from "../../../lib/workset/stages";
-import type { LiveViewer } from "../../../lib/factory/runner/live";
-import {
-  createFactoryOutcomes,
-  type FactoryOutcomes,
-  type Outcomes,
-  type OutcomesPorts,
-  recordOutcomes,
-} from "../../../lib/factory/outcomes";
-import { LiveSessions } from "../../../lib/factory/outcomes/sessions";
-import { FACTORY_BROKER_ENV, factoryClient, type FactoryClient } from "../../../lib/factory/client";
+import { WorksetError } from "../../../lib/workset/record";
+import type { PluginService, StudioSocketHandler } from "../../../tools/setup/service";
+import { registeredServices } from "../../../tools/setup/service-registry";
 import { addCompanionByPath, addCompanionByUrl } from "./companion-add";
-import { addRepository, removeRepository } from "./repository-add";
-import { factoryCredentialResponse } from "./factory-credential";
-import { factoryGitTokensResponse } from "./factory-git-tokens";
-import { createWorksetResolver } from "./workset-session";
+import { LiveSessions } from "./live-sessions";
+import {
+  guardedSocket,
+  type MatchedServiceRoute,
+  mountStudioServices,
+  type MountedServices,
+  NO_SERVICES,
+} from "./service-host";
 import {
   CHAT_CREDENTIAL_ROUTE,
   CHAT_ROUTE,
   CHAT_SESSION_ROUTE,
-  FACTORY_CREDENTIAL_ROUTE,
-  FACTORY_GIT_TOKENS_ROUTE,
-  FACTORY_WORKSETS_ROUTE,
   REPORTS_ROUTE,
   REPORT_VIEW_PREFIX,
+  SERVICE_ASSET_PREFIX,
+  SERVICE_ROUTE_PREFIX,
   STUDIO_EVENTS_ROUTE,
   STUDIO_HOSTNAME,
+  STUDIO_PING_ROUTE,
   type StudioEvent,
   TERMINAL_ASSET_PREFIX,
   TERMINAL_SESSIONS_END_ROUTE,
@@ -66,6 +57,7 @@ import {
   modePolicy,
   parse,
   parseVaultSelection,
+  REFRESH_PARAM,
   resolveCompanion,
   type StudioModePolicy,
   type StudioProfile,
@@ -93,7 +85,7 @@ import {
   type TerminalConnection,
   type TerminalRegistryOptions,
 } from "./terminal";
-import type { StudioFormField, StudioServices } from "./services";
+import type { StudioServices } from "./services";
 import type { UsageCache } from "../../../lib/usage/cache";
 import { studioAppAsset, type StudioApp } from "./studio-app";
 import { terminalAsset } from "./terminal-assets";
@@ -110,7 +102,8 @@ const STUDIO_APP_CALL_PREFIX = "/_serverFn/";
 
 /** The socket Bun hands a WebSocket handler; `data` is what the upgrade attached. */
 export interface StudioSocket {
-  data: { connection?: TerminalConnection };
+  /** A terminal connection, or a service's socket. */
+  data: { connection?: TerminalConnection; service?: StudioSocketHandler };
   send(data: string | Uint8Array): number;
   getBufferedAmount(): number;
   ping(): void;
@@ -165,22 +158,19 @@ export interface StudioServerDeps {
   vault?: VaultManager;
   reports?: ReportStore;
   usage?: UsageCache;
+  /** Where the Friction Log and Switch live; the user's home when absent. */
+  homeDir?: string;
   terminal?: Partial<TerminalRegistryOptions>;
   launchableAgents?: typeof launchableAgents;
-  /**
-   * The factory's Outcomes, built from the ports Studio creates first for the companion it
-   * serves; from the environment in factory mode when absent.
-   */
-  factoryOutcomes?: (portsFor: (companionPath: string) => OutcomesPorts) => FactoryOutcomes | null;
-  /** A companion's Workset stages; read from OpenSpec when absent. */
-  worksetStages?: (companionPath: string) => Promise<{ worksets: WorksetWithStage[] }>;
-  /** The factory broker's client; from the environment when absent, null outside factory mode. */
-  factoryClient?: FactoryClient | null;
   /** The Analysis chat's backend; the local Claude Code harness when absent. */
   chatAgent?: ChatAgent;
   /** The chat's Claude credential; the profile's store under Mate's home when absent. */
   chatCredentials?: ChatCredentials;
   chatTurns?: ChatTurns;
+  /** The plugin services Studio mounts; the registered plugins' when absent. */
+  services?: readonly PluginService[];
+  /** The environment services read their connection from; `process.env` when absent. */
+  env?: NodeJS.ProcessEnv;
 }
 
 export interface StudioServerOptions {
@@ -230,9 +220,6 @@ const TOKEN_REQUIRED_PAGE = `<!doctype html>
 If the token was pinned with <code>--token</code> or <code>MATE_STUDIO_TOKEN</code>,
 open this address with <code>?token=</code> followed by that value.</p></main></body></html>`;
 
-/** A Workset's run log, or its live stream when the second group matched. */
-const FACTORY_LOG = new RegExp(`^${FACTORY_WORKSETS_ROUTE}/([^/]+)/log(/stream)?$`);
-
 /**
  * What a route is, for its guard. A read needs the token where the invocation requires it
  * for reading; a write also needs the same origin, the token for saving and, when it names
@@ -257,8 +244,26 @@ const CHAT_OFF_REASON = "the chat is offered only when Studio listens on localho
 
 const READS = ["GET", "HEAD"] as const;
 
+/** A service route by the access its method declares; a WebSocket is guarded like a write. */
+function serviceRouteKind(matched: MatchedServiceRoute, method: string): RouteKind {
+  const access = matched.access;
+  if (!access) return { kind: "read", methods: matched.methods };
+  if (access.kind === "read") return { kind: "read", methods: [method] };
+  if (access.kind === "socket") return { kind: "write", methods: [method] };
+  return {
+    kind: "write",
+    methods: [method],
+    ...(access.writable ? { writable: access.writable } : {}),
+  };
+}
+
 /** Every route core answers, by kind; the rest are reads the application answers. */
-function routeOf(url: URL, method: string, hasApp: boolean): RouteKind {
+function routeOf(
+  url: URL,
+  method: string,
+  hasApp: boolean,
+  service: MatchedServiceRoute | null,
+): RouteKind {
   const { pathname } = url;
   if (pathname === REPORTS_ROUTE && method === "POST")
     return { kind: "session", methods: ["POST"] };
@@ -267,24 +272,9 @@ function routeOf(url: URL, method: string, hasApp: boolean): RouteKind {
   if (pathname === CHAT_CREDENTIAL_ROUTE) {
     return { kind: "chat", methods: ["GET", "HEAD", "PUT", "DELETE"] };
   }
-  if (pathname === FACTORY_CREDENTIAL_ROUTE) {
-    return method === "GET" || method === "HEAD"
-      ? { kind: "read", methods: [method] }
-      : {
-          kind: "write",
-          methods: [method],
-          writable: "start Studio with --writable to set the agent credential",
-        };
-  }
-  if (pathname === FACTORY_GIT_TOKENS_ROUTE) {
-    return method === "GET" || method === "HEAD"
-      ? { kind: "read", methods: [method] }
-      : {
-          kind: "write",
-          methods: [method],
-          writable: "start Studio with --writable to set Git tokens",
-        };
-  }
+  if (service) return serviceRouteKind(service, method);
+  // A service that is not mounted answers nothing, whatever the method.
+  if (pathname.startsWith(SERVICE_ROUTE_PREFIX)) return { kind: "read", methods: [method] };
   if (pathname === TERMINAL_SOCKET_ROUTE) {
     return { kind: "terminal", methods: READS, privileged: true };
   }
@@ -352,6 +342,7 @@ async function readCapped(request: Request, limit: number): Promise<string | nul
   let size = 0;
   let over = Number.isFinite(declared) && declared > limit;
   for (;;) {
+    // oxlint-disable-next-line no-await-in-loop -- stream chunks arrive in order
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
@@ -359,6 +350,7 @@ async function readCapped(request: Request, limit: number): Promise<string | nul
     if (over) {
       chunks.length = 0;
       if (size > limit * 4) {
+        // oxlint-disable-next-line no-await-in-loop -- same stream
         await reader.cancel();
         break;
       }
@@ -368,8 +360,6 @@ async function readCapped(request: Request, limit: number): Promise<string | nul
   }
   return over ? null : Buffer.concat(chunks).toString("utf8");
 }
-
-const NOT_WRITABLE = "start Studio with --writable to create or start Worksets";
 
 /** One chat request: its JSON body and how many messages the conversation may hold. */
 export const CHAT_LIMITS = { bodyBytes: 256 * 1024, messages: 100 } as const;
@@ -394,6 +384,8 @@ interface StudioFetch {
   (request: Request, server?: StudioUpgrader): Promise<Response | undefined>;
   terminal: TerminalRegistry | null;
   services: StudioServices;
+  /** Settles once every plugin service is mounted. */
+  ready: Promise<MountedServices>;
   close(): Promise<void>;
 }
 
@@ -436,39 +428,13 @@ export function createStudioFetch(
   let graphs: Promise<SpecGraphCache> | null = null;
   const writable = options.writable === true;
   const policy = modePolicy(options.profile ?? "standard", { chat: options.chat === true });
-  const broker = deps.factoryClient !== undefined ? deps.factoryClient : factoryClient();
   const reports = deps.reports ?? createReportStore();
-  const stagesOf = deps.worksetStages ?? ((path: string) => readCompanionWorksetStages(path));
-  // Created before the terminal and the Outcomes, so neither needs the other.
+  const env = deps.env ?? process.env;
+  // Created before the terminal and the services, so neither needs the other.
   const sessions = new LiveSessions();
   const launchCompanion = options.launchCompanion ?? null;
-  /** Where the factory keeps the companions it cloned; the only place Studio deletes a folder. */
-  const companionsDir = process.env.MATE_COMPANIONS_DIR || "/companions";
-  const outcomesPorts = (companionPath: string): OutcomesPorts => ({
-    stages: () => stagesOf(companionPath),
-    reports: {
-      publish: (report) => reports.publish(companionDigest(companionPath), report),
-      ids: async () =>
-        (await reports.list(companionDigest(companionPath))).map((report) => report.id),
-    },
-    sessions,
-  });
-  const outcomes = (() => {
-    try {
-      if (deps.factoryOutcomes) return deps.factoryOutcomes(outcomesPorts);
-      return createFactoryOutcomes(launchCompanion, outcomesPorts(launchCompanion ?? ""));
-    } catch (error) {
-      process.stderr.write(
-        `mate studio: the factory runner did not start: ${(error as Error).message}\n`,
-      );
-      return null;
-    }
-  })();
-  /** A companion's Outcomes: the factory's for the companion it runs, record-only otherwise. */
-  const outcomesFor = (companionPath: string): Outcomes =>
-    outcomes?.companionPath === companionPath
-      ? outcomes
-      : recordOutcomes(companionPath, () => stagesOf(companionPath));
+  /** The mounted services; none until they are, and every request waits for them. */
+  let services: MountedServices = NO_SERVICES;
   const access =
     options.access ??
     createStudioAccess({
@@ -481,7 +447,7 @@ export function createStudioFetch(
   const publicOrigin = options.publicOrigin ? normalizeOrigin(options.publicOrigin) : null;
   const reportListeners = new Map<string, Set<(event: PublishedReport) => void>>();
   const agentsFor = deps.launchableAgents ?? launchableAgents;
-  const terminal = options.terminal
+  const terminal: TerminalRegistry | null = options.terminal
     ? new TerminalRegistry({
         detachMs: (options.detachMinutes ?? DEFAULT_DETACH_MINUTES[access.invocation]) * 60_000,
         resolveLaunch: createLaunchResolver({
@@ -491,32 +457,12 @@ export function createStudioFetch(
         }),
         mateCommand: process.argv.slice(0, 2),
         sessions,
-        ...(process.env[FACTORY_BROKER_ENV]
-          ? {
-              resolveWorkset: createWorksetResolver({
-                collectInventory: inventory,
-                launchCompanion,
-                mateCommand: process.argv.slice(0, 2),
-                env: process.env,
-                noGit: options.noGit === true,
-                // A person in control continues the factory's own conversation.
-                takenOver: async (id) => (outcomes ? outcomes.takenOver(id) : null),
-              }),
-              // Quitting Claude in a person's session hands the Outcome back to automation.
-              onWorksetExit: async (id, companionPath) => {
-                // Another companion's Workset may share the id; only the factory's own returns.
-                if (
-                  !outcomes ||
-                  path.resolve(companionPath) !== path.resolve(outcomes.companionPath)
-                ) {
-                  return;
-                }
-                await outcomes.returnAfterExit(id);
-                // A return that starts no stage settles no run; the open board still has to learn of it.
-                boardChanged(companionDigest(outcomes.companionPath));
-              },
-            }
-          : {}),
+        resolveWorkset: async (id, digest, sessionId) =>
+          (await ready).worksetSessions?.resolve(id, digest, sessionId) ?? {
+            reason: "no service of this Studio starts Workset sessions",
+          },
+        onWorksetExit: async (id, companionPath) =>
+          (await ready).worksetSessions?.onExit?.(id, companionPath),
         noGit: options.noGit === true,
         reportUrl: options.reportOrigin,
         ...deps.terminal,
@@ -552,11 +498,11 @@ export function createStudioFetch(
     for (const notify of reportListeners.get(digest) ?? []) {
       notify({ id: stored.id, title: stored.title });
     }
-    const path = `${REPORT_VIEW_PREFIX}${stored.id}`;
+    const viewPath = `${REPORT_VIEW_PREFIX}${stored.id}`;
     return json({
       id: stored.id,
-      path,
-      ...(publicOrigin ? { url: `${publicOrigin}${path}` } : {}),
+      path: viewPath,
+      ...(publicOrigin ? { url: `${publicOrigin}${viewPath}` } : {}),
     });
   };
 
@@ -697,24 +643,16 @@ export function createStudioFetch(
     return json(chatSession());
   };
 
-  /** One document's model, with the factory and terminal state its address needs. */
+  /** One document's model, with the terminal state its address needs. */
   const collectPage = async (url: URL): Promise<StudioPage> => {
     const page = await collectStudioPage(url, policy, inventory, snapshots, writable);
     page.renderedAt = Date.now();
-    page.factoryRuns = page.companion ? await outcomesFor(page.companion.path).runs() : null;
     if (terminal) {
       const target = await effectiveLaunchCompanion(
         page.inventory,
         launchCompanion,
         page.selection.companionDigest,
       );
-      page.worksetSessions = process.env[FACTORY_BROKER_ENV]
-        ? Object.fromEntries(
-            terminal
-              .list()
-              .flatMap((session) => (session.workset ? [[session.workset.id, session.id]] : [])),
-          )
-        : null;
       page.terminal = {
         pinned: launchCompanion !== null,
         target: target ? { path: target.path, digest: companionDigest(target.path) } : null,
@@ -736,32 +674,85 @@ export function createStudioFetch(
   const boardChanged = (digest: string) => {
     for (const notify of boardListeners.get(digest) ?? []) notify();
   };
-  if (outcomes) {
-    const digest = companionDigest(outcomes.companionPath);
-    outcomes.onChanged(() => boardChanged(digest));
-  }
+
+  const ready: Promise<MountedServices> = mountStudioServices(
+    deps.services ?? registeredServices(),
+    {
+      writable,
+      noGit: options.noGit === true,
+      launchCompanion,
+      mateCommand: process.argv.slice(0, 2),
+      env,
+      companionPath: companionPathOf,
+      companionSnapshot: async (digest, { refresh = false } = {}) => {
+        await companionPathOf(digest);
+        const url = new URL("http://studio.local/");
+        url.searchParams.set(COMPANION_PARAM, digest);
+        if (refresh) url.searchParams.set(REFRESH_PARAM, "1");
+        const page = await collectPage(url);
+        return {
+          payload: page.payload,
+          error: page.error?.reason ?? null,
+          collectedAt: page.collectedAt,
+        };
+      },
+      companionDigest,
+      launchTarget: async (digest) =>
+        (await effectiveLaunchCompanion(await inventory(), launchCompanion, digest))?.path ?? null,
+      boardChanged: (companionPath) => boardChanged(companionDigest(companionPath)),
+      reports: {
+        publish: (companionPath, report) => reports.publish(companionDigest(companionPath), report),
+        ids: async (companionPath) =>
+          (await reports.list(companionDigest(companionPath))).map((report) => report.id),
+      },
+      terminal: {
+        enabled: terminal !== null,
+        sessions: () =>
+          (terminal?.list() ?? []).map((session) => ({
+            id: session.id,
+            companionPath: session.companionPath,
+            ...(session.workset ? { workset: session.workset } : {}),
+          })),
+        busy: () => sessions.busy(),
+        onEnded: (listener) => sessions.onEnded(listener),
+        close: (companionPath, worksetId, reason) =>
+          sessions.close(companionPath, worksetId, reason),
+      },
+    },
+  ).then((mounted) => {
+    services = mounted;
+    return mounted;
+  });
+
+  /** A service route called from inside Studio: the route's `writable` refusal applies. */
+  const callService = async (request: Request): Promise<Response> => {
+    const current = await ready;
+    const url = new URL(request.url);
+    const matched = current.match(url.pathname, request.method);
+    if (!matched?.route.handle) return notFound();
+    const guard = matched.access;
+    if (!guard || guard.kind === "socket") {
+      return new Response(`${request.method} is not served here`, { status: 405 });
+    }
+    if (guard.kind === "write" && guard.writable && !writable) {
+      return refused(guard.writable, 403);
+    }
+    return matched.route.handle(request, { path: matched.path, url, keepOpen: () => {} });
+  };
 
   let usage: Promise<UsageCache> | undefined = deps.usage && Promise.resolve(deps.usage);
-  const services: StudioServices = {
+  const studioServices: StudioServices = {
     writable,
-    factoryMode: broker !== null,
-    keepsFolder: (companionPath) =>
-      broker !== null && !deletableWithin(companionPath, companionsDir),
+    services: () => services.summaries(),
+    keepsFolder: (companionPath) => {
+      const folder = services.companions?.folder;
+      return folder !== undefined && !deletableWithin(companionPath, folder);
+    },
+    addsCompanions: () => services.companions !== null,
     physicalPath: (companionPath) => physicalPath(path.resolve(companionPath)),
     modePolicy: policy,
     page: collectPage,
-    worksetAction: async (digest, id, action, field: StudioFormField) => {
-      if (!writable) throw new WorksetError(NOT_WRITABLE);
-      const outcomesOfCompanion = outcomesFor(await companionPathOf(digest));
-      // Return and Delete end the person's session themselves, once accepted.
-      await outcomesOfCompanion.act(id, action, field);
-      boardChanged(digest);
-    },
-    createOutcome: async (digest, field) => {
-      if (!writable) throw new WorksetError(NOT_WRITABLE);
-      await outcomesFor(await companionPathOf(digest)).create(field);
-      boardChanged(digest);
-    },
+    callService,
     vault: async (digest, request) => {
       const { vaultView } = await import("./views/vault/view");
       return vaultView(vault, await companionPathOf(digest), request);
@@ -774,14 +765,14 @@ export function createStudioFetch(
       const { vaultMatches } = await import("./views/vault/view");
       return vaultMatches(vault, await companionPathOf(digest), query);
     },
-    vaultPreview: async (digest, path, content) => {
+    vaultPreview: async (digest, filePath, content) => {
       await companionPathOf(digest);
       const { markdownTree } = await import("./views/vault/markdown-tree");
-      return markdownTree(content, path);
+      return markdownTree(content, filePath);
     },
-    vaultSave: async (digest, path, content, token) => {
+    vaultSave: async (digest, filePath, content, token) => {
       if (!writable) throw new VaultPathError("start Studio with --writable to enable saving");
-      return vault.save(await companionPathOf(digest), path, content, token);
+      return vault.save(await companionPathOf(digest), filePath, content, token);
     },
     graph: async (digest) => {
       const companionPath = await companionPathOf(digest);
@@ -803,6 +794,30 @@ export function createStudioFetch(
         });
       return (await usage).read(companionPath, request);
     },
+    friction: async (digest, { days }) => {
+      const companionPath = await companionPathOf(digest);
+      const { readFrictionView } = await import("../../../lib/friction/view/read");
+      return readFrictionView({ companion: companionPath }, { days, homeDir: deps.homeDir });
+    },
+    frictionRecording: async () => {
+      const { readFrictionSwitch } = await import("../../../runtime/friction-switch");
+      return { recording: readFrictionSwitch(deps.homeDir) };
+    },
+    setFrictionRecording: async (recording) => {
+      const { writeFrictionSwitch } = await import("../../../runtime/friction-switch");
+      writeFrictionSwitch(recording, deps.homeDir);
+      return { recording };
+    },
+    markFriction: async (target, state, { note, link }) => {
+      const { markFriction } = await import("../../../lib/friction/mark");
+      const marked = await markFriction(
+        target,
+        state,
+        { note, link, by: "studio" },
+        { homeDir: deps.homeDir },
+      );
+      return marked.ok ? { ok: true, state: marked.state } : { ok: false, reason: marked.reason };
+    },
     skillPreview: async (digest, agent, name, file) => {
       const { readSkillPreview } = await import("./skill-files");
       return readSkillPreview(await companionPathOf(digest), agent, name, file);
@@ -812,49 +827,35 @@ export function createStudioFetch(
         throw new CompanionRemovalError("start Studio with --writable to delete companions");
       }
       const companionPath = await companionPathOf(digest);
-      const pinned = [launchCompanion, outcomes?.companionPath].filter(
+      const mounted = await ready;
+      const pinned = [launchCompanion, ...mounted.pinnedCompanions()].filter(
         (entry): entry is string => typeof entry === "string" && entry !== "",
       );
       // Real paths, so a symlinked start path still protects its folder.
-      const real = (entry: string) => realpath(entry).catch(() => path.resolve(entry));
-      const target = await real(companionPath);
-      const pinnedReal = await Promise.all(pinned.map(real));
+      const target = await realOrResolved(companionPath);
+      const pinnedReal = await Promise.all(pinned.map((entry) => realOrResolved(entry)));
       if (pinnedReal.includes(target)) {
         throw new CompanionRemovalError(
           "Studio was started for this companion; it is not deleted.",
         );
       }
-      // With the factory, only a folder in its companions directory is deleted.
+      // With a companion source, only a folder in its directory is deleted.
+      const folder = mounted.companions?.folder;
       const { deletedFolder } = await deleteRegisteredCompanion(
         companionPath,
-        broker === null ? {} : { deleteWithin: companionsDir },
+        folder === undefined ? {} : { deleteWithin: folder },
       );
       return { deletedFolder };
     },
-    addRepository: async (digest, input) => {
-      if (!writable)
-        return { ok: false, reason: "start Studio with --writable to add repositories" };
-      if (broker === null)
-        return { ok: false, reason: "adding repositories needs the factory's broker" };
-      const added = await addRepository(await companionPathOf(digest), input, { client: broker });
-      if (added.ok && !added.existing) boardChanged(digest);
-      return added;
-    },
-    removeRepository: async (digest, identity) => {
-      if (!writable)
-        return { ok: false, reason: "start Studio with --writable to remove repositories" };
-      const removed = await removeRepository(await companionPathOf(digest), identity);
-      if (removed.ok) boardChanged(digest);
-      return removed;
-    },
     addCompanion: async (input) => {
       if (!writable) return { ok: false, reason: "start Studio with --writable to add companions" };
-      if (broker === null) {
-        return { ok: false, reason: "adding companions needs the factory's broker" };
+      const source = (await ready).companions;
+      if (source === null) {
+        return { ok: false, reason: "adding companions needs a service that provides them" };
       }
       const added =
         input.kind === "url"
-          ? await addCompanionByUrl(input.url, { client: broker, companionsDir })
+          ? await addCompanionByUrl(input.url, { source })
           : await addCompanionByPath(input.path, {});
       return added.ok
         ? { ok: true, digest: companionDigest(added.companionPath), existing: added.existing }
@@ -920,7 +921,9 @@ export function createStudioFetch(
     const exchanged = exchangeStudioToken(request, access, acceptedOrigin);
     if (exchanged) return exchanged;
 
-    const route = routeOf(url, request.method, app !== null);
+    await ready;
+    const serviceRoute = services.match(url.pathname, request.method);
+    const route = routeOf(url, request.method, app !== null, serviceRoute);
     if (!route.methods.includes(request.method)) {
       return new Response(`${request.method} is not served here`, {
         status: 405,
@@ -941,6 +944,10 @@ export function createStudioFetch(
       return url.pathname === CHAT_SESSION_ROUTE
         ? chatSessionReport(url)
         : chatTurn(request, server);
+    }
+
+    if (url.pathname === STUDIO_PING_ROUTE) {
+      return respond(new Response(null, { status: 204, headers: { "cache-control": "no-store" } }));
     }
 
     if (url.pathname === REPORTS_ROUTE) {
@@ -968,14 +975,32 @@ export function createStudioFetch(
       );
     }
 
-    if (url.pathname === FACTORY_CREDENTIAL_ROUTE) {
-      if (broker === null) return respond(notFound());
-      return respond(await factoryCredentialResponse(broker, request));
+    if (serviceRoute?.access) {
+      const context = {
+        path: serviceRoute.path,
+        url,
+        keepOpen: () => server?.timeout?.(request, 0),
+      };
+      if (serviceRoute.access.kind === "socket") {
+        if (request.headers.get("upgrade")?.toLowerCase() !== "websocket" || !server) {
+          return respond(refused("this route is a WebSocket endpoint", 426));
+        }
+        const handler = serviceRoute.route.socket?.(request, context) ?? null;
+        if (!handler) return respond(refused("the service refused the connection", 403));
+        const service = guardedSocket(handler, (message) =>
+          process.stderr.write(`mate studio: ${message}\n`),
+        );
+        if (server.upgrade(request, { data: { service } })) return undefined;
+        return respond(refused("the connection could not be upgraded", 400));
+      }
+      if (!serviceRoute.route.handle) return respond(notFound());
+      return respond(await serviceRoute.route.handle(request, context));
     }
 
-    if (url.pathname === FACTORY_GIT_TOKENS_ROUTE) {
-      if (broker === null) return respond(notFound());
-      return respond(await factoryGitTokensResponse(broker, request));
+    if (url.pathname.startsWith(SERVICE_ROUTE_PREFIX)) return respond(notFound());
+
+    if (url.pathname.startsWith(SERVICE_ASSET_PREFIX)) {
+      return respond((await services.asset(url.pathname)) ?? notFound());
     }
 
     if (app) {
@@ -1049,20 +1074,8 @@ export function createStudioFetch(
       }
     }
 
-    const logMatch = FACTORY_LOG.exec(url.pathname);
-    if (logMatch) {
-      const id = decodeURIComponent(logMatch[1]!);
-      if (!outcomes || !isWorksetId(id)) return respond(notFound());
-      if (logMatch[2]) return respond(logStream(outcomes, id));
-      return respond(
-        new Response(await outcomes.log(id), {
-          headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
-        }),
-      );
-    }
-
     // Everything else is the application's: its documents, views and server functions.
-    if (app) return respond(await app.fetch(request, { context: { studio: services } }));
+    if (app) return respond(await app.fetch(request, { context: { studio: studioServices } }));
     if (url.pathname === "/") return respond(html(MISSING_BUILD_PAGE));
     return respond(notFound());
   };
@@ -1078,10 +1091,12 @@ export function createStudioFetch(
   };
 
   handler.terminal = terminal;
-  handler.services = services;
+  handler.services = studioServices;
+  handler.ready = ready;
   handler.close = async () => {
     vault.stop();
     await Promise.all([terminal?.stopAll(), chatTurns.stopAll()]);
+    await (await ready).close();
   };
   return handler;
 }
@@ -1109,13 +1124,17 @@ async function selectedCompanion(
   return resolveCompanion(await collectInventory(), digest);
 }
 
+function realOrResolved(entry: string): Promise<string> {
+  return realpath(entry).catch(() => path.resolve(entry));
+}
+
 /** Server-sent events: `subscribe` gets a send function and returns its unsubscribe. */
 function eventStream(
   greeting: string,
   subscribe: (send: (event: unknown) => void) => () => void,
 ): Response {
   const encoder = new TextEncoder();
-  let unsubscribe = () => {};
+  let unsubscribe: (() => void) | undefined;
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(encoder.encode(`: ${greeting}\n\n`));
@@ -1123,12 +1142,12 @@ function eventStream(
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
         } catch {
-          unsubscribe();
+          unsubscribe?.();
         }
       });
     },
     cancel() {
-      unsubscribe();
+      unsubscribe?.();
     },
   });
   return new Response(stream, {
@@ -1137,22 +1156,6 @@ function eventStream(
       "cache-control": "no-cache",
       connection: "keep-alive",
     },
-  });
-}
-
-/**
- * A Workset's run log as it grows: one `replay` (the stored log and the text still
- * streaming), then the live events. Read-only; leaving never touches the run.
- */
-function logStream(live: { watch(id: string): LiveViewer }, id: string): Response {
-  return eventStream("studio factory log", (send) => {
-    const viewer = live.watch(id);
-    void (async () => {
-      send({ type: "replay", ...(await viewer.replay) });
-      // oxlint-disable-next-line no-await-in-loop -- events arrive one at a time, in order
-      for (let event = await viewer.next(); event; event = await viewer.next()) send(event);
-    })().catch(() => viewer.close());
-    return () => viewer.close();
   });
 }
 
@@ -1318,33 +1321,39 @@ export function startStudioServer(
     hostname,
     idleTimeout: options.idleTimeout ?? STUDIO_IDLE_TIMEOUT_SECONDS,
     fetch: fetchHandler,
-    ...(registry
-      ? {
-          websocket: {
-            open(ws) {
-              ws.data.connection = registry.connect({
-                send: (data) => void ws.send(data),
-                bufferedAmount: () => ws.getBufferedAmount(),
-                ping: () => ws.ping(),
-                close: (code, reason) => ws.close(code, reason),
-              });
-            },
-            message(ws, message) {
-              void ws.data.connection?.message(message);
-            },
-            close(ws) {
-              ws.data.connection?.closed();
-            },
-            pong(ws) {
-              ws.data.connection?.pong();
-            },
-            idleTimeout: 0,
-            sendPings: false,
-            backpressureLimit: 2 * 1024 * 1024,
-            maxPayloadLength: 256 * 1024,
-          },
+    websocket: {
+      open(ws) {
+        if (ws.data.service) {
+          ws.data.service.open({
+            send: (data) => void ws.send(data),
+            close: (code, reason) => ws.close(code, reason),
+          });
+          return;
         }
-      : {}),
+        if (!registry) return ws.close(1008, "the terminal is not enabled");
+        ws.data.connection = registry.connect({
+          send: (data) => void ws.send(data),
+          bufferedAmount: () => ws.getBufferedAmount(),
+          ping: () => ws.ping(),
+          close: (code, reason) => ws.close(code, reason),
+        });
+      },
+      message(ws, message) {
+        if (ws.data.service) return ws.data.service.message(message);
+        void ws.data.connection?.message(message);
+      },
+      close(ws) {
+        if (ws.data.service) return ws.data.service.close();
+        ws.data.connection?.closed();
+      },
+      pong(ws) {
+        ws.data.connection?.pong();
+      },
+      idleTimeout: 0,
+      sendPings: false,
+      backpressureLimit: 2 * 1024 * 1024,
+      maxPayloadLength: 256 * 1024,
+    },
   });
   boundPort = server.port;
   const loopback = hostname === STUDIO_HOSTNAME || hostname === "localhost" || hostname === "::1";

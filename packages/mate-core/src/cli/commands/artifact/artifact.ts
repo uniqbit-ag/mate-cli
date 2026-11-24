@@ -2,8 +2,12 @@ import { usage } from "../../usage";
 import { runArtifactApplyContextCommand } from "./apply-context";
 import { runArtifactArchiveCommand } from "./delivery/archive";
 import { runArtifactLinkCommand } from "./delivery/link";
+import { runArtifactResolveCommand } from "./delivery/resolve";
+import { runArtifactSubmitCommand } from "./delivery/submit";
+import { runArtifactTakeCommand } from "./delivery/take";
 import { runArtifactPublishCommand } from "./finish";
 import { runArtifactPendingCommand } from "./pending";
+import { runArtifactProjectCommand } from "./project/command";
 
 /**
  * Pre-rename spelling of `publish`. Kept so companions whose materialized skills were
@@ -36,8 +40,20 @@ export async function runArtifactCommand(
     case "link":
       await runArtifactLinkCommand(argv);
       return;
+    case "submit":
+      await runArtifactSubmitCommand(argv);
+      return;
     case "archive":
       await runArtifactArchiveCommand(argv);
+      return;
+    case "take":
+      await runArtifactTakeCommand(argv);
+      return;
+    case "resolve":
+      await runArtifactResolveCommand(argv);
+      return;
+    case "project":
+      await runArtifactProjectCommand(argv);
       return;
     case "apply-context":
       await runArtifactApplyContextCommand(argv);

@@ -1,0 +1,1 @@
+export const FRICTION_RETENTION_DAYS = 90;

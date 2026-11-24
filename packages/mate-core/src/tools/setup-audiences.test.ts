@@ -9,7 +9,8 @@ import * as hydrateModule from "./setup/dynamic-plugins/hydrate";
 import * as installModule from "./setup/dynamic-plugins/install";
 import { executeSetup } from "./setup";
 
-const installCalls: PluginDeclaration[][] = [];
+/** One entry per workspace install: its companion-relative root and the packages it was given. */
+const installCalls: Array<[workspace: string, packages: string[]]> = [];
 const spies: Array<{ mockRestore: () => void }> = [];
 
 const originalHome = process.env.HOME;
@@ -21,8 +22,12 @@ beforeEach(async () => {
   installCalls.length = 0;
   spies.push(
     spyOn(installModule, "installDeclaredPlugins").mockImplementation(
-      async (_companion: string, declarations: PluginDeclaration[]) => {
-        installCalls.push(declarations);
+      async (workspaceRoot: string, declarations: PluginDeclaration[]) => {
+        // Setup resolves its cwd, so the root is compared from `.mate` on.
+        installCalls.push([
+          workspaceRoot.slice(workspaceRoot.lastIndexOf(`${path.sep}.mate${path.sep}`) + 1),
+          declarations.map((d) => d.package),
+        ]);
         return [];
       },
     ),
@@ -54,16 +59,17 @@ afterEach(async () => {
   else process.env.MATE_AUDIENCE = originalAudience;
 });
 
-test("setup installs base and every audience's plugins whatever the selection", async () => {
+test("setup installs the base plugins, plus the selected audience's in its own workspace", async () => {
   for (const audience of [undefined, "ba"]) {
     if (audience) process.env.MATE_AUDIENCE = audience;
     else delete process.env.MATE_AUDIENCE;
     await executeSetup({}, { cwd: companion });
   }
 
-  expect(installCalls.map((calls) => calls.map((d) => d.package))).toEqual([
-    ["@acme/base", "@acme/analyst"],
-    ["@acme/base", "@acme/analyst"],
+  expect(installCalls).toEqual([
+    [path.join(".mate", "plugins"), ["@acme/base"]],
+    [path.join(".mate", "plugins"), ["@acme/base"]],
+    [path.join(".mate", "plugins", "audiences", "ba"), ["@acme/analyst"]],
   ]);
 });
 

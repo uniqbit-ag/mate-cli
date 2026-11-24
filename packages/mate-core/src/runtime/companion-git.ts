@@ -33,6 +33,42 @@ export function outputLines(stdout: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Blob contents by spec from the output of `git cat-file --batch` fed `specs`, one per line.
+ * Per spec, in order: `<oid> <type> <size>\n<contents>\n`, or `<spec> missing\n`; missing
+ * and non-blob objects are left out. Null when the output is cut off or malformed.
+ */
+export function parseBlobBatch(out: Buffer, specs: readonly string[]): Map<string, string> | null {
+  const blobs = new Map<string, string>();
+  let offset = 0;
+  for (const spec of specs) {
+    const end = out.indexOf(10, offset);
+    if (end < 0) return null;
+    const line = out.subarray(offset, end).toString("utf8");
+    offset = end + 1;
+    // The spec is echoed, spaces and all, so these are read off the end.
+    if (line.endsWith(" missing") || line.endsWith(" ambiguous")) continue;
+    const header = line.split(" ");
+    if (header.length !== 3) continue;
+    const size = Number(header[2]);
+    if (!Number.isInteger(size) || offset + size > out.length) return null;
+    if (header[1] === "blob") blobs.set(spec, out.subarray(offset, offset + size).toString("utf8"));
+    offset += size + 1;
+  }
+  return blobs;
+}
+
+/** Paths of a `-z` listing, unquoted, so a non-ASCII path survives. */
+export function nulPaths(stdout: string): string[] {
+  return stdout.split("\0").filter(Boolean);
+}
+
+/**
+ * Git option that reads pathspecs as plain paths. A change name may hold `*`, `?` or `[`, and
+ * on the inbox it is a teammate's: as a pattern it would match other changes' folders.
+ */
+export const LITERAL_PATHSPECS: readonly string[] = ["--literal-pathspecs"];
+
 /** Matches Git progress-meter lines such as `Updating files:  76% (11340/14790)` or `..., done.` */
 const GIT_PROGRESS_LINE = /^\S.*?: +\d+% \(\d+\/\d+\)(?:, done\.)?$/;
 
@@ -184,10 +220,15 @@ export interface CompanionGitOptions {
 export interface CompanionGit {
   /** Local command, captured. */
   run(args: readonly string[]): Promise<GitResult>;
+  /**
+   * Contents of the blobs `ids` by id, decoded as text, read in one `git cat-file --batch`
+   * however many there are. Ids that name no blob are left out; null when the command fails.
+   */
+  readBlobs(ids: readonly string[]): Promise<Map<string, string> | null>;
   /** `git fetch <args>`, SSH first for HTTP(S) remotes. */
   fetch(args?: readonly string[]): Promise<NetworkGitResult>;
-  /** `git push <args>`, SSH first for HTTP(S) remotes. */
-  push(args?: readonly string[]): Promise<NetworkGitResult>;
+  /** `git <gitOptions> push <args>`, SSH first for HTTP(S) remotes. */
+  push(args?: readonly string[], gitOptions?: readonly string[]): Promise<NetworkGitResult>;
   /** Clones `url` into `destination` (relative to the operation's directory), SSH first for HTTP(S). */
   clone(url: string, destination: string, options?: { branch?: string }): Promise<NetworkGitResult>;
   upstreamTarget(): Promise<UpstreamTarget | null>;
@@ -226,14 +267,15 @@ function spawnGit(
   cwd: string,
   args: readonly string[],
   env: Record<string, string | undefined>,
-  options: { interactive: boolean; timeoutMs?: number },
-): Promise<GitResult> {
+  options: { interactive: boolean; timeoutMs?: number; input?: string },
+): Promise<GitResult & { bytes?: Buffer }> {
   return new Promise((resolve) => {
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
-    const finish = (result: GitResult) => {
+    const piped = options.input !== undefined;
+    const finish = (result: GitResult & { bytes?: Buffer }) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
@@ -246,7 +288,9 @@ function spawnGit(
         cwd,
         env,
         /** Interactive output goes to stderr so a caller's stdout (e.g. `--json`) stays clean. */
-        stdio: options.interactive ? ["inherit", 2, "inherit"] : ["ignore", "pipe", "pipe"],
+        stdio: options.interactive
+          ? ["inherit", 2, "inherit"]
+          : [piped ? "pipe" : "ignore", "pipe", "pipe"],
       });
     } catch (error) {
       finish({ status: 1, stdout: "", stderr: (error as Error).message });
@@ -256,8 +300,18 @@ function spawnGit(
     child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
     child.once("error", (error) => finish({ status: 1, stdout: "", stderr: error.message }));
     child.once("close", (status) =>
-      finish({ status: status ?? 1, stdout: decode(stdout), stderr: decode(stderr) }),
+      finish({
+        status: status ?? 1,
+        // Byte offsets matter to a caller that pipes input; the others read text.
+        ...(piped ? { stdout: "", bytes: Buffer.concat(stdout) } : { stdout: decode(stdout) }),
+        stderr: decode(stderr),
+      }),
     );
+    if (piped) {
+      // A command that exits early closes the pipe; its status reports the failure.
+      child.stdin?.on("error", () => {});
+      child.stdin?.end(options.input);
+    }
     if (options.timeoutMs !== undefined) {
       /** Resolved without awaiting `close`: an SSH grandchild may hold the pipes open. */
       timer = setTimeout(
@@ -313,6 +367,8 @@ export function companionGit(
 ): CompanionGit {
   const baseEnv: Record<string, string | undefined> = {
     ...gitEnvironment(options.env ?? process.env),
+    // Failures are told apart by Git's English messages.
+    LC_ALL: "C",
     ...(options.indexFile ? { GIT_INDEX_FILE: options.indexFile } : {}),
   };
   const mayPrompt = options.prompt === "if-terminal" && deps.isTerminal();
@@ -327,8 +383,12 @@ export function companionGit(
   async function exec(
     args: readonly string[],
     env: Record<string, string | undefined>,
-    { interactive = false, capMs }: { interactive?: boolean; capMs?: number } = {},
-  ): Promise<GitResult> {
+    {
+      interactive = false,
+      capMs,
+      input,
+    }: { interactive?: boolean; capMs?: number; input?: string } = {},
+  ): Promise<GitResult & { bytes?: Buffer }> {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
       return {
@@ -342,10 +402,23 @@ export function companionGit(
     return spawnGit(cwd, args, env, {
       interactive,
       timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : undefined,
+      ...(input === undefined ? {} : { input }),
     });
   }
 
   const run = (args: readonly string[]) => exec(args, capturedEnv, { capMs: options.commandCapMs });
+
+  async function readBlobs(ids: readonly string[]): Promise<Map<string, string> | null> {
+    const blobs = new Map<string, string>();
+    if (ids.length === 0) return blobs;
+    const result = await exec(["cat-file", "--batch"], capturedEnv, {
+      capMs: options.commandCapMs,
+      input: `${ids.join("\n")}\n`,
+    });
+    const out = result.bytes;
+    if (result.status !== 0 || !out) return null;
+    return parseBlobBatch(out, ids);
+  }
 
   /**
    * `never` appends `BatchMode=yes` to the SSH command Git would use anyway
@@ -405,8 +478,9 @@ export function companionGit(
 
   return {
     run,
+    readBlobs,
     fetch: (args = []) => remoteNetwork(["fetch", ...args]),
-    push: (args = []) => remoteNetwork(["push", ...args]),
+    push: (args = [], gitOptions = []) => remoteNetwork([...gitOptions, "push", ...args]),
     async clone(url, destination, { branch } = {}) {
       const cloneArgs = ["clone", ...(branch ? ["--branch", branch] : []), url, destination];
       const ssh = toSshUrl(url);
@@ -432,7 +506,8 @@ export function companionGit(
   };
 }
 
-function parseRemoteRef(stdout: string): UpstreamTarget | undefined {
+/** `remote/branch` as an upstream target; undefined when it has no `/`. */
+export function parseRemoteRef(stdout: string): UpstreamTarget | undefined {
   const ref = stdout.trim();
   const separator = ref.indexOf("/");
   if (separator <= 0 || separator === ref.length - 1) return undefined;

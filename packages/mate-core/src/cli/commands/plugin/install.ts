@@ -6,12 +6,15 @@ import { backfillHubAllowedAgents } from "../../../lib/orchestrator/companion-hu
 import { ConfigStore } from "../../../lib/orchestrator/config-store";
 import type { FrameworkConfig, PluginDeclaration } from "../../../lib/orchestrator/types";
 import { applySetupCompatibilities } from "../../../tools/setup";
-import { hydrateDynamicPlugins } from "../../../tools/setup/dynamic-plugins/hydrate";
 import {
-  installDeclaredPlugins,
-  type PluginInstallDeps,
-} from "../../../tools/setup/dynamic-plugins/install";
-import { reportPluginInstallResults } from "../install";
+  describeUnknownAudience,
+  readAudienceSelection,
+  resolveAudience,
+} from "../../../tools/setup/dynamic-plugins/audiences";
+import { hydrateDynamicPlugins } from "../../../tools/setup/dynamic-plugins/hydrate";
+import type { PluginInstallDeps } from "../../../tools/setup/dynamic-plugins/install";
+import { installPluginWorkspaces } from "../../../tools/setup/dynamic-plugins/workspaces";
+import { reportPluginInstallResults, reportPluginWorkspaces } from "../install";
 
 export function parsePackageSpec(spec: string): { package: string; version: string } {
   const atIndex = spec.startsWith("@") ? spec.indexOf("@", 1) : spec.indexOf("@");
@@ -45,7 +48,8 @@ export interface PluginInstallCommandDeps {
  * @description Declares `<package>` in the companion's (or hub's) `framework.yaml`
  * `plugins:` list (adding it, or updating its version if already declared)
  * and installs it immediately into the shared workspace, the same way
- * `mate install` would on its next run.
+ * `mate install` would on its next run: with the selected audience's
+ * plugins, and without any other audience's.
  */
 export async function runPluginInstallCommand(
   argv: string[],
@@ -78,6 +82,18 @@ export async function runPluginInstallCommand(
     return false;
   }
 
+  // A hub declares no audiences; the selection only applies to a companion.
+  let audience: string | null = null;
+  if (context.kind === "companion") {
+    const resolved = resolveAudience(context.config, readAudienceSelection(process.env));
+    if (!resolved.ok) {
+      process.stderr.write(`${FRAMEWORK_NAME}: ${describeUnknownAudience(resolved)}\n`);
+      process.exitCode = 1;
+      return false;
+    }
+    audience = resolved.active;
+  }
+
   const configPath = path.join(
     context.companionPath,
     `.${FRAMEWORK_NAME}`,
@@ -92,11 +108,11 @@ export async function runPluginInstallCommand(
     await store.save(nextConfig);
   }
 
-  const results = await installDeclaredPlugins(
-    context.companionPath,
-    nextPlugins,
-    deps.installDeps,
-  );
+  const outcome = await installPluginWorkspaces(context.companionPath, nextConfig, audience, {
+    installDeps: deps.installDeps,
+  });
+  const { results } = outcome;
+  reportPluginWorkspaces(outcome);
   reportPluginInstallResults(results);
   await hydrateDynamicPlugins({ companionPath: context.companionPath });
   if (context.kind === "hub") {

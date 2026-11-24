@@ -8,12 +8,12 @@ import {
   type StartupProgressController,
 } from "../../../lib/components/startup-progress";
 import { ConfigStore } from "../../../lib/orchestrator/config-store";
+import { writeEngineFloor } from "../../../lib/orchestrator/engine-floor";
 import {
   refreshWorkingClaudeLinks,
   type LinkRefreshResult,
 } from "../../../lib/orchestrator/refresh-working-claude-links";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
-import { YamlFileStore } from "../../../lib/orchestrator/yaml-file-store";
 import {
   fetchLatestVersion,
   getCurrentVersion,
@@ -56,21 +56,12 @@ function frameworkConfigPath(companionPath: string): string {
   return path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
 }
 
-/**
- * Raw view of `framework.yaml`: `ConfigStore.load()` merges defaults, so saving
- * its result would add keys the companion never declared.
- */
-class RawFrameworkConfigStore extends YamlFileStore<Record<string, unknown>> {
-  protected onMissing(): Promise<Record<string, unknown>> {
-    return Promise.resolve({});
-  }
-}
-
 async function hashTree(absolute: string, hash: crypto.Hash, relative: string): Promise<void> {
   const stat = await fs.lstat(absolute);
   if (stat.isDirectory()) {
     const entries = (await fs.readdir(absolute)).toSorted();
     for (const entry of entries) {
+      // oxlint-disable-next-line no-await-in-loop -- the hash depends on entry order
       await hashTree(path.join(absolute, entry), hash, path.posix.join(relative, entry));
     }
     return;
@@ -134,14 +125,7 @@ export const companionUpdateDeps: CompanionUpdateDeps = {
     return (await syncCompanionFiles(companionPath, config, undefined, options)).managedOutput;
   },
   untrackSkillCopies: untrackManagedSkillCopies,
-  async writeEngineFloor(companionPath, range) {
-    const store = new RawFrameworkConfigStore(frameworkConfigPath(companionPath));
-    const raw = (await store.load()) ?? {};
-    const engines = (raw.engines ?? {}) as Record<string, string>;
-    if (engines[FRAMEWORK_NAME] === range) return false;
-    await store.save({ ...raw, engines: { ...engines, [FRAMEWORK_NAME]: range } });
-    return true;
-  },
+  writeEngineFloor,
   refreshWorkingClaudeLinks,
   hasSkillsLock: (companionPath) =>
     fs
@@ -171,6 +155,7 @@ export async function snapshotChangedPaths(
 ): Promise<Map<string, string>> {
   const before = new Map<string, string>();
   for (const changed of await git.changedPaths()) {
+    // oxlint-disable-next-line no-await-in-loop -- a few paths, in order
     before.set(changed, await companionUpdateDeps.snapshotPath(companionPath, changed));
   }
   return before;

@@ -5,6 +5,7 @@ import {
   GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT,
 } from "./companion-guidance";
 import { getWrapperBinPath } from "../lib/package-paths";
+import { FRICTION_GUIDANCE } from "../runtime/companion-guidance";
 
 describe("buildCompanionGuidance", () => {
   test("carries the secret-handling rule while guardrails are active", () => {
@@ -140,11 +141,27 @@ describe("buildCompanionGuidance", () => {
 
     expect(withOpenspec).toContain('<rule id="openspec-publish" severity="critical">');
     expect(withOpenspec).toContain('mate artifact publish "<name>" --json');
-    expect(withOpenspec).toContain("never hand-commit or hand-tag one");
-    expect(withOpenspec).toContain("archiving is a precondition");
-    expect(withOpenspec).toContain("still-active change is an error");
-    expect(withOpenspec).toContain("never applies delta specs itself");
-    expect(withOpenspec).toContain("refuses to run anywhere but the companion's default branch");
+    expect(withOpenspec).toContain("It creates no tag.");
+    expect(withOpenspec).toContain("Never hand-commit or hand-tag one.");
+    expect(withOpenspec).toContain("submitting is a precondition (mate-submit-change");
+    expect(withOpenspec).toContain(
+      "is not the truth: only publication lands it on the companion's default branch",
+    );
+    expect(withOpenspec).toContain(
+      "mate artifact pending --json lists them with author, touched requirements, ref and path",
+    );
+    expect(withOpenspec).toContain(
+      "read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it",
+    );
+    expect(withOpenspec).toContain('mate artifact take "<name>" brings it into the checkout');
+    expect(withOpenspec).toContain("implement or revise one only when the user names it");
+    expect(withOpenspec).toContain('mate artifact project "<name>" shows the unpublished outcome');
+    expect(withOpenspec).toContain("to the inbox mate/inbox to await its merge");
+    expect(withOpenspec).not.toContain("unpublished and not yours");
+    expect(withOpenspec).not.toContain("mate-archive-change");
+    // The command enforces these itself; the guidance does not repeat them.
+    expect(withOpenspec).not.toContain("still-active change is an error");
+    expect(withOpenspec).not.toContain("refuses to run anywhere but");
 
     const withoutOpenspec = buildCompanionGuidance({
       companionPath: "/tmp/companion",
@@ -274,7 +291,10 @@ describe("buildCompanionGuidance", () => {
     } as never);
 
     expect(guidance).toContain("Agent artifacts MUST go to /tmp/companion");
-    expect(guidance).toContain("Product code (README, docs, source, tests)");
+    expect(guidance).toContain(
+      "NEVER /tmp/working, which holds product code (README, docs, source, tests)",
+    );
+    expect(guidance).not.toContain('id="product-code-location"');
     expect(guidance).not.toContain("*.md");
   });
 
@@ -378,5 +398,37 @@ describe("buildCompanionGuidance", () => {
 
     expect(guidance).toContain("MANDATORY RULES");
     expect(guidance).toContain("NON-NEGOTIABLE");
+  });
+});
+
+describe("the friction section", () => {
+  const context = {
+    companionPath: "/Users/acme/code/companions/acme-companion",
+    repository: { id: "acme", path: "/Users/acme/code/projects/acme.worktrees/acme-feature" },
+    capabilities: ["openspec", "rtk", "graphify", "tokensave"].map((name) => ({ name })),
+  };
+
+  test("has at most 80 words and names the report command with the Invocation Name", () => {
+    expect(FRICTION_GUIDANCE.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(80);
+    expect(FRICTION_GUIDANCE).toContain("`mate friction report");
+  });
+
+  test("follows the companion policy only while recording is on", () => {
+    const on = buildCompanionGuidance(context, { friction: true });
+
+    expect(on.indexOf(FRICTION_GUIDANCE)).toBeGreaterThan(on.indexOf("</companion-policy>"));
+    expect(buildCompanionGuidance(context)).not.toContain("## Friction");
+  });
+
+  test("keeps the guidance with every capability-gated rule under Claude Code's 10,000-character cap", () => {
+    const guidance = buildCompanionGuidance(context, {
+      wrapperBinPath: "/Users/acme/.mate/runtime/wrappers/bin",
+      friction: true,
+    });
+
+    expect(guidance).toContain("openspec-publish");
+    expect(guidance).toContain("entered-worktree-git");
+    expect(guidance).toContain("codebase-exploration-rules");
+    expect(guidance.length).toBeLessThan(10_000);
   });
 });

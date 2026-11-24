@@ -17,7 +17,7 @@ import {
   type DeliveryCheckout,
   type MergeProbeResult,
 } from "./checkout";
-import type { MergeGit, PatchMatch } from "./merge-git";
+import type { Containment, MergeGit, PatchMatch } from "./merge-git";
 import { newBranchBase, resolveDeliveryBranch, worktreeAddArgs } from "./resolve-branch";
 
 const WEB = "acme/web";
@@ -407,27 +407,43 @@ describe("probeMerge", () => {
   const gitWith = (state: {
     onDefault?: boolean;
     firstParent?: boolean;
+    containing?: Containment;
     match?: PatchMatch | null;
   }): MergeGit => ({
     isRepository: async () => true,
+    originUrl: async () => null,
     tip: async () => HEAD,
+    localTip: async () => null,
+    remoteTip: async () => null,
+    dirtyWorktree: async () => null,
+    aheadOf: async () => false,
     hasCommit: async () => true,
     isAncestor: async () => state.onDefault ?? false,
     onFirstParent: async () => state.firstParent ?? false,
     patchMatch: async () => state.match ?? null,
+    supportsContainment: async () => state.containing !== "unknown",
+    contains: async () => null,
+    firstContaining: async () => state.containing ?? "none",
     lastFetchedAt: async () => null,
     fetch: async () => ({ ok: true }),
+    pullRefs: async () => null,
+    fetchPullHead: async () => null,
   });
   const probe = (state: Parameters<typeof gitWith>[0]) =>
     probeMerge(gitWith(state), "main", "workset/acme-api", undefined);
 
-  test("a merge commit reads merged", async () => {
+  test("a merge commit or a default-branch commit containing the head reads merged", async () => {
     expect(await probe({ onDefault: true, firstParent: false })).toBe("merged");
+    expect(await probe({ containing: { commit: "b".repeat(40), committedAt: "t" } })).toBe(
+      "merged",
+    );
   });
 
-  test("a squash or rebase match reads squashed", async () => {
+  test("on Git without containment, a squash or rebase match reads squashed", async () => {
     for (const style of ["squash", "rebase"] as const) {
-      expect(await probe({ match: { commit: HEAD, style } })).toBe("squashed");
+      expect(await probe({ containing: "unknown", match: { commit: HEAD, style } })).toBe(
+        "squashed",
+      );
     }
   });
 

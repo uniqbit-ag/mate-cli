@@ -1,18 +1,16 @@
-import type { OutcomeAction } from "../../../lib/factory/outcomes/actions";
+import type { FrictionView, FrictionViewDays } from "../../../lib/friction/view/model";
+import type { FrictionState, MarkState } from "../../../runtime/friction-vocabulary";
 import type { UsageRequest } from "../../../lib/usage/cache";
 import type { UsageResponse } from "../../../lib/usage/types";
 import type { StudioSpecGraph } from "./graph";
 import type { StoredReport } from "./reports";
-import type { RepositoryAddInput, RepositoryAddResult } from "./repository-add";
+import type { StudioServiceSummary } from "./service-host";
 import type { SkillAgent, SkillPreview } from "./skill-files";
 import type { StudioModePolicy } from "./selection";
 import type { VaultConflict, VaultSaved } from "./vault";
 import type { StudioPage } from "./views/model";
 import type { MdNode } from "./views/vault/markdown-tree";
 import type { VaultEntry, VaultView, VaultViewRequest } from "./views/vault/view";
-
-/** The fields of a submitted factory form; an absent field reads as an empty string. */
-export type StudioFormField = (name: string) => string;
 
 /**
  * What Studio's application may ask of the server it runs in. Core creates one
@@ -22,31 +20,26 @@ export type StudioFormField = (name: string) => string;
 export interface StudioServices {
   /** Whether saves and Workset changes are enabled (`--writable`). */
   readonly writable: boolean;
-  /** Whether the factory broker is reachable, so the Agents panel can be offered. */
-  readonly factoryMode: boolean;
+  /** The plugin services this Studio mounted, with their views. */
+  services(): StudioServiceSummary[];
   /**
-   * Whether removing the companion only unregisters it: in factory mode, Studio deletes only
-   * folders inside the factory's companions directory.
+   * Whether removing the companion only unregisters it: with a service's companion source,
+   * Studio deletes only folders inside that source's folder.
    */
   keepsFolder(companionPath: string): boolean;
   /** The companion's path with links followed, as the chat's sandbox resolves it. */
   physicalPath(companionPath: string): string;
+  /** Whether a mounted service adds companions by Git URL (its `companions` source). */
+  addsCompanions(): boolean;
   /** The startup profile's Studio modes; every page selection is resolved through it. */
   readonly modePolicy: StudioModePolicy;
   /** Everything one view is derived from, for the address that asked for it. */
   page(url: URL): Promise<StudioPage>;
   /**
-   * A board action on one Workset of a registered companion, named by its digest; needs
-   * `writable`. Refused, changing nothing, when the Outcome does not accept it now.
+   * A plugin service's route (`/api/plugins/<id>/…`), called from a server function. The
+   * caller's own guard stands for origin and token; the route's `writable` refusal applies.
    */
-  worksetAction(
-    companionDigest: string,
-    id: string,
-    action: OutcomeAction,
-    field: StudioFormField,
-  ): Promise<void>;
-  /** The outcome input: Start runs it at once, Save for later keeps it unstarted; needs `writable`. */
-  createOutcome(companionDigest: string, field: StudioFormField): Promise<void>;
+  callService(request: Request): Promise<Response>;
   /** The vault page: the bounded tree and the open folder or file. */
   vault(companionDigest: string, request: VaultViewRequest): Promise<VaultView>;
   /** A folder's entries, when first expanded; `null` when the listed tree lacks it. */
@@ -74,6 +67,25 @@ export interface StudioServices {
   reports(companionDigest: string): Promise<StoredReport[]>;
   /** Read-only, explicitly refreshed usage; never collected for unrelated views. */
   usage(companionDigest: string, request: UsageRequest): Promise<UsageResponse>;
+  /** The friction recorded for a registered companion on this machine; read-only. */
+  friction(companionDigest: string, request: { days: FrictionViewDays }): Promise<FrictionView>;
+  /** This machine's Friction Switch alone: reads no Friction Log and writes nothing. */
+  frictionRecording(): Promise<{ recording: boolean }>;
+  /**
+   * Sets this machine's Friction Switch. Needs no `writable`: it writes only the switch's
+   * settings file, never a companion, repository, registry or log.
+   */
+  setFrictionRecording(recording: boolean): Promise<{ recording: boolean }>;
+  /**
+   * Sets or, with `open`, clears a fingerprint's or Free Report's Friction State, as
+   * `mate friction mark` does, by `studio`. Needs no `writable`: it writes only the state file.
+   * A refusal is an answer, not an error.
+   */
+  markFriction(
+    target: string,
+    state: MarkState,
+    input: { note?: string; link?: string },
+  ): Promise<FrictionMarkResult>;
   /** One installed skill's files and one of them rendered (SKILL.md by default); read-only. */
   skillPreview(
     companionDigest: string,
@@ -88,27 +100,18 @@ export interface StudioServices {
    */
   deleteCompanion(companionDigest: string): Promise<{ deletedFolder: boolean }>;
   /**
-   * Adds a companion to Studio's registry, by Git URL (the factory clones it) or by the absolute
-   * path of a folder Studio can read (registered in place). Needs `writable` and factory mode.
+   * Adds a companion to Studio's registry, by Git URL (a service's companion source fetches it)
+   * or by the absolute path of a folder Studio can read (registered in place). Needs `writable`
+   * and a service's companion source.
    * A refusal is an answer, not an error; `tokenKey` names the Git token that would unlock a
    * private URL.
    */
   addCompanion(input: CompanionAddInput): Promise<CompanionAddResult>;
-  /** Adds a Working Repository to the companion's list; see {@link RepositoryAddInput}. */
-  addRepository(companionDigest: string, input: RepositoryAddInput): Promise<RepositoryAddResult>;
-  /** Removes an entry of the companion's list; a linked or configured repository is not one. */
-  removeRepository(
-    companionDigest: string,
-    identity: string,
-  ): Promise<{ ok: true } | { ok: false; reason: string }>;
 }
 
-/**
- * Adds a Working Repository to a companion's `factory.local.yaml`, by Git URL or from a local
- * checkout's `origin`, after the factory checked the remote answers. Needs `writable` and factory
- * mode; a refusal is an answer, and `tokenKey` names the Git token that would unlock a private one.
- */
-export type { RepositoryAddInput, RepositoryAddResult };
+export type FrictionMarkResult =
+  | { ok: true; state: FrictionState | null }
+  | { ok: false; reason: string };
 
 export type CompanionAddInput = { kind: "url"; url: string } | { kind: "path"; path: string };
 

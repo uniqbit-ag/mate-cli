@@ -268,7 +268,8 @@ describe("createOpenspecPlugin", () => {
         "mate-explore-change": "CONTEXT-MAP.md",
         "mate-propose-change": "mate-minimal",
         "mate-apply-change": "mate artifact link",
-        "mate-archive-change": "mate artifact archive",
+        "mate-submit-change": "mate artifact submit",
+        "mate-archive-change": "mate-submit-change",
         "mate-interview-me": "one-question-at-a-time",
         "mate-grill-me": "mate-grilling",
         "mate-grilling": "design tree",
@@ -311,16 +312,16 @@ describe("createOpenspecPlugin", () => {
       }
     }
 
-    // Every runtime confirms the commit + tag + push before the first finish
+    // Every runtime announces the merge + push before the first publish
     // call and keeps the deterministic CLI as the publication primitive.
     for (const runtimeDir of [".claude", ".agents"]) {
       const publishSkill = await fs.readFile(
         path.join(root, runtimeDir, "skills", "mate-publish-artifact", "SKILL.md"),
         "utf8",
       );
-      expect(publishSkill).toContain("commit, tag, and push");
+      expect(publishSkill).toContain("commits to and pushes");
       expect(publishSkill).toContain("Present both sections as Markdown tables");
-      expect(publishSkill).toContain('artifact publish "<anchor-or-name>" --json');
+      expect(publishSkill).toContain("artifact publish '<group-or-anchor>' --json");
       expect(publishSkill).toContain("artifact publish --specs");
       expect(publishSkill).toContain("artifact publish --all --json");
       await expect(
@@ -491,6 +492,7 @@ describe("createOpenspecPlugin", () => {
       "mate-explore-change",
       "mate-propose-change",
       "mate-apply-change",
+      "mate-submit-change",
       "mate-archive-change",
       "mate-interview-me",
       "mate-grill-me",
@@ -586,7 +588,7 @@ describe("createOpenspecPlugin", () => {
     ).rejects.toThrow();
   });
 
-  test("seeds mate-v1 schema files and activates mate-v1 in config", async () => {
+  test("seeds mate-full schema files and activates mate-full in config", async () => {
     const root = await makeTempDir("mate-openspec-schema-seed-");
     const runOpenSpec = mock(async () => OPENSPEC_OK);
     const plugin = createOpenspecPlugin({ runOpenSpec });
@@ -595,32 +597,82 @@ describe("createOpenspecPlugin", () => {
 
     expect(
       parseYaml(await fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")),
-    ).toEqual({ schema: "mate-v1", rules: { specs: [MATE_SPECS_RULE] } });
-    await expect(
-      fs.access(path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml")),
-    ).resolves.toBeNull();
+    ).toEqual({ schema: "mate-full", rules: { specs: [MATE_SPECS_RULE] } });
 
     const schema = await fs.readFile(
-      path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml"),
+      path.join(root, "openspec", "schemas", "mate-full", "schema.yaml"),
       "utf8",
     );
-    expect(schema).toContain("version: 11");
+    expect(schema).toContain("name: mate-full");
+    expect(schema).toContain("version: 12");
     expect(schema).toContain("openspec/mate-conventions.yaml");
     expect(schema).toContain("id: proposal");
     await expect(
-      fs.access(path.join(root, "openspec", "schemas", "mate-v1", "templates", "proposal.md")),
+      fs.access(path.join(root, "openspec", "schemas", "mate-full", "templates", "proposal.md")),
     ).resolves.toBeNull();
     expect(schema).not.toContain("id: explore");
     expect(schema).not.toContain("explore-brief.md");
-    await expect(
-      fs.access(path.join(root, "openspec", "schemas", "mate-v1", "templates", "explore-brief.md")),
-    ).rejects.toThrow();
+    for (const name of ["mate-full", "mate-v1"]) {
+      await expect(
+        fs.access(path.join(root, "openspec", "schemas", name, "templates", "explore-brief.md")),
+      ).rejects.toThrow();
+    }
     await expect(
       fs.readFile(path.join(root, "openspec", "mate-conventions.yaml"), "utf8"),
     ).resolves.toContain("name: mate-openspec-conventions");
   });
 
-  test("seeds mate-minimal while mate-v1 stays the companion default", async () => {
+  test("seeds the mate-v1 alias, which differs from mate-full only in its name", async () => {
+    const root = await makeTempDir("mate-openspec-schema-alias-");
+    const plugin = createOpenspecPlugin(openspecAvailable);
+
+    await plugin.apply(makeCtx(root, ["claude"]));
+
+    const schemasDir = path.join(root, "openspec", "schemas");
+    const read = (name: string, file: string) =>
+      fs.readFile(path.join(schemasDir, name, file), "utf8");
+    const full = parseYaml(await read("mate-full", "schema.yaml")) as Record<string, unknown>;
+    const alias = parseYaml(await read("mate-v1", "schema.yaml")) as Record<string, unknown>;
+    expect(alias.name).toBe("mate-v1");
+    expect(alias.version).toBe(full.version);
+    expect(alias.description).toBe(`Earlier name of mate-full - ${String(full.description)}`);
+    expect(
+      JSON.stringify({ ...alias, name: "", description: "" }).replaceAll("mate-v1", "mate-full"),
+    ).toBe(JSON.stringify({ ...full, name: "", description: "" }));
+
+    const templates = await fs.readdir(path.join(schemasDir, "mate-full", "templates"));
+    expect(await fs.readdir(path.join(schemasDir, "mate-v1", "templates"))).toEqual(templates);
+    for (const template of templates) {
+      const fullText = await read("mate-full", path.join("templates", template));
+      const aliasText = await read("mate-v1", path.join("templates", template));
+      expect(aliasText).toBe(fullText.replaceAll("mate-full", "mate-v1"));
+    }
+    await expect(read("mate-v1", path.join("templates", "proposal.md"))).resolves.toContain(
+      "schema: mate-v1",
+    );
+    // Only the name is renamed; instruction prose naming mate-full stays.
+    await expect(read("mate-v1", "schema.yaml")).resolves.toContain("Every mate-full change");
+  });
+
+  test("an existing mate-v1 config is kept byte-for-byte while the trees refresh", async () => {
+    const root = await makeTempDir("mate-openspec-schema-keep-v1-");
+    const plugin = createOpenspecPlugin(openspecAvailable);
+    await fs.mkdir(path.join(root, "openspec"), { recursive: true });
+    const configPath = path.join(root, "openspec", "config.yaml");
+    const existing = `schema: mate-v1\nrules:\n  specs:\n    - "${MATE_SPECS_RULE}"\n`;
+    await fs.writeFile(configPath, existing, "utf8");
+
+    await plugin.apply(makeCtx(root, ["claude"]));
+
+    await expect(fs.readFile(configPath, "utf8")).resolves.toBe(existing);
+    for (const name of ["mate-full", "mate-v1", "mate-minimal"]) {
+      await expect(
+        fs.access(path.join(root, "openspec", "schemas", name, "schema.yaml")),
+      ).resolves.toBeNull();
+    }
+  });
+
+  test("seeds mate-minimal while mate-full stays the companion default", async () => {
     const root = await makeTempDir("mate-openspec-minimal-schema-seed-");
     const plugin = createOpenspecPlugin(openspecAvailable);
 
@@ -643,7 +695,7 @@ describe("createOpenspecPlugin", () => {
     });
     expect(
       parseYaml(await fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")),
-    ).toMatchObject({ schema: "mate-v1" });
+    ).toMatchObject({ schema: "mate-full" });
   });
 
   test("mate-minimal templates carry parser-compatible user-story rules", async () => {
@@ -691,7 +743,7 @@ describe("createOpenspecPlugin", () => {
     await plugin.apply(makeCtx(root, ["claude"]));
 
     expect(parseYaml(await fs.readFile(configPath, "utf8"))).toEqual({
-      schema: "mate-v1",
+      schema: "mate-full",
       rules: { specs: [MATE_SPECS_RULE] },
     });
     await expect(
@@ -780,7 +832,7 @@ describe("createOpenspecPlugin", () => {
     });
   });
 
-  test("activates mate-v1 over the default schema a fresh `openspec init` writes", async () => {
+  test("activates mate-full over the default schema a fresh `openspec init` writes", async () => {
     const root = await makeTempDir("mate-openspec-schema-after-init-");
     // The bundled CLI writes `schema: spec-driven` plus commented guidance.
     const location = locateOpenSpec();
@@ -798,7 +850,7 @@ describe("createOpenspecPlugin", () => {
 
     const activated = await fs.readFile(configPath, "utf8");
     expect(parseYaml(activated)).toEqual({
-      schema: "mate-v1",
+      schema: "mate-full",
       rules: { specs: [MATE_SPECS_RULE] },
     });
     // OpenSpec's commented guidance stays.
@@ -874,7 +926,7 @@ describe("createOpenspecPlugin", () => {
 
     expect(
       parseYaml(await fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")),
-    ).toEqual({ schema: "mate-v1", rules: { specs: [MATE_SPECS_RULE] } });
+    ).toEqual({ schema: "mate-full", rules: { specs: [MATE_SPECS_RULE] } });
   });
 
   test("activation keeps user keys and a user-chosen schema while replacing the Mate entry", async () => {
@@ -976,29 +1028,34 @@ describe("createOpenspecPlugin", () => {
     await expect(fs.readFile(thirdParty, "utf8")).resolves.toBe("acme\n");
   });
 
-  test("capability teardown removes managed mate-v1 schema state", async () => {
-    const root = await makeTempDir("mate-openspec-schema-teardown-");
-    const plugin = createOpenspecPlugin(openspecAvailable);
-    await fs.mkdir(path.join(root, "openspec", "schemas", "mate-v1"), { recursive: true });
-    await fs.writeFile(
-      path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml"),
-      "name: mate-v1\n",
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(root, "openspec", "config.yaml"),
-      `schema: mate-v1\nrules:\n  specs:\n    - "${MATE_SPECS_RULE_MARKER}old"\n`,
-      "utf8",
-    );
+  test("capability teardown removes managed schema state under either default name", async () => {
+    for (const schema of ["mate-full", "mate-v1"]) {
+      const root = await makeTempDir("mate-openspec-schema-teardown-");
+      const plugin = createOpenspecPlugin(openspecAvailable);
+      for (const name of ["mate-full", "mate-v1", "mate-minimal"]) {
+        await fs.mkdir(path.join(root, "openspec", "schemas", name), { recursive: true });
+        await fs.writeFile(
+          path.join(root, "openspec", "schemas", name, "schema.yaml"),
+          `name: ${name}\n`,
+          "utf8",
+        );
+      }
+      await fs.writeFile(
+        path.join(root, "openspec", "config.yaml"),
+        `schema: ${schema}\nrules:\n  specs:\n    - "${MATE_SPECS_RULE_MARKER}old"\n`,
+        "utf8",
+      );
 
-    await plugin.teardown(makeCtx(root, []));
+      await plugin.teardown(makeCtx(root, []));
 
-    await expect(fs.access(path.join(root, "openspec", "config.yaml"))).rejects.toThrow();
-    await expect(fs.access(path.join(root, "openspec", "schemas", "mate-v1"))).rejects.toThrow();
-    await expect(
-      fs.access(path.join(root, "openspec", "schemas", "mate-minimal")),
-    ).rejects.toThrow();
-    await expect(fs.access(path.join(root, "openspec", "mate-conventions.yaml"))).rejects.toThrow();
+      await expect(fs.access(path.join(root, "openspec", "config.yaml"))).rejects.toThrow();
+      for (const name of ["mate-full", "mate-v1", "mate-minimal"]) {
+        await expect(fs.access(path.join(root, "openspec", "schemas", name))).rejects.toThrow();
+      }
+      await expect(
+        fs.access(path.join(root, "openspec", "mate-conventions.yaml")),
+      ).rejects.toThrow();
+    }
   });
 });
 

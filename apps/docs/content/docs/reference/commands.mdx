@@ -9,7 +9,7 @@ description: Current Mate CLI commands and their execution contexts.
 | ------------------------------------------ | ----------------------- | -------------------------------------------------------------------------- |
 | `mate companion setup`                     | Companion root          | Create or reconfigure a companion explicitly.                              |
 | `mate companion link`                      | Working repository, TTY | Select or clone a companion, write the link, and install its requirements. |
-| `mate companion list [--json]`             | Linked context          | List linked repositories.                                                  |
+| `mate companion list [--json]`             | Linked context          | List the connected companions; in a companion root, the linked repos.      |
 | `mate companion open [--no-open] [--json]` | Linked context          | Prepare the repository's editor workspace; open it unless `--no-open`.     |
 | `mate companion tui`                       | Linked context, TTY     | Open a shell in the resolved companion.                                    |
 | `mate companion sync`                      | Linked context          | Sync the companion with its Git upstream, interactively at a terminal.     |
@@ -24,6 +24,28 @@ installation confirmation are interactive. The default workflow is:
 mate install
 mate companion link
 mate opencode
+```
+
+`mate companion list` answers by location. In a working repository it lists the
+companions the repository is connected to and marks the one Mate uses with `*`.
+In a companion root it lists the working repositories linked to that companion.
+It never changes a link. With `--json`, or when stdout is not a terminal, it
+prints one object, from a working repository:
+
+```json
+{
+  "workingRepository": { "id": "acme", "path": "/work/acme" },
+  "companions": [{ "path": "/work/acme-companion", "repositoryId": "acme", "active": true }]
+}
+```
+
+and from a companion root:
+
+```json
+{
+  "companionPath": "/work/acme-companion",
+  "repositories": [{ "id": "acme", "path": "/work/acme" }]
+}
 ```
 
 `mate companion open --no-open --json` creates or updates the managed workspace
@@ -185,23 +207,28 @@ runtimes, so a plain `claude` or `opencode` session started there gets the
 artifact guardrail, hooks, skills, and MCP servers; `git status` stays clean in
 both checkouts. A failed wrap keeps the worktree and exits non-zero, unless the
 worktree is reused and still wrapped from an earlier run; then it only warns. Each
-worktree then gets the install step of its first lockfile: `bun install`,
+worktree then gets the ignored files its main checkout's include files name,
+before the install step: `.worktreeinclude` and, while Git ignores it,
+`.worktreeinclude.local`, both in gitignore syntax. Mate's managed Git excludes
+ignore a root `.worktreeinclude.local`. Files that already exist in
+the worktree are kept, and a failed copy keeps the worktree and exits non-zero;
+see [Worktrees](/docs/concepts/worktrees#include-files). Then comes the install step of its first lockfile: `bun install`,
 `pnpm install`, `yarn install`, or `npm ci`. `--no-install` skips the install.
 A failed install keeps the worktree and exits non-zero. When the main checkout
 holds a TokenSave index and `tokensave` is on your `PATH`, the worktree gets its
 own index: `tokensave init` with the main checkout's CPU profile for a new
 worktree, `tokensave sync` for a reused one that already has one. This runs
 also with `--no-install`. A failed index step keeps the worktree and only warns.
-Env files are never
+Other env files are never
 read, copied, or linked: the command names the ignored `.env` and `.env.*`
-files of the main checkout that the worktree lacks, by path only, so you can
+files of the main checkout that the worktree still lacks, by path only, so you can
 provide them yourself. Example files such as `.env.example` are not named.
 
 In an umbrella's mirrored worktree, the folder gets the link and the wrap
 instead of its children: a repo-local link under the umbrella's repository ID,
 never the companion's registry, and a wrap for the runtimes the umbrella is
 wrapped for. The child worktrees get no `.mate/` folder, so `git status` stays
-clean in them and in the umbrella's children. Install, env files, and the
+clean in them and in the umbrella's children. Include files, install, env files, and the
 TokenSave index still run per child worktree. When the umbrella holds a
 TokenSave index, the mirrored folder gets its own index too, by the same rules.
 When the umbrella has none, that step is skipped with the reason
@@ -212,7 +239,9 @@ with several, pass `--companion <path>`. `--json` prints one object with each
 repository's path, branch, `created` or `reused`, the wrapped runtimes and the
 install command with their outcomes (`ok`, `failed`, or `skipped`), the
 TokenSave `index` step with its outcome and, when skipped or failed, its
-`reason`, and the missing env paths. With `--enter` it adds an `enter` field: `runtime`
+`reason`, the `include` step with its `sources` (the include files used),
+`copied` paths, and `failed` paths each with a `reason`, and the missing env
+paths. With `--enter` it adds an `enter` field: `runtime`
 (`claude`, `opencode`, or `unknown`), `action`, either `tool` with the `tool`
 to call or `handoff` with a `reason`, and the current repository's worktree
 `path` when it has one. When the companion selects RTK, Claude's `tool` also
@@ -236,7 +265,8 @@ it, and exits 0 either way. Before removing a worktree it removes the
 worktree's wrap, including the Claude local-scope MCP entries kept for its
 path; when that fails, it keeps the worktree and names the reason. A locked
 worktree is kept as is. A worktree Git refuses to remove is kept and wrapped
-again. It never
+again. A change of a Done Workset with no Delivery Record in the companion is
+named in a warning. It never
 deletes the branch. It takes `--companion <path>` and `--json` as well.
 
 After the child worktrees of an umbrella's mirrored worktree are handled, prune
@@ -256,11 +286,12 @@ companion.
 
 ## Installation And Health
 
-| Command                  | Purpose                                                                            |
-| ------------------------ | ---------------------------------------------------------------------------------- |
-| `mate install [--yes]`   | Install and verify core requirements or refresh the active companion requirements. |
-| `mate doctor`            | Show context, policy, selected capabilities, and tool status.                      |
-| `mate config [--vscode]` | Open the global `~/.mate` configuration directory.                                 |
+| Command                                                  | Purpose                                                                            |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `mate install [--yes]`                                   | Install and verify core requirements or refresh the active companion requirements. |
+| `mate doctor`                                            | Show context, policy, selected capabilities, and tool status.                      |
+| `mate config [--vscode]`                                 | Open the global `~/.mate` configuration directory.                                 |
+| `mate triage [--agent <claude\|opencode>] [--no-launch]` | Hand a Mate problem to your coding agent in a triage session.                      |
 
 `mate install --yes` skips interactive confirmation and is required when the
 process has no TTY. It can run before a companion is linked; in that context it
@@ -269,8 +300,35 @@ companion only recommends (RTK, TokenSave, Graphify, Context Mode): add
 `--with <capability>` to install one, or `--without <capability>` to decline
 it. Both flags repeat, and Mate remembers the choice per companion.
 
+In a companion that declares [audiences](/docs/reference/deployment#serving-one-audience-of-a-companion),
+`mate install` installs the base plugins plus those of the audience
+`MATE_AUDIENCE` selects, and removes the installed plugins of every other
+audience. With `MATE_AUDIENCE` unset it installs no audience plugin.
+
 For OpenSpec, `mate doctor` reports the CLI bundled with Mate, with its path
 and version, instead of looking for `openspec` on `PATH`.
+
+While [friction recording](/docs/concepts/friction) is on, `mate doctor` shows
+a Friction section: the events of open fingerprints recorded for the
+companion in the last seven days and the most frequent open fingerprint with its
+count. A fingerprint marked `fixed`, `reported` or `dismissed` is left out until
+it is reopened; see [Friction States](/docs/concepts/friction#friction-states).
+`--json` carries it as `friction`, with `days`, `events` and `top`
+(`null` without events). An unreadable log or state file counts as no events or
+no states. While
+recording is off, doctor shows no Friction section, the JSON has no `friction`
+field, and doctor reads no log.
+With one or more events, the human-readable section names `mate triage` as the
+next action.
+
+`mate triage` writes a triage session at `~/.mate/triage/<UTC time>/` with
+`context.md` (machine facts and the doctor report), the shipped `PLAYBOOK.md`,
+`prompt.md`, and the friction of the last 30 days, then starts Claude Code or
+OpenCode in it directly, not through a Mate launch. It runs before every gate,
+so it works when the installation, an update or the companion blocks other
+commands. `--agent` picks the agent when both are installed; `--no-launch` only
+prints the session paths. It ends with the agent's exit code. See
+[Triage a Mate Problem](/docs/scenarios/triage-a-mate-problem).
 
 ### Progress Output
 
@@ -375,7 +433,7 @@ Once that workspace is open, the Mate sidebar shows:
   that worktree.
 - **Open changes**: the active changes of the linked Companion Repository with
   their task progress.
-- **Ready to archive**: the active changes whose tasks are all checked, with
+- **Ready to submit**: the active changes whose tasks are all checked, with
   their Workset. They are no longer listed under Open changes.
 - **Ready to publish**: the archived changes `mate artifact pending` reports,
   marked when they still wait for their merge.
@@ -753,7 +811,10 @@ mate session context --repo <dir> [--json]
 
 Prints the companion and the secret policy that Mate resolves for a folder of a
 wrapped Working Repository. A Claude plugin in a plain `claude` session asks this,
-because such a session has no `MATE_*` launch environment. The folder can be the
+because such a session has no Mate launch environment. A session counts as a Mate
+launch only when `MATE_ARTIFACT_PATH` is set. Other `MATE_*` variables that you set
+in the Agent Runtime's settings, such as `MATE_REACT_DOCTOR_BIN_PATH`, leave it a
+plain session. The folder can be the
 repository root or any folder below it. A relative `--repo` resolves against the
 current folder, and a link before a `..` is followed first, as the system does:
 with `forward` a link to `/x/sub`, `--repo /x/d/forward/../acme-app` asks about
@@ -811,6 +872,9 @@ repository.
 | `mate cap index --graphify`                | Refresh only Graphify.                          |
 | `mate cap index --tokensave`               | Refresh only TokenSave.                         |
 
+`mate cap <namespace> --help`, or `-h`, lists the commands of a namespace a
+plugin provides and exits 0.
+
 The two index flags cannot be combined. When both Graphify and TokenSave are
 enabled, the default index flow refreshes TokenSave and then refreshes Graphify
 against the resulting state.
@@ -821,6 +885,140 @@ the repository's `.graphifyignore` and passes the secret patterns as
 `--exclude`. Afterwards it removes any secret that still reached the output and
 keeps the rest of the graph. A secret never stops the run. See
 [Secret Guardrails](/docs/concepts/secret-guardrails).
+
+## Friction
+
+| Command                                                        | Purpose                                              |
+| -------------------------------------------------------------- | ---------------------------------------------------- |
+| `mate friction on`                                             | Turn friction recording on for this machine.         |
+| `mate friction off`                                            | Turn friction recording off; the records stay.       |
+| `mate friction status [--json]`                                | Say whether recording is on, and where the log is.   |
+| `mate friction list [--days N] [--all] [--state <s>] [--json]` | List recorded friction, grouped by fingerprint.      |
+| `mate friction report [<event-id>] ...`                        | Record what an agent expected.                       |
+| `mate friction mark <fingerprint\|report-id> --state <s> ...`  | Record that a fingerprint or Free Report is handled. |
+
+See [Friction](/docs/concepts/friction) for what Mate records and where. For
+people, Studio's **Friction** view lists the same records and turns recording on
+or off; see [Friction in Studio](/docs/concepts/friction#in-studio).
+
+`mate friction on` and `mate friction off` set the machine's Friction Switch,
+print the new state in one line and exit 0, also when the state does not
+change. `mate friction off` names the folder that keeps the records. Both
+refuse inside an agent session, exit 1 and change nothing. They,
+`mate friction status` and `mate friction mark` run in any folder, without a linked companion or a
+complete installation. `mate friction report` needs a linked companion, but it
+also runs while an update is required or the installation is incomplete, so the
+command a nudge names is not blocked by the failure it reports.
+
+`mate friction status` prints whether recording is on and the log folder. With
+`--json` it prints one document with `kind` `friction-status`, `version` 1, a
+boolean `recording` and the folder as `logDir`. It runs inside an agent session
+too.
+
+`mate friction list` reads the events of the last `N` days, default 30 and at
+most 90 (the time the log keeps a record), recorded for
+the resolved companion, and groups them by fingerprint. A fingerprint is
+`refusal:<check>:<tool kind>` or `command:<command> <subcommand>:<exit code>`.
+For each group it shows the fingerprint with a plain sentence for it, the event count, the number of sessions, the highest
+count in one session, the first and last time seen, the Mate versions, the paths
+its refusals named and the flags its failed commands carried, and the number of
+reports on its events with the latest `expected` text. Groups with the most repeats in one
+session come first, then those with the most events. Free reports of the
+companion follow in their own section, newest first, each with its id.
+`--state <open|handled|all>`, default `open`, chooses what is listed by
+[Friction State](/docs/concepts/friction#friction-states): `open` lists unmarked
+and reopened items, `handled` lists `fixed`, `reported` and `dismissed` items
+that are not reopened, and `all` lists both. The event and session totals count
+the whole period whatever the filter. When the filter hides items, the output
+says how many and names `--state all`; when records exist but none passes, it
+says so and exits 0. Each listed item with a Friction State shows its state, who
+set it and when, its note or link, and for a group whether it is reopened or how
+many events arrived since it was reported. When it lists anything,
+the output ends with a line that names
+[`mate triage`](/docs/scenarios/triage-a-mate-problem), to run in your own
+terminal inside the affected repository. With `--json` it prints
+one document with `kind` `friction-list` and `version` 1, the applied `state`,
+the number of `hidden` items and `recording`; each group carries its `reports`,
+its sentence as `title` and its `subjectType`, and the document carries
+`freeReports`, each with the `subjectType` its subject names or `null`. Each group and Free Report carries `state`:
+`null` when unmarked, otherwise `state`, `at`, `by`, `note` and `link`, and for a
+group also `reopened` and `eventsSince`. Each also carries `open`. It writes nothing to the
+log. With `--all` it lists the friction of every companion on this machine,
+including companions no repository resolves to any more: each group names its
+companions with their event counts, and the JSON `companion` is `null`. Without
+`--all`, in a folder that resolves no companion, it lists nothing and exits 1
+with a message that names `--all` and the affected repository; with `--json` it
+prints `kind` `error` with the code `no-companion`. With `--json`, a bad argument
+exits 1 and prints `kind` `error` with the code `usage`; when a required update,
+companion selection or an incomplete installation blocks the command, it prints
+`kind` `error` with the code `PREFLIGHT_FAILED`. While
+recording is off, the list still shows what was recorded, after a first line
+that says recording is off and names `mate friction on`; the `--json` document
+changes only in `recording`.
+
+`mate friction report` records one Friction Report and prints its id. While
+recording is off, it records nothing and exits 1:
+
+| Flag                                 | Meaning                                                                                               |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `<event-id>`                         | The Friction Event the report is about. Optional; without it, the report is a free report.            |
+| `--kind <bug\|unclear\|missing>`     | Required. Mate was wrong, its message did not help, or something needed does not exist.               |
+| `--expected <text>`                  | Required. What the agent expected.                                                                    |
+| `--cost <blocker\|detour\|papercut>` | Optional. What the friction cost.                                                                     |
+| `--subject <type>[:<name>]`          | Required for a free report. `type` is `command`, `hook`, `skill`, `guidance`, `capability` or `docs`. |
+| `--evidence <text>`                  | Required for a free report: what the agent saw.                                                       |
+| `--workaround <text>`                | Optional. What the agent did instead.                                                                 |
+| `--json`                             | Print one JSON document.                                                                              |
+
+A report on an event takes its subject from the event; a `--subject` given
+with an event id is ignored. Each text is cut to
+1,000 characters. The report records the agent session's id and runtime, or
+null outside a session. With `--json` it prints `kind` `friction-report`,
+`version` 1, `id` and `eventId`. A refusal exits 1 and records nothing; with
+`--json` it prints `kind` `error` with one of these codes:
+
+| Code                                                     | Cause                                                                          |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `missing-kind`, `invalid-kind`                           | `--kind` is missing or not one of the three values.                            |
+| `missing-expected`, `invalid-cost`                       | `--expected` is missing, or `--cost` has an unknown value.                     |
+| `event-not-found`                                        | No event in the log has that id.                                               |
+| `missing-subject`, `invalid-subject`, `missing-evidence` | A free report lacks its subject or evidence, or names an unknown subject type. |
+| `secret`, `scan-failed`                                  | The text holds a secret, or it could not be scanned. The text is not printed.  |
+| `no-companion`                                           | A free report was made in a folder that resolves no companion.                 |
+| `recording-off`                                          | Friction recording is off on this machine.                                     |
+| `usage`, `write-failed`                                  | An argument is unknown, or the log cannot be written.                          |
+
+`mate friction mark` sets the [Friction State](/docs/concepts/friction#friction-states)
+of one fingerprint or one Free Report, replacing an earlier one, and prints the
+target and its new state. It changes no record in the Friction Log.
+
+| Flag                                         | Meaning                                                                          |
+| -------------------------------------------- | -------------------------------------------------------------------------------- |
+| `<fingerprint\|report-id>`                   | Required. A fingerprint as `mate friction list` shows it, or a Free Report's id. |
+| `--state <open\|fixed\|reported\|dismissed>` | Required. `open` removes the Friction State.                                     |
+| `--note <text>`                              | Optional. Why, such as what was fixed or why it is no Mate problem.              |
+| `--link <url>`                               | Optional, only with `--state reported`. The `http` or `https` issue URL.         |
+| `--json`                                     | Print one JSON document.                                                         |
+
+Note and link are cut to 1,000 characters and refused when they hold a secret.
+You run `mark` in your own terminal and it records `by` `person`. An agent may
+run it only from the session folder of the running
+[`mate triage`](/docs/scenarios/triage-a-mate-problem) that started it, where it
+records `by` `triage`; anywhere else it refuses, so an agent cannot hide the
+friction it causes. With `--json` it prints `kind`
+`friction-state`, `version` 1, the `target`, and the new `state` with its fields,
+or `null` after `--state open`. A refusal exits 1 and changes nothing; with
+`--json` it prints `kind` `error` with one of these codes:
+
+| Code                                  | Cause                                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `usage`, `invalid-state`              | The target or `--state` is missing, an argument is unknown, or the state is not one of the four. |
+| `unknown-target`                      | No event has that fingerprint and no Friction State names it, and no Free Report has that id.    |
+| `report-on-event`                     | The id is a report on an event; it follows its fingerprint, which the message names.             |
+| `link-needs-reported`, `invalid-link` | `--link` was given without `--state reported`, or is no `http` or `https` URL.                   |
+| `secret`, `scan-failed`               | The note or link holds a secret, or could not be scanned. The text is not printed.               |
+| `agent-session`                       | An agent ran it outside the session folder of the `mate triage` that started it.                 |
+| `state-file-damaged`, `write-failed`  | The state file is malformed and was kept unchanged, or it could not be written.                  |
 
 ## Usage And Reports
 
@@ -915,45 +1113,312 @@ falls back locally. Final delivery failure returns
 
 ## Artifacts And Updates
 
-| Command                                                          | Purpose                                                               |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `mate artifact pending [--json]`                                 | List archived changes and drifted specs that are not published yet.   |
-| `mate artifact publish <target> [options]`                       | Commit, tag, and push one archived change.                            |
-| `mate artifact link <change>... [options]`                       | Record a change's delivery branch and merge state in `delivery.yaml`. |
-| `mate artifact archive <change> [options]`                       | Archive a change, before or after its merge, and record its delivery. |
-| `mate artifact apply-context <change> --json [--since <digest>]` | Fetch fresh apply instructions as a full or compact envelope.         |
-| `mate update`                                                    | Upgrade an npm-managed Mate installation and reinstall requirements.  |
-| `mate update --check`                                            | Check for an update without installing it.                            |
+| Command                                                            | Purpose                                                                        |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `mate artifact pending [--json]`                                   | List submitted Delivery Groups, legacy archives, and drifted specs to publish. |
+| `mate artifact publish <target> [options]`                         | Publish a submitted Delivery Group, a legacy archive, or drifted specs.        |
+| `mate artifact link <change>... [options]`                         | Record a change's delivery branch and merge state in `delivery.yaml`.          |
+| `mate artifact submit <change>... [options]`                       | Submit finished changes for publication: push their Delivery Group's folders.  |
+| `mate artifact take <change> [--json]`                             | Take a submitted change into this checkout, to revise and submit it again.     |
+| `mate artifact archive <change> [options]`                         | Deprecated alias of `mate artifact submit`.                                    |
+| `mate artifact resolve <change> --capability --requirement --file` | Resolve a publication conflict in a submitted change, from any machine.        |
+| `mate artifact project <change> [--json]`                          | Show the canonical specs once the change's `dependsOn` chain is published.     |
+| `mate artifact apply-context <change> --json [--since <digest>]`   | Fetch fresh apply instructions as a full or compact envelope.                  |
+| `mate workflow steps <stage> [--json]`                             | Resolve a Delivery Path stage: its steps, entry skill, and next stage.         |
+| `mate workflow done <skill> [<change>] [--json]`                   | Record a finished step and print what comes next.                              |
+| `mate workflow next <change> [--after <skill>] [--json]`           | Show the stage a change is at and its next actions.                            |
+| `mate workflow trust [--json]`                                     | Approve the `run:` commands the companion's workflow declares.                 |
+| `mate update`                                                      | Upgrade an npm-managed Mate installation and reinstall requirements.           |
+| `mate update --check`                                              | Check for an update without installing it.                                     |
 
-`mate artifact pending` is read-only. It lists each archived OpenSpec change
-whose files are still uncommitted in the companion, with the canonical specs it
-applied, and separately lists uncommitted specs no pending change accounts for.
+**Workflow.** A companion may declare its Delivery Path in
+`.mate/config/workflow.yaml`; see
+[Design a Team Companion](/docs/scenarios/design-a-team-companion). A session
+uses three commands to follow it; you run none of them yourself. `mate workflow steps <stage>` resolves one
+skill stage and writes nothing. With `--json` it prints `ok`, `stage`, `source`
+(`declared` or `default`), `file`, `steps` (each a `skill`, with `own: true`
+for the stage's Mate stage skill), `entry` (the skill the stage is started
+with: its first step's), `artifact` for `submit`, `next`, and `warnings`.
+`mate workflow done <skill> <change>` reports that one step finished. A skill
+is one step of the Delivery Path, so it names its stage: the command appends the
+skill to the list `stages.<stage>` in the change's `delivery.yaml` and changes
+nothing else in it. A step already recorded changes nothing. A Mate stage
+skill's step counts as done once the change's plan says its work is done
+(`propose`: the change validates and has tasks; `apply`: every task is
+checked), recorded or not. Any other step that is not recorded counts as done
+once a later step of the Delivery Path is recorded for the change, or the
+change is submitted; counted steps are computed, never stored. So a step
+reported before an earlier one is still recorded, and the earlier one counts.
+The command then prints the hand-off: the actions the developer starts next, as
+`next:` lines and one `optional:` line, then a
+`Counted, not reported: /<skill> <change>. Not an action below; run it if it did not run.` line
+naming each counted step, which is never an action. The actions are the next
+step of the stage while one is left, or the stage the change is then at, so an
+open earlier stage is listed first. No step runs by itself: the session ends
+with the section and runs nothing it lists. Every Mate stage skill ends with
+this command, on the default path too. With `--json` it prints `ok`, `stage`,
+`change`, `step`, `recorded`, `remaining`, `counted` (the counted steps by
+stage), `complete`, `handoff` (the `## Next steps` section, with the counted
+line above it), `actions` and `optional`. `actions` holds the section's actions
+in order, each either `{ "kind": "skill", "skill", "change", "note", "afterReview" }`
+or `{ "kind": "text", "text" }`; `optional` holds the offered optional stages as
+skill actions. Skill names carry no prefix there; `change` and `note` are
+omitted when empty, and `afterReview: true` marks the stage that follows the
+listed reviews.
+Without a change, `mate workflow done <skill>` is for a stage that ends before
+a change exists, such as `explore`: it records nothing and hands off to the
+stage after it. A stage declared `optional: true` records nothing
+(`recorded: false`): no change waits for it, and the hand-off always offers it.
+`publish`, and `mate-submit-change` and the steps after it in `submit`, record
+nothing either: the change's `state` and its publication say where it is.
 
-The `publish` target is a dated archive anchor (`YYYY-MM-DD-<name>`) or a change
-name that matches exactly one archive. Publishing never archives: archive the
-change first. Options:
+`mate workflow next <change>` prints the stage a change is at, what is open in
+it, and the same hand-off as a `## Next steps` section, writing nothing. It is
+computed from the declaration, the change's `delivery.yaml` and its tasks, so it
+holds whatever an earlier session wrote; skills and runners call it to find
+where a change stands. With `--json` it prints `ok`, `change`, `stage`, `open`,
+`handoff`, `actions` and `optional`. With `--after <skill>` the hand-off is the one
+`mate workflow done <skill> <change>` printed, which for a step that records
+nothing follows its stage's steps; the turn hook checks a response against it.
 
+The commands exit 1 on an invalid declaration, with every problem and its key
+path on stderr and, with `--json`, `ok: false` and `problems` on stdout. `steps`
+also exits 1 for an unknown stage or a review stage. `done` exits 1, writing
+nothing, for a skill that is no step, naming each stage's steps, as `next`
+does for such an `--after` skill; `done` and `next` exit 1 for a change whose
+folder does not exist, naming the expected path and the changes that exist.
+`done` hands off without a folder only up to the path's first required stage,
+before the change exists. An invalid declaration never falls back to the
+default steps.
+
+`mate workflow trust` lists the `run:` commands the companion's workflow
+declares for its artifact types and asks you to approve the ones this machine
+has not. Submit and publication run no such command until you approve it,
+since anyone who can push to the companion can change it; they fail naming
+the command instead. Approvals are kept per user in `~/.mate/trusted-hooks.json`,
+per companion checkout, type, hook and command text, so an edited command, or
+the same text in another companion, needs approving again; a script the
+command calls is trusted with it. The command asks only in a terminal outside
+an agent session, so a session cannot approve a command for you. With `--json` it prints `ok` and
+`commands` (each `type`, `hook`, `run` and `trusted`) and approves nothing.
+
+**Submit.** A finished change is submitted before its delivery branch merges.
+`mate artifact submit <change>...` records and refreshes the delivery as
+`mate artifact link` does, prints concurrent-change, dependency,
+incomplete-planning, and unscoped-delivery warnings to stderr, runs
+`openspec validate <change> --strict`, and sets `state: submitted` in the
+change's `delivery.yaml`. A change is refused when its name holds anything but
+letters, digits, `_`, `.` and `-`, or starts with `.` or `-`: the name reaches
+shell commands. Then it pushes the change folders of its **Delivery
+Group** in one secret-scanned commit carrying a `Mate-Transaction` trailer. The
+commit is built in a temporary worktree and pushed without force, rebuilt up to
+three times. It goes to the **inbox**, the companion's pending branch
+`mate/inbox`; your checkout and the default branch are not touched. Nothing is
+archived and no canonical spec changes: publication does that after the merge.
+Submitting needs a companion with a remote: without one, submit fails and
+changes nothing.
+
+The Delivery Group is `<repository>/<delivery-branch>` with the repository
+written as `org_repo` (for example `acme_widgets/workset/acme-login`), or
+`change/<change>` without a branch; all slices of one Workset share it and are
+pushed and published together. Submit acts on the whole group: the other active
+changes of the group in your checkout are submitted with the one you name when
+all their tasks are checked. While one of them has open tasks or fails its
+check, submit pushes nothing, changes no state, and reports `waiting` with
+`waitingFor`; finish or drop it, then submit again. A change says
+`state: submitted` only once it is on the pending branch. Without a recorded
+delivery it submits nothing and reports `needs-branch`; answer with
+`--branch <branch>` (`--direct` for a protected one), `--not-applicable <reason>`,
+or `--skip-branch`, which leaves an unlinked record so publication asks again;
+add `--repository <org/repo>` when the Working Repository has no `origin` remote
+Mate can read. A change whose plan leaves a required stage of its Delivery Path
+before `submit` open (unchecked tasks, or no tasks) is submitted with a warning
+of kind `stage-open` that names the stage, what is open, and the skill to run.
+Submitting counts every other step before `mate-submit-change` not reported
+with `mate workflow done`, and names them in a warning of kind `step-counted`.
+Like every warning, neither blocks. A failed check or push fails the submit and changes no state;
+run it again, and an unchanged resubmit adds no commit. A change already
+submitted is pushed again only when you edited it since. Submit then treats it
+like the other changes of the group, even when you did not name it: it refreshes
+its delivery, runs its check, and lists it in the result. While it fails, the
+group waits and nothing is pushed. One you dropped comes
+back when you name it. Submit never replaces a folder a teammate resolved or
+revised on the pending branch since your submit: it fails and names
+`mate artifact take`. `--drop <change>`
+sets `state: dropped` and removes the folder (the group when it is empty) from
+the pending branch, from any machine. `mate artifact archive` still works as a
+deprecated alias of `submit` that only records the delivery and runs the check:
+it submits and pushes nothing; run `mate artifact submit` to submit. With `--json` and one change it prints that change's
+result as one object rather than an array.
+
+Submit refuses a change whose delivery branch Git already counts as merged
+while the work tree that has the branch checked out holds modified tracked
+files: that work is on no commit, so the merge would be recorded without it.
+Commit or stash it, then submit again; nothing is recorded or pushed before.
+Untracked files and edits on another branch do not count.
+
+Submit records the delivery branch's final `head` in `delivery.yaml`, with
+`unpushed: true` while that commit is not on the branch on `origin`.
+`mate companion sync` and `mate artifact publish --refresh` on a machine where
+the delivery's repository is linked check every
+unsettled submitted change in Git and push newly settled merges to the pending
+branch in one commit, so a publisher without that checkout publishes without a
+question. A failure there is a warning; see
+[Merge State](/docs/concepts/merge-state).
+
+**The inbox.** Submitted changes wait on the companion's orphan branch
+`mate/inbox`, in the same `openspec/changes/<name>/` layout, created by the
+first submit. The default branch holds published content only: nobody's
+unfinished or unmerged change shows up in `openspec/changes/` of another
+checkout, and a companion can protect its default branch, since submitting
+needs write access to `mate/inbox` only. Publication is then run by someone
+with push rights to the default branch. Your own submitted change stays in your
+checkout, uncommitted, until its published archive arrives.
+
+Publication trusts the inbox: a publisher lands what it holds, with the merge
+state its Delivery Records name, on the default branch. Whoever can push
+`mate/inbox` can therefore get specs published by the next publisher, and can
+record a delivery as merged. Give that access only to people who may change the
+specs and whose word on a merge you take. `mate artifact pending` and each
+publication name who recorded a merge that is not yours (`merges`): found by Git
+on their machine, or their own answer, which no checkout checked. The name is
+the Git author of the inbox commit, which the pusher writes, so it tells you
+whose claim it is and proves nothing; a host that verifies commit authors
+closes that gap. `mate artifact publish --all` skips a group resting on someone
+else's answer; publish that group by name to accept it.
+
+`mate artifact pending` lists the submitted changes on the pending branch by
+Delivery Group, each with its delivery, any block, whether it is yours (`yours`,
+committed with your Git email or submitted from this checkout) or someone
+else's (`others`, with the submitter as `author`), and the requirements it
+rewrites or removes (`touches`), who recorded each merge that is not yours
+(`merges`), and per group whether it is publishable and which unpublished
+dependencies hold it. Agents read `touches` while exploring
+and proposing, to say who else is changing a requirement before a change is
+planned against it. With `--json` each change carries its `path` and the
+listing the pending branch's `ref`, so `git show <ref>:<path>/proposal.md` in
+the companion reads a file of it without a checkout. To revise a submitted
+change that is not in your checkout, a teammate's or your own from another
+machine, `mate artifact take <change>` writes its folder into
+`openspec/changes/<change>/`, uncommitted; edit it and submit it again. It is
+refused while your checkout holds a folder of that name, and when the folder on
+the pending branch holds a symbolic link or submodule. Separately it lists archives an earlier Mate left
+uncommitted in this checkout, publishable from this checkout only, and
+uncommitted specs no pending change accounts for. In Git mode `auto` it fetches
+the default and pending branches first; otherwise, or when the fetch fails, it
+reports the last fetched state as stale. It changes nothing else.
+
+The `publish` target is a Delivery Group (`<repository>/<branch>` or
+`change/<name>`), a submitted change name, or the dated anchor
+(`YYYY-MM-DD-<name>`) or name of a legacy archive. A Delivery Group publishes
+from any machine once every delivery in it is merged. In a temporary checkout of
+the fetched default branch its changes are applied in `dependsOn` order, then
+submit order: each is checked for stale requirements, archived with
+`openspec archive`, and each canonical spec that changed is validated (errors
+only; warnings never block). The group lands as one commit with a
+`Mate-Artifact: openspec/<anchor>` trailer per change and a `Mate-Transaction`
+trailer, is secret-scanned and pushed without force, rebuilt once when the branch
+moved. The group then leaves `mate/inbox` in a second push; when that one
+fails, the result carries a warning and the next publication of the group takes
+it out. Your checkout then
+fast-forwards to the published commit when nothing blocks it. When the companion refuses your push to its default
+branch, the result is `awaiting-publisher`: nothing is published, and someone
+with push rights publishes it. A change that depends on an unpublished change of
+another group publishes that group first in the same run, or is `held` with
+reason `dependency-unpublished`. With `--json` a result carries `merges`: each
+final merge result the group rests on, with `source`, `recordedBy` and `yours`. A group `--refresh` leaves `held` as
+`unmerged` names why: each branch that needs your answer, for example one
+deleted on the remote that this machine never fetched, with the `--confirm-*`
+flags that answer it; `--json` carries them as `outcomes`. No tag is created:
+`git log --grep "Mate-Artifact: openspec/<anchor>"` finds a publication for a
+revert. Tags made by older versions stay. A legacy archive keeps the commit
+pipeline on this checkout's `HEAD`. Publishing never submits: submit the change
+first. Options:
+
+- `--refresh` checks each submitted change's merge state in its checkout linked
+  on this machine before deciding, and records settled merges of other linked
+  submitted changes on the pending branch; see
+  [Merge State](/docs/concepts/merge-state).
+- `--confirm-merged`, `--confirm-open`, `--confirm-dropped` record your answer
+  instead. A published group carries the settled records in its commit; a group
+  held back, or one whose publication fails, gets them pushed to the pending
+  branch on their own.
 - `--specs [<path>...]` publishes drifted canonical specs as their own
-  publication instead of a change; with paths, only those specs.
-- `--all` publishes every pending change in order, then the remaining spec
-  drift. It skips an archive the merge gate holds back, saying why, and stops
-  at the first conflict, error, or deferral.
+  publication instead of a change, as one commit carrying
+  `Mate-Artifact: openspec/specs/<date>-<specs>`; with paths, only those specs.
+- `--all` publishes every submitted Delivery Group, dependencies first, then
+  every legacy archive, then the remaining spec drift. It skips a group the merge
+  gate holds back or that awaits a publisher, saying why, and a group resting on
+  a merge someone else answered that no checkout found (`held`, reason
+  `unconfirmed-merge`): publish that group by name to accept the answer. A group's conflict
+  blocks only that group and the run goes on, exiting 1 at the end; it stops at
+  the first error, deferral, or local conflict.
+- After `--no-push`, publishing the same legacy archive again pushes that local
+  commit instead of creating a second one.
 - `--type openspec` selects the publisher; it is the default.
-- `--no-push` commits and tags locally without pushing.
+- `--no-push` commits a legacy archive locally on `HEAD` without pushing.
 - `--json` prints machine-readable results.
 
-Publishing never prompts for credentials. When the fetch or push fails with an
-authentication rejection or a network error, it retries twice after a short
-wait. If the remote is still unreachable, the publication is `deferred`: the
-command exits 0 and keeps the commit (and, after a failed push, the tag) in
-the companion. A deferred fetch leaves the commit untagged. Re-run
-`mate artifact publish` with the same target to finish it. Other remote
-failures, such as a rejected push, still fail the command.
+When a requirement a change modifies, removes, or renames changed on the
+default branch since the change's delta was written, publishing stops with a
+conflict instead of merging the two edits; it also conflicts when a delta no
+longer applies or a canonical spec it changed fails validation. It pushes
+nothing, leaves the submitted folders as they are, names the change, the
+capability, and the requirement, or the invalid spec, and records `blocked`
+(reason, paths, first seen, default tip) in the change's `delivery.yaml` on the pending
+branch, so `mate artifact pending` and the session banner show it on every
+machine. With `--json`, the result's `conflict` carries the requirement as the
+delta was written against it, the change's version, and the default branch's.
+Resolve it from any machine: write each requirement as it should read to a file
+and run
+`mate artifact resolve <change> --capability <capability> --requirement <name> --file <file>`,
+one `--capability --requirement --file` triple per requirement. It rewrites the
+submitted folder, takes the default tip as the new delta base, clears the block,
+and pushes; then publish again. While another requirement the change would
+overwrite changed on the default branch too and is not resolved in the same
+call, `resolve` refuses and names it in `unresolved`, so the new delta base
+never hides a teammate's change. It also refuses when a requirement it is given
+changed on the default branch again after the conflict was reported: publish
+again to see the current text, then resolve from that. A removed or renamed requirement, or a delta
+that no longer applies, is fixed in the change's delta spec and submitted
+again. To keep a removal or rename as it is, submit the change again
+unchanged, by name: that accepts the conflict, takes the default tip as the
+delta base and clears the block, as long as the change overwrites no other
+requirement that changed. A requirement the
+change renames and also modifies is resolved under its old name, as the
+conflict reports it. A
+modification identical to the default branch's text is no conflict, and the
+changes of one group build on each other.
+
+The delta base is when the delta was written, not when it was submitted:
+`mate artifact link` keeps the companion's `HEAD` as `specBase` in
+`delivery.yaml` the first time it writes the record (the propose skill runs
+`mate artifact link <change> --spec-base` once the delta specs are written), and
+publication uses it while the default branch still holds it.
+Publishing never prompts for credentials. When a fetch or
+push fails with an authentication rejection or a network error, it retries twice
+after a short wait. If the remote is still unreachable, the publication is
+`deferred` and the command exits 0. A group publication has pushed nothing; a
+local publication keeps its commit. Re-run `mate artifact publish` with the same
+target to finish it. A publication an older version committed and tagged locally
+is pushed once, with its tag. Other remote failures, such as a rejected push,
+still fail the command.
+
+`mate artifact project <change>` shows the canonical specs of the affected
+capabilities as they will read once the change's `dependsOn` chain, submitted or
+still active here, is published. It applies the chain with the publication code
+in a temporary worktree and commits nothing; a dependency that would fail
+publication is reported with publication's reason. The propose and apply skills
+read it for a change with `dependsOn`.
 
 When a publication makes its Workset Done, publish then removes that Workset's
 worktrees as `mate working worktree prune` does: clean, fully pushed worktrees
 go, and any other is kept with its reason. A change without a Workset record is
 Done once published. With `--all` this runs once, after the last publication.
+It reads each published change's Delivery Record from the publication's commit,
+so a Delivery Group published to the remote is cleaned up even when this
+companion checkout is behind it and lacks the archived change. A change whose
+Delivery Record it cannot find is named in a warning, and its worktrees stay.
 The cleanup is best effort: it never changes the result's status, the exit code,
 or where `--all` stops, and it never deletes a branch or uses `--force`. With
 `--json`, the result that finished the Workset carries
@@ -963,12 +1428,13 @@ kept worktree follows the result. To get a removed worktree back, run
 worktree that a Claude Code session entered with `EnterWorktree`, so cleanup
 never removes that worktree while the session is still in it.
 
-`mate artifact pending --json` also reports each archive's delivery: `merged`
-and `not-applicable` archives are publishable; `waiting`, `unlinked`, and
-`dropped` ones are held back, and `mate artifact publish` refuses them. A
-`legacy` archive (no `delivery.yaml`) publishes with a warning that its merge was not checked. An archive is also held back while it
-shares a canonical spec with a pending archive that is held back, since its
-commit would carry that archive's unmerged requirements.
+`mate artifact pending --json` also reports each change's delivery: `merged`
+and `not-applicable` changes are publishable; `waiting`, `unlinked`, and
+`dropped` ones are held back. A Delivery Group is published only when every
+change in it is publishable; otherwise `mate artifact publish` reports it as
+`held`. A legacy archive without a `delivery.yaml` publishes with a warning that
+its merge was not checked. A dropped submitted change is removed from any
+machine with `mate artifact submit --drop <change>`.
 
 `mate artifact link` writes the change's `delivery.yaml`, the only writer of
 that file, for active and archived changes. Options:
@@ -986,8 +1452,8 @@ that file, for active and archived changes. Options:
   delivery. `--direct` works on any branch: no PR is looked up for it, and only
   your answer settles it.
 - `--not-applicable <reason>` records that no branch delivers the change.
-- `--pr <url>` records the PR; with `--refresh` it picks that PR when several
-  share the branch.
+- `--pr <url>` records the PR. A refresh keeps it over one it finds, and uses
+  its head ref to recover the head of a deleted branch.
 - `--ticket <KEY>` records the Delivery Branch resolved with a Jira key
   (`ABC-123`, any case): the branch is named by the branch template with the key
   (by default `workset/<TICKET>-<workset-id>`), while a recorded or inherited
@@ -999,16 +1465,21 @@ that file, for active and archived changes. Options:
   `--not-applicable`, is refused when the repository's delivery is direct or not
   applicable, and is refused unless the companion's openspec
   capability sets `ticket: jira`; see [Your First Change](/docs/scenarios/first-change).
-- `--refresh` asks GitHub for the merge state when a
-  [forge token](/docs/concepts/forge-token) is available, and otherwise checks
-  the repository's local checkout (source `git`); see
+- `--refresh` checks each recorded branch in the repository's checkout linked
+  on this machine: a merge commit, or a default-branch commit containing the
+  branch's head (squash or rebase), records it merged with source `git`, and the
+  remote's pull refs give the PR link. Anything else needs your answer, with an
+  `answerReason`: `likely-merged` (a fast-forward, a merge commit that brought a
+  head never pushed as its branch, or a patch-identity match on Git before 2.38), `not-on-default`, `branch-deleted` (gone on the remote and
+  never merged), `no-checkout` (not linked here) or `direct`; see
   [Merge State](/docs/concepts/merge-state). A direct
   delivery is never settled automatically, because Git cannot tell its commits
   from your other pushes. The refresh reports it as needing your answer; check
   `origin/<branch>` and answer with `--confirm-merged`. The publish skill asks
   this once per branch, for every direct delivery on it.
 - `--fetch`, with `--refresh`, fetches the default and delivery branches from
-  `origin` first even when the companion's Git mode is not `auto`.
+  `origin` and lists its pull refs first, even when the companion's Git mode is
+  not `auto`.
 - `--confirm-merged`, `--confirm-open`, and `--confirm-dropped` record your own
   answer, with source `user`.
 - `--json` prints one result per named change; several changes on one branch
@@ -1059,21 +1530,14 @@ recorded delivery whose repository matches none of them gets a warning on
 stderr, naming the scoped spelling it likely means (same last path segment),
 and appears in `--json` as `settlement.unscoped`. The warning changes neither
 the record nor the exit code; fix whichever spelling is wrong.
-A `dependsOn` change that is neither archived nor fully implemented also gets a
+A `dependsOn` change that is neither published nor fully implemented also gets a
 stderr warning and appears in `--json` as `warnings`; it never blocks. For a repository other than the Working Repository,
-the host comes from the `origin` remote of a linked checkout of it, else from the
-Working Repository's remote, and the default branch comes from that host when it
-is github.com. Without a forge token, or when GitHub
-cannot answer, `main` is taken as its default branch.
+the default branch comes from its checkout linked on this machine, else `main`
+is taken. Mate starts only `git`, reads no credential, and never
+inspects a repository a record merely names.
 
-`mate artifact archive` archives regardless of merge state, prints overlap,
-dependency, incomplete-planning, and unscoped-delivery warnings to stderr before archiving, refreshes merge state from the forge or the local checkout (`--fetch` fetches first in Git mode `default`), always
-leaves a `delivery.yaml`, and then runs `openspec archive`. Without a recorded
-delivery it archives nothing and reports `needs-branch`; answer with
-`--branch <branch>` (`--direct` for a protected one), `--not-applicable <reason>`,
-or `--skip-branch`, which leaves an unlinked record so publication asks again; add `--repository <org/repo>` when the Working
-Repository has no `origin` remote Mate can read. See [Your First Change](/docs/scenarios/first-change)
-for how the commands fit together.
+See [Your First Change](/docs/scenarios/first-change) for how the commands fit
+together.
 
 `mate artifact apply-context` is read-only and opt-in; ordinary apply never
 uses it. Each call fetches fresh `openspec instructions apply --json` for the

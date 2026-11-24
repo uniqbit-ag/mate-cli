@@ -1,4 +1,29 @@
+import { ARTIFACT_TRAILER, archiveOfArtifact } from "../../../../lib/artifact-trailer";
+import { changeNameOf, parseAnchor } from "../../../../lib/change-layout";
+import {
+  recordDelivery,
+  type DeliveryEdit,
+  type RecordDeliveryDeps,
+} from "../../../../lib/delivery/record-delivery";
+import type { ArtifactType } from "../../../../lib/delivery/staging/artifact-type";
+import { isDeliveryGroup } from "../../../../lib/delivery/staging/naming";
+import { declaredSubmitType } from "../../../../lib/delivery/staging/registry";
+import { errorMessage } from "../../../../runtime/error-message";
+import { settleLinked } from "../../../../lib/delivery/staging/settle-linked";
+import {
+  publicationQueue,
+  publishSubmitted,
+  type PublicationQueue,
+  type PublicationResult,
+  type PublishDeps,
+} from "../../../../lib/delivery/staging/publish";
+import { stagingRemote } from "../../../../lib/delivery/staging/refs";
 import { resolveForCapability } from "../../../../lib/orchestrator/framework-context";
+import { companionGit, outputLines } from "../../../../runtime/companion-git";
+import type { BranchOutcome } from "../../../../lib/delivery/refresh";
+import { CONFIRM_FLAGS, confirmFlag } from "../delivery/branch-flags";
+import { resolveDeliveryEnvironment, type DeliveryEnvironmentDeps } from "../delivery/environment";
+import { renderOutcome } from "../delivery/output";
 import type { LaunchContext } from "../../../../lib/orchestrator/framework-context";
 import type { CapabilityConfig } from "../../../../lib/orchestrator/types";
 import { WorkingRepoRequiredError } from "../../../../lib/orchestrator/types";
@@ -35,12 +60,135 @@ export interface PublishCommandDeps {
   ) => Promise<PublicationSecretScan>;
   /** Injectable readers and prune for the cleanup after a Workset becomes Done. */
   worktreeCleanup?: WorktreeCleanupDeps;
+  /** Publishes a Delivery Group of submitted changes; see {@link publishSubmitted}. */
+  publishSubmitted?: (
+    companionPath: string,
+    target: string,
+    deps: PublishDeps,
+  ) => Promise<PublicationResult>;
+  /** True when the companion has an upstream a Delivery Group publishes to. */
+  hasRemote?: (companionPath: string) => Promise<boolean>;
+  /** True when an earlier publication of the target is committed on `HEAD` but not pushed. */
+  unpushedPublication?: (companionPath: string, target: string) => Promise<boolean>;
+  /** The Delivery Groups `--all` publishes; see {@link publicationQueue}. */
+  publicationQueue?: (companionPath: string) => Promise<PublicationQueue>;
+  /** Builds the delivery environment `--refresh` and `--confirm-*` settle with. */
+  deliveryEnvironment?: DeliveryEnvironmentDeps & RecordDeliveryDeps;
+  /** `--refresh`: records the merges linked checkouts settle first; see {@link settleLinked}. */
+  settleLinked?: typeof settleLinked;
   stdout?: (line: string) => void;
   stderr?: (line: string) => void;
 }
 
 /** Presence-only flags; every other `--flag` consumes the following token as its value. */
-const BOOLEAN_FLAGS: BooleanFlagSet = new Set(["no-push", "json", "specs", "all"]);
+const BOOLEAN_FLAGS: BooleanFlagSet = new Set([
+  "no-push",
+  "json",
+  "specs",
+  "all",
+  "refresh",
+  ...CONFIRM_FLAGS,
+]);
+
+async function defaultHasRemote(companionPath: string): Promise<boolean> {
+  return (await stagingRemote(companionGit(companionPath, { prompt: "never" }))) !== null;
+}
+
+/**
+ * An earlier publication of `target` committed on `HEAD` that never reached the upstream: a
+ * `--no-push` commit, or a tag an older Mate version created. It is pushed from the checkout.
+ */
+export async function unpushedPublication(companionPath: string, target: string): Promise<boolean> {
+  const git = companionGit(companionPath, { prompt: "never" });
+  const upstream = (await git.upstreamTarget())?.ref;
+  if (!upstream) return false;
+  const log = await git.run([
+    "log",
+    `--format=%(trailers:key=${ARTIFACT_TRAILER},valueonly,separator=%x0a)`,
+    "--end-of-options",
+    `${upstream}..HEAD`,
+  ]);
+  const matches = (anchor: string): boolean =>
+    anchor === target || (parseAnchor(anchor) !== null && changeNameOf(anchor) === target);
+  const published = log.status === 0 ? outputLines(log.stdout).map(archiveOfArtifact) : [];
+  if (published.some((anchor) => anchor !== null && matches(anchor))) return true;
+  const tags = await git.run([
+    "for-each-ref",
+    "--format=%(refname:strip=3)",
+    "refs/tags/openspec/",
+  ]);
+  if (tags.status !== 0) return false;
+  for (const anchor of outputLines(tags.stdout).filter(matches)) {
+    const tag = `refs/tags/openspec/${anchor}`;
+    // A tag left on a commit a rebase replaced is not on HEAD, so it marks nothing to push.
+    // oxlint-disable-next-line no-await-in-loop -- one tag per archive of the change
+    const onHead = await git.run(["merge-base", "--is-ancestor", tag, "HEAD"]);
+    if (onHead.status !== 0) continue;
+    // oxlint-disable-next-line no-await-in-loop -- same tag
+    const reached = await git.run(["merge-base", "--is-ancestor", tag, upstream]);
+    if (reached.status === 1) return true;
+  }
+  return false;
+}
+
+/** A Delivery Group publication as the publish result the skill reads. */
+function publicationResult(
+  type: string,
+  target: string,
+  publication: PublicationResult,
+): FinishResult {
+  const ok = publication.status === "ok";
+  return {
+    type,
+    name: target,
+    anchorName: publication.records[0] ?? null,
+    tag: null,
+    ...(publication.commit ? { commit: publication.commit } : {}),
+    ...(publication.group ? { group: publication.group } : {}),
+    changes: publication.changes,
+    anchors: publication.records,
+    ...(publication.reason ? { reason: publication.reason } : {}),
+    ...(publication.heldBy ? { heldBy: publication.heldBy } : {}),
+    ...(publication.merges ? { merges: publication.merges } : {}),
+    ...(publication.blocked ? { blocked: true } : {}),
+    ...(publication.conflict ? { conflict: publication.conflict } : {}),
+    ...(publication.dependencies
+      ? {
+          dependencies: publication.dependencies.map((dependency) =>
+            publicationResult(type, dependency.group ?? target, dependency),
+          ),
+        }
+      : {}),
+    resumed: publication.alreadyPublished === true,
+    step: ok ? "done" : publication.status === "held" ? "resolve" : "publish",
+    status: publication.status,
+    conflictedPaths: publication.conflictedPaths,
+    local: { committed: ok, tagged: false, pushed: ok },
+    message: publication.message,
+    ...(publication.secretFindings ? { secretFindings: publication.secretFindings } : {}),
+    ...(publication.warnings.length > 0 ? { warning: publication.warnings.join(" ") } : {}),
+  };
+}
+
+/** Every result a publication carries: its own and those of dependencies published first. */
+function flattened(results: readonly FinishResult[]): FinishResult[] {
+  return results.flatMap((result) => [...flattened(result.dependencies ?? []), result]);
+}
+
+/** A deferral halts too: the remote is likely still unreachable. */
+function halted(result: FinishResult): boolean {
+  return result.status === "conflict" || result.status === "error" || result.status === "deferred";
+}
+
+/** The archives an `ok` result published. */
+function publishedBy(result: FinishResult): string[] {
+  if (result.status !== "ok") return [];
+  return result.anchors ?? (result.anchorName ? [result.anchorName] : []);
+}
+
+function deliveryRefusal(changes: string[], reason: string): string {
+  return `mate: the delivery of ${changes.join(", ")} could not be recorded (${reason}).`;
+}
 
 /**
  * Every non-flag token, in order. Consumes the value of a value-taking flag exactly as
@@ -67,7 +215,7 @@ async function defaultLoadCapabilities(context: LaunchContext): Promise<Capabili
   return config.capabilities ?? [];
 }
 
-/** A publication the pipeline never ran: nothing was resolved, committed, tagged, or pushed. */
+/** A publication the pipeline never ran: nothing was resolved, committed, or pushed. */
 function nothingToPublish(name: string, message: string): FinishResult {
   return {
     type: DEFAULT_FINISHER_TYPE,
@@ -100,25 +248,43 @@ function refusalResult(type: string, name: string, message: string): FinishResul
 
 /**
  * @command mate artifact publish <target>
- * @description Publishes an already-produced artifact. Resolves the launch context for the
- * current working repo, loads the enabled capabilities, and runs {@link runFinishEngine} to
- * commit/tag/push via {@link GitOps}. Two publication units exist: an archived change,
- * named positionally, and a spec publication of drifted canonical specs, selected with
- * `--specs`. Archiving is a precondition performed by the archive workflow; this command
- * never archives.
+ * @description Publishes artifacts to the companion's default branch. A submitted change is
+ * published with its whole Delivery Group, from any machine, once every delivery in it is
+ * merged: in a temporary worktree of the fetched default branch its changes are applied in
+ * `dependsOn` order, then submit order (stale check against `specBase`, `openspec archive`,
+ * spec validation), committed once with a `Mate-Artifact` trailer per change and a
+ * `Mate-Transaction` trailer, secret-scanned and pushed without force, rebuilt once. The
+ * group then leaves the inbox `mate/inbox`. A conflict publishes nothing and records `blocked`
+ * in the change's `delivery.yaml` on the pending branch; a refused push is
+ * `awaiting-publisher`. The checkout and its `HEAD` are not touched. A change depending on an
+ * unpublished change of another group publishes that group first, or is held
+ * (`dependency-unpublished`). Archives an earlier Mate left uncommitted in this checkout,
+ * drifted canonical specs (`--specs`), `--no-push`, and companions without a remote use the
+ * commit pipeline on `HEAD` (resolve, branch guard, cap sync, secret scan, commit,
+ * sync-with-remote, push). No tag is created; results carry the published `commit`.
  * @flags
- * - `<target>` — a dated archive anchor (`YYYY-MM-DD-<name>`), or a change name matching
- *   exactly one archive. Mutually exclusive with `--specs` and `--all`.
- * - `--specs [<path>...]` — publish drifted canonical specs as their own publication under a
- *   new `openspec/specs/<date>-<specs>` tag. Bare, it publishes every drifted spec; with paths, only
- *   those. A bare name alongside it is a change target and is refused.
- * - `--all` — publish every pending change in discovery order, then one spec publication for
- *   the drift that remains. Skips an archive the merge gate holds back, reporting why, and
- *   halts at the first conflict or error; with `--json` it emits a
- *   single array of results in execution order.
+ * - `<target>` — a Delivery Group (`<repository>/<branch>`, `change/<name>`), a submitted change
+ *   name, or the dated anchor (`YYYY-MM-DD-<name>`) or name of a local archive from an earlier
+ *   Mate. Mutually exclusive with `--specs` and `--all`.
+ * - `--refresh` — before publishing, record the merges this machine's linked checkouts settle
+ *   for every submitted change, then check each branch of the group's changes in its linked
+ *   checkout, recorded in its `delivery.yaml` on the pending branch (published with the group,
+ *   else pushed there alone).
+ * - `--confirm-merged` / `--confirm-open` / `--confirm-dropped` — the user's answer for the
+ *   group's Working Repository delivery, recorded the same way. One at a time; never with
+ *   `--all`, `--specs` or `--no-push`.
+ * - `--specs [<path>...]` — publish drifted canonical specs as their own publication. Bare, it
+ *   publishes every drifted spec; with paths, only those. A bare name alongside it is a change
+ *   target and is refused.
+ * - `--all` — publish every submitted Delivery Group, dependencies first, then every local
+ *   archive of an earlier Mate, then one spec publication for the drift that remains. Skips
+ *   what is held or awaits a publisher, and a group resting on a merge someone else answered
+ *   that no checkout found (`unconfirmed-merge`; publish it by name to accept the answer); a group's conflict blocks only that group and the run
+ *   goes on, exiting 1 at the end. Halts at the first error or deferral; with `--json` it emits
+ *   a single array of results in execution order.
  * - `--type <type>` — finisher type to use; see `knownFinisherTypes()`. `--specs` and
  *   `--all` are openspec-only.
- * - `--no-push` — commit and tag locally but skip the remote sync and push.
+ * - `--no-push` — commit a local archive on `HEAD` but skip the remote sync and push.
  * - `--json` — emit machine-readable JSON instead of human-readable text.
  * @remarks No-ops (with a message on stderr) when the selected finisher is disabled for the
  * repo's configured capabilities — nothing is resolved or mutated in that case.
@@ -163,7 +329,29 @@ export async function runArtifactPublishCommand(
     return;
   }
   if (!allMode && !specsMode && positionals.length === 0) {
-    refuse("mate: artifact publish requires an archive anchor or change name, --specs, or --all.");
+    refuse(
+      "mate: artifact publish requires a Delivery Group, a change name or archive anchor, --specs, or --all.",
+    );
+    return;
+  }
+  const confirmation = confirmFlag(flags);
+  if ("error" in confirmation) {
+    refuse(confirmation.error);
+    return;
+  }
+  const { confirm } = confirmation;
+  const refresh = flags.refresh === true;
+  const settling = refresh || confirm !== undefined;
+  if (confirm !== undefined && (allMode || specsMode)) {
+    refuse(
+      "mate: --confirm-* answers for the Delivery Group of one target; name it instead of --all or --specs.",
+    );
+    return;
+  }
+  if (settling && (specsMode || noPush)) {
+    refuse(
+      "mate: --refresh and --confirm-* record on the pending branch, which --specs and --no-push never reach; record with `mate artifact link` instead.",
+    );
     return;
   }
   if ((allMode || specsMode) && type !== DEFAULT_FINISHER_TYPE) {
@@ -202,6 +390,17 @@ export async function runArtifactPublishCommand(
 
   const loadCapabilities = deps.loadCapabilities ?? defaultLoadCapabilities;
   const capabilities = await loadCapabilities(context);
+
+  // The declared type the companion's submit handles; an invalid declaration publishes nothing.
+  let declaredType: ArtifactType | undefined;
+  try {
+    declaredType = await declaredSubmitType(context.companionPath);
+  } catch (err) {
+    emitErr(`mate: ${errorMessage(err)}`);
+    process.exitCode = 1;
+    return;
+  }
+  const typeDeps = declaredType ? { artifactType: declaredType } : {};
 
   let git: GitOps;
   const finishContext: FinishContext = {
@@ -247,31 +446,209 @@ export async function runArtifactPublishCommand(
     secretScan: (commitPaths: string[]) => scanPublicationFn(context.companionPath, commitPaths),
   };
 
-  const runChange = (target: string, printResult = true): Promise<FinishResult> =>
-    runFinishEngine(finisher, { name: target, noPush }, { ...engineDeps, printResult });
+  const deliveryEnvironment = () =>
+    resolveDeliveryEnvironment({
+      ensureUnambiguousCompanion: async () => true,
+      resolveContext: async () => context,
+      loadCapabilities: async () => capabilities,
+      ...deps.deliveryEnvironment,
+    });
+
+  /** `--refresh`: the merges linked checkouts settle are recorded once per run, before any group. */
+  let linkedSettled: Promise<boolean> | undefined;
+  /** True when it pushed a record, which leaves refs fetched before it stale. */
+  const settleLinkedOnce = (): Promise<boolean> =>
+    (linkedSettled ??= (async () => {
+      const environment = await deliveryEnvironment();
+      if ("error" in environment) return false;
+      const settled = await (deps.settleLinked ?? settleLinked)(
+        environment,
+        deps.deliveryEnvironment ?? {},
+      );
+      if (settled.warning && !quiet) emitErr(`mate: ${settled.warning}`);
+      return settled.recorded.length > 0;
+    })());
+
+  /** What `--refresh` found per change, kept for the result of a group it leaves held. */
+  const refreshOutcomes = new Map<string, BranchOutcome[]>();
+  /** Names why a group held as unmerged still waits: the lookups that need the user's answer. */
+  const withOutcomes = (result: FinishResult): FinishResult => {
+    const dependencies = result.dependencies?.map(withOutcomes);
+    const next = dependencies ? { ...result, dependencies } : result;
+    if (result.status !== "held" || result.reason !== "unmerged") return next;
+    const seen = new Set<string>();
+    const outcomes = (result.changes ?? [])
+      .flatMap((change) => refreshOutcomes.get(change) ?? [])
+      .filter((outcome) => {
+        const key = `${outcome.repository}\n${outcome.branch}`;
+        if (!outcome.needsAnswer || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    if (outcomes.length === 0) return next;
+    const lines = outcomes.flatMap(renderOutcome);
+    return {
+      ...next,
+      outcomes,
+      message: `${result.message}\n${lines.join("\n")}\n  Answer with --confirm-merged, --confirm-open or --confirm-dropped.`,
+    };
+  };
+
+  /** Records `--refresh` and, unless `refreshOnly`, `--confirm-*` into the changes in `dir`. */
+  const settleWith =
+    (refreshOnly: boolean) =>
+    async (dir: string, changes: string[]): Promise<string | null> => {
+      const environment = await deliveryEnvironment();
+      if ("error" in environment) return environment.error;
+      const answer = refreshOnly ? undefined : confirm;
+      const record = (names: string[], edit: DeliveryEdit = {}) =>
+        recordDelivery(
+          { ...environment, companionPath: dir },
+          {
+            changes: names,
+            refresh: edit.confirm === undefined && refresh,
+            refreshAll: true,
+            edit,
+            // The worktree's HEAD is the publication tip; a base set here would hide staleness.
+            leaveSpecBase: true,
+          },
+          deps.deliveryEnvironment ?? {},
+        );
+      if (refresh) {
+        const outcome = await record(changes);
+        if ("refusal" in outcome) return deliveryRefusal(changes, outcome.refusal.reason);
+        if ("results" in outcome) {
+          for (const entry of outcome.results) refreshOutcomes.set(entry.change, entry.outcomes);
+        }
+      }
+      if (!answer) return null;
+      // The answer is for the Working Repository's delivery; changes without one keep theirs.
+      let confirmed = 0;
+      for (const change of changes) {
+        // oxlint-disable-next-line no-await-in-loop -- one record at a time, in group order
+        const outcome = await record([change], { confirm: answer });
+        if (!("refusal" in outcome)) confirmed += 1;
+        else if (outcome.refusal.reason !== "no-delivery-branch") {
+          return deliveryRefusal([change], outcome.refusal.reason);
+        }
+      }
+      return confirmed > 0 ? null : deliveryRefusal(changes, "no-delivery-branch");
+    };
+
+  const hasRemote = !noPush && (await (deps.hasRemote ?? defaultHasRemote)(context.companionPath));
+
+  /** One capability sync per run, however many groups `--all` publishes. */
+  let capSynced: Promise<boolean> | undefined;
+  /** Set by the `--all` queue's fetch; the next publication reuses it instead of fetching again. */
+  let refsFresh = false;
+  const publishGroup = async (target: string, inQueue = false): Promise<FinishResult> => {
+    capSynced ??= finisher.capSync ? finisher.capSync() : Promise.resolve(true);
+    if (!(await capSynced)) {
+      process.exitCode = 1;
+      return refusalResult(type, target, "mate: cap sync failed; nothing was published.");
+    }
+    if (refresh && (await settleLinkedOnce())) refsFresh = false;
+    const fresh = refsFresh;
+    refsFresh = false;
+    const publication = await (deps.publishSubmitted ?? publishSubmitted)(
+      context.companionPath,
+      target,
+      {
+        ...(settling ? { settle: settleWith(false) } : {}),
+        ...(refresh ? { settleDependency: settleWith(true) } : {}),
+        ...(fresh ? { fresh } : {}),
+        // `--all` publishes dependencies in queue order instead, and takes nobody's answer.
+        ...(inQueue ? { withDependencies: false, ownAnswersOnly: true } : {}),
+        scan: scanPublicationFn,
+        ...typeDeps,
+      },
+    );
+    const result = withOutcomes(publicationResult(type, target, publication));
+    if (result.status === "conflict" || result.status === "error") process.exitCode = 1;
+    return result;
+  };
+
+  /** Uncommitted archives of an earlier Mate, which publish from this checkout only. */
+  const localPendingArchives = async (changed = git.changedPaths()) => {
+    const paths = await changed;
+    const changeKinds = (await git.changedPathKinds?.()) ?? {};
+    return pendingArchives(await discoverArchives(context.companionPath, paths, changeKinds));
+  };
+
+  /**
+   * Names of the checkout's pending archives, read once per run: publishing commits one but never
+   * adds one.
+   */
+  let pendingArchiveNames: Promise<Set<string>> | undefined;
+
+  /**
+   * Publishes from this checkout what only it holds (an archive of an earlier Mate, an unpushed
+   * earlier publication) and everything without a remote; otherwise the Delivery Group.
+   */
+  const usesCheckout = async (target: string): Promise<boolean> => {
+    if (!hasRemote) return true;
+    if (isDeliveryGroup(target)) return false;
+    if (parseAnchor(target)) return true;
+    pendingArchiveNames ??= localPendingArchives().then(
+      (entries) => new Set(entries.map((entry) => entry.name)),
+    );
+    if ((await pendingArchiveNames).has(target)) return true;
+    return (deps.unpushedPublication ?? unpushedPublication)(context.companionPath, target);
+  };
+
+  /** Never prints: the caller does, once cleanup has attached `worktrees`. */
+  const runChange = async (target: string): Promise<FinishResult> => {
+    if (!hasRemote && isDeliveryGroup(target)) {
+      process.exitCode = 1;
+      return refusalResult(
+        type,
+        target,
+        `mate: ${target} is a Delivery Group, which publishes to the companion remote; ${noPush ? "drop --no-push" : "the companion has no remote"}.`,
+      );
+    }
+    if (!(await usesCheckout(target))) return await publishGroup(target);
+    if (!settling) {
+      return runFinishEngine(
+        finisher,
+        { name: target, noPush },
+        { ...engineDeps, printResult: false },
+      );
+    }
+    process.exitCode = 1;
+    return refusalResult(
+      type,
+      target,
+      `mate: ${target} is not submitted, so --refresh or --confirm-* has nothing to record on; record with \`mate artifact link\`, then publish again.`,
+    );
+  };
 
   /**
    * Cleans up the Worksets these change results made Done and attaches each outcome to the
    * result that completed it. Runs after every status and exit code is final; never throws.
    */
   const cleanUpWorktrees = async (changeResults: readonly FinishResult[]): Promise<void> => {
-    const published = changeResults.flatMap((result) =>
-      result.status === "ok" && result.anchorName ? [result.anchorName] : [],
-    );
+    const all = flattened(changeResults);
     const outcomes = await cleanUpCompletedWorksets(
       context.companionPath,
-      published,
+      all.flatMap((result) =>
+        publishedBy(result).map((anchor) => ({
+          anchor,
+          ...(result.commit ? { commit: result.commit } : {}),
+        })),
+      ),
       deps.worktreeCleanup,
     );
-    for (const result of changeResults) {
-      const outcome = result.anchorName ? outcomes.get(result.anchorName) : undefined;
+    for (const result of all) {
+      const outcome = publishedBy(result)
+        .map((anchor) => outcomes.get(anchor))
+        .find((found) => found !== undefined);
       if (outcome) result.worktrees = outcome;
     }
   };
 
   const printWorktrees = (changeResults: readonly FinishResult[]): void => {
     if (json) return;
-    for (const { worktrees } of changeResults) {
+    for (const { worktrees } of flattened(changeResults)) {
       for (const entry of worktrees?.removed ?? []) emitErr(`mate: removed worktree ${entry.path}`);
       for (const entry of worktrees?.kept ?? []) {
         emitErr(`mate: kept worktree ${entry.path} (${entry.reason})`);
@@ -293,24 +670,55 @@ export async function runArtifactPublishCommand(
     return runFinishEngine(specsFinisher, { name: "--specs", noPush }, engineDeps);
   };
 
-  /** A deferral halts too: the remote is likely still unreachable, and the re-run must tag its own commit. */
-  const halted = (result: FinishResult): boolean =>
-    result.status === "conflict" || result.status === "error" || result.status === "deferred";
-
   if (allMode) {
     const results: FinishResult[] = [];
     const changeResults: FinishResult[] = [];
-    const changed = await git.changedPaths();
-    const changeKinds = (await git.changedPathKinds?.()) ?? {};
-    const archives = await discoverArchives(context.companionPath, changed, changeKinds);
+    let blocked = false;
+    const stop = async (): Promise<void> => {
+      // Worksets completed before the halt are still cleaned up.
+      await cleanUpWorktrees(changeResults);
+      printWorktrees(changeResults);
+      if (json) emitOut(JSON.stringify(results));
+    };
 
-    for (const entry of pendingArchives(archives)) {
+    if (hasRemote) {
+      const queue = await (deps.publicationQueue ?? publicationQueue)(
+        context.companionPath,
+        typeDeps,
+      );
+      // A queue read from stale refs: the first publication fetches for itself.
+      refsFresh = queue.fresh;
+      for (const group of queue.groups) {
+        // oxlint-disable-next-line no-await-in-loop -- publications push one after another
+        const result = await publishGroup(group, true);
+        if (!quiet) printFinishResult(result, { json, stdout: emitOut, stderr: emitErr });
+        results.push(result);
+        // A group waiting on a merge, a dependency or a publisher does not stop the others.
+        if (result.status === "held" || result.status === "awaiting-publisher") continue;
+        changeResults.push(result);
+        // A group publication never touches the checkout, so its conflict blocks only that group.
+        if (result.status === "conflict") {
+          blocked = true;
+          continue;
+        }
+        if (halted(result)) {
+          // oxlint-disable-next-line no-await-in-loop -- ends the loop
+          await stop();
+          return;
+        }
+      }
+      refsFresh = false;
+    }
+
+    const changed = git.changedPaths();
+    for (const entry of await localPendingArchives(changed)) {
       // A held-back archive waits for its merge; it does not stop the merged ones.
       // Same cache as the finisher's resolve step, so both see one pending set and agree.
+      // oxlint-disable-next-line no-await-in-loop -- one archive after another
       const hold = await publicationHold(
         context.companionPath,
         entry.anchor,
-        async () => changed,
+        () => changed,
         finishContext.holdCache,
       );
       if (hold) {
@@ -318,14 +726,17 @@ export async function runArtifactPublishCommand(
         results.push(nothingToPublish(entry.anchor, hold));
         continue;
       }
-      const result = await runChange(entry.anchor);
+      // oxlint-disable-next-line no-await-in-loop -- one archive after another
+      const result = await runFinishEngine(
+        finisher,
+        { name: entry.anchor, noPush },
+        { ...engineDeps, printResult: true },
+      );
       results.push(result);
       changeResults.push(result);
       if (halted(result)) {
-        // Worksets completed before the halt are still cleaned up.
-        await cleanUpWorktrees(changeResults);
-        printWorktrees(changeResults);
-        if (json) emitOut(JSON.stringify(results));
+        // oxlint-disable-next-line no-await-in-loop -- ends the loop
+        await stop();
         return;
       }
     }
@@ -333,6 +744,7 @@ export async function runArtifactPublishCommand(
     /** Drift is recomputed: a spec a change just committed is no longer drifted. */
     const specResult = await runSpecs([]);
     if (specResult) results.push(specResult);
+    if (blocked) process.exitCode = 1;
 
     await cleanUpWorktrees(changeResults);
     printWorktrees(changeResults);
@@ -354,7 +766,7 @@ export async function runArtifactPublishCommand(
   }
 
   // Printed here, after cleanup, so `--json` stays one object that carries `worktrees`.
-  const result = await runChange(positionals[0], false);
+  const result = await runChange(positionals[0]);
   await cleanUpWorktrees([result]);
   printFinishResult(result, { json, stdout: emitOut, stderr: emitErr });
   printWorktrees([result]);

@@ -4,8 +4,10 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { writeFrictionSwitch } from "../runtime/friction-switch";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
+import { umbrellaChildrenBlock } from "../runtime/umbrella-children";
 import { buildSessionGuidance } from "./session-guidance";
 
 const tempRoots: string[] = [];
@@ -60,6 +62,18 @@ afterEach(() => {
 });
 
 describe("session-guidance hook module", () => {
+  test("follows a changed Friction Switch in the next session, with no sync", () => {
+    const { repoRoot } = wrapRepo();
+    const env = { HOME: makeTempDir("session-guidance-home-") };
+
+    writeFrictionSwitch(true, env.HOME);
+    expect(additionalContext(buildSessionGuidance(env, repoRoot).stdout)).toContain("## Friction");
+    writeFrictionSwitch(false, env.HOME);
+    expect(additionalContext(buildSessionGuidance(env, repoRoot).stdout)).not.toContain(
+      "## Friction",
+    );
+  });
+
   test("emits the companion policy as SessionStart additionalContext", () => {
     const { repoRoot, companionPath } = wrapRepo();
 
@@ -71,6 +85,29 @@ describe("session-guidance hook module", () => {
     expect(context).toContain(companionPath);
     expect(context).toContain(repoRoot);
     expect(JSON.parse(result.stdout).hookSpecificOutput.hookEventName).toBe("SessionStart");
+  });
+
+  test("appends the children block in an Umbrella Repository, none in a checkout", () => {
+    const { repoRoot } = wrapRepo();
+    expect(additionalContext(buildSessionGuidance({}, repoRoot).stdout)).not.toContain(
+      "<umbrella-children",
+    );
+    for (const name of ["api", "web"]) {
+      fs.mkdirSync(path.join(repoRoot, name, ".git"), { recursive: true });
+      fs.writeFileSync(
+        path.join(repoRoot, name, ".git", "config"),
+        `[remote "origin"]\n\turl = git@github.com:acme/${name}.git\n`,
+      );
+    }
+
+    const context = additionalContext(buildSessionGuidance({}, repoRoot).stdout);
+
+    expect(context).toEndWith(`</companion-policy>\n\n${umbrellaChildrenBlock(repoRoot)}`);
+    expect(context).toContain('<child repository="acme/api" folder="api" />');
+    // Claude's hook cwd follows `cd`; SessionStart runs again on clear and compact.
+    expect(additionalContext(buildSessionGuidance({}, path.join(repoRoot, "api")).stdout)).toBe(
+      context,
+    );
   });
 
   test("names the projected wrapper bin, not the running installation's", () => {
@@ -109,6 +146,17 @@ describe("session-guidance hook module", () => {
     const result = buildSessionGuidance({ MATE_ARTIFACT_PATH: companionPath }, repoRoot);
 
     expect(result).toEqual({ exitCode: 0, stdout: "" });
+  });
+
+  test("a Capability variable alone is no launch: the guidance is emitted", () => {
+    const { repoRoot, companionPath } = wrapRepo();
+
+    const result = buildSessionGuidance(
+      { MATE_REACT_DOCTOR_BIN_PATH: "/opt/acme/react-doctor" },
+      repoRoot,
+    );
+
+    expect(additionalContext(result.stdout)).toContain(companionPath);
   });
 
   test("emits nothing in an unwrapped repository", () => {

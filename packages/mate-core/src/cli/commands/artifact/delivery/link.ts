@@ -5,13 +5,15 @@ import {
   type RecordDeliveryDeps,
 } from "../../../../lib/delivery/record-delivery";
 import { applyWarnings, type DependencyWarning } from "../../../../lib/delivery/overlap";
-import { isJiraKey, normalizeJiraKey, type MergeState } from "../../../../lib/delivery/record";
+import { isJiraKey, normalizeJiraKey } from "../../../../lib/delivery/record";
 import { attributeCurrentSession } from "../../../../lib/session-attribution";
 import { claudeSessionIsolation } from "../../../../runtime/claude-bg-isolation";
 import { type BooleanFlagSet, parseFlags, positionalArgs, stringFlag } from "../../../parse-flags";
 import {
   branchFlagsFrom,
   canonicalRepository,
+  CONFIRM_FLAGS,
+  confirmFlag,
   deliveryEditFrom,
   DIRECT_NEEDS_BRANCH,
   repositoryFlag,
@@ -39,16 +41,9 @@ const BOOLEAN_FLAGS: BooleanFlagSet = new Set([
   "refresh",
   "fetch",
   "direct",
-  "confirm-merged",
-  "confirm-open",
-  "confirm-dropped",
+  "spec-base",
+  ...CONFIRM_FLAGS,
 ]);
-
-const CONFIRMATIONS: Record<string, MergeState> = {
-  "confirm-merged": "merged",
-  "confirm-open": "open",
-  "confirm-dropped": "closed-unmerged",
-};
 
 /**
  * `warnings`: declared dependencies not implemented yet; they inform and never block.
@@ -82,25 +77,30 @@ function renderHuman(result: LinkResult): string[] {
  * @description Writes a change's Delivery Record (`delivery.yaml`), with `artifact archive`
  * the only writer of that file, for active and archived changes. Records the delivery branch or a
  * not-applicable reason per Working Repository, an informational PR URL, merge results
- * from the forge or a local checkout (`--refresh`), or the user's answer (`--confirm-*`,
- * source `user`).
+ * from a checkout linked on this machine (`--refresh`, source `git`), or the user's answer
+ * (`--confirm-*`, source `user`).
  * @flags
  * - `--repository <org/repo>` — the delivery to edit; defaults to the Working Repository, or in
  *   an Umbrella Repository to the change's only scoped child.
  * - `--branch <branch>` — record the delivery branch; a protected branch needs `--direct`.
  * - `--direct` — with `--branch`, record a direct delivery, settled only by the user's answer; required for a protected branch.
  * - `--not-applicable <reason>` — no branch delivers this change in the repository.
- * - `--pr <url>` — record the PR URL; with `--refresh`, picks that PR among several.
+ * - `--pr <url>` — record the PR URL; kept over one a refresh finds, and its head ref recovers
+ *   the head of a deleted branch.
  * - `--ticket <KEY>` — record the Delivery Branch resolved with this Jira key (`ABC-123`, any
  *   case): a new branch is named by the `branchTemplate` (default
  *   `workset/<TICKET>-<workset-id>`), while a recorded, inherited,
  *   or existing branch is kept. The key is not stored. Excludes `--branch` and
  *   `--not-applicable`; refused unless the openspec capability sets `ticket: jira`.
- * - `--refresh` — ask the forge (with `MATE_GIT_TOKEN`), then a local checkout, for the merge
- *   state of each recorded branch; a direct delivery is reported as needing the user's answer.
- * - `--fetch` — with `--refresh`, fetch the default and delivery branches first even when the
- *   companion's Git mode is not `auto`.
+ * - `--refresh` — check each recorded branch in its checkout linked on this machine: a merge
+ *   commit or a default-branch commit containing its head records it merged; anything else is
+ *   an outcome needing an answer (`answerReason`: `likely-merged`, `not-on-default`,
+ *   `branch-deleted`, `no-checkout`, `direct`).
+ * - `--fetch` — with `--refresh`, fetch the default and delivery branches and list the
+ *   remote's pull refs first even when the companion's Git mode is not `auto`.
  * - `--confirm-merged` / `--confirm-open` / `--confirm-dropped` — the user's answer.
+ * - `--spec-base` — record the companion's `HEAD` as the commit the change's delta specs are
+ *   written against, unless one is recorded; any first write of the record does too.
  * - `--json` — emit an array of {@link LinkResult}, one per change.
  * @remarks Warns, without blocking, about each `dependsOn` change that is neither archived nor
  * fully implemented, since apply records the branch before writing code. Without an edit flag or `--refresh` it only reads the record and writes nothing.
@@ -109,10 +109,10 @@ function renderHuman(result: LinkResult): string[] {
  * `worktree.bgIsolation` in the Claude settings files) is not `none`, when the Working
  * Repository (else the current folder) lies in a Git checkout that is not a linked
  * worktree. An isolation value other than `worktree` or `none` is ignored with a warning.
- * Network requests go only to the forge API, with `--refresh` and with `--branch` for
- * another repository's default branch, and to `origin` through `git fetch` with `--refresh`
- * in Git mode `auto` or with `--fetch`. Only `git` is started; no credential is read. The
- * forge token is never printed, logged, or written.
+ * Network requests go only to a linked checkout's `origin`, through `git fetch` and
+ * `git ls-remote` with `--refresh` in Git mode `auto` or with `--fetch`. Only `git` is started;
+ * no credential is read, and no repository a record names is inspected unless it is
+ * linked on this machine.
  */
 export async function runArtifactLinkCommand(
   argv: string[],
@@ -133,7 +133,7 @@ export async function runArtifactLinkCommand(
   const { branch, notApplicable } = branchFlags;
   const pr = stringFlag(flags.pr);
   const ticket = stringFlag(flags.ticket);
-  const confirmations = Object.keys(CONFIRMATIONS).filter((flag) => flags[flag] === true);
+  const confirmation = confirmFlag(flags);
 
   if (changes.length === 0) return refuse("mate: artifact link requires a change name.");
   if (flags.fetch === true && flags.refresh !== true) {
@@ -142,9 +142,7 @@ export async function runArtifactLinkCommand(
   if (branch !== undefined && notApplicable !== undefined) {
     return refuse("mate: --branch and --not-applicable exclude each other.");
   }
-  if (confirmations.length > 1) {
-    return refuse("mate: pass one of --confirm-merged, --confirm-open, or --confirm-dropped.");
-  }
+  if ("error" in confirmation) return refuse(confirmation.error);
   if (branchFlags.direct && branch === undefined) return refuse(DIRECT_NEEDS_BRANCH);
   if (pr !== undefined && !/^https?:\/\/\S+$/.test(pr)) {
     return refuse("mate: --pr expects the PR's URL.");
@@ -164,7 +162,7 @@ export async function runArtifactLinkCommand(
   if ("error" in environment) return refuse(environment.error);
   if (environment.ticket?.diagnostic) emitErr(`warning: ${environment.ticket.diagnostic}`);
   const repository = canonicalRepository(environment, requested.repository);
-  const confirm = confirmations.length === 1 ? CONFIRMATIONS[confirmations[0]] : undefined;
+  const { confirm } = confirmation;
   const delivery = deliveryEditFrom(branchFlags);
   const outcome = await recordDelivery(
     environment,
@@ -179,6 +177,7 @@ export async function runArtifactLinkCommand(
       },
       refresh: flags.refresh === true,
       fetch: flags.fetch === true,
+      specBase: flags["spec-base"] === true,
       includeArchived: true,
     },
     deps,
@@ -198,6 +197,7 @@ export async function runArtifactLinkCommand(
   const results: LinkResult[] = [];
   for (const result of "results" in outcome ? outcome.results : []) {
     for (const diagnostic of result.diagnostics) emitErr(`warning: ${diagnostic}`);
+    // oxlint-disable-next-line no-await-in-loop -- warnings are emitted in result order
     const warnings = await applyWarnings(environment.companionPath, result.change);
     for (const warning of warnings) emitErr(`warning: ${warning.message}`);
     for (const entry of result.settlement.unscoped) {

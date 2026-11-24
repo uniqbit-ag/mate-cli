@@ -6,14 +6,17 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { stringify } from "yaml";
 
 import {
-  allPluginDeclarations,
+  audienceInstallCommand,
+  audiencePluginPackages,
   declaredAudiences,
   effectivePluginDeclarations,
+  effectivePluginEntries,
   effectiveStudioAgent,
   normalizeBaseAudience,
-  readAllDeclarations,
+  pluginInstallTargets,
   readAudienceSelection,
   readEffectiveDeclarations,
+  readEffectiveEntries,
   readFrameworkRaw,
   resolveAudience,
 } from "./audiences";
@@ -120,28 +123,67 @@ describe("effectivePluginDeclarations", () => {
   });
 });
 
-describe("allPluginDeclarations", () => {
-  test("is base followed by every audience", () => {
+describe("pluginInstallTargets", () => {
+  const packages = (targets: ReturnType<typeof pluginInstallTargets>) =>
+    targets.map((target) => [target.audience, target.declarations.map((d) => d.package)]);
+
+  test("without an audience the shared workspace is the only target", () => {
+    expect(packages(pluginInstallTargets(raw, null))).toEqual([[null, ["@acme/base"]]]);
+  });
+
+  test("an active audience adds its own workspace and no other audience's", () => {
+    expect(packages(pluginInstallTargets(raw, "ba"))).toEqual([
+      [null, ["@acme/base"]],
+      ["ba", ["@acme/analyst"]],
+    ]);
+    expect(packages(pluginInstallTargets(raw, "qa"))).toEqual([
+      [null, ["@acme/base"]],
+      ["qa", ["@acme/analyst", "@acme/reviewer"]],
+    ]);
+  });
+
+  test("the reserved base audience selects the shared workspace only", () => {
+    expect(packages(pluginInstallTargets(raw, "base"))).toEqual([[null, ["@acme/base"]]]);
+  });
+
+  test("an undeclared audience selects the shared workspace only", () => {
+    expect(packages(pluginInstallTargets(raw, "dev"))).toEqual([[null, ["@acme/base"]]]);
+  });
+
+  test("the shared target exists even with no base plugin, so a stale workspace is pruned", () => {
     expect(
-      allPluginDeclarations(raw).map((entry) => (entry as { package: string }).package),
-    ).toEqual(["@acme/base", "@acme/analyst", "@acme/reviewer"]);
+      packages(pluginInstallTargets({ audiences: { ba: { plugins: [analyst] } } }, null)),
+    ).toEqual([[null, []]]);
+  });
+});
+
+describe("effectivePluginEntries", () => {
+  test("keeps each entry's origin", () => {
+    expect(effectivePluginEntries(raw, "ba")).toEqual([
+      { entry: base, audience: null },
+      { entry: { ...analyst, config: { mode: "ba" } }, audience: "ba" },
+    ]);
   });
 
-  test("deduplicates a package shared by audiences only for installation", () => {
-    const all = allPluginDeclarations(raw);
-    expect(
-      all.filter((entry) => (entry as { package: string }).package === analyst.package),
-    ).toHaveLength(1);
-    expect(effectivePluginDeclarations(raw, "ba")[1]).toMatchObject({ config: { mode: "ba" } });
-    expect(effectivePluginDeclarations(raw, "qa")[1]).toMatchObject({ config: { mode: "qa" } });
+  test("an unknown or reserved audience yields base entries only", () => {
+    expect(effectivePluginEntries(raw, "dev")).toEqual([{ entry: base, audience: null }]);
+    expect(effectivePluginEntries(raw, "base")).toEqual([{ entry: base, audience: null }]);
   });
+});
 
-  test("equals the base list when no audiences are declared", () => {
-    expect(allPluginDeclarations({ plugins: [base] })).toEqual([base]);
+describe("audiencePluginPackages", () => {
+  test("names every package declared under an audience and no base package", () => {
+    expect([...audiencePluginPackages(raw)].toSorted()).toEqual([
+      "@acme/analyst",
+      "@acme/reviewer",
+    ]);
   });
+});
 
-  test("keeps malformed entries so callers can report them", () => {
-    expect(allPluginDeclarations({ plugins: ["junk"] })).toEqual(["junk"]);
+describe("audienceInstallCommand", () => {
+  test("names the selection that installs the workspace", () => {
+    expect(audienceInstallCommand(null)).toBe("mate install");
+    expect(audienceInstallCommand("ba")).toBe("MATE_AUDIENCE=ba mate install");
   });
 });
 
@@ -220,20 +262,23 @@ describe("raw readers", () => {
     expect(await readEffectiveDeclarations(root, "ba")).toHaveLength(2);
   });
 
-  test("readAllDeclarations reads base plus every audience", async () => {
+  test("readEffectiveEntries reads each entry with its origin", async () => {
     const root = await companionWith(yaml);
-    expect(await readAllDeclarations(root)).toHaveLength(2);
+    expect((await readEffectiveEntries(root, "ba")).map((item) => item.audience)).toEqual([
+      null,
+      "ba",
+    ]);
   });
 
   test("readers return an empty list when the file is missing", async () => {
     const root = await companionWith(null);
     expect(await readEffectiveDeclarations(root, "ba")).toEqual([]);
-    expect(await readAllDeclarations(root)).toEqual([]);
+    expect(await readEffectiveEntries(root, "ba")).toEqual([]);
   });
 
   test("readers never write the config file", async () => {
     const root = await companionWith(yaml);
-    await readAllDeclarations(root);
+    await readEffectiveEntries(root, "ba");
     await readEffectiveDeclarations(root, "ba");
     expect(await fs.readFile(path.join(root, ".mate", "config", "framework.yaml"), "utf8")).toBe(
       yaml,

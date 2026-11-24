@@ -10,6 +10,7 @@ import { join, relative } from "node:path";
 import {
   deliveryPath,
   SCHEMA_ARTIFACTS,
+  SHIPPED_SCHEMAS,
 } from "../../../packages/mate-core/src/lib/delivery/stages.ts";
 
 const root = join(import.meta.dir, "..");
@@ -58,7 +59,8 @@ function schemaArtifactIds(schema: string): string[] {
 const guide = readFileSync(guideFile, "utf8");
 const problems: string[] = [];
 
-for (const [schema, contractArtifacts] of Object.entries(SCHEMA_ARTIFACTS)) {
+for (const schema of SHIPPED_SCHEMAS) {
+  const contractArtifacts = SCHEMA_ARTIFACTS[schema];
   const shipped = schemaArtifactIds(schema);
   if (shipped.join(",") !== contractArtifacts.join(",")) {
     problems.push(
@@ -84,5 +86,5 @@ if (problems.length > 0) {
   process.exit(1);
 }
 console.log(
-  `check-delivery-guide: the first-change guide matches the stage contract for ${Object.keys(SCHEMA_ARTIFACTS).join(" and ")}`,
+  `check-delivery-guide: the first-change guide matches the stage contract for ${SHIPPED_SCHEMAS.join(" and ")}`,
 );

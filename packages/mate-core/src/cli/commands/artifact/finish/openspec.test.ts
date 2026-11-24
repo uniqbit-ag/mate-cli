@@ -82,6 +82,7 @@ describe("openspecFinisher.resolve", () => {
           "openspec/changes/my-change",
           "openspec/changes/archive/2026-01-01-my-change",
         ],
+        trailers: { "Mate-Artifact": "openspec/2026-01-01-my-change" },
       },
     });
   });
@@ -95,7 +96,7 @@ describe("openspecFinisher.resolve", () => {
     expect(result.ok ? "" : result.message).toContain(
       "openspec/changes/archive/2026-07-14-my-change",
     );
-    expect(result.ok ? "" : result.message).toContain("openspec archive my-change");
+    expect(result.ok ? "" : result.message).toContain("mate artifact submit my-change");
   });
 
   test("a dated anchor that is a file is not an archive", async () => {
@@ -216,7 +217,7 @@ describe("openspecFinisher.resolve", () => {
     const result = await resolve(root, "my-change");
 
     expect(result.ok).toBe(false);
-    expect(result.ok ? "" : result.message).toContain("openspec archive my-change");
+    expect(result.ok ? "" : result.message).toContain("mate artifact submit my-change");
   });
 
   test("an active-but-unarchived change is refused, not published", async () => {
@@ -227,8 +228,8 @@ describe("openspecFinisher.resolve", () => {
 
     expect(result.ok).toBe(false);
     const message = result.ok ? "" : result.message;
-    expect(message).toContain("still active");
-    expect(message).toContain("openspec archive my-change");
+    expect(message).toContain("is not submitted");
+    expect(message).toContain("mate artifact submit my-change");
   });
 
   test("a stale same-name archive resolves even while a new active change exists", async () => {
@@ -571,6 +572,21 @@ scopes:
     expect(await readCanonical(root, "cap")).toContain("repository: acme/product");
   });
 
+  test("reconciles mate-full and legacy mate-v1 archives alike", async () => {
+    const blocks: string[] = [];
+    for (const schema of ["mate-full", "mate-v1"]) {
+      const root = await makeCompanion();
+      await seedArchivedDelta(root, "2026-08-06-probe", "cap", SINGLE_SCOPE, `schema: ${schema}\n`);
+      await seedCanonical(root, "cap", BARE_CANONICAL);
+
+      await openspecFinisher(root).resolve("probe");
+
+      blocks.push(await readCanonical(root, "cap"));
+    }
+    expect(blocks[0]).toContain("repository: acme/product");
+    expect(blocks[1]).toBe(blocks[0]);
+  });
+
   test("skips non-Mate archived schemas even when the project default is mate-v1", async () => {
     for (const schema of ["default", "spec-driven", "custom"]) {
       const root = await makeCompanion();
@@ -673,6 +689,7 @@ scopes:
       resolved: {
         anchorName: "2026-08-06-probe",
         commitPaths: ["openspec/changes/probe", "openspec/changes/archive/2026-08-06-probe"],
+        trailers: { "Mate-Artifact": "openspec/2026-08-06-probe" },
       },
     });
   });
@@ -911,7 +928,7 @@ describe("resolveDriftedSpecs", () => {
 });
 
 describe("openspecSpecsFinisher", () => {
-  test("produces the spec publication's anchor, namespace, subject, and collision policy", async () => {
+  test("produces the spec publication's anchor and subject", async () => {
     const companion = await makeCompanion();
     const paths = ["openspec/specs/widget-api/spec.md"];
 
@@ -922,9 +939,8 @@ describe("openspecSpecsFinisher", () => {
     expect(result.ok === true && result.resolved).toEqual({
       anchorName: "2026-09-14-widget-api",
       commitPaths: paths,
-      tagNamespace: "openspec/specs",
       commitSubject: "chore(openspec): sync canonical specs (widget-api)",
-      tagCollision: "suffix",
+      trailers: { "Mate-Artifact": "openspec/specs/2026-09-14-widget-api" },
     });
   });
 

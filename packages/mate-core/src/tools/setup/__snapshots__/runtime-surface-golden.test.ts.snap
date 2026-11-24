@@ -143,9 +143,8 @@ exports[`runtime surface golden fixtures setup graphify × claude 2`] = `
     <linked-repository id="app" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -297,6 +296,58 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -509,9 +560,8 @@ exports[`runtime surface golden fixtures setup graphify × opencode 2`] = `
     <linked-repository id="$MATE_REPO_ID" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -949,9 +999,8 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] =
     <linked-repository id="app" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -1017,9 +1066,8 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] =
     <linked-repository id="$MATE_REPO_ID" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -1157,6 +1205,58 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -1661,9 +1761,8 @@ exports[`runtime surface golden fixtures setup tokensave × claude 2`] = `
     <linked-repository id="app" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -1840,6 +1939,14 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
           {
             "hooks": [
               {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
                 "args": [
                   "hook-prompt-submit",
                 ],
@@ -1853,10 +1960,36 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
       {
         "at": [
           "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
           "Stop",
         ],
         "kind": "list",
         "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
           {
             "hooks": [
               {
@@ -2082,9 +2215,8 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 2`] = `
     <linked-repository id="$MATE_REPO_ID" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -2547,9 +2679,8 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] 
     <linked-repository id="app" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -2609,9 +2740,8 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] 
     <linked-repository id="$MATE_REPO_ID" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -2777,6 +2907,14 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
           {
             "hooks": [
               {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
                 "args": [
                   "hook-prompt-submit",
                 ],
@@ -2790,10 +2928,36 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
       {
         "at": [
           "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
           "Stop",
         ],
         "kind": "list",
         "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
           {
             "hooks": [
               {
@@ -3292,9 +3456,8 @@ exports[`runtime surface golden fixtures setup context-mode × claude 2`] = `
     <linked-repository id="app" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -3437,6 +3600,58 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -3626,9 +3841,8 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 2`] = `
     <linked-repository id="$MATE_REPO_ID" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -4026,9 +4240,8 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
     <linked-repository id="app" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -4074,9 +4287,8 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
     <linked-repository id="$MATE_REPO_ID" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -4214,6 +4426,58 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -4672,9 +4936,8 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 2`] = `
     <linked-repository id="app" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -4815,6 +5078,58 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -4996,9 +5311,8 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 2`] = `
     <linked-repository id="$MATE_REPO_ID" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -5390,9 +5704,8 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2
     <linked-repository id="app" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -5436,9 +5749,8 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2
     <linked-repository id="$MATE_REPO_ID" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -5576,6 +5888,58 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -5970,6 +6334,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
         "Skill(mate-publish-artifact)",
         "Skill(mate-show-me)",
         "Skill(mate-simplify-code)",
+        "Skill(mate-submit-change)",
       ],
       "ask": [
         "Edit(/<root>/companion/.mate/config/framework.yaml)",
@@ -6014,30 +6379,31 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
     },
   },
   "claudeSkills": {
-    "mate-apply-change/SKILL.md": "2e50a18e43e4",
+    "mate-apply-change/SKILL.md": "6c3f42b0ace2",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
-    "mate-apply-change/references/openspec-apply-change.md": "d11b6fc25bf4",
-    "mate-archive-change/SKILL.md": "a231ddabb438",
+    "mate-apply-change/references/openspec-apply-change.md": "fa61cbd0bc83",
+    "mate-archive-change/SKILL.md": "675ef32ae065",
     "mate-backfill-spec/SKILL.md": "d07cd4a60169",
-    "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
+    "mate-clarify-intent/SKILL.md": "7f7d768be634",
     "mate-create-report/SKILL.md": "b4d92b44719a",
-    "mate-domain-modeling/SKILL.md": "722d0e5a972d",
+    "mate-domain-modeling/SKILL.md": "92f3e1f5faa2",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-explore-change/SKILL.md": "773339a07db8",
+    "mate-explore-change/SKILL.md": "66158c617ed4",
     "mate-explore-change/references/openspec-explore.md": "3cf63d55e3d2",
     "mate-grill-me/SKILL.md": "ab55b002ba24",
     "mate-grill-with-docs/SKILL.md": "b542b610c484",
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "82f83a32a9a9",
-    "mate-propose-change/references/mate-revise.md": "fab04cde133f",
+    "mate-propose-change/SKILL.md": "371e31803cc5",
+    "mate-propose-change/references/mate-revise.md": "1f90002ee95d",
     "mate-propose-change/references/openspec-propose.md": "dbd00207ffa4",
-    "mate-propose-change/references/openspec-update-change.md": "678af6ec1889",
-    "mate-publish-artifact/SKILL.md": "1daa076a037a",
-    "mate-publish-artifact/references/openspec.md": "d004aed5cf3f",
-    "mate-show-me/SKILL.md": "ad2c0acd4aef",
-    "mate-simplify-code/SKILL.md": "3620932bd724",
+    "mate-propose-change/references/openspec-update-change.md": "0b0f6dee9f1e",
+    "mate-publish-artifact/SKILL.md": "4332053cc80d",
+    "mate-publish-artifact/references/openspec.md": "83196c70960c",
+    "mate-show-me/SKILL.md": "4cb867ba9740",
+    "mate-simplify-code/SKILL.md": "740c2b533c6a",
+    "mate-submit-change/SKILL.md": "4595ca11960e",
   },
   "opencodeConfig": null,
   "opencodePlugins": {},
@@ -6070,9 +6436,8 @@ exports[`runtime surface golden fixtures setup openspec × claude 2`] = `
     <linked-repository id="app" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -6080,7 +6445,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 2`] = `
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
     <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>
     <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository; areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
-    <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is local and publishes nothing. Publish only through the mate-publish-artifact skill, whose sanctioned command is mate artifact publish "<name>" --json: only after an explicit user selection and confirmation of the commit, tag, and push, and only for an archive whose delivery branch is merged; never hand-commit or hand-tag one. Publish never archives and never applies delta specs itself: archiving is a precondition (mate-archive-change, allowed before the merge), and publishing a still-active change is an error. Publish refuses to run anywhere but the companion's default branch.</rule>
+    <rule id="openspec-publish" severity="critical">Submit publishes nothing: it pushes an OpenSpec change folder (state: submitted) to the inbox mate/inbox to await its merge. A submitted change is not the truth: only publication lands it on the companion's default branch. openspec/specs/ is current; mate artifact project "<name>" shows the unpublished outcome. mate artifact pending --json lists them with author, touched requirements, ref and path; read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it; implement or revise one only when the user names it: mate artifact take "<name>" brings it into the checkout when it is missing there, then resubmit it with mate-submit-change. Publish only through mate-publish-artifact (mate artifact publish "<name>" --json), after the user selects and confirms the commit and push, for a Delivery Group whose delivery branch is merged. It creates no tag. Never hand-commit or hand-tag one. Publish archives submitted changes and never submits: submitting is a precondition (mate-submit-change, before the merge).</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -6223,6 +6588,58 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
       },
       {
         "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -6243,6 +6660,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
           "Skill(mate-explore-change)",
           "Skill(mate-propose-change)",
           "Skill(mate-apply-change)",
+          "Skill(mate-submit-change)",
           "Skill(mate-archive-change)",
           "Skill(mate-publish-artifact)",
           "Skill(mate-backfill-spec)",
@@ -6377,30 +6795,31 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
   "opencodeSkills": {},
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-apply-change/SKILL.md": "2e50a18e43e4",
+    "mate-apply-change/SKILL.md": "6c3f42b0ace2",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
-    "mate-apply-change/references/openspec-apply-change.md": "de22021f4daa",
-    "mate-archive-change/SKILL.md": "a231ddabb438",
+    "mate-apply-change/references/openspec-apply-change.md": "c132265690b4",
+    "mate-archive-change/SKILL.md": "675ef32ae065",
     "mate-backfill-spec/SKILL.md": "d07cd4a60169",
-    "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
+    "mate-clarify-intent/SKILL.md": "7f7d768be634",
     "mate-create-report/SKILL.md": "b4d92b44719a",
-    "mate-domain-modeling/SKILL.md": "722d0e5a972d",
+    "mate-domain-modeling/SKILL.md": "92f3e1f5faa2",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-explore-change/SKILL.md": "773339a07db8",
+    "mate-explore-change/SKILL.md": "66158c617ed4",
     "mate-explore-change/references/openspec-explore.md": "5bfcc2eefbd8",
     "mate-grill-me/SKILL.md": "ab55b002ba24",
     "mate-grill-with-docs/SKILL.md": "b542b610c484",
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "82f83a32a9a9",
-    "mate-propose-change/references/mate-revise.md": "fab04cde133f",
+    "mate-propose-change/SKILL.md": "371e31803cc5",
+    "mate-propose-change/references/mate-revise.md": "1f90002ee95d",
     "mate-propose-change/references/openspec-propose.md": "c1f1d1291283",
-    "mate-propose-change/references/openspec-update-change.md": "cdb8d6c17526",
-    "mate-publish-artifact/SKILL.md": "1daa076a037a",
-    "mate-publish-artifact/references/openspec.md": "d004aed5cf3f",
-    "mate-show-me/SKILL.md": "ad2c0acd4aef",
-    "mate-simplify-code/SKILL.md": "3620932bd724",
+    "mate-propose-change/references/openspec-update-change.md": "098ef729c37f",
+    "mate-publish-artifact/SKILL.md": "4332053cc80d",
+    "mate-publish-artifact/references/openspec.md": "83196c70960c",
+    "mate-show-me/SKILL.md": "4cb867ba9740",
+    "mate-simplify-code/SKILL.md": "740c2b533c6a",
+    "mate-submit-change/SKILL.md": "4595ca11960e",
   },
 }
 `;
@@ -6433,9 +6852,8 @@ exports[`runtime surface golden fixtures setup openspec × opencode 2`] = `
     <linked-repository id="$MATE_REPO_ID" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -6443,7 +6861,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 2`] = `
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
     <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>
     <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository; areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
-    <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is local and publishes nothing. Publish only through the mate-publish-artifact skill, whose sanctioned command is mate artifact publish "<name>" --json: only after an explicit user selection and confirmation of the commit, tag, and push, and only for an archive whose delivery branch is merged; never hand-commit or hand-tag one. Publish never archives and never applies delta specs itself: archiving is a precondition (mate-archive-change, allowed before the merge), and publishing a still-active change is an error. Publish refuses to run anywhere but the companion's default branch.</rule>
+    <rule id="openspec-publish" severity="critical">Submit publishes nothing: it pushes an OpenSpec change folder (state: submitted) to the inbox mate/inbox to await its merge. A submitted change is not the truth: only publication lands it on the companion's default branch. openspec/specs/ is current; mate artifact project "<name>" shows the unpublished outcome. mate artifact pending --json lists them with author, touched requirements, ref and path; read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it; implement or revise one only when the user names it: mate artifact take "<name>" brings it into the checkout when it is missing there, then resubmit it with mate-submit-change. Publish only through mate-publish-artifact (mate artifact publish "<name>" --json), after the user selects and confirms the commit and push, for a Delivery Group whose delivery branch is merged. It creates no tag. Never hand-commit or hand-tag one. Publish archives submitted changes and never submits: submitting is a precondition (mate-submit-change, before the merge).</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -6747,6 +7165,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
         "Skill(mate-publish-artifact)",
         "Skill(mate-show-me)",
         "Skill(mate-simplify-code)",
+        "Skill(mate-submit-change)",
       ],
       "ask": [
         "Edit(/<root>/companion/.mate/config/framework.yaml)",
@@ -6791,30 +7210,31 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     },
   },
   "claudeSkills": {
-    "mate-apply-change/SKILL.md": "2e50a18e43e4",
+    "mate-apply-change/SKILL.md": "6c3f42b0ace2",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
-    "mate-apply-change/references/openspec-apply-change.md": "d11b6fc25bf4",
-    "mate-archive-change/SKILL.md": "a231ddabb438",
+    "mate-apply-change/references/openspec-apply-change.md": "fa61cbd0bc83",
+    "mate-archive-change/SKILL.md": "675ef32ae065",
     "mate-backfill-spec/SKILL.md": "d07cd4a60169",
-    "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
+    "mate-clarify-intent/SKILL.md": "7f7d768be634",
     "mate-create-report/SKILL.md": "b4d92b44719a",
-    "mate-domain-modeling/SKILL.md": "722d0e5a972d",
+    "mate-domain-modeling/SKILL.md": "92f3e1f5faa2",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-explore-change/SKILL.md": "773339a07db8",
+    "mate-explore-change/SKILL.md": "66158c617ed4",
     "mate-explore-change/references/openspec-explore.md": "3cf63d55e3d2",
     "mate-grill-me/SKILL.md": "ab55b002ba24",
     "mate-grill-with-docs/SKILL.md": "b542b610c484",
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "82f83a32a9a9",
-    "mate-propose-change/references/mate-revise.md": "fab04cde133f",
+    "mate-propose-change/SKILL.md": "371e31803cc5",
+    "mate-propose-change/references/mate-revise.md": "1f90002ee95d",
     "mate-propose-change/references/openspec-propose.md": "dbd00207ffa4",
-    "mate-propose-change/references/openspec-update-change.md": "678af6ec1889",
-    "mate-publish-artifact/SKILL.md": "1daa076a037a",
-    "mate-publish-artifact/references/openspec.md": "d004aed5cf3f",
-    "mate-show-me/SKILL.md": "ad2c0acd4aef",
-    "mate-simplify-code/SKILL.md": "3620932bd724",
+    "mate-propose-change/references/openspec-update-change.md": "0b0f6dee9f1e",
+    "mate-publish-artifact/SKILL.md": "4332053cc80d",
+    "mate-publish-artifact/references/openspec.md": "83196c70960c",
+    "mate-show-me/SKILL.md": "4cb867ba9740",
+    "mate-simplify-code/SKILL.md": "740c2b533c6a",
+    "mate-submit-change/SKILL.md": "4595ca11960e",
   },
   "opencodeConfig": {
     "$schema": "https://opencode.ai/config.json",
@@ -6837,30 +7257,31 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
   "opencodeSkills": {},
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-apply-change/SKILL.md": "2e50a18e43e4",
+    "mate-apply-change/SKILL.md": "6c3f42b0ace2",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
-    "mate-apply-change/references/openspec-apply-change.md": "de22021f4daa",
-    "mate-archive-change/SKILL.md": "a231ddabb438",
+    "mate-apply-change/references/openspec-apply-change.md": "c132265690b4",
+    "mate-archive-change/SKILL.md": "675ef32ae065",
     "mate-backfill-spec/SKILL.md": "d07cd4a60169",
-    "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
+    "mate-clarify-intent/SKILL.md": "7f7d768be634",
     "mate-create-report/SKILL.md": "b4d92b44719a",
-    "mate-domain-modeling/SKILL.md": "722d0e5a972d",
+    "mate-domain-modeling/SKILL.md": "92f3e1f5faa2",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-explore-change/SKILL.md": "773339a07db8",
+    "mate-explore-change/SKILL.md": "66158c617ed4",
     "mate-explore-change/references/openspec-explore.md": "5bfcc2eefbd8",
     "mate-grill-me/SKILL.md": "ab55b002ba24",
     "mate-grill-with-docs/SKILL.md": "b542b610c484",
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "82f83a32a9a9",
-    "mate-propose-change/references/mate-revise.md": "fab04cde133f",
+    "mate-propose-change/SKILL.md": "371e31803cc5",
+    "mate-propose-change/references/mate-revise.md": "1f90002ee95d",
     "mate-propose-change/references/openspec-propose.md": "c1f1d1291283",
-    "mate-propose-change/references/openspec-update-change.md": "cdb8d6c17526",
-    "mate-publish-artifact/SKILL.md": "1daa076a037a",
-    "mate-publish-artifact/references/openspec.md": "d004aed5cf3f",
-    "mate-show-me/SKILL.md": "ad2c0acd4aef",
-    "mate-simplify-code/SKILL.md": "3620932bd724",
+    "mate-propose-change/references/openspec-update-change.md": "098ef729c37f",
+    "mate-publish-artifact/SKILL.md": "4332053cc80d",
+    "mate-publish-artifact/references/openspec.md": "83196c70960c",
+    "mate-show-me/SKILL.md": "4cb867ba9740",
+    "mate-simplify-code/SKILL.md": "740c2b533c6a",
+    "mate-submit-change/SKILL.md": "4595ca11960e",
   },
 }
 `;
@@ -6888,9 +7309,8 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     <linked-repository id="app" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -6898,7 +7318,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
     <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>
     <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository; areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
-    <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is local and publishes nothing. Publish only through the mate-publish-artifact skill, whose sanctioned command is mate artifact publish "<name>" --json: only after an explicit user selection and confirmation of the commit, tag, and push, and only for an archive whose delivery branch is merged; never hand-commit or hand-tag one. Publish never archives and never applies delta specs itself: archiving is a precondition (mate-archive-change, allowed before the merge), and publishing a still-active change is an error. Publish refuses to run anywhere but the companion's default branch.</rule>
+    <rule id="openspec-publish" severity="critical">Submit publishes nothing: it pushes an OpenSpec change folder (state: submitted) to the inbox mate/inbox to await its merge. A submitted change is not the truth: only publication lands it on the companion's default branch. openspec/specs/ is current; mate artifact project "<name>" shows the unpublished outcome. mate artifact pending --json lists them with author, touched requirements, ref and path; read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it; implement or revise one only when the user names it: mate artifact take "<name>" brings it into the checkout when it is missing there, then resubmit it with mate-submit-change. Publish only through mate-publish-artifact (mate artifact publish "<name>" --json), after the user selects and confirms the commit and push, for a Delivery Group whose delivery branch is merged. It creates no tag. Never hand-commit or hand-tag one. Publish archives submitted changes and never submits: submitting is a precondition (mate-submit-change, before the merge).</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -6936,9 +7356,8 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     <linked-repository id="$MATE_REPO_ID" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -6946,7 +7365,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
     <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>
     <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository; areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
-    <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is local and publishes nothing. Publish only through the mate-publish-artifact skill, whose sanctioned command is mate artifact publish "<name>" --json: only after an explicit user selection and confirmation of the commit, tag, and push, and only for an archive whose delivery branch is merged; never hand-commit or hand-tag one. Publish never archives and never applies delta specs itself: archiving is a precondition (mate-archive-change, allowed before the merge), and publishing a still-active change is an error. Publish refuses to run anywhere but the companion's default branch.</rule>
+    <rule id="openspec-publish" severity="critical">Submit publishes nothing: it pushes an OpenSpec change folder (state: submitted) to the inbox mate/inbox to await its merge. A submitted change is not the truth: only publication lands it on the companion's default branch. openspec/specs/ is current; mate artifact project "<name>" shows the unpublished outcome. mate artifact pending --json lists them with author, touched requirements, ref and path; read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it; implement or revise one only when the user names it: mate artifact take "<name>" brings it into the checkout when it is missing there, then resubmit it with mate-submit-change. Publish only through mate-publish-artifact (mate artifact publish "<name>" --json), after the user selects and confirms the commit and push, for a Delivery Group whose delivery branch is merged. It creates no tag. Never hand-commit or hand-tag one. Publish archives submitted changes and never submits: submitting is a precondition (mate-submit-change, before the merge).</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -7086,6 +7505,58 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
       },
       {
         "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -7106,6 +7577,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
           "Skill(mate-explore-change)",
           "Skill(mate-propose-change)",
           "Skill(mate-apply-change)",
+          "Skill(mate-submit-change)",
           "Skill(mate-archive-change)",
           "Skill(mate-publish-artifact)",
           "Skill(mate-backfill-spec)",
@@ -7560,6 +8032,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
         "Skill(mate-react-doctor)",
         "Skill(mate-show-me)",
         "Skill(mate-simplify-code)",
+        "Skill(mate-submit-change)",
         "mcp__plugin_context-mode_context-mode__*",
         "mcp__tokensave__*",
       ],
@@ -7621,32 +8094,33 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 "Outputs land in $GRAPHIFY_OUT by default.
 "
 ,
-    "mate-apply-change/SKILL.md": "2e50a18e43e4",
+    "mate-apply-change/SKILL.md": "6c3f42b0ace2",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
-    "mate-apply-change/references/openspec-apply-change.md": "d11b6fc25bf4",
-    "mate-archive-change/SKILL.md": "a231ddabb438",
+    "mate-apply-change/references/openspec-apply-change.md": "fa61cbd0bc83",
+    "mate-archive-change/SKILL.md": "675ef32ae065",
     "mate-backfill-spec/SKILL.md": "d07cd4a60169",
-    "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
+    "mate-clarify-intent/SKILL.md": "7f7d768be634",
     "mate-create-report/SKILL.md": "b4d92b44719a",
-    "mate-domain-modeling/SKILL.md": "722d0e5a972d",
+    "mate-domain-modeling/SKILL.md": "92f3e1f5faa2",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-explore-change/SKILL.md": "773339a07db8",
+    "mate-explore-change/SKILL.md": "66158c617ed4",
     "mate-explore-change/references/openspec-explore.md": "3cf63d55e3d2",
     "mate-grill-me/SKILL.md": "ab55b002ba24",
     "mate-grill-with-docs/SKILL.md": "b542b610c484",
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "82f83a32a9a9",
-    "mate-propose-change/references/mate-revise.md": "fab04cde133f",
+    "mate-propose-change/SKILL.md": "371e31803cc5",
+    "mate-propose-change/references/mate-revise.md": "1f90002ee95d",
     "mate-propose-change/references/openspec-propose.md": "dbd00207ffa4",
-    "mate-propose-change/references/openspec-update-change.md": "678af6ec1889",
-    "mate-publish-artifact/SKILL.md": "1daa076a037a",
-    "mate-publish-artifact/references/openspec.md": "d004aed5cf3f",
+    "mate-propose-change/references/openspec-update-change.md": "0b0f6dee9f1e",
+    "mate-publish-artifact/SKILL.md": "4332053cc80d",
+    "mate-publish-artifact/references/openspec.md": "83196c70960c",
     "mate-react-doctor/SKILL.md": "2ecf137679df",
     "mate-react-doctor/references/explain.md": "86754a7e5436",
-    "mate-show-me/SKILL.md": "ad2c0acd4aef",
-    "mate-simplify-code/SKILL.md": "3620932bd724",
+    "mate-show-me/SKILL.md": "4cb867ba9740",
+    "mate-simplify-code/SKILL.md": "740c2b533c6a",
+    "mate-submit-change/SKILL.md": "4595ca11960e",
   },
   "opencodeConfig": {
     "$schema": "https://opencode.ai/config.json",
@@ -7705,32 +8179,33 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   },
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-apply-change/SKILL.md": "2e50a18e43e4",
+    "mate-apply-change/SKILL.md": "6c3f42b0ace2",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
-    "mate-apply-change/references/openspec-apply-change.md": "de22021f4daa",
-    "mate-archive-change/SKILL.md": "a231ddabb438",
+    "mate-apply-change/references/openspec-apply-change.md": "c132265690b4",
+    "mate-archive-change/SKILL.md": "675ef32ae065",
     "mate-backfill-spec/SKILL.md": "d07cd4a60169",
-    "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
+    "mate-clarify-intent/SKILL.md": "7f7d768be634",
     "mate-create-report/SKILL.md": "b4d92b44719a",
-    "mate-domain-modeling/SKILL.md": "722d0e5a972d",
+    "mate-domain-modeling/SKILL.md": "92f3e1f5faa2",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-explore-change/SKILL.md": "773339a07db8",
+    "mate-explore-change/SKILL.md": "66158c617ed4",
     "mate-explore-change/references/openspec-explore.md": "5bfcc2eefbd8",
     "mate-grill-me/SKILL.md": "ab55b002ba24",
     "mate-grill-with-docs/SKILL.md": "b542b610c484",
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "82f83a32a9a9",
-    "mate-propose-change/references/mate-revise.md": "fab04cde133f",
+    "mate-propose-change/SKILL.md": "371e31803cc5",
+    "mate-propose-change/references/mate-revise.md": "1f90002ee95d",
     "mate-propose-change/references/openspec-propose.md": "c1f1d1291283",
-    "mate-propose-change/references/openspec-update-change.md": "cdb8d6c17526",
-    "mate-publish-artifact/SKILL.md": "1daa076a037a",
-    "mate-publish-artifact/references/openspec.md": "d004aed5cf3f",
+    "mate-propose-change/references/openspec-update-change.md": "098ef729c37f",
+    "mate-publish-artifact/SKILL.md": "4332053cc80d",
+    "mate-publish-artifact/references/openspec.md": "83196c70960c",
     "mate-react-doctor/SKILL.md": "2ecf137679df",
     "mate-react-doctor/references/explain.md": "86754a7e5436",
-    "mate-show-me/SKILL.md": "ad2c0acd4aef",
-    "mate-simplify-code/SKILL.md": "3620932bd724",
+    "mate-show-me/SKILL.md": "4cb867ba9740",
+    "mate-simplify-code/SKILL.md": "740c2b533c6a",
+    "mate-submit-change/SKILL.md": "4595ca11960e",
   },
 }
 `;
@@ -7758,9 +8233,8 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     <linked-repository id="app" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -7768,7 +8242,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
     <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>
     <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository; areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
-    <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is local and publishes nothing. Publish only through the mate-publish-artifact skill, whose sanctioned command is mate artifact publish "<name>" --json: only after an explicit user selection and confirmation of the commit, tag, and push, and only for an archive whose delivery branch is merged; never hand-commit or hand-tag one. Publish never archives and never applies delta specs itself: archiving is a precondition (mate-archive-change, allowed before the merge), and publishing a still-active change is an error. Publish refuses to run anywhere but the companion's default branch.</rule>
+    <rule id="openspec-publish" severity="critical">Submit publishes nothing: it pushes an OpenSpec change folder (state: submitted) to the inbox mate/inbox to await its merge. A submitted change is not the truth: only publication lands it on the companion's default branch. openspec/specs/ is current; mate artifact project "<name>" shows the unpublished outcome. mate artifact pending --json lists them with author, touched requirements, ref and path; read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it; implement or revise one only when the user names it: mate artifact take "<name>" brings it into the checkout when it is missing there, then resubmit it with mate-submit-change. Publish only through mate-publish-artifact (mate artifact publish "<name>" --json), after the user selects and confirms the commit and push, for a Delivery Group whose delivery branch is merged. It creates no tag. Never hand-commit or hand-tag one. Publish archives submitted changes and never submits: submitting is a precondition (mate-submit-change, before the merge).</rule>
   </mandatory-rules>
 </companion-policy>
 
@@ -7830,9 +8304,8 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     <linked-repository id="$MATE_REPO_ID" />
   </context>
   <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
+    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH, which holds product code (README, docs, source, tests). Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in the working-repository path; agent artifacts in the companion-repository path.</rule>
     <rule id="local-artifact-exception" severity="critical">Write an artifact in the working repository only when its exact path is gitignored AND intentionally local-only.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to the working repository are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories; the working-repository path is this session's single primary Working Repository (the product-code plane), not the full set. The Companion Repository is the shared artifact and context plane.</rule>
@@ -7840,7 +8313,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
     <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>
     <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository; areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
-    <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is local and publishes nothing. Publish only through the mate-publish-artifact skill, whose sanctioned command is mate artifact publish "<name>" --json: only after an explicit user selection and confirmation of the commit, tag, and push, and only for an archive whose delivery branch is merged; never hand-commit or hand-tag one. Publish never archives and never applies delta specs itself: archiving is a precondition (mate-archive-change, allowed before the merge), and publishing a still-active change is an error. Publish refuses to run anywhere but the companion's default branch.</rule>
+    <rule id="openspec-publish" severity="critical">Submit publishes nothing: it pushes an OpenSpec change folder (state: submitted) to the inbox mate/inbox to await its merge. A submitted change is not the truth: only publication lands it on the companion's default branch. openspec/specs/ is current; mate artifact project "<name>" shows the unpublished outcome. mate artifact pending --json lists them with author, touched requirements, ref and path; read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it; implement or revise one only when the user names it: mate artifact take "<name>" brings it into the checkout when it is missing there, then resubmit it with mate-submit-change. Publish only through mate-publish-artifact (mate artifact publish "<name>" --json), after the user selects and confirms the commit and push, for a Delivery Group whose delivery branch is merged. It creates no tag. Never hand-commit or hand-tag one. Publish archives submitted changes and never submits: submitting is a precondition (mate-submit-change, before the merge).</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -8000,6 +8473,14 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
           {
             "hooks": [
               {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
                 "args": [
                   "hook-prompt-submit",
                 ],
@@ -8013,10 +8494,36 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
       {
         "at": [
           "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
           "Stop",
         ],
         "kind": "list",
         "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
           {
             "hooks": [
               {
@@ -8052,6 +8559,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
           "Skill(mate-explore-change)",
           "Skill(mate-propose-change)",
           "Skill(mate-apply-change)",
+          "Skill(mate-submit-change)",
           "Skill(mate-archive-change)",
           "Skill(mate-publish-artifact)",
           "Skill(mate-backfill-spec)",
@@ -9080,6 +9588,7 @@ User notes.
 /.opencode/opencode.json
 /.agents/
 /.mcp.json
+/.worktreeinclude.local
 # mate managed: end
 .tokensave/
 "
@@ -9126,6 +9635,7 @@ User notes.
 /.opencode/opencode.json
 /.agents/
 /.mcp.json
+/.worktreeinclude.local
 # mate managed: end
 "
 ,

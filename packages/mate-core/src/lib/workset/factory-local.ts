@@ -3,8 +3,8 @@ import path from "node:path";
 
 import { parse, stringify } from "yaml";
 
-import { parseRemote, repositoryPath } from "../delivery/forge";
-import { KeyedSerial } from "../factory/keyed-serial";
+import { parseRemote, repositoryPath } from "../delivery/remote";
+import { KeyedSerial } from "../keyed-serial";
 
 /**
  * The companion's machine-local list of Working Repositories a Workset may name: a

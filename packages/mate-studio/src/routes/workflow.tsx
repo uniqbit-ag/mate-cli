@@ -5,6 +5,7 @@ import { loadView, registeredCompanion } from "../lib/queries";
 import { useBrowser } from "../lib/use-browser";
 import { companionViewQuery } from "../lib/studio-queries";
 import { CompanionView } from "../shell/companion-view";
+import { activeChanges } from "../views/overview/change-group";
 import { Workflow } from "../views/workflow/workflow-view";
 
 export const Route = createFileRoute("/workflow")({
@@ -29,8 +30,9 @@ export const Route = createFileRoute("/workflow")({
               skills: data.skills ?? [],
               topology: data.topology ?? null,
               warnings: data.warnings,
+              workflow: data.workflow,
             }}
-            changes={overview.data?.changes ?? []}
+            changes={activeChanges(overview.data?.changes ?? [], overview.data?.submitted ?? [])}
           />
         )}
       </CompanionView>

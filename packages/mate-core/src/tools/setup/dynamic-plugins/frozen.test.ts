@@ -66,17 +66,17 @@ async function installTree(
 describe("installDeclaredPluginsFrozen", () => {
   test("refuses an absent lockfile, manifest drift and lockfile drift", async () => {
     const none = await workspace({ lockfile: false });
-    await expect(
-      installDeclaredPluginsFrozen(none.companion, [READER], { env: {} }),
-    ).rejects.toThrow(/package-lock\.json is missing/);
+    await expect(installDeclaredPluginsFrozen(none.root, [READER], { env: {} })).rejects.toThrow(
+      /package-lock\.json is missing/,
+    );
     const drift = await workspace({ declared: { [READER.package]: "^2.0.0" } });
-    await expect(
-      installDeclaredPluginsFrozen(drift.companion, [READER], { env: {} }),
-    ).rejects.toThrow(/manifest disagrees.*@acme\/reader/);
+    await expect(installDeclaredPluginsFrozen(drift.root, [READER], { env: {} })).rejects.toThrow(
+      /manifest disagrees.*@acme\/reader/,
+    );
     const stale = await workspace({ rootDeps: { [READER.package]: "^0.9.0" } });
-    await expect(
-      installDeclaredPluginsFrozen(stale.companion, [READER], { env: {} }),
-    ).rejects.toThrow(/lockfile disagrees/);
+    await expect(installDeclaredPluginsFrozen(stale.root, [READER], { env: {} })).rejects.toThrow(
+      /lockfile disagrees/,
+    );
   });
 
   test("a moving tag uses the locked version", async () => {
@@ -86,7 +86,7 @@ describe("installDeclaredPluginsFrozen", () => {
       locked,
     });
     await installTree(root, locked);
-    const results = await installDeclaredPluginsFrozen(companion, [WRITER], { env: {} });
+    const results = await installDeclaredPluginsFrozen(root, [WRITER], { env: {} });
     expect(results).toEqual([
       { package: WRITER.package, status: "unchanged", resolvedVersion: "3.1.0" },
     ]);
@@ -95,7 +95,7 @@ describe("installDeclaredPluginsFrozen", () => {
   test("reuses a matching tree without running npm", async () => {
     const { companion, root } = await workspace({});
     await installTree(root, LOCKED);
-    const results = await installDeclaredPluginsFrozen(companion, [READER], {
+    const results = await installDeclaredPluginsFrozen(root, [READER], {
       env: {},
       runNpmCi: () => {
         throw new Error("must not run");
@@ -109,7 +109,7 @@ describe("installDeclaredPluginsFrozen", () => {
     await installTree(root, { "@acme/reader": { version: "1.2.0", integrity: "sha512-OTHER" } });
     const before = await fs.readFile(path.join(root, "package-lock.json"), "utf8");
     let calls = 0;
-    const results = await installDeclaredPluginsFrozen(companion, [READER], {
+    const results = await installDeclaredPluginsFrozen(root, [READER], {
       env: {},
       runNpmCi: async (workspaceRoot) => {
         calls += 1;
@@ -123,8 +123,8 @@ describe("installDeclaredPluginsFrozen", () => {
   });
 
   test("a rejected registry token fails the package", async () => {
-    const { companion } = await workspace({});
-    const results = await installDeclaredPluginsFrozen(companion, [READER], {
+    const { root } = await workspace({});
+    const results = await installDeclaredPluginsFrozen(root, [READER], {
       env: {},
       runNpmCi: () => ({ ok: false, detail: "E401 unauthorized" }),
     });
@@ -136,7 +136,7 @@ describe("installDeclaredPluginsFrozen", () => {
   test("puts back tracked files a restore rewrote and fails", async () => {
     const { companion, root } = await workspace({});
     const before = await fs.readFile(path.join(root, "package-lock.json"), "utf8");
-    const results = await installDeclaredPluginsFrozen(companion, [READER], {
+    const results = await installDeclaredPluginsFrozen(root, [READER], {
       env: {},
       runNpmCi: async (workspaceRoot) => {
         await fs.writeFile(path.join(workspaceRoot, "package-lock.json"), "{}");

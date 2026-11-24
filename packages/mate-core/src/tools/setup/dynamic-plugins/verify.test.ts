@@ -29,8 +29,13 @@ async function companion(
   return dir;
 }
 
-async function install(dir: string, name: string, marker?: string): Promise<void> {
-  const root = pluginPackageRoot(dir, name);
+async function install(
+  dir: string,
+  name: string,
+  marker?: string,
+  audience: string | null = null,
+): Promise<void> {
+  const root = pluginPackageRoot(dir, name, audience);
   await fs.mkdir(root, { recursive: true });
   await fs.writeFile(
     path.join(root, "package.json"),
@@ -89,7 +94,7 @@ describe("verifyDeclaredPlugins audiences", () => {
       ba: { plugins: [NEEDS_TOKEN] },
     });
     await install(dir, "@acme/reader");
-    await install(dir, "@acme/ba");
+    await install(dir, "@acme/ba", undefined, "ba");
 
     expect(await verifyDeclaredPlugins(dir, { env: {} })).toEqual([]);
     expect(await verifyDeclaredPlugins(dir, { env: { MATE_AUDIENCE: "qa" } })).toEqual([]);
@@ -100,7 +105,7 @@ describe("verifyDeclaredPlugins audiences", () => {
       ba: { plugins: [NEEDS_TOKEN] },
     });
     await install(dir, "@acme/reader");
-    await install(dir, "@acme/ba");
+    await install(dir, "@acme/ba", undefined, "ba");
 
     const failures = await verifyDeclaredPlugins(dir, { env: { MATE_AUDIENCE: "ba" } });
     expect(failures.map((failure) => failure.package)).toEqual(["@acme/ba"]);
@@ -108,6 +113,17 @@ describe("verifyDeclaredPlugins audiences", () => {
     expect(
       await verifyDeclaredPlugins(dir, { env: { MATE_AUDIENCE: "ba", BA_TOKEN: "t" } }),
     ).toEqual([]);
+  });
+
+  test("an audience plugin present only in the shared workspace is not installed", async () => {
+    const dir = await companion([], {
+      ba: { plugins: [{ package: "@acme/ba", version: "1.0.0" }] },
+    });
+    await install(dir, "@acme/ba");
+
+    const failures = await verifyDeclaredPlugins(dir, { env: { MATE_AUDIENCE: "ba" } });
+    expect(failures.map((failure) => failure.package)).toEqual(["@acme/ba"]);
+    expect(failures[0]?.reason).toMatch(/not installed/);
   });
 
   test("a missing active-audience package is reported and an inactive one is not", async () => {

@@ -65,7 +65,13 @@ function claudeDocument(pluginRoot: string): RenderedRuntimeDocument[] {
         {
           at: ["hooks", "PreToolUse"],
           kind: "list",
-          values: [{ hooks: [{ type: "command", command: `${pluginRoot}/hooks/guard.mjs` }] }],
+          values: [
+            {
+              hooks: [
+                { type: "command", command: `${pluginRoot}/hooks/guard.mjs`, if: "Bash(git *)" },
+              ],
+            },
+          ],
         },
         { at: ["env"], kind: "map", entries: { MATE_PROJECTED: "1" } },
       ],
@@ -222,7 +228,7 @@ describe("placing a runtime document twice", () => {
 
     const settings = JSON.parse(await fs.readFile(target, "utf8"));
     expect(settings.hooks.PreToolUse).toEqual([
-      { hooks: [{ type: "command", command: "/new/plugin/hooks/guard.mjs" }] },
+      { hooks: [{ type: "command", command: "/new/plugin/hooks/guard.mjs", if: "Bash(git *)" }] },
     ]);
   });
 

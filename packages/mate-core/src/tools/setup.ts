@@ -42,17 +42,21 @@ import { getActiveDistribution } from "../distribution";
 import { createUvPlugin } from "./setup/package-managers/uv";
 import type { PackageManagerSetupDeps } from "./setup/package-managers/uv";
 import { applyRequiredSelectionsToConfig } from "./setup/policy";
+import { normalizeRegistration } from "./setup/registry";
 import { invalidateInstallState } from "../lib/install";
 import type { StartupProgressController } from "../lib/components/startup-progress";
 import { emitWarning } from "../lib/live-progress";
 import {
   describeUnknownAudience,
-  installPluginDeclarations,
+  pluginInstallTargets,
   readAudienceSelection,
   resolveAudience,
 } from "./setup/dynamic-plugins/audiences";
 import { hydrateDynamicPlugins } from "./setup/dynamic-plugins/hydrate";
-import { installDeclaredPlugins } from "./setup/dynamic-plugins/install";
+import {
+  describeRemovedAudience,
+  installPluginWorkspaces,
+} from "./setup/dynamic-plugins/workspaces";
 import {
   buildSetupInstallationPlan,
   collectRuntimeContributionInputs,
@@ -89,6 +93,8 @@ export interface SetupDependencies {
 export interface CompanionSyncOptions {
   /** Regenerates OpenSpec CLI output; set only by `mate companion update`. */
   regenerateOpenSpec?: boolean;
+  /** The saved config before this run's input; set only by `executeSetup`. */
+  previousConfig?: FrameworkConfig;
 }
 
 export interface CompanionSyncOutcome extends SetupInstallationOutcome {
@@ -116,6 +122,14 @@ export async function applySetupCompatibilities(
     repoPath,
     scope,
     ...(options.regenerateOpenSpec ? { regenerateOpenSpec: true } : {}),
+    previousSetup: options.previousConfig && {
+      config: options.previousConfig,
+      // Without policies: a required provider the saved config omits was not in use.
+      activeProviders: buildSetupInstallationPlan(
+        options.previousConfig,
+        plugins.map((entry) => normalizeRegistration(entry).plugin),
+      ).activeProviders,
+    },
     managedOutput: managedOutput.recorder,
   };
   const outcome = await executeSetupInstallationPlan(ctx, plugins, plan);
@@ -248,7 +262,7 @@ export async function syncCompanionFiles(
   companionPath: string,
   config: FrameworkConfig,
   repoPath?: string,
-  options: CompanionSyncOptions = {},
+  options: Pick<CompanionSyncOptions, "regenerateOpenSpec"> = {},
 ): Promise<CompanionSyncResult> {
   const outcome = await applySetupCompatibilities(
     companionPath,
@@ -289,6 +303,7 @@ export async function executeSetup(
     deps.configStore ??
     new ConfigStore(path.join(cwd, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"));
   const config = mergeWithDefaults(await configStore.load());
+  const previousConfig = structuredClone(config);
   const audience = resolveAudience(config, readAudienceSelection(process.env));
   if (!audience.ok) throw new ConfigError(describeUnknownAudience(audience));
   if (input.allowedAgents !== undefined) {
@@ -315,21 +330,31 @@ export async function executeSetup(
   // Declared plugin packages install and hydrate before the setup plan runs,
   // so a fresh clone reaches a fully applied state from one setup run
   // (install → load → plan).
-  const declarations = installPluginDeclarations(config);
-  if (declarations.length) {
-    await progress.step("plugins", "Installing plugins", async () => {
-      for (const result of await installDeclaredPlugins(companionPath, declarations)) {
-        if (result.status === "failed") {
-          emitWarning(
-            `${FRAMEWORK_NAME}: plugin "${result.package}" failed to install: ${result.error ?? "unknown error"}`,
-          );
-        }
+  const installPlugins = async () => {
+    const outcome = await installPluginWorkspaces(companionPath, config, audience.active);
+    for (const removed of outcome.removed) {
+      emitWarning(`${FRAMEWORK_NAME}: ${describeRemovedAudience(removed)}`);
+    }
+    for (const result of outcome.results) {
+      if (result.status === "failed") {
+        emitWarning(
+          `${FRAMEWORK_NAME}: plugin "${result.package}" failed to install: ${result.error ?? "unknown error"}`,
+        );
       }
-      await hydrateDynamicPlugins({ companionPath });
-    });
-  }
+    }
+    if (outcome.declared) await hydrateDynamicPlugins({ companionPath });
+  };
+  // Without a declaration the run still removes unselected audiences' trees
+  // and prunes a stale shared workspace, but shows no step.
+  const declaresPlugins = pluginInstallTargets(config, audience.active).some(
+    (target) => target.declarations.length > 0,
+  );
+  if (declaresPlugins) await progress.step("plugins", "Installing plugins", installPlugins);
+  else await installPlugins();
   await progress.step("capabilities", "Applying capabilities", () =>
-    applySetupCompatibilities(companionPath, config, "setup"),
+    applySetupCompatibilities(companionPath, config, "setup", undefined, undefined, undefined, {
+      previousConfig,
+    }),
   );
   await progress.step("register", "Registering companion", async () => {
     const untracked = await untrackManagedSkillCopies(companionPath, config);

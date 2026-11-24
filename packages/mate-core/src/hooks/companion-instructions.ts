@@ -5,6 +5,7 @@ import {
   COMPANION_INSTRUCTIONS_BUDGET,
   buildCompanionInstructions,
   companionInstructionsUnavailableLine,
+  type CompanionInstructions,
   type CompanionInstructionsInput,
   type InstructionReader,
 } from "../runtime/companion-instructions";
@@ -80,16 +81,26 @@ function ownsEvent(event: InstructionEvent, kind: SessionKind, projected: boolea
   return false;
 }
 
+type Unavailable = Extract<CompanionInstructions, { kind: "unavailable" }>;
+
 /**
- * A launch sets every path; a partial one is not completed from a projection, which may
- * name another repository. A session moved into another Checkout of the clone names it.
+ * Reached only for a repository-scoped launch, so the companion and repository paths are
+ * set. A partial one is not completed from a projection, which may name another
+ * repository. A session moved into another Checkout of the clone names it.
  */
-function launchReaderInput(env: HookEnv, folder: string): CompanionInstructionsInput | null {
-  const companionPath = env[MATE_ENV.companionPath];
+function launchReaderInput(env: HookEnv, folder: string): CompanionInstructionsInput | Unavailable {
+  const companionPath = env[MATE_ENV.companionPath] ?? "";
   const id = env[MATE_ENV.repositoryId];
-  const repoPath = env[MATE_ENV.repositoryPath];
+  const repoPath = env[MATE_ENV.repositoryPath] ?? "";
   const wrapperBinPath = env[MATE_ENV.wrapperBinPath];
-  if (!companionPath || !id || !repoPath || !wrapperBinPath) return null;
+  if (!id || !wrapperBinPath) {
+    const missing = [!id && MATE_ENV.repositoryId, !wrapperBinPath && MATE_ENV.wrapperBinPath];
+    return {
+      kind: "unavailable",
+      source: "the Mate launch environment",
+      reason: `lacks ${missing.filter(Boolean).join(", ")}`,
+    };
+  }
   return {
     companionPath,
     repository: { id, path: checkoutServedFrom(repoPath, folder) },
@@ -103,7 +114,7 @@ function readerInput(
   kind: SessionKind,
   folder: string,
   resolve: typeof resolveProjection,
-): CompanionInstructionsInput | null {
+): CompanionInstructionsInput | Unavailable | null {
   if (kind !== "unmanaged") return launchReaderInput(env, folder);
   const projection = resolve(folder);
   if (!projection) return null;
@@ -138,7 +149,7 @@ function evaluate(
   const reader = readerInput(env, kind, directory || hookFolder(input, env, cwd), resolve);
   if (!reader) return null;
 
-  const result = read(reader);
+  const result = "kind" in reader ? reader : read(reader);
   if (result.kind === "unavailable") {
     const line = companionInstructionsUnavailableLine(result);
     return instructionOutput(event, line, line);

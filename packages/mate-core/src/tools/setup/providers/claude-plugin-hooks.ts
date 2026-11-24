@@ -32,6 +32,8 @@ const PREPARE_HOOK_SHIM = "session-prepare.mjs";
 const INSTRUCTIONS_HOOK_SHIM = "companion-instructions.mjs";
 const SESSION_END_HOOK_SHIM = "session-end.mjs";
 const ATTENTION_HOOK_SHIM = "session-attention.mjs";
+const TURN_HOOK_SHIM = "workflow-turn.mjs";
+const TURN_HOOK_EVENTS = ["UserPromptSubmit", "PostToolUse", "Stop"] as const;
 const PLUGIN_ROOT_TOKEN = "${CLAUDE_PLUGIN_ROOT}";
 
 interface PluginHookWiring {
@@ -177,8 +179,24 @@ export function mateAttentionHookGroups(
   return withProjectedFlag(groupsFor("Notification", ATTENTION_HOOK_SHIM, commandRoot));
 }
 
+/**
+ * The turn hook's groups by event, resolved the same way and carrying `PROJECTED_FLAG`: this
+ * copy checks a plain session's turns and yields under a launch, where the plugin's copy does.
+ */
+export function mateTurnHookGroups(
+  commandRoot: string = runtimeClaudePluginRoot(),
+): Record<string, ClaudeHookGroup[]> {
+  return Object.fromEntries(
+    TURN_HOOK_EVENTS.map((event) => [
+      event,
+      withProjectedFlag(groupsFor(event, TURN_HOOK_SHIM, commandRoot)),
+    ]),
+  );
+}
+
 function mateOwnHookGroups(commandRoot: string): ClaudeHookGroup[] {
   return [
+    ...Object.values(mateTurnHookGroups(commandRoot)).flat(),
     ...mateGuardHookGroups(commandRoot),
     ...mateTokensaveRouteHookGroups(commandRoot),
     ...mateRtkWorktreeGitHookGroups(commandRoot),

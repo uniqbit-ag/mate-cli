@@ -14,6 +14,7 @@ import {
   type PluginInstallResult,
 } from "../../tools/setup/dynamic-plugins/install";
 import { hydrateDynamicPlugins } from "../../tools/setup/dynamic-plugins/hydrate";
+import { dynamicPluginsWorkspaceRoot } from "../../tools/setup/dynamic-plugins/paths";
 import { applySetupCompatibilities } from "../../tools/setup";
 import { findRepoLocalRegistryFile } from "./repository-link";
 import { companionGit, describeGitFailure, type CompanionGit } from "../../runtime/companion-git";
@@ -350,7 +351,11 @@ export async function updateHubPlugins(
   const resolvedHubPath = path.resolve(hubPath);
   const results =
     declarations.length > 0
-      ? await installDeclaredPlugins(resolvedHubPath, declarations, deps.installDeps)
+      ? await installDeclaredPlugins(
+          dynamicPluginsWorkspaceRoot(resolvedHubPath),
+          declarations,
+          deps.installDeps,
+        )
       : [];
   if (declarations.length > 0) {
     await (deps.hydrate ?? hydrateDynamicPlugins)({ companionPath: resolvedHubPath });

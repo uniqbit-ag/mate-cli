@@ -61,3 +61,11 @@ describe("buildOpenCodeGuidance", () => {
     expect(guidance.errors).toEqual([]);
   });
 });
+
+test("appends the friction section to the companion guidance only while recording is on", () => {
+  const on = buildOpenCodeGuidance([], { friction: true });
+
+  expect(on.companionGuidance).toMatch(/<\/companion-policy>\n\n## Friction\n/);
+  expect(on.errors).toEqual([]);
+  expect(buildOpenCodeGuidance([]).companionGuidance).not.toContain("## Friction");
+});

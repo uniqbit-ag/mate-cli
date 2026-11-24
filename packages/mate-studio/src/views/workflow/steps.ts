@@ -1,15 +1,23 @@
 import {
+  BUILTIN_ARTIFACT_TYPE,
+  canonicalSchema,
   CHANGE_PLACEHOLDER,
   DEFAULT_SCHEMA,
+  defaultWorkflow,
   deliveryPath,
   IDEA_PLACEHOLDER,
   isMateSchema,
   SCHEMA_ARTIFACTS,
+  SHIPPED_SCHEMAS,
+  WORKFLOW_FILE,
   type DeliveryStage,
-  type MateSchema,
+  type SkillStage,
   type SkillStageId,
+  type Workflow,
   type WorkflowTopology,
 } from "@uniqbit/mate-core/studio";
+
+const DEFAULT_WORKFLOW = defaultWorkflow();
 
 export type WorkflowStepBadge = "optional" | "skill" | "openspec" | "human-review";
 
@@ -38,7 +46,7 @@ export type WorkflowStep = DeliveryStage & {
   phase: WorkflowPhaseId;
 };
 
-/** One step of the stage map: a single stage, or a run of review stages or optional peers. */
+/** One step of the stage map: a single stage, one review stage's reviews, or optional peers. */
 export type WorkflowMapNode =
   | { kind: "stage"; step: WorkflowStep }
   | { kind: "group"; group: "human" | "optional"; steps: WorkflowStep[] };
@@ -52,12 +60,29 @@ export interface WorkflowPath {
   steps: WorkflowStep[];
   map: WorkflowMapNode[];
   reviewsKnown: boolean;
+  /** False when the declaration is invalid: the default path is drawn without step lists. */
+  stepsKnown: boolean;
 }
 
 export interface WorkflowPlanOptions {
   /** Skills reported for the companion; undefined treats every stage skill as present. */
   skills?: readonly string[];
   topology?: WorkflowTopology | null;
+  /**
+   * The companion's resolved workflow; undefined is the built-in default, null an invalid
+   * declaration.
+   */
+  workflow?: Workflow | null;
+}
+
+/** The graph node of a review stage: `reviews` for the default one. */
+export function reviewNode(group: string): string {
+  return group === "review" ? "reviews" : `reviews-${group}`;
+}
+
+/** The graph node a stage of the path is drawn in. */
+export function nodeOf(step: DeliveryStage): string {
+  return step.kind === "human" ? reviewNode(step.group) : step.id;
 }
 
 export interface WorkflowPlan {
@@ -90,7 +115,7 @@ const STAGE_TEXT: Record<SkillStageId, { what: string; why: string }> = {
   },
   apply: {
     what: "Records the delivery branch, avoiding protected branches, then implements the reviewed tasks.",
-    why: "The recorded branch is what archive and publication later wait on.",
+    why: "The recorded branch is what submit and publication later wait on.",
   },
   "inspect-outcome": {
     what: "Shows what the applied change did as a rendered diagram and diff in a Mate report.",
@@ -98,15 +123,15 @@ const STAGE_TEXT: Record<SkillStageId, { what: string; why: string }> = {
   },
   "refine-code": {
     what: "Looks for smaller, clearer code once tests pass, preserving behavior.",
-    why: "Cleanup lands before archive, so shipped code and recorded specs agree.",
+    why: "Cleanup lands before submit, so shipped code and recorded specs agree.",
   },
-  archive: {
-    what: "Applies the delta specs to the local canonical specs and records the delivery; allowed before the branch merges.",
-    why: "A feature's later changes build on canonical specs that already include this one.",
+  submit: {
+    what: "Records the delivery, validates the change, and pushes its Delivery Group's change folders for publication; allowed before the branch merges.",
+    why: "The finished change is safe on the remote and publishable from any machine once merged.",
   },
   publish: {
-    what: "Commits, tags, and pushes archived changes whose delivery branches are merged, chosen by the developer.",
-    why: "Published canonical specs then describe the default branch; unmerged archives wait.",
+    what: "Archives submitted Delivery Groups whose delivery branches are merged, from any machine, and commits and pushes them, chosen by the developer.",
+    why: "Published canonical specs then describe the default branch; unmerged changes wait.",
   },
 };
 
@@ -122,6 +147,14 @@ function reviewText(
   return {
     what: description ?? `A person reviews the ${artifact} artifact.`,
     why: "Reviews stay with people: Mate never marks them approved.",
+  };
+}
+
+/** What the panel says about a stage the companion added. */
+function declaredText(stage: SkillStage): { what: string; why: string } {
+  return {
+    what: `Runs ${stage.steps.map((step) => step.skill).join(", then ")}.`,
+    why: `The companion declares this stage in ${WORKFLOW_FILE}.`,
   };
 }
 
@@ -148,23 +181,31 @@ function clarifyAlternatives(available: (skill: string) => boolean): WorkflowAlt
   }));
 }
 
-/** Stages whose skills run an OpenSpec workflow. */
-const OPENSPEC_STAGES: ReadonlySet<SkillStageId> = new Set([
-  "explore",
-  "propose",
-  "apply",
-  "archive",
+/** Mate stage skills that run an OpenSpec workflow. */
+const OPENSPEC_SKILLS: ReadonlySet<string> = new Set([
+  "mate-explore-change",
+  "mate-propose-change",
+  "mate-apply-change",
 ]);
 
-function badgesFor(stage: DeliveryStage): WorkflowStepBadge[] {
+/** A stage runs OpenSpec while its chain holds such a skill, or submits the built-in type. */
+function runsOpenSpec(stage: SkillStage, workflow: Workflow): boolean {
+  if (stage.id === "submit") return workflow.submitArtifact === BUILTIN_ARTIFACT_TYPE;
+  return stage.steps.some((step) => OPENSPEC_SKILLS.has(step.skill));
+}
+
+function badgesFor(stage: DeliveryStage, workflow: Workflow): WorkflowStepBadge[] {
   if (stage.kind === "human") return ["human-review"];
   const badges: WorkflowStepBadge[] = stage.optional ? ["optional", "skill"] : ["skill"];
-  if (OPENSPEC_STAGES.has(stage.id)) badges.push("openspec");
+  if (runsOpenSpec(stage, workflow)) badges.push("openspec");
   return badges;
 }
 
-const SHIPPED_PATH_TEXT: Record<MateSchema, { tagline: string; description: string }> = {
-  "mate-v1": {
+const SHIPPED_PATH_TEXT: Record<
+  (typeof SHIPPED_SCHEMAS)[number],
+  { tagline: string; description: string }
+> = {
+  "mate-full": {
     tagline: "full planning",
     description: "Full planning path: proposal, specs, design, and tasks.",
   },
@@ -176,7 +217,10 @@ const SHIPPED_PATH_TEXT: Record<MateSchema, { tagline: string; description: stri
 };
 
 function pathText(schema: string): { tagline: string; description: string } {
-  if (isMateSchema(schema)) return SHIPPED_PATH_TEXT[schema];
+  const canonical = canonicalSchema(schema);
+  if (Object.hasOwn(SHIPPED_PATH_TEXT, canonical)) {
+    return SHIPPED_PATH_TEXT[canonical as keyof typeof SHIPPED_PATH_TEXT];
+  }
   return { tagline: "custom schema", description: `Planning path of the ${schema} schema.` };
 }
 
@@ -187,27 +231,44 @@ export const PHASE_LABELS: Record<WorkflowPhaseId, string> = {
   ship: "Ship",
 };
 
-/** Plan precedes reviews, Review holds them, Build is apply plus its optional peers, Ship follows. */
-function phaseOf(stage: DeliveryStage, previous: WorkflowPhaseId | undefined): WorkflowPhaseId {
-  if (stage.kind === "human") return "review";
-  if (stage.id === "apply") return "build";
-  if (previous === "build" && stage.optional) return "build";
-  return previous === undefined || previous === "plan" ? "plan" : "ship";
+const SHIP_STAGES: ReadonlySet<string> = new Set(["submit", "publish"]);
+
+/**
+ * Phases follow position: Plan before the last review, Review the reviews, Build from the
+ * first skill stage after the last review to the stage before `submit`, Ship `submit` and
+ * `publish`. A path without reviews builds from `apply`.
+ */
+function phasesOf(stages: readonly DeliveryStage[]): WorkflowPhaseId[] {
+  const lastReview = stages.findLastIndex((stage) => stage.kind === "human");
+  const buildFrom =
+    lastReview === -1 ? stages.findIndex((stage) => stage.id === "apply") : lastReview + 1;
+  return stages.map((stage, index) => {
+    if (stage.kind === "human") return "review";
+    if (SHIP_STAGES.has(stage.id)) return "ship";
+    return buildFrom !== -1 && index >= buildFrom ? "build" : "plan";
+  });
 }
 
-function groupOf(step: WorkflowStep): "human" | "optional" | null {
-  if (step.kind === "human") return "human";
+/** The run a step joins: its review stage, or the optional peers around it. */
+function groupOf(step: WorkflowStep): string | null {
+  if (step.kind === "human") return `human:${step.group}`;
   return step.optional ? "optional" : null;
 }
 
-/** Review runs are always one group; optional runs group only when they hold peers. */
+/** A review stage is always one group; optional runs group only when they hold peers. */
 function mapOf(steps: readonly WorkflowStep[]): WorkflowMapNode[] {
-  const runs: { group: "human" | "optional" | null; steps: WorkflowStep[] }[] = [];
+  const runs: { group: "human" | "optional" | null; key: string | null; steps: WorkflowStep[] }[] =
+    [];
   for (const step of steps) {
-    const group = groupOf(step);
+    const key = groupOf(step);
     const run = runs.at(-1);
-    if (group && run?.group === group) run.steps.push(step);
-    else runs.push({ group, steps: [step] });
+    if (key && run?.key === key) run.steps.push(step);
+    else
+      runs.push({
+        group: step.kind === "human" ? "human" : key ? "optional" : null,
+        key,
+        steps: [step],
+      });
   }
   return runs.map((run) =>
     run.group === "human" || (run.group === "optional" && run.steps.length > 1)
@@ -223,31 +284,42 @@ export function buildPath(
 ): WorkflowPath {
   const reported = options.skills ? new Set(options.skills) : null;
   const available = (skill: string): boolean => !reported || reported.has(skill);
-  const contract = deliveryPath(artifacts);
+  const workflow = options.workflow ?? DEFAULT_WORKFLOW;
+  const contract = deliveryPath(artifacts, workflow);
+  const phases = phasesOf(contract.stages);
 
-  const steps: WorkflowStep[] = [];
-  for (const stage of contract.stages) {
+  const steps: WorkflowStep[] = contract.stages.map((stage, index) => {
     const text =
       stage.kind === "human"
         ? reviewText(stage.artifact, options.topology, schema)
-        : STAGE_TEXT[stage.id];
+        : // A stage keeps its text while its chain holds its Mate stage skill; any other names its steps.
+          stage.steps.some((entry) => entry.own) && stage.id in STAGE_TEXT
+          ? STAGE_TEXT[stage.id as SkillStageId]
+          : declaredText(stage);
     const prompt = promptFor(stage, schema);
-    const previous = steps.at(-1);
     const step: WorkflowStep = {
       ...stage,
       what: text.what,
       why: text.why,
-      badges: badgesFor(stage),
+      badges: badgesFor(stage, workflow),
       prompt,
       copyPrompt: copyPromptFor(prompt),
-      phase: phaseOf(stage, previous?.phase),
+      phase: phases[index]!,
     };
-    if (stage.id === "clarify-intent") step.alternatives = clarifyAlternatives(available);
-    if (stage.kind === "skill" && !available(stage.skill)) step.missingSkill = stage.skill;
+    // The clarify modes are alternatives to the Mate skill, not to a declared chain.
+    if (stage.id === "clarify-intent" && stage.skill === CLARIFY_MODES[0]) {
+      step.alternatives = clarifyAlternatives(available);
+    }
+    if (stage.kind === "skill") {
+      const missing = [stage.skill, ...stage.steps.map((entry) => entry.skill)].find(
+        (skill) => !available(skill),
+      );
+      if (missing) step.missingSkill = missing;
+    }
     // A new session starts at apply; the optional peers after it reuse its context.
     if (stage.id === "apply") step.sessionBreakBefore = true;
-    steps.push(step);
-  }
+    return step;
+  });
 
   return {
     schema,
@@ -256,6 +328,7 @@ export function buildPath(
     steps,
     map: mapOf(steps),
     reviewsKnown: contract.reviewsKnown,
+    stepsKnown: options.workflow !== null,
   };
 }
 
@@ -269,11 +342,17 @@ function schemaArtifacts(
 
 /** The Delivery Path Studio shows: a path per schema Mate ships, or the served schema's alone. */
 export function workflowPlan(options: WorkflowPlanOptions = {}): WorkflowPlan {
-  const served = options.topology?.schemaName;
-  const schemas = served && !isMateSchema(served) ? [served] : Object.keys(SCHEMA_ARTIFACTS);
+  // A served legacy alias (`mate-v1`) feeds the path of the schema it names.
+  const topology = options.topology && {
+    ...options.topology,
+    schemaName: canonicalSchema(options.topology.schemaName),
+  };
+  const normalized = { ...options, topology };
+  const served = topology?.schemaName;
+  const schemas: readonly string[] = served && !isMateSchema(served) ? [served] : SHIPPED_SCHEMAS;
   return {
     paths: schemas.map((schema) =>
-      buildPath(schema, schemaArtifacts(schema, options.topology), options),
+      buildPath(schema, schemaArtifacts(schema, topology), normalized),
     ),
   };
 }

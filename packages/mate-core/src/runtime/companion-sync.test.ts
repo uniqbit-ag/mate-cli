@@ -544,6 +544,21 @@ describe("the shared fork refusal", () => {
     expect(refusal).toContain(COMPANION_SYNC_COMMAND);
   });
 
+  test("refuses when only a Capability variable is set", async () => {
+    const fixture = makeFixture();
+    commitUpstream(fixture, "remote");
+    commitCompanion(fixture, "local");
+    fetchOnly(fixture);
+
+    const refusal = await companionForkRefusal(
+      { MATE_REACT_DOCTOR_BIN_PATH: "/opt/acme/react-doctor" },
+      fixture.companion,
+      { homeDir: fixture.home },
+    );
+
+    expect(refusal).toContain("forked");
+  });
+
   test("permits when a launch environment is present", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");

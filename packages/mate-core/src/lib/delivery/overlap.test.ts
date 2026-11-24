@@ -3,9 +3,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { seedPending } from "../../../test/pending-inbox";
 import {
   applyWarnings,
-  archiveWarnings,
+  submitWarnings,
   declaredDependencies,
   deltaRequirementEdits,
   planningWarning,
@@ -75,20 +76,20 @@ describe("declaredDependencies", () => {
   });
 });
 
-describe("archiveWarnings", () => {
+describe("submitWarnings", () => {
   test("warns when another active change modifies the same requirement", async () => {
     await writeDelta("a", "studio-dashboard", "## MODIFIED Requirements\n### Requirement: R1\n");
     await writeDelta("b", "studio-dashboard", "## REMOVED Requirements\n### Requirement: R1\n");
     await writeDelta("c", "studio-dashboard", "## MODIFIED Requirements\n### Requirement: R2\n");
     await writeDelta("d", "other", "## MODIFIED Requirements\n### Requirement: R1\n");
-    expect(await archiveWarnings(companion, "a")).toEqual([
+    expect(await submitWarnings(companion, "a")).toEqual([
       {
         kind: "overlap",
         change: "b",
         capability: "studio-dashboard",
         requirement: "R1",
         message:
-          "b also changes studio-dashboard › R1; archiving b later will replace this change's version of that requirement.",
+          "b also changes studio-dashboard › R1; unless both publish in one Delivery Group, the one published second is refused as a conflict until it is resolved.",
       },
     ]);
   });
@@ -97,34 +98,56 @@ describe("archiveWarnings", () => {
     await writeDelta("a", "identity/user-auth", "## MODIFIED Requirements\n### Requirement: R1\n");
     await writeDelta("b", "identity/user-auth", "## MODIFIED Requirements\n### Requirement: R1\n");
     await writeDelta("c", "identity/admin-auth", "## MODIFIED Requirements\n### Requirement: R1\n");
-    expect(await archiveWarnings(companion, "a")).toEqual([
+    expect(await submitWarnings(companion, "a")).toEqual([
       {
         kind: "overlap",
         change: "b",
         capability: "identity/user-auth",
         requirement: "R1",
         message:
-          "b also changes identity/user-auth › R1; archiving b later will replace this change's version of that requirement.",
+          "b also changes identity/user-auth › R1; unless both publish in one Delivery Group, the one published second is refused as a conflict until it is resolved.",
       },
     ]);
   });
 
-  test("names a declared dependency that is not archived yet", async () => {
-    await writeArtifact("b", "proposal.md", "dependsOn: [a, done]");
+  test("names a declared dependency neither submitted nor published", async () => {
+    await writeArtifact("b", "proposal.md", "dependsOn: [a, done, sent]");
     await fs.mkdir(path.join(changes(), "a"), { recursive: true });
+    await writeArtifact("sent", "proposal.md", "type: change-proposal");
+    await fs.writeFile(
+      path.join(changes(), "sent", "delivery.yaml"),
+      "version: 1\nchange: sent\nstate: submitted\ndeliveries: []\n",
+    );
     await fs.mkdir(path.join(changes(), "archive", "2026-10-01-done"), { recursive: true });
-    expect(await archiveWarnings(companion, "b")).toEqual([
+    expect(await submitWarnings(companion, "b")).toEqual([
       {
         kind: "dependency",
         change: "a",
-        message: "b depends on a, which is not archived yet; archive a first.",
+        message:
+          "b depends on a, which is neither submitted nor published; submit a with it or first.",
       },
     ]);
+  });
+
+  test("a dependency a teammate submitted, on the inbox alone, is not named", async () => {
+    seedPending(companion, [{ name: "a" }]);
+    await writeArtifact("b", "proposal.md", "dependsOn: [a]");
+    expect(await submitWarnings(companion, "b")).toEqual([]);
+  });
+
+  test("a dropped change overlaps nothing", async () => {
+    await writeDelta("a", "studio-dashboard", "## MODIFIED Requirements\n### Requirement: R1\n");
+    await writeDelta("b", "studio-dashboard", "## MODIFIED Requirements\n### Requirement: R1\n");
+    await fs.writeFile(
+      path.join(changes(), "b", "delivery.yaml"),
+      "version: 1\nchange: b\nstate: dropped\ndeliveries: []\n",
+    );
+    expect(await submitWarnings(companion, "a")).toEqual([]);
   });
 
   test("a change without deltas or dependencies has no warnings", async () => {
     await fs.mkdir(path.join(changes(), "solo"), { recursive: true });
-    expect(await archiveWarnings(companion, "solo")).toEqual([]);
+    expect(await submitWarnings(companion, "solo")).toEqual([]);
   });
 });
 
@@ -146,9 +169,10 @@ describe("applyWarnings", () => {
 });
 
 describe("planningWarning", () => {
-  const status = (...artifacts: [string, string][]) =>
+  const status = (...artifacts: [string, string][]) => statusFor("mate-full", ...artifacts);
+  const statusFor = (schemaName: string, ...artifacts: [string, string][]) =>
     JSON.stringify({
-      schemaName: "mate-v1",
+      schemaName,
       artifacts: artifacts.map(([id, status]) => ({ id, status })),
     });
 
@@ -164,6 +188,12 @@ describe("planningWarning", () => {
       artifacts: ["proposal", "design"],
       message: "x is missing planning artifacts its schema requires: proposal, design.",
     });
+  });
+
+  test("a change on the legacy mate-v1 name gets the same warning", () => {
+    expect(
+      planningWarning("x", statusFor("mate-v1", ["specs", "done"], ["design", "ready"])),
+    ).toMatchObject({ kind: "incomplete-planning", artifacts: ["design"] });
   });
 
   test("done and skipped artifacts complete the planning", () => {
@@ -184,7 +214,7 @@ describe("planningWarning", () => {
   test("unparsable status yields no warning", () => {
     expect(planningWarning("x", "not json")).toBeNull();
     expect(
-      planningWarning("x", JSON.stringify({ schemaName: "mate-v1", artifacts: "none" })),
+      planningWarning("x", JSON.stringify({ schemaName: "mate-full", artifacts: "none" })),
     ).toBeNull();
     expect(planningWarning("x", "null")).toBeNull();
   });

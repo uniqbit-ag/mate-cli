@@ -5,7 +5,9 @@ import path from "node:path";
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
 import { extractPatchPaths, readContext } from "../../src/opencode";
-import { runtimeDirectoryPath, runtimeWrapperBinPath } from "../../src/runtime/runtime-directory";
+import { repoLocalRegistryPath } from "../../src/runtime/repo-local";
+import { runtimeWrapperBinPath } from "../../src/runtime/runtime-directory";
+import { umbrellaChildrenBlock } from "../../src/runtime/umbrella-children";
 
 import { registerCompanion } from "./companion";
 
@@ -119,6 +121,7 @@ describe("OpenCode companion registration", () => {
         expect(shell.env.MATE_GUIDANCE_JSON).toBe("");
 
         const [prompt] = await system("base");
+        expect(prompt).not.toContain("<umbrella-children");
         expect(prompt).toContain("/package/wrappers/bin/openspec");
         expect(prompt).toContain("<cli-tools>");
         expect(prompt).toContain('name="mate" type="global"');
@@ -188,6 +191,38 @@ describe("OpenCode companion registration", () => {
         expect(once[0]).toStartWith("base\n\nextra\n\n<companion-policy");
 
         expect(await system(...once)).toEqual(once);
+      },
+    );
+  });
+
+  test("puts the children block after the policy in an Umbrella Repository", async () => {
+    const root = await makeTempDir("mate-opencode-umbrella-");
+    const umbrella = path.join(root, "acme");
+    await fs.mkdir(path.dirname(repoLocalRegistryPath(umbrella)), { recursive: true });
+    await fs.writeFile(repoLocalRegistryPath(umbrella), "companions: []\n");
+    for (const name of ["api", "web"]) {
+      await fs.mkdir(path.join(umbrella, name, ".git"), { recursive: true });
+      await fs.writeFile(
+        path.join(umbrella, name, ".git", "config"),
+        `[remote "origin"]\n\turl = git@github.com:acme/${name}.git\n`,
+      );
+    }
+
+    await withEnv(
+      {
+        MATE_ARTIFACT_PATH: path.join(root, "companion"),
+        MATE_REPO_PATH: umbrella,
+        MATE_GUIDANCE_JSON: GUIDANCE_JSON,
+        MATE_REPO_ID: "acme",
+        MATE_POLICY_JSON: "{}",
+        MATE_GIT_AUTO_MODE: "0",
+        MATE_WRAPPER_BIN_PATH: "/package/wrappers/bin",
+      },
+      async () => {
+        const [prompt] = await (await register(umbrella)).system("base");
+
+        expect(prompt).toContain(`</companion-policy>\n\n${umbrellaChildrenBlock(umbrella)}`);
+        expect(prompt).toContain('<child repository="acme/web" folder="web" />');
       },
     );
   });
@@ -301,7 +336,9 @@ more content
 });
 
 describe("wrapper path without a launch environment", () => {
-  const launchEnv = (companion: string, repo: string) => ({
+  /** HOME is the test's own: the run's shared one holds the runtime directory other files use. */
+  const launchEnv = (home: string, companion: string, repo: string) => ({
+    HOME: home,
     MATE_ARTIFACT_PATH: companion,
     MATE_REPO_PATH: repo,
     MATE_GUIDANCE_JSON: GUIDANCE_JSON,
@@ -311,24 +348,20 @@ describe("wrapper path without a launch environment", () => {
     PATH: "/usr/bin",
   });
 
-  afterEach(async () => {
-    await fs.rm(runtimeDirectoryPath(), { recursive: true, force: true });
-  });
-
   test("uses the runtime directory in guidance and in spawned shells", async () => {
     const root = await makeTempDir("mate-opencode-runtime-");
     const repo = path.join(root, "repo");
     await fs.mkdir(repo, { recursive: true });
-    await fs.mkdir(runtimeWrapperBinPath(), { recursive: true });
+    await fs.mkdir(runtimeWrapperBinPath(root), { recursive: true });
 
-    await withEnv(launchEnv(path.join(root, "companion"), repo), async () => {
+    await withEnv(launchEnv(root, path.join(root, "companion"), repo), async () => {
       const { hooks, system } = await register(repo);
       const shell = { env: {} as Record<string, string> };
       await hooks.get("shell.create.before")!(shell);
       const [prompt] = await system("base");
 
-      expect(shell.env.MATE_WRAPPER_BIN_PATH).toBe(runtimeWrapperBinPath());
-      expect(prompt).toContain(path.join(runtimeWrapperBinPath(), "openspec"));
+      expect(shell.env.MATE_WRAPPER_BIN_PATH).toBe(runtimeWrapperBinPath(root));
+      expect(prompt).toContain(path.join(runtimeWrapperBinPath(root), "openspec"));
       expect(prompt).not.toContain("$MATE_WRAPPER_BIN_PATH");
     });
   });
@@ -343,7 +376,7 @@ describe("wrapper path without a launch environment", () => {
     });
 
     try {
-      await withEnv(launchEnv(path.join(root, "companion"), repo), async () => {
+      await withEnv(launchEnv(root, path.join(root, "companion"), repo), async () => {
         const { hooks } = await register(repo);
         expect(hooks.has("session.context")).toBe(false);
       });

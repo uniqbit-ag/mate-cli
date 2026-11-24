@@ -53,15 +53,23 @@ export function renderOutcome(outcome: BranchOutcome): string[] {
     lines.push(
       `  ${outcome.branch}: likely merged (${style}, ${commit.slice(0, 12)}); needs your confirmation`,
     );
+  } else if (outcome.answerReason === "not-on-default" && outcome.fetch?.branchDeleted) {
+    lines.push(
+      `  ${outcome.branch}: deleted on the remote and its commits are not on this machine, so Git cannot check it; needs an answer`,
+    );
   } else if (outcome.answerReason === "not-on-default") {
     const fetched = outcome.fetchedAt ? `last fetch ${outcome.fetchedAt}` : "never fetched";
     lines.push(`  ${outcome.branch}: not on the default branch (${fetched}); needs an answer`);
+  } else if (outcome.answerReason === "branch-deleted") {
+    lines.push(
+      `  ${outcome.branch}: deleted on the remote and not on the default branch; merged, or drop it?`,
+    );
+  } else if (outcome.answerReason === "no-checkout") {
+    lines.push(
+      `  ${outcome.branch}: ${outcome.repository} is not linked on this machine; needs an answer`,
+    );
   } else {
     lines.push(`  ${outcome.branch}: needs an answer (${outcome.answerReason})`);
-  }
-  if (outcome.failure) lines.push(`    ${outcome.failure.message}`);
-  for (const candidate of outcome.candidates ?? []) {
-    lines.push(`    #${candidate.number} ${candidate.state}  ${candidate.url}`);
   }
   return lines;
 }
@@ -83,12 +91,18 @@ export function sharedRefusalMessage(
   if (refusal.reason === "tickets-off") {
     return `mate: ${TICKETS_OFF}`;
   }
+  if (refusal.reason === "missing-folder") {
+    return `mate: ${refusal.change} has no change folder at ${refusal.path}; a skill of its stage creates it.`;
+  }
   if (refusal.reason === "no-resolved-branch") {
     const reasons = refusal.diagnostics.length > 0 ? ` (${refusal.diagnostics.join(" ")})` : "";
     return `mate: ${refusal.change} has no Delivery Branch to name with a ticket${reasons}; pass --branch instead.`;
   }
   if (refusal.reason === "settled-delivery") {
     return `mate: ${refusal.change} records ${refusal.delivery} for ${refusal.repository}; a ticket does not replace it, pass --branch to relink.`;
+  }
+  if (refusal.reason === "uncommitted-work") {
+    return `mate: ${refusal.change} is not submitted: ${refusal.branch} already counts as merged in ${refusal.repository}, but ${refusal.worktree} holds uncommitted changes to tracked files. Commit or stash them, then submit again.`;
   }
   if (refusal.reason === "protected-branch") {
     return `mate: ${refusal.branch} is a protected branch (${refusal.protection}); record it only as an explicit direct delivery with --direct.`;

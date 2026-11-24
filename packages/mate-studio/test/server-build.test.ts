@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { cp, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -15,13 +15,30 @@ import {
 
 const SERVER = path.join(import.meta.dir, "../dist/server/server.js");
 
+function newestSource() {
+  let newest = 0;
+  for (const dir of ["../src", "../../mate-core/src"]) {
+    const root = path.join(import.meta.dir, dir);
+    for (const file of readdirSync(root, { recursive: true }) as string[]) {
+      if (/\.test\.tsx?$/.test(file)) continue;
+      const stat = statSync(path.join(root, file));
+      if (stat.isFile()) newest = Math.max(newest, stat.mtimeMs);
+    }
+  }
+  return newest;
+}
+
+const stale = existsSync(SERVER) && statSync(SERVER).mtimeMs < newestSource();
+
 /** Answers like core's services: every page selection is resolved through the profile. */
 const servicesFor = (profile: StudioProfile) =>
   ({
     writable: false,
-    factoryMode: true,
+    services: () => [{ id: "acme", label: "Acme", views: [] }],
+    callService: async () => Response.json({}),
     keepsFolder: () => false,
     physicalPath: (companionPath: string) => companionPath,
+    addsCompanions: () => false,
     modePolicy: modePolicy(profile),
     page: async (url: URL) => ({
       ...page,
@@ -72,6 +89,7 @@ const selecting = (studio: StudioServices) =>
 
 async function built() {
   expect(existsSync(SERVER)).toBe(true);
+  if (stale) throw new Error("dist/server is older than its sources: run `bun run build`.");
   const { default: handler } = (await import(SERVER)) as {
     default: {
       fetch(request: Request, options: { context: StudioRequestContext }): Promise<Response>;
@@ -97,7 +115,7 @@ describe("built server", () => {
     let asked = 0;
     const studio = {
       ...selecting(services),
-      factoryMode: false,
+      services: () => [],
       usage: async () => {
         asked += 1;
         throw new Error("not during document rendering");
@@ -142,7 +160,7 @@ describe("built server", () => {
     }
   });
   test("renders bundled developer guides with the initial response and native links", async () => {
-    const selected = { ...selecting(services), factoryMode: false };
+    const selected = { ...selecting(services), services: () => [] };
     for (const [topic, expected] of [
       ["", "Your first change"],
       ["/worktrees", "Work in an isolated checkout"],
@@ -171,7 +189,7 @@ describe("built server", () => {
   test("Start here teaches the existing-checkout workflow without optional setup steps", async () => {
     const { response } = await follow(
       `/getting-started?companion=${acmeDigest}&studioMode=engineering`,
-      { ...selecting(services), factoryMode: false },
+      { ...selecting(services), services: () => [] },
     );
     const html = await response.text();
     expect(html).toContain(
@@ -323,7 +341,7 @@ describe("built server", () => {
   test("sends the route's data with the first response", async () => {
     const handler = await built();
     const response = await handler.fetch(
-      new Request("http://127.0.0.1/factory?studioMode=engineering"),
+      new Request("http://127.0.0.1/workflow?studioMode=engineering"),
       { context: { studio: services } },
     );
     expect(await response.text()).toContain("/acme-b");
@@ -350,7 +368,7 @@ describe("built server", () => {
       }),
     } as unknown as StudioServices;
     const digest = companionDigest(companion.path);
-    for (const view of ["workflow", "factory"]) {
+    for (const view of ["workflow", "skills"]) {
       const { response } = await follow(
         `/${view}?companion=${digest}&studioMode=engineering`,
         withCompanion,
@@ -388,14 +406,36 @@ describe("built server", () => {
     expect(main).not.toContain("view-placeholder");
   });
 
-  test("sends the Factory view to the Overview without the factory broker", async () => {
-    const handler = await built();
-    const response = await handler.fetch(
-      new Request("http://127.0.0.1/factory?studioMode=engineering"),
-      { context: { studio: { ...services, factoryMode: false } } },
+  test("draws submitted changes awaiting publication on the Overview", async () => {
+    const companion = page.inventory.companions[0]!;
+    const withSubmitted = {
+      ...services,
+      page: async (url: URL) => ({
+        ...(await services.page(url)),
+        companion,
+        payload: {
+          companionPath: companion.path,
+          changes: [],
+          submitted: [{ name: "acme-awaiting", group: "", blocked: false, mine: true }],
+          specs: [],
+          skills: [],
+          topology: null,
+          worksets: [],
+          linkedRepositories: [],
+          worksetProblems: [],
+          warnings: [],
+        },
+      }),
+    } as unknown as StudioServices;
+    const digest = companionDigest(companion.path);
+    const { response } = await follow(
+      `/?companion=${digest}&studioMode=engineering`,
+      withSubmitted,
     );
-    expect(response.status).toBe(307);
-    expect(new URL(response.headers.get("location")!, "http://127.0.0.1").pathname).toBe("/");
+    const html = await response.text();
+    const main = html.slice(html.indexOf('id="studio-main"'), html.indexOf("</main>"));
+    expect(main).toContain("Awaiting publication");
+    expect(main).toContain('data-submitted="acme-awaiting"');
   });
 
   test("names the effective mode in an address that names none or a legacy role", async () => {
@@ -418,7 +458,7 @@ describe("built server", () => {
     for (const address of [
       "/?studioMode=engineering",
       "/workflow?studioMode=engineering",
-      "/factory?role=product-engineer",
+      "/getting-started?role=product-engineer",
       "/skills",
     ]) {
       const { response, location } = await follow(address, appliance);

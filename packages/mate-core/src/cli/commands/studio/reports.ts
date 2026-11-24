@@ -1,3 +1,4 @@
+// oxlint-disable no-await-in-loop -- one companion's reports at a time, so the index stays consistent
 import { randomBytes } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -60,6 +61,24 @@ function isEntry(value: unknown): value is StoredReport {
   );
 }
 
+const readIndex = async (dir: string): Promise<StoredReport[]> => {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(path.join(dir, "index.json"), "utf8"));
+    return Array.isArray(parsed) ? parsed.filter(isEntry) : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeIndex = async (dir: string, entries: StoredReport[]) => {
+  const temporary = path.join(dir, `index.${randomBytes(4).toString("hex")}.tmp`);
+  await writeFile(temporary, JSON.stringify(entries), "utf8");
+  await rename(temporary, path.join(dir, "index.json"));
+};
+
+const remove = (dir: string, entry: StoredReport) =>
+  rm(path.join(dir, `${entry.id}.html`), { force: true });
+
 export function createReportStore(options: ReportStoreOptions = {}): ReportStore {
   const root = options.root ?? defaultReportRoot();
   const now = options.now ?? Date.now;
@@ -77,24 +96,6 @@ export function createReportStore(options: ReportStoreOptions = {}): ReportStore
     if (!COMPANION_DIGEST_PATTERN.test(companion)) throw new Error("invalid companion digest");
     return path.join(root, companion);
   };
-
-  const readIndex = async (dir: string): Promise<StoredReport[]> => {
-    try {
-      const parsed: unknown = JSON.parse(await readFile(path.join(dir, "index.json"), "utf8"));
-      return Array.isArray(parsed) ? parsed.filter(isEntry) : [];
-    } catch {
-      return [];
-    }
-  };
-
-  const writeIndex = async (dir: string, entries: StoredReport[]) => {
-    const temporary = path.join(dir, `index.${randomBytes(4).toString("hex")}.tmp`);
-    await writeFile(temporary, JSON.stringify(entries), "utf8");
-    await rename(temporary, path.join(dir, "index.json"));
-  };
-
-  const remove = (dir: string, entry: StoredReport) =>
-    rm(path.join(dir, `${entry.id}.html`), { force: true });
 
   /** Newest first; drops expired entries, then evicts oldest until both caps hold. */
   const prune = async (dir: string, entries: StoredReport[], keep?: string) => {

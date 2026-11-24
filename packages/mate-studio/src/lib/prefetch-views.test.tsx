@@ -7,8 +7,7 @@ const { act, render } = await import("@testing-library/react");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
 const router = await import("@tanstack/react-router");
 const { prefetchViews, usePrefetchViews } = await import("./prefetch-views");
-const { companionViewQuery, factoryQuery, reportsQuery, vaultQuery } =
-  await import("./studio-queries");
+const { companionViewQuery, reportsQuery, vaultQuery } = await import("./studio-queries");
 
 const search = { companion: "0123456789" };
 const data = { error: null, studioMode: "engineering", warnings: [] } as CompanionViewData;
@@ -27,7 +26,7 @@ function recording() {
 }
 
 describe("prefetchViews", () => {
-  it("loads the mode's companion views in order, never Factory, Vault or Reports", async () => {
+  it("loads the mode's companion views in order, never Vault or Reports", async () => {
     const queryClient = new QueryClient();
     const { asked, query } = recording();
     const preloaded: CompanionView[] = [];
@@ -113,11 +112,10 @@ describe("usePrefetchViews", () => {
     expect(await mountOn()).toContainEqual(companionViewQuery("dashboard", search).queryKey);
   });
 
-  it("loads the Vault's root listing and the Reports list, never Factory data", async () => {
+  it("loads the Vault's root listing and the Reports list, never Usage", async () => {
     const keys = await mountOn();
     expect(keys).toContainEqual(vaultQuery(search.companion, {}).queryKey);
     expect(keys).toContainEqual(reportsQuery(search.companion).queryKey);
-    expect(keys).not.toContainEqual(factoryQuery(search.companion).queryKey);
     expect(keys).not.toContainEqual([search.companion, "usage", 7]);
   });
 });

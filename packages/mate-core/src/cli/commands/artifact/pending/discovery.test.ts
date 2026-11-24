@@ -7,7 +7,7 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { runFinishEngine } from "../finish/engine";
 import type { GitOps } from "../finish/git";
 import { openspecFinisher } from "../finish/openspec";
-import { discoverArchives, finishMarker, pendingArchives, unattributedSpecs } from "./discovery";
+import { discoverArchives, pendingArchives, unattributedSpecs } from "./discovery";
 
 const roots: string[] = [];
 
@@ -61,7 +61,6 @@ describe("archive discovery", () => {
         name: "acme",
         anchor: "2026-09-07-acme",
         path: "openspec/changes/archive/2026-09-07-acme",
-        tag: "openspec/2026-09-07-acme",
         uncommittedPaths: ["openspec/changes/archive/2026-09-07-acme/"],
         uncommittedSpecs: [],
         uncommittedSpecChanges: [],
@@ -141,6 +140,16 @@ describe("archive discovery", () => {
     expect(archive.uncommittedPaths).toEqual(["openspec/changes/acme/"]);
   });
 
+  test("leaves out a new change that reuses an archived name", async () => {
+    const companion = await makeCompanion([{ name: "2026-09-07-acme", kind: "dir" }]);
+    await fs.mkdir(path.join(companion, "openspec", "changes", "acme"), { recursive: true });
+
+    const [archive] = await discoverArchives(companion, ["openspec/changes/acme/"]);
+
+    expect(archive.state).toBe("committed");
+    expect(archive.uncommittedPaths).toEqual([]);
+  });
+
   test("matches a porcelain-collapsed ancestor directory", async () => {
     const companion = await makeCompanion([{ name: "2026-09-07-acme", kind: "dir" }]);
 
@@ -210,7 +219,6 @@ describe("archive discovery", () => {
         name: "acme",
         anchor: "2026-09-07-acme",
         path: "openspec/changes/archive/2026-09-07-acme",
-        tag: "openspec/2026-09-07-acme",
         uncommittedPaths: [],
         uncommittedSpecs: [],
         uncommittedSpecChanges: [],
@@ -226,7 +234,6 @@ describe("archive discovery", () => {
       "openspec/changes/archive/2026-09-07-acme/",
     ]);
 
-    expect(archive.tag).toBe(finishMarker("2026-09-07-acme"));
     expect(archive.state).toBe("uncommitted");
   });
 });
@@ -519,9 +526,9 @@ describe("explicit retry of a committed, push-failed archive", () => {
 
     expect(result.resumed).toBe(true);
     expect(result.anchorName).toBe("2026-09-07-acme");
-    expect(result.tag).toBe(finishMarker("2026-09-07-acme"));
+    expect(result.tag).toBeNull();
     expect(result.status).toBe("ok");
-    expect(result.local).toEqual({ committed: true, tagged: true, pushed: true });
+    expect(result.local).toEqual({ committed: true, tagged: false, pushed: true });
     expect(pushed).toEqual([true]);
   });
 });

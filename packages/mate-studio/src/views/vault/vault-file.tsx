@@ -32,13 +32,13 @@ function useFileEvents(companion: string, path: string, onEvent: (event: VaultWa
   useEffect(() => {
     if (typeof EventSource === "undefined") return;
     const source = new EventSource(eventsUrl(companion, path));
-    source.onmessage = (message) => {
+    source.addEventListener("message", (message) => {
       try {
         handler.current(JSON.parse(message.data) as VaultWatchEvent);
       } catch {
         /* a malformed event is skipped */
       }
-    };
+    });
     return () => source.close();
   }, [companion, path]);
 }

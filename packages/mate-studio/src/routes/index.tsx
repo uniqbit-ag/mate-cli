@@ -31,7 +31,12 @@ function Overview() {
           <AnalystOverview payload={{ shipped: data.shipped ?? [], warnings: data.warnings }} />
         ) : (
           <Dashboard
-            payload={{ changes: data.changes ?? [], warnings: data.warnings }}
+            payload={{
+              changes: data.changes ?? [],
+              submitted: data.submitted,
+              warnings: data.warnings,
+              workflow: data.workflow,
+            }}
             selected={search.change}
             companion={search.companion}
           />

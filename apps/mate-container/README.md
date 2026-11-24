@@ -167,8 +167,10 @@ follow the full log with `bun run appliance:local:logs`.
 ## Keeping the dependency locks current
 
 `locks/global-tools.package-lock.json` pins the published release packages and
-everything they install. The factory image keeps its own copy. When a release
-package gains, drops or changes a dependency, both locks are out of date. Every
+everything they install. When a release package gains, drops or changes a
+dependency, the lock is out of date. (The factory image moved to
+[uniqbit-ag/mate-factory](https://github.com/uniqbit-ag/mate-factory), which
+keeps its own lock.) Every
 pull request runs `bun run image-locks:check`, and a stale lock fails `ci-ok`.
 The check only reads the committed pins. It resolves nothing and runs no
 dependency scripts.

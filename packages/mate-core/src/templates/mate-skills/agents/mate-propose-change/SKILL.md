@@ -1,6 +1,6 @@
 ---
 name: mate-propose-change
-description: Propose a change with its schema chosen by the minimal eligibility test (mate-minimal or mate-v1) and one change per agreed slice. Builds on the OpenSpec propose workflow. Use when the user wants to turn an explored direction into a change proposal, or revise an existing change's plan.
+description: Propose a change with its schema chosen by the minimal eligibility test (mate-minimal or mate-full) and one change per agreed slice. Builds on the OpenSpec propose workflow. Use when the user wants to turn an explored direction into a change proposal, or revise an existing change's plan.
 allowed-tools: Bash(mate:*), Bash(openspec:*), Bash(git:*)
 license: MIT
 compatibility: Requires the mate CLI and the openspec capability enabled.
@@ -24,7 +24,7 @@ propose steps below.
 ## Steps
 
 1. **Choose the schema.** Use `mate-minimal` (specs and tasks only) when every
-   statement holds; otherwise use `mate-v1` (proposal, specs, design, tasks):
+   statement holds; otherwise use `mate-full` (proposal, specs, design, tasks):
 
    - Intent and scope are clear, with nothing left to explore.
    - The change stays within one Area.
@@ -54,19 +54,45 @@ propose steps below.
    state in one line why, and continue. If the test clearly passes but the slice
    boundaries are unclear, suggest `/mate-explore-change` instead of guessing slices.
    Record a slice's dependency on an earlier change as a `dependsOn` list in the
-   frontmatter of its first artifact, for example `dependsOn: [add-graph-model]`; archive
-   later warns while a dependency is still unarchived.
+   frontmatter of its first artifact, for example `dependsOn: [add-graph-model]`; submit
+   later warns while a dependency is neither submitted nor published.
 
 3. **Follow the OpenSpec workflow.** Read
    [references/openspec-propose.md](references/openspec-propose.md) and follow it with the
    chosen schema (pass `--schema <schema>` when creating the change). Never ask for a
-   ticket; apply asks when it creates the branch.
+   ticket; apply asks when it creates the branch. Once the change's delta specs are written,
+   record the companion commit they were written against with
+   `mate artifact link "<change-name>" --spec-base --json`, so a requirement someone changes
+   meanwhile conflicts at publication instead of being overwritten. Then compare the
+   requirements the delta specs modify or remove with `touches` of each change in
+   `mate artifact pending --json`: for a match, tell the user the change and its
+   `author`, since the one published second is refused as a conflict until resolved.
 
-4. **Hand off to human review.** Reviews are done by people, not by a skill.
-   End the response with a final `## Next steps` section: numbered required actions in
-   execution order, with exact commands and known change names, prerequisites first.
-   Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
-   follows it. Listing an action never invokes it. Never offer the user an optional command, in or above the section; optional work appears above it only as a skill invocation labelled optional.
+   **Dependent changes.** A `dependsOn` change that is submitted or active in this
+   checkout counts as satisfied: its requirements are not in the canonical specs until
+   it is published. Before writing the delta specs of a change with `dependsOn`, read
+   the specs as they will be once that chain is published with
+   `mate artifact project "<change-name>" --json`, and write `MODIFIED` requirements
+   against that text, not against the canonical specs. A failing projection reports
+   publication's reason; relay it.
+
+4. **Close the stage.** Reviews are done by people, not by a skill, and validation is
+   never approval. At the end of every run of this skill, for each change it proposed,
+   run:
+
+   ```bash
+   mate workflow done mate-propose-change "<change-name>"
+   ```
+
+   It prints the next actions for the change. End the response with a final `## Next
+   steps` section: numbered required actions in execution order, with exact commands and
+   known change names, prerequisites first: required work of this run that is still
+   open, then the actions the command printed, in its order. Summaries, evidence,
+   warnings, optional work, and deferred context go above it; nothing follows it.
+   Listing an action never invokes it. Never offer the user an optional command, in or
+   above the section; optional work appears above it only as a skill invocation labelled
+   optional, as the command's `optional:` line names it. If the command fails, report its
+   problems and end without a `Next steps` section.
 
    **Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
    and Cursor and the fallback. When the current runtime uses another syntax, swap only
@@ -75,27 +101,16 @@ propose steps below.
    folder or an older example. Arguments, commands, paths, and order stay, and naming
    never invokes.
 
-   List the artifacts to review in schema order (Review proposal, Review specs, Review
-   design, Review tasks for `mate-v1`; Review specs and Review tasks for
-   `mate-minimal`), then `/mate-apply-change <change-name>` after that review. Never
-   describe validation as approval.
+   Add only this skill's own required actions to the section:
 
    - **Remaining slices:** when recommending them next, list
      `/mate-propose-change <slice>` per slice in dependency order; otherwise name them
      above the section as deferred.
    - **Dependencies:** a `dependsOn` change with unfinished work (open tasks or an
-     outstanding check) gets its named action listed before applying this change. A
-     dependency that is implemented but unarchived does not block apply: say above
-     the section that archiving it first avoids an archive warning.
-
-   ```text
-   Validation passed; validation is not approval.
-
-   ## Next steps
-   1. Review specs: openspec/changes/acme-queue/specs/
-   2. Review tasks: openspec/changes/acme-queue/tasks.md
-   3. After your review: /mate-apply-change acme-queue
-   ```
+     outstanding check) gets its named action listed before the printed ones. A
+     dependency that is implemented but unsubmitted does not block apply: say above
+     the section that submitting it first, with `/mate-submit-change`, avoids a submit
+     warning.
 
 ## Revise mode
 

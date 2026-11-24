@@ -23,7 +23,12 @@ import {
   removeManagedBlocksForPlugin,
   upsertManagedBlock,
 } from "../context-services";
-import type { CapabilityContributionInput, ProviderPlugin, SetupContext } from "../plugin";
+import type {
+  CapabilityContributionInput,
+  ProviderPlugin,
+  RuntimeContributions,
+  SetupContext,
+} from "../plugin";
 import { projectionRepoRoot, surfaceRoot } from "../surface-target";
 import { mergeDir, pruneEmptyAncestors } from "../utils";
 import { stripSectionFromFile, type RemoveHeadingSectionOptions } from "./agent-file-sections";
@@ -61,6 +66,7 @@ import {
   mateSessionEndHookGroups,
   mateSessionPrepareHookGroups,
   mateTokensaveRouteHookGroups,
+  mateTurnHookGroups,
 } from "./claude-plugin-hooks";
 import { getSetupRootTemplates } from "./utils";
 
@@ -260,6 +266,14 @@ function renderManagedClaudeHookGroups(
   return hooks;
 }
 
+/** Every hook marker a contribution owns: its groups' markers and its ownership-only `hookMarkers`. */
+export function declaredHookMarkers(contributions: RuntimeContributions): string[] {
+  return [
+    ...(contributions.hookGroups ?? []).map((hook) => hook.marker),
+    ...(contributions.hookMarkers ?? []),
+  ];
+}
+
 // Reconcile the Mate-managed Claude settings shape (hooks, permissions, MCP
 // servers) on top of whatever already exists in the settings document. Managed
 // groups/entries always lead their arrays so the emitted shape stays stable
@@ -274,7 +288,7 @@ function renderManagedClaudeSettings(
   // Declared markers and permission entries widen the managed strip set for
   // every registered Capability, enabled or not, so deselection tears down.
   const declaredMarkers = contributions.flatMap((input) =>
-    (input.contributions.hookGroups ?? []).map((hook) => hook.marker),
+    declaredHookMarkers(input.contributions),
   );
   const declaredPermissionEntries = contributions.flatMap(
     (input) => input.contributions.permissionEntries ?? [],
@@ -366,7 +380,7 @@ function renderManagedClaudeSettings(
 /**
  * Loaded by a managed session beside the launch's plugin, so each Mate hook
  * here runs twice there: the guard, tokensave routing and the RTK git deny are input-pure, guidance yields under a
- * launch env, and the banner, prepare and instruction copies carry
+ * launch env, and the banner, prepare, instruction and turn-hook copies carry
  * `--projected`, so one copy of each acts. Capability groups run once: the
  * launch omits them from `--settings`.
  *
@@ -398,6 +412,7 @@ function claudeSettingsRegions(
     SubagentStart: mateInstructionHookGroups(),
     SessionEnd: mateSessionEndHookGroups(),
     Notification: mateAttentionHookGroups(),
+    ...mateTurnHookGroups(),
   };
   const events = [...new Set([...Object.keys(mateHooks), ...Object.keys(capabilityHooks)])];
   const served = servingWrapState(repoRoot);
