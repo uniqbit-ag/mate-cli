@@ -26,6 +26,8 @@ interface SidebarProps {
   shell: ShellData;
   search: StudioSearch;
   view: StudioView;
+  /** The workspace view (`<service>/<view>`) holding the sidebar at icons, if any. */
+  heldBy?: string | null;
 }
 
 const MODE_ICONS: Record<StudioMode, IconName> = { engineering: "code", analysis: "eye" };
@@ -43,12 +45,13 @@ function useNeedsYou(shell: ShellData, search: StudioSearch): Partial<Record<Stu
   return counts;
 }
 
-export function Sidebar({ shell, search, view }: SidebarProps) {
+export function Sidebar({ shell, search, view, heldBy }: SidebarProps) {
   const rail = useAppearance((state) => state.rail);
   const toggleRail = useAppearance((state) => state.toggleRail);
+  const release = useAppearance((state) => state.release);
   const counts = useNeedsYou(shell, search);
   const mode = shell.studioMode;
-  const collapsed = rail === "min";
+  const collapsed = rail === "min" || Boolean(heldBy);
   return (
     <nav
       className="studio-nav flex min-h-0 flex-col gap-px overflow-x-hidden overflow-y-auto border-r border-rule bg-page px-2 pt-2 pb-2.5 max-[900px]:border-r-0 max-[900px]:flex-row max-[900px]:flex-wrap max-[900px]:items-center max-[900px]:gap-1 max-[900px]:border-b max-[900px]:border-rule"
@@ -93,7 +96,7 @@ export function Sidebar({ shell, search, view }: SidebarProps) {
             className="flex h-[30px] items-center gap-2.5 rounded-[6px] border-0 bg-transparent px-2.5 text-xs text-muted hover:bg-surface hover:text-text rail-min:justify-center rail-min:px-0 max-[900px]:hidden"
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             aria-expanded={!collapsed}
-            onClick={toggleRail}
+            onClick={heldBy ? () => release(heldBy) : toggleRail}
           >
             <Icon name="sidebar" />
             <span className="rail-min:hidden">Collapse</span>

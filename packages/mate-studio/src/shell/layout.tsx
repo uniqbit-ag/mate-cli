@@ -23,19 +23,21 @@ import { TopBar } from "./top-bar";
 import { VIEW_DESCRIPTIONS, VIEW_TITLES } from "./views";
 import { TerminalSidebar } from "../terminal/terminal-sidebar";
 
-/** Cmd/Ctrl+Backslash collapses the sidebar to icons and back. */
-function useRailKey(): void {
+/** Cmd/Ctrl+Backslash collapses the sidebar to icons and back; a held one it expands. */
+function useRailKey(heldBy: string | null): void {
   const toggleRail = useAppearance((state) => state.toggleRail);
+  const release = useAppearance((state) => state.release);
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === "\\") {
         event.preventDefault();
-        toggleRail();
+        if (heldBy) release(heldBy);
+        else toggleRail();
       }
     };
     document.addEventListener("keydown", keydown, true);
     return () => document.removeEventListener("keydown", keydown, true);
-  }, [toggleRail]);
+  }, [toggleRail, release, heldBy]);
 }
 
 /** The top bar, sidebar and page header around every view; the view comes from the matched route. */
@@ -53,10 +55,16 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
         (entry) => entry.service === pluginParams.service && entry.view === pluginParams.view,
       )
     : undefined;
+  const workspace = pluginView?.layout === "workspace";
+  const workspaceKey = pluginView ? `${pluginView.service}/${pluginView.view}` : null;
+  const released = useAppearance((state) => state.released);
+  // A workspace view holds the sidebar at icons until the person expands it.
+  const heldBy =
+    workspace && workspaceKey && !released.includes(workspaceKey) ? workspaceKey : null;
   const digest = shell.selected?.digest;
   useStudioEvents(digest);
   useStudioClicks();
-  useRailKey();
+  useRailKey(heldBy);
   usePrefetchViews(shell.selected ? search : {}, shell.studioMode, shell.enabledModes);
   useEffect(() => {
     if (!digest) return;
@@ -73,14 +81,19 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
         data-companion={digest}
         data-terminal={shell.terminal ? "" : undefined}
         data-picker={shell.selected ? undefined : ""}
+        data-rail={heldBy ? "min" : undefined}
       >
         <NavigationProgress />
         <TopBar shell={shell} search={search} />
         {/* Choosing a companion is the whole page: no views to navigate yet. */}
-        {shell.selected ? <Sidebar shell={shell} search={search} view={view} /> : null}
+        {shell.selected ? (
+          <Sidebar shell={shell} search={search} view={view} heldBy={heldBy} />
+        ) : null}
         <main className="studio-main flex min-h-0 min-w-0 flex-col overflow-auto" id="studio-main">
           <ConnectionBanner />
-          {shell.selected ? (
+          {shell.selected && workspace ? (
+            <Outlet />
+          ) : shell.selected ? (
             <>
               <PageHeader
                 title={pluginView ? pluginView.label : VIEW_TITLES[view]}

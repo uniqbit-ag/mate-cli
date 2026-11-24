@@ -129,7 +129,7 @@ const settle = () => act(async () => new Promise((done) => setTimeout(done, 20))
 
 afterEach(() => {
   document.documentElement.removeAttribute("data-rail");
-  useAppearance.setState({ rail: "full" });
+  useAppearance.setState({ rail: "full", released: [] });
   Object.assign(frictionServer, switchAnswers());
   getFriction.mockClear();
 });
@@ -753,6 +753,40 @@ describe("removing a companion a service fetched", () => {
       (button) => button.textContent === "Remove",
     )!;
     expect(confirm.disabled).toBe(false);
+  });
+});
+
+describe("a workspace view holding the sidebar", () => {
+  it("shows icons only, and the toggle expands it without forgetting the preference", async () => {
+    localStorage.removeItem("mate-studio-rail");
+    const { doc } = await mount(
+      () => (
+        <Sidebar
+          shell={shell()}
+          search={{ companion: acme.digest }}
+          view="dashboard"
+          heldBy={useAppearance((state) =>
+            state.released.includes("factory/factory") ? null : "factory/factory",
+          )}
+        />
+      ),
+      `/?companion=${acme.digest}`,
+    );
+    const toggle = () => doc.querySelector<HTMLButtonElement>("#studio-rail-toggle")!;
+    expect(toggle().getAttribute("aria-label")).toBe("Expand sidebar");
+    await act(async () => toggle().click());
+    expect(toggle().getAttribute("aria-label")).toBe("Collapse sidebar");
+    expect(useAppearance.getState().released).toEqual(["factory/factory"]);
+    expect(doc.documentElement.getAttribute("data-rail")).toBeNull();
+    expect(localStorage.getItem("mate-studio-rail")).not.toBe("min");
+  });
+
+  it("undoes a remembered collapse when the person expands it", () => {
+    useAppearance.getState().toggleRail();
+    expect(localStorage.getItem("mate-studio-rail")).toBe("min");
+    useAppearance.getState().release("factory/factory");
+    expect(useAppearance.getState().rail).toBe("full");
+    expect(localStorage.getItem("mate-studio-rail")).toBe("full");
   });
 });
 
