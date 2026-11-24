@@ -10,6 +10,10 @@ import {
   type NetworkGitResult,
 } from "../../../runtime/companion-git";
 import { TRANSACTION_TRAILER } from "../../artifact-trailer";
+import {
+  trailerRecordsAt as readTrailerRecords,
+  type TrailerRecord,
+} from "../../../runtime/artifact-trailers";
 import { INBOX_BRANCH } from "../../../runtime/pending-records";
 import type { ArtifactType } from "./artifact-type";
 import { WITHOUT_HOOKS } from "./worktree";
@@ -170,12 +174,45 @@ export async function mapLimited<T, R>(
   return results;
 }
 
-/** Archive anchors present at `ref`; empty when the ref or the archive directory is missing. */
+export type { TrailerRecord };
+
+/**
+ * The records of `type` published on `ref`, newest first, from the `Mate-Artifact` trailers of
+ * its history: how a type that keeps no archive knows a change is published.
+ */
+export function trailerRecordsAt(
+  git: CompanionGit,
+  ref: string,
+  type: Pick<ArtifactType, "name" | "isRecordId">,
+): Promise<TrailerRecord[]> {
+  return readTrailerRecords(git, ref, type.name, type.isRecordId);
+}
+
+/**
+ * Records present at `ref`, as {@link anchorsAt}; for a type without an archive with the inbox
+ * commit each was published from.
+ */
+export async function recordsAt(
+  git: CompanionGit,
+  ref: string,
+  type: ArtifactType,
+): Promise<TrailerRecord[]> {
+  if (type.archiveRoot === undefined) return trailerRecordsAt(git, ref, type);
+  return (await anchorsAt(git, ref, type)).map((id) => ({ id, inbox: null }));
+}
+
+/**
+ * Records present at `ref`: its archive anchors, or for a type without an archive the records
+ * its history published. Empty when the ref or the archive directory is missing.
+ */
 export async function anchorsAt(
   git: CompanionGit,
   ref: string,
   type: ArtifactType,
 ): Promise<string[]> {
+  if (type.archiveRoot === undefined) {
+    return (await trailerRecordsAt(git, ref, type)).map((record) => record.id);
+  }
   // A path filter, unlike `<ref>:<path>`, lists a missing directory as empty, not as a failure.
   const listed = await git.run([
     "ls-tree",

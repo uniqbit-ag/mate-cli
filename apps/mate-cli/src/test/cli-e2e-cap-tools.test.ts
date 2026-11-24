@@ -63,7 +63,7 @@ describe("mate CLI e2e: capability passthrough", () => {
     const templates = invocations.filter((invocation) => invocation.args[0] !== "store");
     expect(templates).toHaveLength(1);
     expect(templates[0]?.cwd).toBe(scenario.companion);
-    expect(templates[0]?.args).toEqual(["templates", "--schema", "mate-v1", "--json"]);
+    expect(templates[0]?.args).toEqual(["templates", "--schema", "mate-full", "--json"]);
   });
 
   test("cap openspec preserves explicit schema for templates", async () => {

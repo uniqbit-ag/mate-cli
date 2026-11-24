@@ -137,8 +137,6 @@ async function createPublishFixture(
   for (const file of [
     "apps/mate-container/scripts/image-pins.ts",
     "apps/mate-container/src/image-pins.ts",
-    "apps/mate-factory/scripts/image-pins.ts",
-    "apps/mate-factory/src/image-pins.ts",
     "apps/mate-vscode/scripts/release-vsix.ts",
     "apps/mate-vscode/scripts/package-vsix.ts",
   ]) {
@@ -187,8 +185,7 @@ async function createPublishFixture(
     Object.fromEntries(
       names.map((name) => [`node_modules/${name}`, { version, integrity: FIXTURE_INTEGRITY }]),
     );
-  // The factory image keeps its own copy of the appliance image's pins.
-  for (const image of ["apps/mate-container", "apps/mate-factory"]) {
+  for (const image of ["apps/mate-container"]) {
     const lockDir = path.join(tempDir, image, "locks");
     await fs.mkdir(lockDir, { recursive: true });
     await fs.writeFile(
@@ -685,13 +682,13 @@ describe("publish.sh", () => {
         `uniqbit-mate-${version}.tgz`,
       ]);
 
-      // The verified tarball is what is published: one pack per package and image (appliance,
-      // then factory), plus the extension once, all before any publish.
+      // The verified tarball is what is published: one pack per package for the image,
+      // plus the extension once, all before any publish.
       const lines = calls.split("\n");
       const packs = lines.flatMap((line, index) =>
         line.startsWith("pack --pack-destination") ? [index] : [],
       );
-      expect(packs).toHaveLength(5);
+      expect(packs).toHaveLength(3);
       const firstPublish = lines.findIndex((line) => line.startsWith("publish "));
       expect(Math.max(...packs)).toBeLessThan(firstPublish);
       expect(calls).not.toContain("publish --workspace");

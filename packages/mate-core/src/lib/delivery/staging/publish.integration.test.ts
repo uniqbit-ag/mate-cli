@@ -255,6 +255,43 @@ describe.skipIf(!REAL_OPENSPEC)("publishSubmitted", () => {
   );
 
   test(
+    "the archived record keeps the steps recorded for the change",
+    async () => {
+      const fixture = await setup();
+      const mine = fixture.clone("acme-mine");
+      proposeLocally(fixture, mine, "acme-login", {
+        branch: "workset/acme-login",
+        merged: true,
+        deltas: { widget: requirement("ADDED", "Widget logs in", "The widget SHALL log in.") },
+      });
+      fs.appendFileSync(
+        path.join(mine, "openspec/changes/acme-login/delivery.yaml"),
+        "stages:\n  apply:\n    - mate-apply-change\n    - acme-verify\n",
+      );
+      await submitGroups(mine, ["acme-login"], {
+        tmpRoot: fixture.root,
+        stateHome: path.join(fixture.root, "home-acme-mine"),
+      });
+
+      const result = await publishSubmitted(
+        fixture.clone("acme-theirs"),
+        "acme-login",
+        deps(fixture),
+      );
+
+      expect(result.status).toBe("ok");
+      const [anchor] = result.records;
+      const archived = showAt(
+        fixture.remote,
+        "main",
+        `openspec/changes/archive/${anchor}/delivery.yaml`,
+      );
+      expect(archived).toContain("apply:\n    - mate-apply-change\n    - acme-verify\n");
+    },
+    TIMEOUT,
+  );
+
+  test(
     "the publishing checkout holds the archive and the new specs at once",
     async () => {
       const fixture = await setup();

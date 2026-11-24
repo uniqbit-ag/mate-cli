@@ -293,7 +293,9 @@ export async function runInstallPlan(
     }
     let result: InstallRequirementResult;
     try {
+      // oxlint-disable-next-line no-await-in-loop -- requirements install one at a time
       await item.install();
+      // oxlint-disable-next-line no-await-in-loop -- verified right after its install
       const verified = item.verify ? await item.verify() : await item.detect();
       if (!verified) throw new Error("requirement is still unavailable after installation");
       result = { id: item.id, status: "installed", verified: true };

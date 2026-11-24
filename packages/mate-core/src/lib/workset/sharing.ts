@@ -539,6 +539,7 @@ async function localArchived(
   name: string,
   type: ArtifactType,
 ): Promise<boolean> {
+  if (type.archiveRoot === undefined) return false;
   const dir = path.join(companionPath, ...type.archiveRoot.split("/"));
   const entries = await fs.readdir(dir).catch(() => [] as string[]);
   return entries.some((id) => type.isRecordId(id) && type.recordName(id) === name);

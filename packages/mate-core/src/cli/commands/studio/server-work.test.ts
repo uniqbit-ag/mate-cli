@@ -78,7 +78,6 @@ function handlerFor(options: { writable?: boolean; token?: string; app?: StudioA
           },
         } as unknown as StudioCompanionPayload;
       },
-      factoryClient: null,
     },
     {
       writable: options.writable ?? true,
@@ -102,46 +101,16 @@ const act = (handler: ReturnType<typeof handlerFor>, request: WorkRequest) =>
   handler.services.workAction(digest, request);
 
 describe("Work on a plain installation", () => {
-  test("offers Scratchpad, Local work and Remote work without any factory control", async () => {
+  test("offers Scratchpad, Local work and Remote work", async () => {
     writeChange(companion, "acme-login");
     const handler = handlerFor();
     expect(await act(handler, { action: "capture", text: "Acme audit log." })).toEqual({
       ok: true,
     });
     const work = await handler.services.work(digest);
-    expect(work.factory).toEqual({ mode: false, usable: false });
     const buckets = Object.fromEntries(work.cards.map((card) => [card.id, card.bucket]));
     expect(buckets).toEqual({ "acme-audit-log": "scratchpad", "acme-login": "local" });
-    for (const card of work.cards) {
-      expect(Object.keys(card.actions)).not.toContain("dispatch");
-      expect(Object.keys(card.actions)).not.toContain("park");
-    }
     expect(work.operator).toEqual({ id: "author@acme.test", label: "Acme Author" });
-    handler.close();
-  });
-
-  test("capture with a factory start is refused; nothing is started", async () => {
-    const handler = handlerFor();
-    const result = await act(handler, {
-      action: "capture",
-      text: "Acme audit log.",
-      start: "delivery",
-    });
-    expect(result).toMatchObject({ ok: false, kind: "factory-unavailable" });
-    expect(fs.existsSync(path.join(companion, ".mate/scratchpad"))).toBe(false);
-    handler.close();
-  });
-
-  test("factory actions requested directly are refused without factory mode", async () => {
-    writeChange(companion, "acme-login");
-    const handler = handlerFor();
-    for (const action of ["dispatch", "park", "move-to-later"] as const) {
-      const request =
-        action === "dispatch"
-          ? { action, workset: "acme-login", mode: "delivery" as const, members: ["acme-login"] }
-          : { action, workset: "acme-login" };
-      expect(await act(handler, request)).toMatchObject({ ok: false, kind: "factory-unavailable" });
-    }
     handler.close();
   });
 });

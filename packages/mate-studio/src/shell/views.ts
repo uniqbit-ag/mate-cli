@@ -4,7 +4,6 @@ import type { StudioMode, StudioView } from "@uniqbit/mate-core/studio";
 export const VIEW_PATHS: Record<StudioView, string> = {
   dashboard: "/",
   work: "/work",
-  factory: "/factory",
   workflow: "/workflow",
   "getting-started": "/getting-started",
   skills: "/skills",
@@ -12,6 +11,7 @@ export const VIEW_PATHS: Record<StudioView, string> = {
   specs: "/specs",
   reports: "/reports",
   usage: "/usage",
+  friction: "/friction",
   graph: "/graph",
 };
 
@@ -19,7 +19,6 @@ export const VIEW_PATHS: Record<StudioView, string> = {
 export const VIEW_TITLES: Record<StudioView, string> = {
   dashboard: "Overview",
   work: "Work",
-  factory: "Factory",
   workflow: "Workflow",
   "getting-started": "Getting Started",
   skills: "Skills",
@@ -27,6 +26,7 @@ export const VIEW_TITLES: Record<StudioView, string> = {
   specs: "Specs",
   reports: "Reports",
   usage: "Usage",
+  friction: "Friction",
   graph: "Graph",
 };
 
@@ -47,7 +47,6 @@ export const VIEW_DESCRIPTIONS: Record<StudioMode, Record<StudioView, string>> =
   engineering: {
     dashboard: "Changes in flight, grouped by what they need next.",
     work: "Your ideas and changes, and the team's shared work to pick up.",
-    factory: "Outcomes the factory works on, and the decisions they wait for.",
     workflow: "The Delivery Path: every stage, its skill and where your changes are.",
     "getting-started": "Take your first change from an idea to delivery in your existing checkout.",
     skills: "The skills each agent can run in this companion.",
@@ -55,12 +54,12 @@ export const VIEW_DESCRIPTIONS: Record<StudioMode, Record<StudioView, string>> =
     specs: "Capabilities by Area, with their requirements.",
     reports: "Reports agents published for this companion.",
     usage: "Token usage across this companion and every linked Working Repository.",
+    friction: "Where Mate got in your agents' way, recorded on this machine.",
     graph: "Capabilities, Areas and repositories, and how they connect.",
   },
   analysis: {
     dashboard: "What shipped lately, and the specs it changed.",
     work: "Ideas, changes and shared work.",
-    factory: "Outcomes the factory works on.",
     workflow: "The Delivery Path.",
     "getting-started": "Developer setup and isolated work.",
     skills: "Skills in this companion.",
@@ -68,6 +67,7 @@ export const VIEW_DESCRIPTIONS: Record<StudioMode, Record<StudioView, string>> =
     specs: "Capabilities by Area, with their requirements.",
     reports: "Reports agents published for this companion.",
     usage: "Token usage across this companion and every linked Working Repository.",
+    friction: "Where Mate got in the agents' way, recorded on this machine.",
     graph: "Capabilities, Areas and repositories, and how they connect.",
   },
 };

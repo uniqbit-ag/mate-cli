@@ -5,10 +5,7 @@ export const ACTION_LABELS: Partial<Record<WorkActionId, string>> = {
   share: "Share",
   claim: "Claim",
   "start-manual": "Continue manually",
-  dispatch: "Start in local factory",
   release: "Release",
-  park: "Park proposal",
-  "move-to-later": "Move to later",
 };
 
 /** Accepted actions only; a refused one names its reason in the card's notes instead. */
@@ -19,14 +16,11 @@ export function acceptedActions(card: StudioWorkCard): WorkActionId[] {
 }
 
 /** A drop's action: the button it stands for, confirmed in the same dialog. */
-export type DropAction = Extract<
-  WorkActionId,
-  "share" | "release" | "claim" | "park" | "move-to-later"
->;
+export type DropAction = Extract<WorkActionId, "share" | "release" | "claim">;
 
 /**
  * Where a card may be dropped and what each drop asks for: Remote work shares it (or releases
- * your claim), Local work claims it, Scratchpad parks a factory start. Accepted actions only.
+ * your claim), Local work claims it. Accepted actions only.
  */
 export function dropTargetsOf(card: StudioWorkCard): Partial<Record<WorkBucket, DropAction>> {
   const first = (...actions: DropAction[]) =>
@@ -37,10 +31,6 @@ export function dropTargetsOf(card: StudioWorkCard): Partial<Record<WorkBucket, 
     if (remote) targets.remote = remote;
   }
   if (card.bucket === "remote" && first("claim")) targets.local = "claim";
-  if (card.bucket !== "scratchpad") {
-    const later = first("park", "move-to-later");
-    if (later) targets.scratchpad = later;
-  }
   return targets;
 }
 
@@ -49,6 +39,4 @@ export const DROP_VERBS: Record<DropAction, string> = {
   share: "share it",
   release: "release your claim",
   claim: "claim it",
-  park: "park its proposal",
-  "move-to-later": "move it to later",
 };

@@ -125,6 +125,9 @@ export async function createScenario(prefix: string): Promise<E2EScenario> {
   return { root, home, companion, working, bin };
 }
 
+const updateStateYaml = (latest: string) =>
+  ["lastChecked: 2099-01-01T00:00:00.000Z", `latestVersion: ${latest}`, ""].join("\n");
+
 /**
  * The running version's own channel is fresh with nothing newer; only the other
  * channel caches a newer release, which no command may act on. Keyed to the
@@ -134,17 +137,15 @@ async function seedUpdateState(home: string): Promise<void> {
   const updateDir = path.join(home, ".mate");
   await fs.mkdir(updateDir, { recursive: true });
   const onCanary = version.includes("-canary.");
-  const state = (latest: string) =>
-    ["lastChecked: 2099-01-01T00:00:00.000Z", `latestVersion: ${latest}`, ""].join("\n");
   await Promise.all([
     fs.writeFile(
       path.join(updateDir, "update-state-uniqbit-mate.yaml"),
-      state(onCanary ? "99.0.0" : "null"),
+      updateStateYaml(onCanary ? "99.0.0" : "null"),
       "utf8",
     ),
     fs.writeFile(
       path.join(updateDir, "update-state-uniqbit-mate-canary.yaml"),
-      state(onCanary ? "null" : "99.0.0"),
+      updateStateYaml(onCanary ? "null" : "99.0.0"),
       "utf8",
     ),
   ]);
@@ -242,6 +243,16 @@ export async function runMate(
   });
 }
 
+const toTclString = (value: string) =>
+  `"${value
+    .replaceAll("\\", "\\\\")
+    .replaceAll('"', '\\"')
+    .replaceAll("$", "\\$")
+    .replaceAll("[", "\\[")
+    .replaceAll("]", "\\]")
+    .replaceAll("\n", "\\n")
+    .replaceAll("\r", "\\r")}"`;
+
 export async function runMateInTty(
   scenario: E2EScenario,
   {
@@ -258,15 +269,6 @@ export async function runMateInTty(
     timeoutSeconds?: number;
   },
 ): Promise<CliRunResult> {
-  const toTclString = (value: string) =>
-    `"${value
-      .replaceAll("\\", "\\\\")
-      .replaceAll('"', '\\"')
-      .replaceAll("$", "\\$")
-      .replaceAll("[", "\\[")
-      .replaceAll("]", "\\]")
-      .replaceAll("\n", "\\n")
-      .replaceAll("\r", "\\r")}"`;
   /**
    * Run through `sh` so mate's exit code reaches us as an output marker: the
    * `wait` builtin blocks indefinitely on this expect build once the child is
@@ -693,7 +695,7 @@ export async function writeOpenSpecStub(scenario: E2EScenario): Promise<string> 
     "  process.exit(0);",
     "}",
     "if (command === 'status') {",
-    "  console.log(JSON.stringify({ changes: [{ changeName: 'add-acme-checkout', schemaName: 'mate-v1', planningHome: { root: process.cwd(), defaultSchema: 'mate-v1' }, artifacts: [{ id: 'proposal', status: 'done' }] }] }));",
+    "  console.log(JSON.stringify({ changes: [{ changeName: 'add-acme-checkout', schemaName: 'mate-full', planningHome: { root: process.cwd(), defaultSchema: 'mate-full' }, artifacts: [{ id: 'proposal', status: 'done' }] }] }));",
     "  process.exit(0);",
     "}",
     "if (command === 'validate') {",
@@ -875,6 +877,7 @@ export async function waitForFile(filePath: string, timeoutMs = 5000): Promise<v
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     if (
+      // oxlint-disable-next-line no-await-in-loop -- polling
       await fs
         .access(filePath)
         .then(() => true)
@@ -885,6 +888,7 @@ export async function waitForFile(filePath: string, timeoutMs = 5000): Promise<v
     if (Date.now() >= deadline) {
       throw new Error(`Timed out waiting for file: ${filePath}`);
     }
+    // oxlint-disable-next-line no-await-in-loop -- polling
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
 }

@@ -30,7 +30,8 @@ const shell: ShellData = {
   collectedAt: null,
   metrics: null,
   writable: false,
-  factoryMode: false,
+  addsCompanions: false,
+  pluginViews: [],
   terminal: null,
 };
 
@@ -85,6 +86,17 @@ const settle = () => act(async () => new Promise((done) => setTimeout(done, 10))
 describe("navigation", () => {
   it("shows the view placeholder while a view waits", () => {
     expect(getRouter().options.defaultPendingComponent).toBe(ViewPlaceholder);
+  });
+
+  it("shows no global features once a companion is selected", async () => {
+    const { page } = await mount({
+      overview: async () => "acme overview",
+      specs: async () => "acme specs",
+    });
+    await settle();
+    expect(page.container.querySelector("nav#studio-rail")).not.toBeNull();
+    expect(page.container.textContent).not.toContain("Global features");
+    page.unmount();
   });
 
   it("switches at once to a placeholder while the next view's data loads", async () => {

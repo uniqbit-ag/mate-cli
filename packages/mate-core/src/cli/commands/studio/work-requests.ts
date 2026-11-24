@@ -9,7 +9,4 @@ export const WORK_REQUEST_ACTIONS = [
   "claim",
   "release",
   "start-manual",
-  "dispatch",
-  "park",
-  "move-to-later",
 ] as const;

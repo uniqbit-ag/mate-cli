@@ -6,30 +6,15 @@ import type { DerivedWorksetStage, WorksetStageId } from "./stage";
 
 /**
  * Where a Workset's card sits and which Work actions it accepts. Every input is derived:
- * delivery stage, shared presence and sync, the claim, progress on a Delivery Branch and
- * this installation's factory run. Nothing here is stored.
+ * delivery stage, shared presence and sync, the claim and progress on a Delivery Branch.
+ * Nothing here is stored.
  */
 
 export const WORK_BUCKETS = ["scratchpad", "local", "remote"] as const;
 export type WorkBucket = (typeof WORK_BUCKETS)[number];
 
-export const WORK_ACTIONS = [
-  "share",
-  "claim",
-  "release",
-  "start-manual",
-  "dispatch",
-  "park",
-  "move-to-later",
-] as const;
+export const WORK_ACTIONS = ["share", "claim", "release", "start-manual"] as const;
 export type WorkActionId = (typeof WORK_ACTIONS)[number];
-
-/** Actions only factory mode offers; a plain installation never sees them. */
-export const FACTORY_WORK_ACTIONS: ReadonlySet<WorkActionId> = new Set([
-  "dispatch",
-  "park",
-  "move-to-later",
-]);
 
 export type SharedPresence = "local" | "shared" | "partial" | "unknown";
 
@@ -64,8 +49,6 @@ export interface WorkMemberStatus {
   problem?: string;
 }
 
-export type WorkRunState = "idle" | "queued" | "running" | "waiting" | "failed" | "interrupted";
-
 export type Claim =
   | { kind: "none" }
   | { kind: "mine"; label: string }
@@ -85,16 +68,6 @@ export interface WorkFacts {
   sharing: SharingFacts;
   claim: Claim;
   progress: Progress;
-  /** This installation's factory run, when it has one. */
-  run?: WorkRunState;
-}
-
-export interface FactoryAvailability {
-  /** The server's factory-broker capability; without it no factory control exists. */
-  mode: boolean;
-  /** Broker, runner and agent credential are usable for this companion. */
-  usable: boolean;
-  reason?: string;
 }
 
 export interface WorkContext {
@@ -103,7 +76,6 @@ export interface WorkContext {
   operator?: Operator;
   /** False outside Git: no sharing or claims. */
   gitBacked: boolean;
-  factory: FactoryAvailability;
 }
 
 export interface WorkCard {
@@ -122,20 +94,8 @@ export interface WorkCard {
 }
 
 const COMPLETED: ReadonlySet<WorksetStageId> = new Set(["merge-wait", "publish", "done"]);
-const BEFORE_APPLY: ReadonlySet<WorksetStageId> = new Set([
-  "clarify-intent",
-  "explore",
-  "propose",
-  "human-review",
-]);
-const ACTIVE_RUN: ReadonlySet<WorkRunState> = new Set(["queued", "running", "waiting"]);
 /** Past apply: submitted, or archived before submit existed. */
 const SUBMITTED = "submitted for publication; nothing is left to do here";
-
-/** Whether a factory run is still live: queued, running, or waiting on a person. */
-export function isActiveRun(state: WorkRunState | undefined): boolean {
-  return state !== undefined && ACTIVE_RUN.has(state);
-}
 
 function isShared(sharing: SharingFacts): boolean {
   return sharing.presence === "shared" || sharing.presence === "partial";
@@ -150,11 +110,6 @@ export type OwnershipFacts = Pick<WorkFacts, "sharing" | "claim" | "progress">;
 /** Unshared, claimed by the operator, or built here: the operator may start it. */
 function isOwnWork(facts: OwnershipFacts): boolean {
   return !isShared(facts.sharing) || facts.claim.kind === "mine" || facts.progress.kind === "here";
-}
-
-/** This installation queued it for its own factory: a scratchpad record with `queuedAt`. */
-function queuedHere(facts: WorkFacts): boolean {
-  return !!facts.inventory.record.queuedAt && !facts.inventory.record.legacy;
 }
 
 export function bucketOf(facts: WorkFacts): WorkBucket {
@@ -202,9 +157,6 @@ export function workActionRefusal(
     return facts.inventory.diagnostics[0] ?? "this Workset cannot be acted on";
   }
   if (facts.claim.kind === "conflict") return facts.claim.diagnostic;
-  if (FACTORY_WORK_ACTIONS.has(action) && !context.factory.mode) {
-    return "the factory is not available on this installation";
-  }
   const { sharing } = facts;
   const hasChanges = activeCount(facts) > 0;
   const stage = facts.stage.stage;
@@ -233,56 +185,20 @@ export function workActionRefusal(
       return missingIdentity;
     case "release":
       if (facts.claim.kind !== "mine") return "only its owner can release it";
-      if (isActiveRun(facts.run)) return "it runs here; stop the run first";
       return missingIdentity;
     case "start-manual":
       if (!hasChanges) return "propose the change first";
       if (stage === "done") return "already delivered";
       if (COMPLETED.has(stage)) return SUBMITTED;
       return first(notOwn(facts), unsynced(sharing));
-    case "dispatch":
-      if (!context.factory.usable)
-        return context.factory.reason ?? "the local factory is not usable";
-      if (!BEFORE_APPLY.has(stage)) {
-        return COMPLETED.has(stage)
-          ? `already ${facts.stage.label.toLowerCase()}; nothing to dispatch`
-          : "implementation has begun; continue it in place instead of dispatching it afresh";
-      }
-      if (queuedHere(facts)) return "already started in the factory";
-      return first(notOwn(facts), unsynced(sharing));
-    case "park":
-      if (!queuedHere(facts)) return "not started in this installation's factory";
-      if (!hasChanges) return "nothing is planned yet; use Move to later";
-      if (stage !== "propose" && stage !== "human-review") {
-        return "implementation has begun; it cannot be parked";
-      }
-      if (facts.run === "running" || facts.run === "waiting") {
-        return "the run is active; cancel it first";
-      }
-      return null;
-    case "move-to-later":
-      if (!queuedHere(facts)) return "not started in the factory";
-      if (hasChanges) return "a plan exists; use Park proposal";
-      if (stage !== "clarify-intent" || facts.run === "running" || facts.run === "waiting") {
-        return "work has begun; it can no longer move to later";
-      }
-      return null;
   }
 }
 
-function relevantActions(
-  bucket: WorkBucket,
-  facts: WorkFacts,
-  context: WorkContext,
-): WorkActionId[] {
+function relevantActions(bucket: WorkBucket, facts: WorkFacts): WorkActionId[] {
   const actions: WorkActionId[] = [];
   if (bucket === "remote") actions.push("claim");
   if (bucket === "local") actions.push("share", "start-manual");
   if (facts.claim.kind === "mine") actions.push("release");
-  if (context.factory.mode && bucket !== "remote") {
-    if (context.factory.usable) actions.push("dispatch");
-    if (queuedHere(facts)) actions.push(activeCount(facts) > 0 ? "park" : "move-to-later");
-  }
   return actions;
 }
 
@@ -290,7 +206,7 @@ function relevantActions(
 export function projectWorkCard(facts: WorkFacts, context: WorkContext): WorkCard {
   const bucket = bucketOf(facts);
   const actions: Partial<Record<WorkActionId, string | null>> = {};
-  for (const action of relevantActions(bucket, facts, context)) {
+  for (const action of relevantActions(bucket, facts)) {
     actions[action] = workActionRefusal(action, facts, context);
   }
   const diagnostics = [

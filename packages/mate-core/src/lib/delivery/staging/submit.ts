@@ -34,6 +34,7 @@ import {
   readDeliveryRecord,
   readOrUnlinkedRecord,
   upsertDelivery,
+  withoutStage,
   writeDeliveryRecord,
   type DeliveryRecord,
   type SubmissionState,
@@ -231,8 +232,8 @@ export interface GroupPush extends PendingCommit {
 }
 
 /**
- * The Delivery Record change `name` is pushed with: `state: submitted`, an earlier block
- * cleared, and a delta base the default branch holds, so publication can tell a requirement
+ * The Delivery Record change `name` is pushed with: `state: submitted`, an earlier block and
+ * its recorded `submit` steps cleared, and a delta base the default branch holds, so publication can tell a requirement
  * changed since: the recorded one, or where it left the default branch when it is a local
  * commit, else `tip`, the fetched default tip. Written locally only once the push succeeded, so
  * a failed push leaves the record, its state included, as it was. Throws on a damaged record.
@@ -252,7 +253,8 @@ async function preparedRecord(
   }
   const next: DeliveryRecord = { ...record, state: "submitted", ...(specBase ? { specBase } : {}) };
   delete next.blocked;
-  return next;
+  // A resubmission runs the steps before `mate-submit-change` again.
+  return withoutStage(next, "submit");
 }
 
 /**
@@ -664,6 +666,34 @@ export async function hasUnsubmittedWork(
   if (!submitted[relative]) return false;
   const git = (deps.git ?? defaultGit)(companionPath);
   return (await editedSinceSubmit(git, companionPath, relative, submitted)) === true;
+}
+
+/**
+ * The `submitted` members of `groups`, those in `named` left out, that {@link submitGroups} pushes
+ * as edited. Call it before refreshing them: a refresh rewrites `delivery.yaml`, which the
+ * comparison covers. A member Git cannot judge is left out, since {@link submitGroups} fails its
+ * group.
+ */
+export async function editedSubmittedMembers(
+  companionPath: string,
+  groups: ReadonlySet<string>,
+  named: readonly string[],
+  deps: Pick<SubmitDeps, "git" | "artifactType" | "stateHome"> = {},
+): Promise<LocalMember[]> {
+  const type = deps.artifactType ?? defaultArtifactType();
+  const git = (deps.git ?? defaultGit)(companionPath);
+  const submitted = readSubmittedFolders(companionPath, deps.stateHome);
+  const edited: LocalMember[] = [];
+  for (const member of await localMembers(companionPath, type)) {
+    if (member.state !== "submitted" || !groups.has(member.group)) continue;
+    if (named.includes(member.name)) continue;
+    const relative = sourcePathOf(type, member.name);
+    // oxlint-disable-next-line no-await-in-loop -- a few members per group
+    if ((await editedSinceSubmit(git, companionPath, relative, submitted)) === true) {
+      edited.push(member);
+    }
+  }
+  return edited;
 }
 
 export type GroupStatus = "pushed" | "unchanged" | "waiting" | "failed";

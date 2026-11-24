@@ -2,6 +2,63 @@
 
 ## Unreleased
 
+### Mate skills declare a security manifest and pre-approve only the git commands they run (security)
+
+- Every Mate skill header, including the generated `mate-create-report`, now declares under `metadata`:
+  - what the skill reads, writes, runs and contacts;
+  - its risk tier: `L0` safe, `L1` low, `L2` elevated, `L3` destructive;
+  - the programs it needs;
+  - its last security scan.
+
+  The format follows the OWASP Agentic Skills Top 10. Connections the `mate` CLI opens for a skill are listed as `(via mate)`.
+- Every skill's `## Guardrails` section now forbids reading secret-bearing files and writing `CLAUDE.md`, `AGENTS.md`, `MEMORY.md` or `SOUL.md`, and treats repository text as data. Two exceptions keep normal work possible: `.env.example`, `.env.sample` and `.env.template` may be read, and an identity file may be written when a task or the user names it.
+- Narrower git pre-approvals:
+  - `mate-submit-change`, `mate-archive-change` and `mate-propose-change` no longer pre-approve git.
+  - `mate-publish-artifact` pre-approves only `git rev-parse`.
+  - `mate-explore-change` pre-approves only `git show`.
+  - `mate-show-me` pre-approves only `git diff`.
+  - `mate-apply-change` pre-approves only `git symbolic-ref`, `git worktree list`, `git rev-list`, `git log`, `git switch` and `git rev-parse`.
+
+  Before, all seven pre-approved every git command, so an agent could push, reset or rebase without a prompt. Any other git command now asks first, including `git add` and `git rebase` in publish's conflict recovery and `git -C <child> …` in apply, explore and domain-modeling.
+
+### Studio shows a lost connection and recovers from it
+
+- When a background request of Studio's page fails, the page probes the new `GET /api/ping` route. Only the probe decides: a refusal leaves everything as it was, while a lost network (`offline`), a redirect from an auth proxy in front of Studio (`signed-out`), a missing or changed access token (`expired`) or a host Studio does not serve (`host-refused`) shows a banner above the view. The view keeps its data.
+- The banner offers Reload, except for `host-refused`; Studio never reloads by itself. While the connection is lost it probes again after 1 s, doubling up to 30 s, and at once when the browser goes online or the tab becomes visible. When the connection is back, the banner hides, Studio refetches its queries and reopens its event stream.
+- Plugin views share the state: the mount context gains an optional `connection` (`state()`, `suspect()`, `subscribe()`). `@uniqbit/mate-core/studio` exports `connectionStateOf()`, `probeStudio()` and `STUDIO_PING_ROUTE`; `@uniqbit/mate-core/plugin-api` exports the types. See the Service Plugins reference.
+
+### The full OpenSpec schema is now `mate-full`
+
+- Mate's full schema (proposal, specs, design, tasks) is renamed from `mate-v1` to `mate-full`, next to `mate-minimal`. A new companion gets `schema: mate-full` in `openspec/config.yaml`, and `mate-propose-change` names `mate-full`.
+- `mate-v1` keeps working: capability sync installs `openspec/schemas/mate-full/` and keeps `openspec/schemas/mate-v1/` in every companion, generated from the same source with only the name changed. An existing `schema: mate-v1` in `openspec/config.yaml` stays, and no change, archive or artifact is rewritten. `--schema mate-v1` still works, also in a new companion.
+- `@uniqbit/mate-core/studio` keeps its exports: `SCHEMA_ARTIFACTS` gains `mate-full` and keeps `mate-v1`, and `MateSchema` accepts both. New: `SHIPPED_SCHEMAS`, `LEGACY_SCHEMA_ALIASES` and `canonicalSchema()`. `DEFAULT_SCHEMA` is now `mate-full`.
+- Everyone sharing a companion should upgrade before proposing `mate-full` changes: an older Mate shows such a change as a custom schema in Studio, and publishing it there skips the canonical frontmatter on its main specs. Until then, each sync by an older Mate rewrites `openspec/schemas/mate-v1/` back to its own copy, so the folder shows changes after every teammate's sync.
+- Copying Mate's skills and schemas into a companion replaces a symlink at a copied path instead of writing through it, so a committed symlink cannot redirect the write outside the companion.
+
+### The Mate factory moved to its own repository (breaking)
+
+- The factory (broker, runner, Workset runtime, `mate factory`, its Studio view and the factory image) now lives in the private repository [uniqbit-ag/mate-factory](https://github.com/uniqbit-ag/mate-factory), as the service plugin `@uniqbit/mate-plugin-factory` with its own Mate distribution for the image. `@uniqbit/mate` no longer has `mate factory`, and Studio no longer has a built-in Factory view; the factory image brings both.
+- `@uniqbit/mate-core/factory` and `@uniqbit/mate-core/factory-studio` are gone. `@uniqbit/mate-core/factory-host` exports the core runtime the factory uses; it is no stable API, and the factory pins mate-core exactly.
+- New factory images are published as `ghcr.io/uniqbit-ag/mate-factory`. Images already published as `ghcr.io/uniqbit-ag/mate-cli/mate-factory` stay where they are; no new versions appear there.
+- `bun run factory:local` and the `factory:dogfood` scripts moved with the factory; run them from a mate-factory checkout, which builds against a local mate-cli checkout.
+
+### A stop signal right after an agent starts no longer leaves it running
+
+- A launch now forwards `SIGTERM` and `SIGINT` from before it starts the agent. Before, a signal that reached the launch while the agent was starting ended the launch and left the agent running.
+
+### Plugins can run a service next to Mate
+
+- A plugin can now declare a `service`: its own top-level command (`mate <name> …`), the connection to its background daemon (a socket path or URL from the environment), and its part of Studio: routes below `/api/plugins/<id>/` (HTTP, server-sent events or WebSocket), views in the navigation under **Services** that Studio mounts from the plugin's own browser module, Workset terminal sessions, and adding companions by Git URL. The contract is versioned (`apiVersion: 1`) and typed in `@uniqbit/mate-core/plugin-api`. See the new Service Plugins reference page.
+- Studio guards a plugin route like its own: a read needs the access token where reading needs it, a write needs Studio's own page, the token and, where the route says so, `--writable`. A service whose daemon is not there is left out, views and routes included; a service that fails to start is left out with a warning, and Studio keeps serving.
+- The Mate factory is the first service plugin. `mate factory serve` and `mate factory attach` work as before. Studio's factory routes moved from `/api/factory/…` to `/api/plugins/factory/…`; the Factory view uses the new addresses.
+- For distributions built on `@uniqbit/mate-core`: the factory is no longer built in. Register it with `createFactoryPlugin()` from `@uniqbit/mate-core/factory`, as `@uniqbit/mate` does. `@uniqbit/mate-core/studio` no longer exports the factory's types and routes; they moved to `@uniqbit/mate-core/factory-studio`.
+
+### Factory: dind Workset runtime for sandboxes without Sysbox
+
+- `MATE_FACTORY_WORKSET_RUNTIME=dind` runs the factory where Sysbox cannot run, such as a development workshop or CI runner on a VM kernel without loadable modules. The supervisor starts no Sysbox, the inner Docker daemon runs runc only, and each Workset container runs privileged under runc with its own volume for its nested Docker, so agents can still build and run containers. Preflight skips Sysbox's own checks.
+- Worksets are then isolated from each other by runc alone, and the factory only by the sandbox around it: for development and CI, not for production. The default, `sysbox`, is unchanged.
+- `bun run factory:local` passes the setting through, and the factory README describes a small profile for a workshop. `pack-local.sh` now also runs with GNU `mktemp` on Linux.
+
 ### Studio issues an access token on every start (breaking)
 
 - `mate studio` now generates a token on every start, with or without `--writable` and `--terminal`, and prints and opens `http://localhost:<port>/?token=…`. Before, `mate studio --writable` without `--terminal` issued none, and a save needed only a matching `Origin` header, which any local process can set. So another user or process on the machine could create, overwrite or delete companion files.

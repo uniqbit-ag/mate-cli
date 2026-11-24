@@ -17,6 +17,8 @@ import { checkCommitAttribution } from "../runtime/commit-attribution-guard";
 import { gitEnvironment } from "../runtime/companion-git";
 import { companionForkRefusal } from "../runtime/companion-sync";
 import { readCompanionRuntimeContext } from "../runtime/env";
+import { recordRefusal } from "../runtime/friction-recorder";
+import type { FrictionCheck } from "../runtime/friction-fingerprint";
 import { guardLaunchEnvironment } from "../runtime/launch-env-guard";
 import { companionLinkPath } from "../runtime/repo-local";
 import { checkSecretAccess, type SecretToolCall } from "../runtime/secret-guard";
@@ -26,6 +28,8 @@ import { hookFolder, type HookEnv } from "./hook-io";
 export interface HookOutcome {
   exitCode: number;
   stderr: string;
+  /** The check that refused; set only on a refusal. */
+  check?: FrictionCheck;
 }
 
 const KNOWN_ARTIFACT_BASENAMES = new Set([
@@ -188,7 +192,7 @@ function blockWrite(target: string, resolved: string, ctx: GuardContext): HookOu
     companion: ctx.companion,
     repoRoot: ctx.repoRoot,
   });
-  return { exitCode: 2, stderr: `${refusal}\n` };
+  return { exitCode: 2, stderr: `${refusal}\n`, check: "artifact" };
 }
 
 function checkFilePath(
@@ -234,7 +238,7 @@ async function checkForkedCompanion(
   if (!isCompanionPath(resolveArtifactTarget(filePath, ctx.repoRoot), ctx)) return null;
 
   const refusal = await companionForkRefusal(ctx.env, ctx.companion);
-  return refusal ? { exitCode: 2, stderr: `${refusal}\n` } : null;
+  return refusal ? { exitCode: 2, stderr: `${refusal}\n`, check: "fork" } : null;
 }
 
 /** Heredoc bodies are what a command writes, not what it runs: they are not scanned. */
@@ -261,22 +265,23 @@ function replacement(edit: Record<string, unknown>) {
   };
 }
 
+const textOf = (value: unknown) => (typeof value === "string" ? value : "");
+
 /** Claude tool payloads in the shape the shared secret guard reads. */
 function secretToolCall(
   toolName: string,
   toolInput: Record<string, unknown>,
   ctx: GuardContext,
 ): SecretToolCall | null {
-  const text = (value: unknown) => (typeof value === "string" ? value : "");
   const target = (value: unknown) =>
-    text(value) ? resolveArtifactTarget(text(value), ctx.repoRoot) : "";
+    textOf(value) ? resolveArtifactTarget(textOf(value), ctx.repoRoot) : "";
   switch (toolName) {
     case "Read":
       return { kind: "read", paths: [target(toolInput.file_path)] };
     case "Write":
       return {
         kind: "write",
-        writes: [{ path: target(toolInput.file_path), content: text(toolInput.content) }],
+        writes: [{ path: target(toolInput.file_path), content: textOf(toolInput.content) }],
       };
     case "Edit":
       return {
@@ -284,7 +289,7 @@ function secretToolCall(
         writes: [
           {
             path: target(toolInput.file_path),
-            content: text(toolInput.new_string),
+            content: textOf(toolInput.new_string),
             result: { kind: "replace", edits: [replacement(toolInput)] },
           },
         ],
@@ -293,7 +298,7 @@ function secretToolCall(
       const edits = (Array.isArray(toolInput.edits) ? toolInput.edits : []).map((edit) =>
         edit && typeof edit === "object" ? (edit as Record<string, unknown>) : {},
       );
-      const content = edits.map((edit) => text(edit.new_string)).join("\n");
+      const content = edits.map((edit) => textOf(edit.new_string)).join("\n");
       return {
         kind: "write",
         writes: [
@@ -311,44 +316,90 @@ function secretToolCall(
         writes: [
           {
             path: target(toolInput.notebook_path),
-            content: text(toolInput.new_source),
+            content: textOf(toolInput.new_source),
             result: { kind: "unknown" },
           },
         ],
       };
     case "Bash":
-      return { kind: "shell", command: text(toolInput.command) };
+      return { kind: "shell", command: textOf(toolInput.command) };
     case "Grep":
       return {
         kind: "search",
         paths: [target(toolInput.path)],
-        globs: [text(toolInput.glob)],
+        globs: [textOf(toolInput.glob)],
       };
     default:
       return null;
   }
 }
 
+interface ToolCall {
+  sessionId: string;
+  toolName: string;
+  toolInput: Record<string, unknown>;
+}
+
+function toolCall(payload: unknown): ToolCall {
+  const input = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  return {
+    sessionId: typeof input.session_id === "string" ? input.session_id : "",
+    toolName: typeof input.tool_name === "string" ? input.tool_name : "",
+    toolInput:
+      input.tool_input && typeof input.tool_input === "object"
+        ? (input.tool_input as Record<string, unknown>)
+        : {},
+  };
+}
+
+function recordHookRefusal(
+  check: FrictionCheck,
+  stderr: string,
+  call: ToolCall,
+  ctx: GuardContext,
+): string | null {
+  const { toolName, toolInput } = call;
+  const command = toolName === "Bash" ? stringOrEmpty(toolInput.command) : "";
+  const paths = command
+    ? commandMatches(command)
+    : [toolInput.file_path, toolInput.notebook_path, toolInput.path].map(stringOrEmpty);
+  return recordRefusal({
+    check,
+    toolKind: secretToolCall(toolName, toolInput, ctx)?.kind ?? "other",
+    message: stderr,
+    paths,
+    companionPath: ctx.companion,
+    repositoryPath: ctx.repoRoot,
+    runtime: "claude",
+    sessionId: call.sessionId,
+    env: ctx.env,
+  });
+}
+
 /**
  * Fails open only when no Mate context resolves from either source; in a
- * wrapped Working Repository the guard runs without a launch.
+ * wrapped Working Repository the guard runs without a launch. A refusal is
+ * recorded as friction after the verdict; an allowed call records nothing.
+ * A session's first refusal of a kind ends with the nudge line.
  */
 export async function evaluate(
   payload: unknown,
   env: HookEnv,
   cwd: string = process.cwd(),
 ): Promise<HookOutcome> {
-  const allow: HookOutcome = { exitCode: 0, stderr: "" };
-
   const ctx = guardContext(env, cwd);
-  if (!ctx) return allow;
+  if (!ctx) return { exitCode: 0, stderr: "" };
+  const call = toolCall(payload);
+  const outcome = await decide(call, ctx);
+  if (!outcome.check) return outcome;
+  const nudge = recordHookRefusal(outcome.check, outcome.stderr, call, ctx);
+  return nudge
+    ? { ...outcome, stderr: `${outcome.stderr.replace(/\n?$/, "\n")}${nudge}\n` }
+    : outcome;
+}
 
-  const input = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
-  const toolName = typeof input.tool_name === "string" ? input.tool_name : "";
-  const toolInput =
-    input.tool_input && typeof input.tool_input === "object"
-      ? (input.tool_input as Record<string, unknown>)
-      : {};
+async function decide({ toolName, toolInput }: ToolCall, ctx: GuardContext): Promise<HookOutcome> {
+  const allow: HookOutcome = { exitCode: 0, stderr: "" };
 
   /** Secrets first: a secret refusal wins over every artifact-placement verdict. */
   const secretCall = secretToolCall(toolName, toolInput, ctx);
@@ -357,7 +408,7 @@ export async function evaluate(
       companionPath: ctx.companion,
       isCompanionPath: (target) => isCompanionPath(target, ctx),
     });
-    if (refusal) return { exitCode: 2, stderr: `${refusal}\n` };
+    if (refusal) return { exitCode: 2, stderr: `${refusal}\n`, check: "secret" };
   }
 
   if (toolName === "Write" || toolName === "Edit" || toolName === "MultiEdit") {
@@ -370,7 +421,7 @@ export async function evaluate(
   if (toolName === "Bash") {
     const command = String(toolInput.command ?? "");
     const attribution = checkCommitAttribution(command);
-    if (attribution) return { exitCode: 2, stderr: `${attribution}\n` };
+    if (attribution) return { exitCode: 2, stderr: `${attribution}\n`, check: "attribution" };
 
     const targets = commandMatches(command);
     for (const target of targets) {

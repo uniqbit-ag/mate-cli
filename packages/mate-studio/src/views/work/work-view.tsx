@@ -33,7 +33,7 @@ import { cn } from "../../lib/cn";
 import { useWorkUi } from "../../stores/work-ui";
 import { CardHeading, WorkCard, type WorkDragData } from "./work-card";
 import { DROP_VERBS } from "./work-card-model";
-import { CaptureStartDialog, WorkDialogs } from "./work-dialogs";
+import { WorkDialogs } from "./work-dialogs";
 import type { WorkSearch } from "./work-search";
 import { useWorkAction } from "./use-work-action";
 
@@ -113,15 +113,7 @@ const collisions: CollisionDetection = (args) => {
 };
 
 /** Work: every Workset once, in the bucket its facts place it; cards move by drag and drop. */
-export function Work({
-  payload,
-  search,
-  factoryMode,
-}: {
-  payload: StudioWorkPayload;
-  search: WorkSearch;
-  factoryMode: boolean;
-}) {
+export function Work({ payload, search }: { payload: StudioWorkPayload; search: WorkSearch }) {
   const companion = search.companion!;
   const navigate = useNavigate();
   const bucket = search.bucket ?? "scratchpad";
@@ -205,15 +197,6 @@ export function Work({
           </div>
           <TeamStatus payload={payload} companion={companion} />
         </div>
-        {factoryMode && payload.factory.mode && !payload.factory.usable ? (
-          <p
-            className="m-0 rounded-control border border-rule bg-surface px-3 py-2 text-sm"
-            role="status"
-          >
-            The local factory cannot take new work now:{" "}
-            {payload.factory.reason ?? "it is not usable"}.
-          </p>
-        ) : null}
         <div className="grid items-start gap-4 @min-[56rem]:grid-cols-3">
           {WORK_BUCKETS.map((name) => (
             <Lane
@@ -396,12 +379,10 @@ function TeamStatus({ payload, companion }: { payload: StudioWorkPayload; compan
   );
 }
 
-/** Scratchpad's one capture form: Save keeps the idea; the factory starts it only when usable. */
+/** Scratchpad's one capture form: Save keeps the idea. */
 function Capture({ payload, companion }: { payload: StudioWorkPayload; companion: string }) {
   const draft = useWorkUi((state) => state.drafts[companion] ?? "");
   const setDraft = useWorkUi((state) => state.setDraft);
-  const dialog = useWorkUi((state) => state.dialog);
-  const openDialog = useWorkUi((state) => state.open);
   const [repository, setRepository] = useState(payload.linkedRepositories[0] ?? "");
   const [ticket, setTicket] = useState("");
   const save = useWorkAction(companion);
@@ -475,24 +456,12 @@ function Capture({ payload, companion }: { payload: StudioWorkPayload; companion
           <Button type="submit" disabled={!draft.trim() || save.isPending}>
             Save
           </Button>
-          {payload.factory.mode && payload.factory.usable ? (
-            <Button
-              variant="primary"
-              disabled={!draft.trim()}
-              onClick={() => openDialog({ kind: "capture-start" })}
-            >
-              Start in local factory
-            </Button>
-          ) : null}
         </div>
       </div>
       {result && !result.ok ? (
         <p className="m-0 text-sm text-bad" role="alert">
           {result.reason}
         </p>
-      ) : null}
-      {dialog?.kind === "capture-start" ? (
-        <CaptureStartDialog companion={companion} draft={draft} fields={fields} onStarted={clear} />
       ) : null}
     </form>
   );

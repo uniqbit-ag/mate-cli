@@ -107,12 +107,13 @@ function plainText(tokens: Token[] | undefined, fallback: string): string {
     .join("");
 }
 
+const highlightNode = (node: ReturnType<typeof highlightNodes>[number]): MdNode =>
+  node.type === "text"
+    ? node.value
+    : el("span", node.children.map(highlightNode), { className: node.classNames.join(" ") });
+
 function highlighted(code: string, language: string | undefined): MdNode[] {
-  const map = (node: ReturnType<typeof highlightNodes>[number]): MdNode =>
-    node.type === "text"
-      ? node.value
-      : el("span", node.children.map(map), { className: node.classNames.join(" ") });
-  return highlightNodes(code, language).map(map);
+  return highlightNodes(code, language).map(highlightNode);
 }
 
 const SECTION_PREFIX = /^(Requirement|Scenario):\s*/i;

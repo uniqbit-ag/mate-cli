@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { git, type GitTeam, gitTeam, write, writeChange } from "../../../../../test/workset-git";
 import { takeSubmitted } from "../delivery/staging/submit";
-import { companionExecutorGuard, findEntry, ownershipFacts, startRefusal } from "./execution";
+import { findEntry, ownershipFacts, startRefusal } from "./execution";
 import { configuredOperator, workGit } from "./git-transaction";
 import { readWorkInventory } from "./inventory";
 import { bucketOf, type WorkFacts } from "./projection";
@@ -163,17 +163,9 @@ describe("shared executable work end to end", () => {
     expect(released.ownership.claim.kind).toBe("none");
   });
 
-  test("a Scratchpad idea never reaches Git and a pulled legacy start never runs", async () => {
-    await createOutcome(author, { text: "Make onboarding easier.", start: true }, ["acme/web"]);
+  test("a Scratchpad idea never reaches Git", async () => {
+    await createOutcome(author, { text: "Make onboarding easier." }, ["acme/web"]);
     // Nothing to commit: the scratchpad ignores itself.
     expect(git(author, "status", "--porcelain")).toBe("");
-    expect(await companionExecutorGuard(author).authorized("make-onboarding-easier")).toBe(true);
-
-    write(
-      teammate,
-      "worksets/acme-legacy.yaml",
-      "id: acme-legacy\nrepositories: [acme/web]\nchanges: []\nqueuedAt: 2026-11-01T00:00:00.000Z\n",
-    );
-    expect(await companionExecutorGuard(teammate).authorized("acme-legacy")).toBe(false);
   });
 });

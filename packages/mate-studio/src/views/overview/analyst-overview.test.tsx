@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { type StudioCompanionPayload, type StudioShippedChange } from "@uniqbit/mate-core/studio";
 
+import { positioned } from "../../../test/positioned";
+
 await import("../../../test/dom");
 const { act, render: mountDom } = await import("@testing-library/react");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
@@ -17,13 +19,13 @@ function payload(overrides: Partial<StudioCompanionPayload> = {}): StudioCompani
   return {
     companionPath: "/home/dev/.mate/companions/acme-companion",
     changes: [
-      {
+      positioned({
         name: "add-active-work",
         completedTasks: 2,
         totalTasks: 5,
         status: "in-progress",
         artifacts: [{ id: "tasks" }],
-      },
+      }),
     ],
     specs: [
       {

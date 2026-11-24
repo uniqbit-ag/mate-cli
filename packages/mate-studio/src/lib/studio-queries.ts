@@ -1,10 +1,9 @@
 import { hashKey, type QueryClient, queryOptions } from "@tanstack/react-query";
 import type { SkillAgent, StudioEvent, StudioMode, VaultView } from "@uniqbit/mate-core/studio";
 
-import { agentCredentialKey } from "./agent-credential";
 import { unpackGraph } from "./graph-wire";
 import type { StudioSearch } from "./search";
-import { getFactory } from "../server/factory";
+import { studioFetch } from "./studio-fetch";
 import { getGraph } from "../server/graph";
 import { getReports } from "../server/reports";
 import { getShell, type ShellData } from "../server/shell";
@@ -22,7 +21,6 @@ const keys = {
   shell: (companion: string | null) => [companion, "shell"] as const,
   views: (companion: string | null) => [companion, "view"] as const,
   skills: (companion: string) => [companion, "skills"] as const,
-  factory: (companion: string) => [companion, "factory"] as const,
   work: (companion: string) => [companion, "work"] as const,
   vault: (companion: string) => [companion, "vault"] as const,
   vaultViews: (companion: string) => [companion, "vault", "view"] as const,
@@ -83,15 +81,23 @@ export const skillPreviewQuery = (
     queryFn: () => getSkillPreview({ data: { companion, agent, name, file } }),
   });
 
-export const factoryQuery = (companion: string) =>
+/** A plugin view's attention count from its service's route; a board change refetches it. */
+export const pluginAttentionQuery = (companion: string, url: string) =>
   queryOptions({
-    queryKey: keys.factory(companion),
-    queryFn: () => getFactory({ data: { companion } }),
-    // Events update the board in place; this only covers a missed one (design D7).
+    queryKey: [...keys.views(companion), "plugin-attention", url],
+    queryFn: async (): Promise<number> => {
+      const response = await studioFetch(`${url}?companion=${encodeURIComponent(companion)}`, {
+        headers: { accept: "application/json" },
+      });
+      if (!response.ok) return 0;
+      const answer = (await response.json()) as { count?: unknown };
+      return typeof answer.count === "number" ? answer.count : 0;
+    },
+    // Board events refetch it; this only covers a missed one.
     refetchInterval: 30_000,
   });
 
-/** Work's buckets; board events make it stale, as they do the Factory's. */
+/** Work's buckets; board events make it stale. */
 export const workQuery = (companion: string) =>
   queryOptions({
     queryKey: keys.work(companion),
@@ -143,23 +149,18 @@ export async function afterEvent(
   type: StudioEvent["type"],
 ): Promise<void> {
   if (type === "board") {
-    // A shown board's refetch collects afresh; the shell and views read what it collected, so
-    // they wait for it. Without one, another tab may have collected, so they refetch at once.
-    const cache = queryClient.getQueryCache();
-    const shown = [keys.factory(companion), keys.work(companion)].some(
-      (queryKey) => cache.find({ queryKey })?.isActive() === true,
-    );
+    // A shown Work view's refetch collects afresh; the shell and views read what it collected,
+    // so they wait for it. Without one, another tab may have collected, so they refetch at once.
+    const shown =
+      queryClient
+        .getQueryCache()
+        .find({ queryKey: keys.work(companion) })
+        ?.isActive() === true;
     if (shown) {
-      await stale(queryClient, keys.factory(companion), keys.work(companion));
+      await stale(queryClient, keys.work(companion));
       await stale(queryClient, keys.shell(companion), keys.views(companion));
     } else {
-      await stale(
-        queryClient,
-        keys.factory(companion),
-        keys.work(companion),
-        keys.shell(companion),
-        keys.views(companion),
-      );
+      await stale(queryClient, keys.work(companion), keys.shell(companion), keys.views(companion));
     }
   } else if (type === "reports") {
     await stale(queryClient, keys.reports(companion));
@@ -167,12 +168,8 @@ export async function afterEvent(
   // `vault-tree` only marks the tree stale; the viewer refreshes it (studio-vault).
 }
 
-export const afterFactoryAction = (queryClient: QueryClient, companion: string) =>
-  stale(queryClient, keys.factory(companion), keys.work(companion));
-
-/** After a Work action; a dispatch or park also changes what the Factory bucket shows. */
 export const afterWorkAction = (queryClient: QueryClient, companion: string) =>
-  stale(queryClient, keys.work(companion), keys.factory(companion), keys.views(companion));
+  stale(queryClient, keys.work(companion), keys.views(companion));
 
 /** The refresh answer is shown at once; the companion's other vault reads follow. */
 export function afterVaultRefresh(
@@ -194,9 +191,6 @@ export function afterVaultRefresh(
 export const afterVaultFileChange = (queryClient: QueryClient, companion: string) =>
   stale(queryClient, keys.vaultViews(companion));
 
-/**
- * After Refresh collected `companion` again; other companions keep what they hold. The agent
- * credential is not companion data but may change out of band; terminal sessions are polled.
- */
+/** After Refresh collected `companion` again; other companions keep what they hold. */
 export const afterRefresh = (queryClient: QueryClient, companion: string | undefined) =>
-  stale(queryClient, keys.companion(companion ?? null), agentCredentialKey);
+  stale(queryClient, keys.companion(companion ?? null));

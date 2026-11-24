@@ -6,6 +6,7 @@ import { type ChangeFacts, changeStage, deriveWorksetStage } from "./stage";
 const facts = (overrides: Partial<ChangeFacts> = {}): ChangeFacts => ({
   name: "acme-form",
   archived: false,
+  submitted: false,
   artifactsComplete: true,
   reviewArtifacts: ["proposal", "specs", "design", "tasks"],
   checkedTasks: 0,
@@ -31,6 +32,12 @@ describe("one change's stage", () => {
     ["a planning artifact missing", facts({ artifactsComplete: false }), "propose"],
     ["planning complete, nothing applied", facts(), "human-review"],
     ["a task checked", facts({ checkedTasks: 1 }), "apply"],
+    ["submitted, not merged", facts({ submitted: true, checkedTasks: 2 }), "merge-wait"],
+    [
+      "submitted, merged or not applicable",
+      facts({ submitted: true, checkedTasks: 2, mergeSettled: true }),
+      "publish",
+    ],
     ["archived, not merged", facts({ archived: true }), "merge-wait"],
     [
       "archived, merged or not applicable",

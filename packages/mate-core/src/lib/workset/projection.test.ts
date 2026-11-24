@@ -19,7 +19,6 @@ const context = (extra: Partial<WorkContext> = {}): WorkContext => ({
   writable: true,
   operator,
   gitBacked: true,
-  factory: { mode: false, usable: false },
   ...extra,
 });
 const SHARED: SharingFacts = { ...LOCAL_ONLY, presence: "shared" };
@@ -31,9 +30,6 @@ function facts(
     sharing?: SharingFacts;
     claim?: Claim;
     progress?: Progress;
-    queuedAt?: string;
-    legacy?: boolean;
-    run?: WorkFacts["run"];
   } = {},
 ): WorkFacts {
   const members = options.members ?? ["acme-login"];
@@ -48,8 +44,6 @@ function facts(
       changes: members,
       stage: "ready",
       createdAt: "",
-      ...(options.queuedAt ? { queuedAt: options.queuedAt } : {}),
-      ...(options.legacy ? { legacy: true } : {}),
       extra: {},
     },
     members: members.map((name) => ({ name, kind: "active" as const })),
@@ -64,7 +58,6 @@ function facts(
     sharing: options.sharing ?? LOCAL_ONLY,
     claim: options.claim ?? { kind: "none" },
     progress: options.progress ?? { kind: "none" },
-    ...(options.run ? { run: options.run } : {}),
   };
 }
 
@@ -154,9 +147,8 @@ describe("actions", () => {
       claim: { kind: "other", label: "Acme Teammate", id: "t@acme.test" },
       progress: { kind: "here", branch: "workset/acme-login" },
     });
-    const usable = context({ factory: { mode: true, usable: true } });
-    for (const action of ["share", "start-manual", "dispatch"] as const) {
-      expect(workActionRefusal(action, branched, usable)).toBe("claimed by Acme Teammate");
+    for (const action of ["share", "start-manual"] as const) {
+      expect(workActionRefusal(action, branched, context())).toBe("claimed by Acme Teammate");
     }
     expect(startRefusalOf(branched)).toBe("claimed by Acme Teammate");
   });
@@ -170,15 +162,7 @@ describe("actions", () => {
     expect(workActionRefusal("start-manual", behind, context())).toContain("mate artifact take");
   });
 
-  test("Release waits for a local run; a conflicting claim blocks everything", () => {
-    const running = facts({
-      sharing: SHARED,
-      claim: { kind: "mine", label: "Acme" },
-      run: "running",
-    });
-    expect(workActionRefusal("release", running, context())).toBe(
-      "it runs here; stop the run first",
-    );
+  test("a conflicting claim blocks everything", () => {
     const conflict = facts({
       sharing: SHARED,
       claim: { kind: "conflict", diagnostic: "only some of its changes are claimed" },
@@ -195,27 +179,5 @@ describe("actions", () => {
     expect(
       workActionRefusal("claim", facts({ sharing: SHARED }), context({ operator: undefined })),
     ).toContain("user.name");
-  });
-
-  test("factory actions exist only in factory mode and only for own work", () => {
-    expect(projectWorkCard(facts(), context()).actions.dispatch).toBeUndefined();
-    const factory = context({ factory: { mode: true, usable: true } });
-    expect(projectWorkCard(facts(), factory).actions.dispatch).toBeNull();
-    expect(projectWorkCard(facts({ sharing: SHARED }), factory).actions.dispatch).toBeUndefined();
-    expect(workActionRefusal("dispatch", facts({ sharing: SHARED }), factory)).toBe(
-      "claim it first",
-    );
-  });
-
-  test("a queued plan parks; a legacy shared start is never this installation's", () => {
-    const factory = context({ factory: { mode: true, usable: true } });
-    const queued = facts({ queuedAt: "2026-11-01T00:00:00.000Z", run: "idle" });
-    expect(projectWorkCard(queued, factory).actions.park).toBeNull();
-    expect(projectWorkCard(queued, factory).actions.dispatch).toBe(
-      "already started in the factory",
-    );
-    const legacy = facts({ queuedAt: "2026-11-01T00:00:00.000Z", legacy: true });
-    expect(projectWorkCard(legacy, factory).actions.park).toBeUndefined();
-    expect(projectWorkCard(legacy, factory).actions.dispatch).toBeNull();
   });
 });

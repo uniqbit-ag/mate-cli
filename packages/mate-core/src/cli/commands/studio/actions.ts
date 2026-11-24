@@ -17,7 +17,7 @@ export interface StudioAction {
   prompts: Record<TerminalAgent, (subject: string) => string>;
 }
 
-/** Manual continuation of Work: the installed Delivery Path skills, no factory needed. */
+/** Manual continuation of Work: the installed Delivery Path skills. */
 export const WORK_ACTIONS: readonly StudioAction[] = [
   {
     id: "explore-workset",

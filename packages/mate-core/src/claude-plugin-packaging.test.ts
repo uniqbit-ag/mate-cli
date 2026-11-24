@@ -131,10 +131,13 @@ describe("packed Claude plugin", () => {
     ) as { hooks: Record<string, { hooks: { command: string }[] }[]> };
     expect(Object.keys(wiring.hooks).sort()).toEqual([
       "Notification",
+      "PostToolUse",
       "PreToolUse",
       "SessionEnd",
       "SessionStart",
+      "Stop",
       "SubagentStart",
+      "UserPromptSubmit",
     ]);
     const commands = (event: string) =>
       wiring.hooks[event]!.flatMap((group) => group.hooks.map((h) => h.command));
@@ -158,11 +161,16 @@ describe("packed Claude plugin", () => {
       "companion-instructions.mjs",
       "session-end.mjs",
       "session-attention.mjs",
+      "workflow-turn.mjs",
     ]) {
       const stat = await fs.stat(path.join(pluginRoot, "hooks", shim));
       expect(stat.isFile()).toBe(true);
       expect(stat.mode & 0o111).toBeGreaterThan(0);
     }
+    // The turn shim's state folder module, loaded without ts-loader.
+    expect(
+      (await fs.stat(path.join(pluginRoot, "..", "src", "runtime", "turn-state.mjs"))).isFile(),
+    ).toBe(true);
 
     await expect(
       fs.stat(path.join(pluginRoot, "hooks", "artifact-finish-nudge.mjs")),

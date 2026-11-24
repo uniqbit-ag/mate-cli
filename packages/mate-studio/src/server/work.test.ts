@@ -19,10 +19,9 @@ describe("Work server function input", () => {
     [{ companion: "../etc", request: { action: "refresh" } }, "no registered companion"],
     [{ companion, request: { action: "merge" } }, "unknown Work action"],
     [{ companion, request: { action: "transfer", workset: "acme" } }, "unknown Work action"],
-    [{ companion, request: { action: "park", workset: "../acme" } }, "not a valid name"],
     [
-      { companion, request: { action: "dispatch", workset: "acme", mode: "yolo", members: [] } },
-      "mode",
+      { companion, request: { action: "start-manual", workset: "../acme", members: [] } },
+      "not a valid name",
     ],
     [{ companion, request: { action: "capture", text: "x".repeat(70_000) } }, "too long"],
     [
@@ -37,9 +36,9 @@ describe("Work server function input", () => {
     expect(
       validateWorkAction({
         companion,
-        request: { action: "park", workset: "acme", extra: "x" } as never,
+        request: { action: "start-manual", workset: "acme", members: [], extra: "x" } as never,
       }),
-    ).toEqual({ companion, request: { action: "park", workset: "acme" } });
+    ).toEqual({ companion, request: { action: "start-manual", workset: "acme", members: [] } });
     expect(
       validateWorkAction({
         companion,

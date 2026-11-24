@@ -13,6 +13,7 @@ import path from "node:path";
 
 import { parse } from "yaml";
 
+import { trailerRecordsAt } from "./artifact-trailers";
 import { LITERAL_PATHSPECS, nulPaths, type CompanionGit } from "./companion-git";
 import { readSubmittedFolders, updateSubmittedFolders } from "./companion-git-state";
 import { errorMessage } from "./error-message";
@@ -21,8 +22,13 @@ import { errorMessage } from "./error-message";
 export interface SubmittedLayout {
   /** Directory holding one folder per change, relative to the companion. */
   source: string;
-  /** Directory holding one folder per archived record, relative to the companion. */
-  archiveRoot: string;
+  /**
+   * Directory holding one folder per archived record, relative to the companion; absent for a
+   * type that keeps no archive, whose records are read from {@link trailer}.
+   */
+  archiveRoot?: string;
+  /** The type's name in `Mate-Artifact: <type>/<id>` trailers, read when it keeps no archive. */
+  trailer?: string;
   /** The change name archived record `id` was made from, or null for no record. */
   recordName: (id: string) => string | null;
 }
@@ -190,21 +196,29 @@ async function holdsExactly(
   return local.every((file, index) => ids[index] === incoming.get(file));
 }
 
-/** Archived record ids below `layout.archiveRoot` at `ref`, by change name. */
+/**
+ * Archived record ids at `ref`, by change name: the folders below `layout.archiveRoot`, or for a
+ * type without an archive the records its history published.
+ */
 async function archivedRecords(
   git: CompanionGit,
   ref: string,
   layout: SubmittedLayout,
 ): Promise<Map<string, Set<string>>> {
-  const listed = await lines(git, [
-    "ls-tree",
-    "-z",
-    "--name-only",
-    "--end-of-options",
-    ref,
-    "--",
-    `${layout.archiveRoot}/`,
-  ]);
+  const listed =
+    layout.archiveRoot === undefined
+      ? layout.trailer === undefined
+        ? []
+        : (await trailerRecordsAt(git, ref, layout.trailer)).map((record) => record.id)
+      : await lines(git, [
+          "ls-tree",
+          "-z",
+          "--name-only",
+          "--end-of-options",
+          ref,
+          "--",
+          `${layout.archiveRoot}/`,
+        ]);
   const records = new Map<string, Set<string>>();
   for (const entry of listed ?? []) {
     const id = entry.split("/").at(-1)!;
@@ -286,7 +300,8 @@ async function newArchive(
     return !known.has(id) && (!dated || dated >= day);
   });
   if (candidates.length === 0) return false;
-  if (local.length === 0) return true;
+  // Without an archive there is nothing to compare the folder with: the record alone decides.
+  if (local.length === 0 || layout.archiveRoot === undefined) return true;
   const record = await fs.readFile(path.join(dir, DELIVERY_FILE), "utf8").catch(() => null);
   const base = specBaseOf(record);
   const branches = deliveryBranchesOf(record);

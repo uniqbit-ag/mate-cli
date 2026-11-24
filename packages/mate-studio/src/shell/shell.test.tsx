@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, describe, expect, it, mock } from "bun:test";
 import type { CompanionAddInput, CompanionAddResult, StudioView } from "@uniqbit/mate-core/studio";
 
 import type { ShellCompanion, ShellData } from "../server/shell";
@@ -9,6 +9,13 @@ await import("../../test/dom");
 const deleted: string[] = [];
 const asked: CompanionAddInput[] = [];
 let answers: CompanionAddResult[] = [];
+/**
+ * The real companions service. bun's mock.module overrides are process-wide and never auto-restored
+ * (`mock.restore()` leaves them), so a later file — bun runs files in file-system order, which
+ * differs between machines — would get this file's fake wherever it asks the server about
+ * companions. The file puts it back when it ends.
+ */
+const realCompanions = await import("../server/companions");
 mock.module("../server/companions", () => ({
   deleteCompanion: async ({ data }: { data: { companion: string } }) => {
     deleted.push(data.companion);
@@ -19,7 +26,26 @@ mock.module("../server/companions", () => ({
     return answers.shift() ?? { ok: true, digest: "abcdef0123", existing: false };
   },
 }));
-const { act, render } = await import("@testing-library/react");
+const switchAnswers = () => ({
+  read: async () => ({ recording: false }),
+  write: async ({ recording }: { recording: boolean }) => ({ recording }),
+});
+const frictionServer = switchAnswers();
+const getFriction = mock(async () => {});
+const realFriction = await import("../server/friction");
+mock.module("../server/friction", () => ({
+  ...realFriction,
+  getFriction,
+  getFrictionRecording: () => frictionServer.read(),
+  setFrictionRecording: ({ data }: { data: { recording: boolean } }) => frictionServer.write(data),
+}));
+
+afterAll(() => {
+  mock.module("../server/companions", () => ({ ...realCompanions }));
+  mock.module("../server/friction", () => ({ ...realFriction }));
+});
+
+const { act, fireEvent, render, within } = await import("@testing-library/react");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
 const router = await import("@tanstack/react-router");
 const { staticMarkup } = await import("../../test/render");
@@ -54,7 +80,8 @@ const shell = (overrides: Partial<ShellData> = {}): ShellData => ({
   collectedAt: null,
   metrics: null,
   writable: false,
-  factoryMode: false,
+  addsCompanions: false,
+  pluginViews: [],
   terminal: null,
   ...overrides,
 });
@@ -103,6 +130,8 @@ const settle = () => act(async () => new Promise((done) => setTimeout(done, 20))
 afterEach(() => {
   document.documentElement.removeAttribute("data-rail");
   useAppearance.setState({ rail: "full" });
+  Object.assign(frictionServer, switchAnswers());
+  getFriction.mockClear();
 });
 
 describe("the companion list page", () => {
@@ -122,6 +151,104 @@ describe("the companion list page", () => {
     const markup = staticMarkup(<CompanionPicker companions={[]} />);
     expect(markup).toContain("No Companion Repository is registered on this machine.");
     expect(markup).toContain("mate companion setup");
+  });
+});
+
+describe("the global features", () => {
+  async function startPage(companions = [acme]) {
+    const { page, instance } = await mount(() => <CompanionPicker companions={companions} />);
+    await settle();
+    const region = within(page.container).getByRole("region", { name: "Global features" });
+    const section = within(region);
+    const control = (name: string) => section.getByRole<HTMLButtonElement>("button", { name });
+    return { page, instance, region, section, control };
+  }
+
+  it("comes before the list, with the state, its reach and the control that changes it", async () => {
+    frictionServer.read = async () => ({ recording: true });
+    const { page, region, section } = await startPage();
+    const list = page.container.querySelector(".picker-card")!;
+    expect(region.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(section.getByText("Recording is on")).toBeDefined();
+    expect(
+      section.getByRole("button", {
+        name: "Turn recording off",
+        description: "Applies to all companions on the machine that runs Studio.",
+      }),
+    ).toBeDefined();
+  });
+
+  it("is shown with no registered companion", async () => {
+    const { section, control } = await startPage([]);
+    expect(section.getByText("Recording is off")).toBeDefined();
+    expect(control("Turn recording on").disabled).toBe(false);
+  });
+
+  it("reads the switch and no Friction Log", async () => {
+    await startPage();
+    expect(getFriction).not.toHaveBeenCalled();
+  });
+
+  it("claims no state until the switch is known, and a companion can still be chosen", async () => {
+    frictionServer.read = () => new Promise(() => {});
+    const { page, instance, region, control } = await startPage();
+    expect(region.textContent).toContain("Checking…");
+    expect(region.textContent).not.toContain("Recording is");
+    expect(control("Turn recording on or off").disabled).toBe(true);
+    await act(async () => page.container.querySelector<HTMLButtonElement>(".picker-card")!.click());
+    await settle();
+    expect(instance.state.location.search).toMatchObject({ companion: acme.digest });
+  });
+
+  it("sets the switch, with the control disabled until the change is done", async () => {
+    const written = Promise.withResolvers<{ recording: boolean }>();
+    const asked: boolean[] = [];
+    frictionServer.write = ({ recording }) => {
+      asked.push(recording);
+      return written.promise;
+    };
+    const { section, control } = await startPage();
+    fireEvent.click(control("Turn recording on"));
+    await settle();
+    expect(asked).toEqual([true]);
+    expect(control("Turn recording on").disabled).toBe(true);
+    frictionServer.read = async () => ({ recording: true });
+    written.resolve({ recording: true });
+    await settle();
+    expect(section.getByText("Recording is on")).toBeDefined();
+    expect(control("Turn recording off").disabled).toBe(false);
+  });
+
+  it("keeps the shown state and names a failed change", async () => {
+    frictionServer.write = async () => {
+      throw new Error("settings file is read-only");
+    };
+    const { section, control } = await startPage();
+    fireEvent.click(control("Turn recording on"));
+    await settle();
+    expect(section.getByText("Recording is off")).toBeDefined();
+    expect(section.getByRole("alert").textContent).toBe(
+      "Recording could not be turned on: settings file is read-only",
+    );
+  });
+
+  it("offers Retry and no control that sets the switch when the read fails", async () => {
+    frictionServer.read = async () => {
+      throw new Error("unreadable");
+    };
+    const { page, section, control } = await startPage();
+    expect(section.getByRole("alert").textContent).toContain("could not be read");
+    expect(section.getAllByRole("button").map((button) => button.textContent)).toEqual(["Retry"]);
+    expect(page.container.querySelector<HTMLButtonElement>(".picker-card")!.disabled).toBe(false);
+    const retried = Promise.withResolvers<{ recording: boolean }>();
+    frictionServer.read = () => retried.promise;
+    fireEvent.click(control("Retry"));
+    await settle();
+    retried.resolve({ recording: true });
+    await settle();
+    expect(section.queryByRole("alert")).toBeNull();
+    expect(section.getByText("Recording is on")).toBeDefined();
+    expect(document.activeElement).toBe(control("Turn recording off"));
   });
 });
 
@@ -266,13 +393,14 @@ describe("the sidebar", () => {
       "/vault",
       "/graph",
       "/usage",
+      "/friction",
       "/reports",
     ]);
     expect(markup).toContain('data-studio-nav-section="Engineering"');
     expect(markup).toContain('data-studio-nav-section="Library"');
   });
 
-  it("groups Usage and Reports under Insights in both modes and rail sizes", () => {
+  it("groups Usage, Friction and Reports under Insights in both modes and rail sizes", () => {
     for (const studioMode of ["engineering", "analysis"] as const) {
       for (const rail of ["full", "min"] as const) {
         useAppearance.setState({ rail });
@@ -282,7 +410,7 @@ describe("the sidebar", () => {
         expect(insights.getAttribute("aria-label")).toBe("Insights");
         expect(
           [...insights.querySelectorAll("a")].map((link) => new URL(link.href).pathname),
-        ).toEqual(["/usage", "/reports"]);
+        ).toEqual(["/usage", "/friction", "/reports"]);
         expect(insights.querySelector('[aria-current="page"]')?.textContent).toContain("Usage");
         const library = root.querySelector(
           `[data-studio-nav-section="${studioMode === "analysis" ? "Published" : "Library"}"]`,
@@ -294,26 +422,33 @@ describe("the sidebar", () => {
     }
   });
 
-  it("offers Factory after Workflow only where the factory broker runs", () => {
-    expect(viewLinks(sidebar(shell()))).not.toContain("/factory");
-    expect(viewLinks(sidebar(shell({ factoryMode: true })))).toEqual([
+  it("lists the Engineering views in navigation order", () => {
+    expect(viewLinks(sidebar(shell()))).toEqual([
       "/",
       "/work",
       "/workflow",
-      "/factory",
       "/skills",
       "/getting-started",
       "/specs",
       "/vault",
       "/graph",
       "/usage",
+      "/friction",
       "/reports",
     ]);
   });
 
-  it("gives Analysis its Overview and the published views, and no Workflow, Skills or Factory", () => {
-    const markup = sidebar(shell({ studioMode: "analysis", factoryMode: true }));
-    expect(viewLinks(markup)).toEqual(["/", "/specs", "/vault", "/graph", "/usage", "/reports"]);
+  it("gives Analysis its Overview and the published views, and no Workflow or Skills", () => {
+    const markup = sidebar(shell({ studioMode: "analysis" }));
+    expect(viewLinks(markup)).toEqual([
+      "/",
+      "/specs",
+      "/vault",
+      "/graph",
+      "/usage",
+      "/friction",
+      "/reports",
+    ]);
     expect(markup).toContain('data-studio-nav-section="Analysis"');
     expect(markup).toContain('data-studio-nav-section="Published"');
   });
@@ -499,22 +634,28 @@ afterEach(() => {
 });
 
 describe("Add companion", () => {
-  it("is offered only in factory mode with the write path", async () => {
-    for (const [factoryMode, writable] of [
+  it("is offered only where a service adds companions, with the write path", async () => {
+    for (const [addsCompanions, writable] of [
       [false, true],
       [true, false],
       [false, false],
     ] as const) {
       // oxlint-disable-next-line no-await-in-loop -- one page at a time
       const { page, doc } = await mount(
-        () => <CompanionPicker companions={[acme]} writable={writable} factoryMode={factoryMode} />,
+        () => (
+          <CompanionPicker
+            companions={[acme]}
+            writable={writable}
+            addsCompanions={addsCompanions}
+          />
+        ),
         "/",
       );
       expect(doc.querySelector("[data-add-companion]")).toBeNull();
       page.unmount();
     }
     const { page, doc } = await mount(
-      () => <CompanionPicker companions={[acme]} writable factoryMode />,
+      () => <CompanionPicker companions={[acme]} writable addsCompanions />,
       "/",
     );
     expect(doc.querySelector("[data-add-companion]")).not.toBeNull();
@@ -523,7 +664,7 @@ describe("Add companion", () => {
 
   it("adds by Git URL and selects the new companion", async () => {
     const { doc, instance } = await mount(
-      () => <CompanionPicker companions={[acme]} writable factoryMode />,
+      () => <CompanionPicker companions={[acme]} writable addsCompanions />,
       "/",
     );
     await openAdd(doc);
@@ -534,7 +675,7 @@ describe("Add companion", () => {
   });
 
   it("adds by local path in its own mode", async () => {
-    const { doc } = await mount(() => <CompanionPicker companions={[]} writable factoryMode />);
+    const { doc } = await mount(() => <CompanionPicker companions={[]} writable addsCompanions />);
     await openAdd(doc);
     const tabs = [...addDialog(doc)!.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
     expect(tabs.map((tab) => tab.textContent)).toEqual(["Git URL", "Local path"]);
@@ -550,7 +691,7 @@ describe("Add companion", () => {
   it("shows a refusal in place and selects nothing", async () => {
     answers = [{ ok: false, reason: "That repository is not a companion: nothing to register." }];
     const { doc, instance } = await mount(
-      () => <CompanionPicker companions={[acme]} writable factoryMode />,
+      () => <CompanionPicker companions={[acme]} writable addsCompanions />,
       "/",
     );
     await openAdd(doc);
@@ -562,7 +703,7 @@ describe("Add companion", () => {
     expect(instance.state.location.search).not.toMatchObject({ companion: "abcdef0123" });
   });
 
-  it("offers the token form for the refused host and organization, then retries", async () => {
+  it("names the Git token a refused private clone needs", async () => {
     answers = [
       {
         ok: false,
@@ -570,47 +711,21 @@ describe("Add companion", () => {
         tokenKey: "git.acme.test/acme",
       },
     ];
-    const calls: Array<{ method: string; body: string | null }> = [];
-    const original = globalThis.fetch;
-    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push({
-        method: init?.method ?? "GET",
-        body: typeof init?.body === "string" ? init.body : null,
-      });
-      return Response.json({ tokens: [] });
-    }) as typeof fetch;
-    try {
-      const { doc, instance } = await mount(() => (
-        <CompanionPicker companions={[acme]} writable factoryMode />
-      ));
-      await openAdd(doc);
-      await typeInto(addDialog(doc)!.querySelector<HTMLInputElement>("input")!, COMPANION_URL);
-      await submitAdd(doc);
-      const token = addDialog(doc)!.querySelector<HTMLFormElement>("[data-git-token-form]")!;
-      expect(token.querySelector<HTMLInputElement>('[name="key"]')!.value).toBe(
-        "git.acme.test/acme",
-      );
-
-      token.querySelector<HTMLInputElement>('[name="token"]')!.value = SECRET;
-      await act(async () => token.requestSubmit());
-      await settle();
-      expect(calls.find((call) => call.method === "PUT")!.body).toBe(
-        JSON.stringify({ key: "git.acme.test/acme", token: SECRET }),
-      );
-      expect(asked).toEqual([
-        { kind: "url", url: COMPANION_URL },
-        { kind: "url", url: COMPANION_URL },
-      ]);
-      expect(instance.state.location.search).toMatchObject({ companion: "abcdef0123" });
-      expect(doc.body.innerHTML).not.toContain(SECRET);
-    } finally {
-      globalThis.fetch = original;
-    }
+    const { doc } = await mount(() => (
+      <CompanionPicker companions={[acme]} writable addsCompanions />
+    ));
+    await openAdd(doc);
+    await typeInto(addDialog(doc)!.querySelector<HTMLInputElement>("input")!, COMPANION_URL);
+    await submitAdd(doc);
+    expect(addDialog(doc)!.querySelector("[data-add-companion-token]")!.textContent).toContain(
+      "git.acme.test/acme",
+    );
+    expect(asked).toEqual([{ kind: "url", url: COMPANION_URL }]);
   });
 
   it("is offered in the switcher too", async () => {
     const { doc } = await mount(
-      () => <CompanionSwitcher companions={[acme]} selected={acme} writable factoryMode />,
+      () => <CompanionSwitcher companions={[acme]} selected={acme} writable addsCompanions />,
       `/?companion=${acme.digest}`,
     );
     await act(async () => doc.querySelector<HTMLButtonElement>("#studio-companion")!.click());
@@ -619,11 +734,11 @@ describe("Add companion", () => {
   });
 });
 
-describe("removing a companion in the factory", () => {
+describe("removing a companion a service fetched", () => {
   it("says a companion outside the companions directory is only unregistered", async () => {
     const outside: ShellCompanion = { ...acme, path: "/srv/acme-companion", keepsFolder: true };
     const { doc } = await mount(() => (
-      <CompanionPicker companions={[outside]} writable factoryMode />
+      <CompanionPicker companions={[outside]} writable addsCompanions />
     ));
     await act(async () =>
       doc.querySelector<HTMLButtonElement>('[aria-label="Actions for acme-companion"]')!.click(),
@@ -640,5 +755,47 @@ describe("removing a companion in the factory", () => {
       (button) => button.textContent === "Remove",
     )!;
     expect(confirm.disabled).toBe(false);
+  });
+});
+
+describe("a plugin view in the sidebar", () => {
+  it("shows the count its service's attention route answers", async () => {
+    const asked: string[] = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      asked.push(String(input));
+      return Response.json({ count: 3 });
+    }) as typeof fetch;
+    try {
+      const data = shell({
+        pluginViews: [
+          {
+            service: "acme",
+            view: "board",
+            label: "Acme board",
+            moduleUrl: "/studio/plugins/acme/board/main.js",
+            attentionUrl: "/api/plugins/acme/waiting",
+          },
+          {
+            service: "acme",
+            view: "plain",
+            label: "Acme plain",
+            moduleUrl: "/studio/plugins/acme/plain/main.js",
+          },
+        ],
+      });
+      const { page, doc } = await mount(() => (
+        <Sidebar shell={data} search={{ companion: acme.digest }} view="dashboard" />
+      ));
+      await settle();
+      expect(asked).toEqual([`/api/plugins/acme/waiting?companion=${acme.digest}`]);
+      const services = doc.querySelector('[data-studio-nav-section="Services"]')!;
+      const [board, plain] = [...services.querySelectorAll("a")];
+      expect(board!.querySelector('[aria-label="3 need you"]')?.textContent).toBe("3");
+      expect(plain!.querySelector("[aria-label]")).toBeNull();
+      page.unmount();
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });

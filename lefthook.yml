@@ -7,3 +7,9 @@ pre-commit:
       stage_fixed: true
     lint:
       run: bun run lint -- --quiet
+    pack-local-manifests:
+      glob: "{apps/mate-cli,packages/mate-core}/package.json"
+      run: >-
+        ! git grep --cached -nE '"version": "[^"]*-local\.|"@uniqbit/mate-core": "file:'
+        -- apps/mate-cli/package.json packages/mate-core/package.json
+      fail_text: "Staged manifests hold pack-local.sh's temporary values. Let it finish, then stage them again."

@@ -48,9 +48,9 @@ This table is invocation syntax only. It adds no Mate runtime integration:
 Mate's launch and setup support stays as described in
 [Capabilities](/docs/capabilities#skill-locations).
 
-The full schema, `mate-v1`, writes a proposal, specs, a design, and tasks:
+The full schema, `mate-full`, writes a proposal, specs, a design, and tasks:
 
-{/* delivery-path:mate-v1 */}
+{/* delivery-path:mate-full */}
 
 | #   | Stage                       | Driven by               |
 | --- | --------------------------- | ----------------------- |
@@ -140,7 +140,7 @@ When the feature is too big for one change, it suggests slices.
 Area, and it is low risk: no new dependency, no data-model or public API change,
 and no security, performance, or migration concern. Public API includes command
 names, flags, exit codes, JSON output fields, config keys, and exported package
-symbols. Otherwise it uses `mate-v1`.
+symbols. Otherwise it uses `mate-full`.
 One prompt writes every artifact of the chosen schema.
 
 When you skipped explore, propose applies the same slicing test first, unless
@@ -291,6 +291,8 @@ are submitted with it when all their tasks are checked; while one has open
 tasks, submit waits and pushes nothing. It warns when another active change
 modifies the same requirement, when a change it `dependsOn` is not submitted yet,
 or when a planning artifact its schema requires is missing; warnings never block.
+It also warns when the change you submit still has unchecked tasks or no
+tasks at all, naming what is open; the change is submitted all the same.
 A failed push fails the submit; run it again. `/mate-archive-change` and
 `mate artifact archive` still work as deprecated aliases.
 
@@ -351,7 +353,7 @@ Large features work best as several small changes:
 ## Share And Carry Work In Studio
 
 Studio's **Work** view, under Engineering, shows your ideas, your changes and
-the team's shared changes. It needs no Docker and no factory, and the normal
+the team's shared changes. It needs no Docker, and the normal
 explore, propose, apply and submit flow writes nothing for it: Work reads the
 changes, their `dependsOn` and their `delivery.yaml`, and Git.
 

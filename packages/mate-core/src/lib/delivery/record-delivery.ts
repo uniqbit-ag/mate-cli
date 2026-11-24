@@ -1,3 +1,4 @@
+// oxlint-disable no-await-in-loop -- changes are recorded in order and the first refusal ends the run
 import {
   workingRepoGit,
   type ProtectionReason,
@@ -5,7 +6,12 @@ import {
   type WorkingRepoGit,
 } from "./branches";
 import { companionGit } from "../../runtime/companion-git";
-import { changeNameOf, locateChange, type ChangeLocation } from "../change-layout";
+import {
+  changeNameOf,
+  locate,
+  OPENSPEC_CHANGE_LAYOUT,
+  type ChangeLocation,
+} from "../change-layout";
 import { scopedRepositories } from "../openspec-scopes";
 import { companionRelative, type DeliveryEnvironment } from "./environment";
 import {
@@ -92,6 +98,8 @@ export interface DeliveryRequest {
 
 export type DeliveryRefusal =
   | { reason: "unknown-change"; change: string }
+  /** A change of a declared artifact type whose folder, companion-relative `path`, does not exist. */
+  | { reason: "missing-folder"; change: string; path: string }
   | { reason: "no-repository" }
   /** An edit in an Umbrella Repository whose changes are scoped to not exactly one child. */
   | { reason: "umbrella-repository"; umbrella: string; scoped: string[]; children: string[] }
@@ -194,7 +202,6 @@ async function scopedChildren(
 ): Promise<string[]> {
   const scoped: string[] = [];
   for (const { dir } of located) {
-    // oxlint-disable-next-line no-await-in-loop -- a few small files, in order
     for (const repository of await scopedRepositories(dir)) {
       const child = children.find((entry) => sameRepository(entry, repository));
       if (child && !scoped.includes(child)) scoped.push(child);
@@ -250,6 +257,21 @@ function hasDeliveryBranch(record: DeliveryRecord, repository: string): boolean 
 }
 
 /**
+ * Where change or record id `name` of the environment's type lives, as {@link locate} finds it.
+ * A declared type's missing change answers the path its folder is expected at; the built-in
+ * type's, nothing, as an unknown change.
+ */
+export async function locateTypedChange(
+  environment: Pick<DeliveryEnvironment, "companionPath" | "artifactType">,
+  name: string,
+): Promise<ChangeLocation | { path: string } | null> {
+  const type = environment.artifactType;
+  const found = await locate(environment.companionPath, type ?? OPENSPEC_CHANGE_LAYOUT, name);
+  if (!found || !("missing" in found)) return found;
+  return type ? { path: found.missing } : null;
+}
+
+/**
  * Reads, edits, refreshes, and writes the Delivery Records of `request.changes`. Every
  * change resolves before any record is written, so a refusal leaves no partial update; a
  * request without an edit or refresh only reads. Network Git runs only in a linked checkout,
@@ -267,7 +289,10 @@ export async function recordDelivery(
 
   const located: Array<ChangeLocation & { change: string }> = [];
   for (const change of request.changes) {
-    const location = await locateChange(environment.companionPath, change);
+    const location = await locateTypedChange(environment, change);
+    if (location && "path" in location) {
+      return { refusal: { reason: "missing-folder", change, path: location.path } };
+    }
     if (!location || (location.archived && !request.includeArchived)) {
       return { refusal: { reason: "unknown-change", change } };
     }

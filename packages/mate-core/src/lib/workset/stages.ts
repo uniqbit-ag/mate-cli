@@ -1,7 +1,8 @@
 import path from "node:path";
 
-import { archiveAnchors, archiveDirOf, CHANGES_RELATIVE_DIR } from "../change-layout";
-import { isPublishable, readDeliveryState } from "../delivery/record";
+import { archiveAnchors, archiveDirOf, changesDirOf } from "../change-layout";
+import { type DeliveryStatus, isPublishable, readDeliveryState } from "../delivery/record";
+import { discoverSubmitted } from "../delivery/staging/pending";
 import {
   type LinkedChange,
   readWorksets,
@@ -29,6 +30,23 @@ export interface WorksetStageSources {
   archiveAnchors?: typeof archiveAnchors;
   /** Whether an archive's Publication Merge Gate is open: merged, not applicable, or legacy. */
   archiveMergeSettled?: (companionPath: string, anchor: string) => Promise<boolean>;
+  /** An active change's submission state and settlement, from its local Delivery Record. */
+  activeDelivery?: (companionPath: string, change: string) => Promise<ActiveDelivery>;
+  /**
+   * Submitted changes on the pending branch as last fetched, where merges are recorded. Asked
+   * only when a linked change is submitted; a failure falls back to the local records.
+   */
+  submittedChanges?: (companionPath: string) => Promise<SubmittedDelivery[]>;
+}
+
+export interface ActiveDelivery {
+  submitted: boolean;
+  status: DeliveryStatus;
+}
+
+export interface SubmittedDelivery {
+  name: string;
+  delivery: { status: DeliveryStatus };
 }
 
 export interface WorksetWithStage {
@@ -41,9 +59,20 @@ async function archiveMergeSettled(companionPath: string, anchor: string): Promi
   return isPublishable(state.status);
 }
 
+async function activeDelivery(companionPath: string, change: string): Promise<ActiveDelivery> {
+  const state = await readDeliveryState(path.join(changesDirOf(companionPath), change));
+  return { submitted: state.record?.state === "submitted", status: state.status };
+}
+
+/** Local Git only: a stage never fetches the pending branch. */
+async function submittedChanges(companionPath: string): Promise<SubmittedDelivery[]> {
+  const discovery = await discoverSubmitted(companionPath, { fetch: false });
+  return discovery.groups.flatMap((group) => group.changes);
+}
+
 /**
  * Every Workset of a companion with its derived stage. Delivery Records are read only for
- * archives a Workset links, so a companion without Worksets pays nothing.
+ * changes a Workset links, so a companion without Worksets pays nothing.
  */
 export async function readWorksetStages(
   companionPath: string,
@@ -67,7 +96,7 @@ export async function readWorksetStages(
     [...linked.values()].flat(),
     changes,
     published,
-    sources.archiveMergeSettled,
+    sources,
   );
 
   return {
@@ -76,20 +105,6 @@ export async function readWorksetStages(
       derived: deriveWorksetStage(record, linked.get(record.id) ?? [], (name) => facts.get(name)),
     })),
     problems: listing.problems,
-  };
-}
-
-/** Whether an active change's own record says it was submitted, and its merge gate. */
-async function activeSubmission(
-  companionPath: string,
-  name: string,
-): Promise<{ submitted: boolean; mergeSettled: boolean }> {
-  const state = await readDeliveryState(
-    path.join(companionPath, ...CHANGES_RELATIVE_DIR.split("/"), name),
-  );
-  return {
-    submitted: state.record?.state === "submitted",
-    mergeSettled: isPublishable(state.status),
   };
 }
 
@@ -103,11 +118,42 @@ export async function collectChangeFacts(
   linked: readonly LinkedChange[],
   changes: readonly ActiveChangeState[],
   published: ReadonlySet<string>,
-  settled: (companionPath: string, anchor: string) => Promise<boolean> = archiveMergeSettled,
+  sources: Pick<
+    WorksetStageSources,
+    "archiveMergeSettled" | "activeDelivery" | "submittedChanges"
+  > = {},
   submitted: ReadonlySet<string> = new Set(),
 ): Promise<Map<string, ChangeFacts>> {
+  const mergeSettled = sources.archiveMergeSettled ?? archiveMergeSettled;
   const activeByName = new Map(changes.map((change) => [change.name, change]));
   const unique = new Map(linked.map((change) => [change.name, change]));
+  const deliveryOf = sources.activeDelivery ?? activeDelivery;
+  const local = new Map(
+    await Promise.all(
+      [...unique.values()]
+        .filter((change) => change.kind === "active" && activeByName.has(change.name))
+        .map(
+          async (change) =>
+            [
+              change.name,
+              await deliveryOf(companionPath, change.name).catch((): ActiveDelivery => ({
+                submitted: false,
+                status: "unlinked",
+              })),
+            ] as const,
+        ),
+    ),
+  );
+  // The merge is recorded on the pending branch's copy, so the local record can lag behind it.
+  const pending = new Map<string, DeliveryStatus>(
+    [...local.values()].some((delivery) => delivery.submitted)
+      ? (
+          await (sources.submittedChanges ?? submittedChanges)(companionPath).catch(
+            (): SubmittedDelivery[] => [],
+          )
+        ).map((change) => [change.name, change.delivery.status])
+      : [],
+  );
   const entries = await Promise.all(
     [...unique.values()].map(async (change): Promise<[string, ChangeFacts] | null> => {
       if (change.kind === "active") {
@@ -120,29 +166,30 @@ export async function collectChangeFacts(
             {
               name: change.name,
               archived: false,
+              submitted: true,
               artifactsComplete: true,
               reviewArtifacts: [],
               checkedTasks: 0,
               mergeSettled: false,
               published: false,
-              submitted: true,
             },
           ];
         }
-        const own = await activeSubmission(companionPath, change.name);
+        const delivery = local.get(change.name)!;
         return [
           change.name,
           {
             name: change.name,
             archived: false,
+            submitted: delivery.submitted || submitted.has(change.name),
             artifactsComplete:
               active.artifacts.length > 0 &&
               active.artifacts.every((artifact) => artifact.status === "done"),
             reviewArtifacts: active.artifacts.map((artifact) => artifact.id),
             checkedTasks: active.completedTasks ?? 0,
-            mergeSettled: own.mergeSettled,
+            mergeSettled:
+              delivery.submitted && isPublishable(pending.get(change.name) ?? delivery.status),
             published: false,
-            submitted: own.submitted || submitted.has(change.name),
           },
         ];
       }
@@ -152,10 +199,11 @@ export async function collectChangeFacts(
           {
             name: change.name,
             archived: true,
+            submitted: false,
             artifactsComplete: true,
             reviewArtifacts: [],
             checkedTasks: 0,
-            mergeSettled: await settled(companionPath, change.anchor),
+            mergeSettled: await mergeSettled(companionPath, change.anchor),
             published: published.has(change.anchor),
           },
         ];

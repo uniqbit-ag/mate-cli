@@ -114,20 +114,11 @@ describe("claims", () => {
     ).toMatchObject({ status: "refused", reason: "in progress on workset/acme-api" });
   });
 
-  test("only the owner releases, never during a local run; release removes the files", async () => {
+  test("only the owner releases; release removes the files", async () => {
     await updateClaim(alice, { action: "claim", members, operator: ALICE, transactionId: "tx-a" });
     expect(
       await updateClaim(bob, { action: "release", members, operator: BOB, transactionId: "tx-b" }),
     ).toMatchObject({ status: "refused", kind: "access" });
-    expect(
-      await updateClaim(alice, {
-        action: "release",
-        members,
-        operator: ALICE,
-        transactionId: "tx-r1",
-        runningHere: true,
-      }),
-    ).toMatchObject({ status: "refused", reason: "it runs here; stop the run first" });
     expect(
       await updateClaim(alice, {
         action: "release",

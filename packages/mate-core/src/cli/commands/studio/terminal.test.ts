@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { FRAMEWORK_NAME } from "../../../framework";
-import { LiveSessions } from "../../../lib/factory/outcomes/sessions";
+import { LiveSessions } from "./live-sessions";
 
 import {
   bunTerminalSpawn,

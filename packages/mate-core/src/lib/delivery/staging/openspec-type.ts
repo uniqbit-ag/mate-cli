@@ -1,14 +1,11 @@
-import {
-  ARCHIVE_RELATIVE_DIR,
-  CHANGES_RELATIVE_DIR,
-  changeNameOf,
-  parseAnchor,
-  SPECS_RELATIVE_DIR,
-} from "../../change-layout";
+import path from "node:path";
+
+import { OPENSPEC_CHANGE_LAYOUT, SPECS_RELATIVE_DIR } from "../../change-layout";
+import { fileExists } from "../../fs-utils";
 import { runOpenSpec, type RunOpenSpec } from "../../openspec-cli";
-import { deltaRequirementEdits } from "../overlap";
+import { deltaRequirementEdits, taskCounts } from "../overlap";
 import { DELIVERY_FILE } from "../record";
-import type { ArtifactType, ValidationFailure } from "./artifact-type";
+import type { ArtifactType, ReviewFile, ValidationFailure } from "./artifact-type";
 import { replayArchive, resolveRequirement, staleRequirement } from "./replay";
 
 /** Name of the OpenSpec type and its trailer prefix. */
@@ -16,6 +13,14 @@ const OPENSPEC_TYPE = "openspec";
 
 /** Bound on one OpenSpec run of a hook, so a hung CLI ends as that hook's failure. */
 const OPENSPEC_TIMEOUT_MS = 120_000;
+
+/** The planning artifacts of a change, in review order. */
+const PLANNING_ARTIFACTS: readonly ReviewFile[] = [
+  { id: "proposal", file: "proposal.md" },
+  { id: "specs", file: "specs/" },
+  { id: "design", file: "design.md" },
+  { id: "tasks", file: "tasks.md" },
+];
 
 /** The capability of a canonical spec path, or null for any other path. */
 function capabilityOf(file: string): string | null {
@@ -94,11 +99,8 @@ async function checkChange(
 export function openspecArtifactType(runner: RunOpenSpec = runOpenSpec): ArtifactType {
   return {
     name: OPENSPEC_TYPE,
-    source: CHANGES_RELATIVE_DIR,
-    archiveRoot: ARCHIVE_RELATIVE_DIR,
+    ...OPENSPEC_CHANGE_LAYOUT,
     deliveryFile: DELIVERY_FILE,
-    isRecordId: (id) => parseAnchor(id) !== null,
-    recordName: changeNameOf,
     check: (dir, name) => checkChange(dir, name, runner),
     apply: (dir, name, options) =>
       replayArchive(dir, name, runner, { timeout: OPENSPEC_TIMEOUT_MS, ...options }),
@@ -118,6 +120,16 @@ export function openspecArtifactType(runner: RunOpenSpec = runOpenSpec): Artifac
         if (failure) return failure;
       }
       return null;
+    },
+    async plan(changeDir) {
+      const { total, open } = await taskCounts(changeDir);
+      return { totalTasks: total, completedTasks: total - open };
+    },
+    async reviews(changeDir) {
+      const present = await Promise.all(
+        PLANNING_ARTIFACTS.map((artifact) => fileExists(path.join(changeDir, artifact.file))),
+      );
+      return PLANNING_ARTIFACTS.filter((_, index) => present[index]);
     },
   };
 }

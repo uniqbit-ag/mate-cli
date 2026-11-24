@@ -12,11 +12,13 @@ const LOCK = path.join(os.homedir(), "studio-dist.lock");
 export async function lockStudioDist(): Promise<void> {
   for (;;) {
     try {
+      // oxlint-disable-next-line no-await-in-loop -- lock retry loop
       await fs.mkdir(LOCK);
       return;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     }
+    // oxlint-disable-next-line no-await-in-loop -- lock retry loop
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 }

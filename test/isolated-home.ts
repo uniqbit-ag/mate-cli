@@ -56,7 +56,39 @@ export function isolatedTestEnv(
   for (const name of ["OPENCODE_CONFIG_DIR", "OPENCODE_CONFIG_CONTENT", "CLAUDE_CONFIG_DIR"]) {
     delete env[name];
   }
+  /**
+   * The Agent Runtime detection variables stay out too (`runtime/skill-prefix.ts`): a suite run
+   * from inside an OpenCode or Claude session would otherwise detect that session and format
+   * skill invocations in its syntax, and runtime-dependent tests would disagree with a
+   * clean-machine run. `MATE_AGENT_RUNTIME` is covered by the `MATE_*` deletion above.
+   */
+  for (const name of [
+    "OPENCODE",
+    "OPENCODE_SESSION_ID",
+    "CLAUDECODE",
+    "CODEX_THREAD_ID",
+    "CODEX_SESSION_ID",
+    "PI_CODING_AGENT",
+    "PI_SESSION_ID",
+  ]) {
+    delete env[name];
+  }
   for (const name of ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"]) {
+    delete env[name];
+  }
+  /**
+   * Git's system configuration and the runner's Git variables stay out too: a system
+   * `core.hooksPath` silences the fixtures' hooks, and Mate's Git calls are tested to set these.
+   */
+  env.GIT_CONFIG_NOSYSTEM = "1";
+  for (const name of [
+    "GIT_CONFIG_GLOBAL",
+    "GIT_CONFIG_SYSTEM",
+    "GIT_SSH_COMMAND",
+    "GIT_EDITOR",
+    "GIT_TERMINAL_PROMPT",
+    "GIT_ASKPASS",
+  ]) {
     delete env[name];
   }
   const caches: Array<[string, string]> = [

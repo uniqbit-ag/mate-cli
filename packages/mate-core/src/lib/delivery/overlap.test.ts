@@ -169,9 +169,10 @@ describe("applyWarnings", () => {
 });
 
 describe("planningWarning", () => {
-  const status = (...artifacts: [string, string][]) =>
+  const status = (...artifacts: [string, string][]) => statusFor("mate-full", ...artifacts);
+  const statusFor = (schemaName: string, ...artifacts: [string, string][]) =>
     JSON.stringify({
-      schemaName: "mate-v1",
+      schemaName,
       artifacts: artifacts.map(([id, status]) => ({ id, status })),
     });
 
@@ -187,6 +188,12 @@ describe("planningWarning", () => {
       artifacts: ["proposal", "design"],
       message: "x is missing planning artifacts its schema requires: proposal, design.",
     });
+  });
+
+  test("a change on the legacy mate-v1 name gets the same warning", () => {
+    expect(
+      planningWarning("x", statusFor("mate-v1", ["specs", "done"], ["design", "ready"])),
+    ).toMatchObject({ kind: "incomplete-planning", artifacts: ["design"] });
   });
 
   test("done and skipped artifacts complete the planning", () => {
@@ -207,7 +214,7 @@ describe("planningWarning", () => {
   test("unparsable status yields no warning", () => {
     expect(planningWarning("x", "not json")).toBeNull();
     expect(
-      planningWarning("x", JSON.stringify({ schemaName: "mate-v1", artifacts: "none" })),
+      planningWarning("x", JSON.stringify({ schemaName: "mate-full", artifacts: "none" })),
     ).toBeNull();
     expect(planningWarning("x", "null")).toBeNull();
   });

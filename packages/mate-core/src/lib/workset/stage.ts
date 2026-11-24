@@ -44,6 +44,8 @@ export type WorksetTurn = "human" | "agent" | "none";
 export interface ChangeFacts {
   name: string;
   archived: boolean;
+  /** Its Delivery Record says `submitted`: still active, waiting for its merge and publication. */
+  submitted: boolean;
   /** Every planning artifact of the change's schema is done. */
   artifactsComplete: boolean;
   /** The schema's artifacts, in review order; names the Human Reviews. */
@@ -51,15 +53,12 @@ export interface ChangeFacts {
   checkedTasks: number;
   /** The Delivery Record is merged, not applicable, or legacy: the Publication Merge Gate is open. */
   mergeSettled: boolean;
-  /** The archive is committed to the companion: published. */
+  /** The archive is committed to the companion: published. Never true while only submitted. */
   published: boolean;
-  /** Submitted for publication but not archived yet; it then waits like an archive. */
-  submitted?: boolean;
 }
 
 export function changeStage(facts: ChangeFacts): WorksetStageId {
-  if (!facts.archived && facts.submitted) return facts.mergeSettled ? "publish" : "merge-wait";
-  if (!facts.archived) {
+  if (!facts.archived && !facts.submitted) {
     if (!facts.artifactsComplete) return "propose";
     return facts.checkedTasks === 0 ? "human-review" : "apply";
   }

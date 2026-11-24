@@ -1,10 +1,8 @@
 import { useDraggable } from "@dnd-kit/core";
-import { Link } from "@tanstack/react-router";
 import type {
   StudioWorkCard,
   WorkActionId,
   WorkBucket,
-  WorkRunState,
   WorksetStageId,
 } from "@uniqbit/mate-core/studio";
 
@@ -25,16 +23,7 @@ const STAGE_MARKERS: Record<WorksetStageId, Marker> = {
   done: "done",
 };
 
-const PRIMARY: ReadonlySet<WorkActionId> = new Set(["claim", "dispatch", "start-manual"]);
-
-const RUN_LABELS: Record<WorkRunState, string> = {
-  idle: "plan ready",
-  queued: "queued",
-  running: "running",
-  waiting: "waiting for you",
-  failed: "failed",
-  interrupted: "interrupted",
-};
+const PRIMARY: ReadonlySet<WorkActionId> = new Set(["claim", "start-manual"]);
 
 function claimText(card: StudioWorkCard): string | null {
   switch (card.claim.kind) {
@@ -79,7 +68,7 @@ function dialogFor(action: WorkActionId, workset: string): WorkDialog {
 const QUIET_BUTTON =
   "inline-flex h-7 items-center gap-1.5 rounded-control border border-rule bg-surface px-2.5 text-xs hover:border-accent hover:bg-accent-soft";
 
-/** Who claimed it, where it is built, its factory run, and the member toggle. */
+/** Who claimed it, where it is built, and the member toggle. */
 function CardFacts({ card }: { card: StudioWorkCard }) {
   const expanded = useWorkUi((state) => state.expanded[card.id] === true);
   const toggle = useWorkUi((state) => state.toggle);
@@ -91,15 +80,6 @@ function CardFacts({ card }: { card: StudioWorkCard }) {
         <span className={cn(card.claim.kind === "mine" && "text-text")}>{claim}</span>
       ) : null}
       {progress ? <span>{progress}</span> : null}
-      {card.run ? (
-        <Link
-          to="/factory"
-          search={(previous) => ({ ...previous, outcome: card.id })}
-          className="underline-offset-2 hover:text-text hover:underline"
-        >
-          Factory: {RUN_LABELS[card.run]}
-        </Link>
-      ) : null}
       {card.memberNames.length > 1 ? (
         <button
           type="button"

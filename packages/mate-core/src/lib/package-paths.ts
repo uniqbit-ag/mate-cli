@@ -6,16 +6,23 @@ import { getActiveDistribution } from "../distribution";
 
 const require = createRequire(import.meta.url);
 
+function resolveAsset(relative: string, bundled: string): string {
+  for (const root of getActiveDistribution().config.assetRoots ?? []) {
+    const candidate = path.join(root, relative);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return bundled;
+}
+
 /**
  * Resolved wrapper directory: a distribution asset root that ships
  * `wrappers/bin` wins over core's bundled default.
  */
 export function getWrapperBinPath(): string {
-  for (const root of getActiveDistribution().config.assetRoots ?? []) {
-    const candidate = path.join(root, "wrappers", "bin");
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  return path.resolve(import.meta.dirname, "../../wrappers/bin");
+  return resolveAsset(
+    path.join("wrappers", "bin"),
+    path.resolve(import.meta.dirname, "../../wrappers/bin"),
+  );
 }
 
 function canonicalDir(dir: string): string {
@@ -49,11 +56,7 @@ export function withoutMateWrapperDirs(
  * mate-core version.
  */
 export function getClaudePluginRoot(): string {
-  for (const root of getActiveDistribution().config.assetRoots ?? []) {
-    const candidate = path.join(root, "claude-plugin");
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  return path.resolve(import.meta.dirname, "../../claude-plugin");
+  return resolveAsset("claude-plugin", path.resolve(import.meta.dirname, "../../claude-plugin"));
 }
 
 /** mate-core's folder of the Claude plugins its built-in Capabilities contribute. */
@@ -99,11 +102,10 @@ export function validateClaudePluginAssets(pluginRoot = getClaudePluginRoot()): 
  * projection, never a committed config.
  */
 export function getOpenCodePluginRoot(): string {
-  for (const root of getActiveDistribution().config.assetRoots ?? []) {
-    const candidate = path.join(root, "opencode-plugin");
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  return path.resolve(import.meta.dirname, "../../opencode-plugin");
+  return resolveAsset(
+    "opencode-plugin",
+    path.resolve(import.meta.dirname, "../../opencode-plugin"),
+  );
 }
 
 /** Root entries OpenCode resolves for a plugin referenced by directory path. */
@@ -122,6 +124,12 @@ export function validateOpenCodePluginAssets(pluginRoot = getOpenCodePluginRoot(
       `bundled OpenCode plugin at ${pluginRoot} is missing: ${missing.join(", ")}. Reinstall Mate to restore it.`,
     );
   }
+}
+
+/** Resolved triage playbook: a distribution asset root's `templates/triage/PLAYBOOK.md` wins. */
+export function getTriagePlaybookPath(): string {
+  const relative = path.join("templates", "triage", "PLAYBOOK.md");
+  return resolveAsset(relative, path.resolve(import.meta.dirname, "..", relative));
 }
 
 export function getReactDoctorBinPath(): string {

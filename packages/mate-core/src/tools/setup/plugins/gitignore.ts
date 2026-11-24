@@ -75,7 +75,7 @@ export function collectManagedGitignoreEntries(ctx: SetupContext, plugins: Plugi
     // Holds absolute local paths of every linked working repo; never shared
     // across machines or committed to the companion repo.
     `.${FRAMEWORK_NAME}/config/registry.yaml`,
-    // Work's Scratchpad: ideas and the factory queue stay on this checkout.
+    // Work's Scratchpad: ideas stay on this checkout.
     `.${FRAMEWORK_NAME}/scratchpad/`,
     ".mcp.json.bak",
     ...plugins

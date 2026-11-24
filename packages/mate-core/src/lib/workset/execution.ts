@@ -3,7 +3,6 @@ import { configuredOperator, workGit } from "./git-transaction";
 import { readChangeLinks } from "./groups";
 import { type InventoryWorkset, readWorkInventory, type WorkInventory } from "./inventory";
 import { type Claim, type OwnershipFacts, type Progress, startRefusalOf } from "./projection";
-import { findWorkset } from "./record";
 import { branchCheckedOutHere } from "./repositories";
 import {
   compareWorkset,
@@ -14,10 +13,9 @@ import {
 } from "./sharing";
 
 /**
- * Who may start a Workset here: every Work-specific start (manual, attended session,
- * factory dispatch) passes `startRefusal`. Starting needs the Workset to be unshared,
- * claimed by the operator, or in progress on a Delivery Branch checked out here. Nothing is
- * reserved or stored; a factory runner starts only what its own scratchpad queued.
+ * Who may start a Workset here: every Work-specific start passes `startRefusal`. Starting
+ * needs the Workset to be unshared, claimed by the operator, or in progress on a Delivery
+ * Branch checked out here. Nothing is reserved or stored.
  */
 
 /** The claim from the shared branch; unshared work has none. */
@@ -98,7 +96,7 @@ export function findEntry(
 }
 
 export interface StartCheck {
-  /** Manual delivery needs complete plans; factory planning does not. */
+  /** Manual delivery needs complete plans; exploring and proposing an idea do not. */
   needsPlan: boolean;
   inventory?: WorkInventory;
 }
@@ -125,26 +123,6 @@ export async function startRefusal(
     if (problems.length > 0) return problems.join("; ");
   }
   return null;
-}
-
-/**
- * The start guard of a served companion, as the factory's Outcomes and attended sessions use
- * it. `authorized`: only a scratchpad record (never a legacy shared one) queued here runs.
- */
-export function companionExecutorGuard(companionPath: string) {
-  return {
-    async authorized(id: string): Promise<boolean> {
-      const record = await findWorkset(companionPath, id);
-      return !!record?.queuedAt && !record.legacy;
-    },
-    reserve(id: string): Promise<string | null> {
-      return startRefusal(companionPath, id, { needsPlan: false });
-    },
-    /** Nothing is held, so nothing is released. */
-    async release(_id: string): Promise<string | null> {
-      return null;
-    },
-  };
 }
 
 /**

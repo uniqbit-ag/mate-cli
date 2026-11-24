@@ -15,10 +15,12 @@ import {
   readDeliveryRecord,
   readDeliveryState,
   readOrUnlinkedRecord,
+  recordStep,
   settleDelivery,
   ticketCandidateOf,
   unlinkedRecord,
   upsertDelivery,
+  withoutStage,
   writeDeliveryRecord,
   type DeliveryRecord,
 } from "./record";
@@ -510,5 +512,115 @@ describe("proposal-time initialization", () => {
     await fs.mkdir(dir);
     expect((await readDeliveryState(dir)).status).toBe("legacy");
     await expect(fs.access(path.join(dir, DELIVERY_FILE))).rejects.toThrow();
+  });
+});
+
+describe("recorded steps", () => {
+  const file = (): string => path.join(companion, DELIVERY_FILE);
+
+  test("a step is recorded with a write limited to its stage's entry, before deliveries", async () => {
+    const head = `version: 1
+change: acme-fix
+# kept as written
+specBase: ${"a".repeat(40)}
+`;
+    const deliveries = `deliveries:
+  - repository: ${REPO}
+    branch: workset/acme-fix
+`;
+    await fs.writeFile(file(), `${head}${deliveries}`);
+
+    await recordStep(companion, "acme-fix", "apply", "mate-apply-change");
+
+    expect(await fs.readFile(file(), "utf8")).toBe(
+      `${head}stages:\n  apply:\n    - mate-apply-change\n${deliveries}`,
+    );
+    expect((await readDeliveryRecord(companion))?.stages).toEqual({
+      apply: ["mate-apply-change"],
+    });
+  });
+
+  test("steps join in the order recorded and a recorded skill changes nothing", async () => {
+    await writeDeliveryRecord(companion, unlinkedRecord("acme-fix"));
+    await recordStep(companion, "acme-fix", "apply", "mate-apply-change");
+    await recordStep(companion, "acme-fix", "apply", "acme-verify");
+    await recordStep(companion, "acme-fix", "build", "acme-build");
+    const written = await fs.readFile(file(), "utf8");
+
+    await recordStep(companion, "acme-fix", "apply", "mate-apply-change");
+
+    expect(await fs.readFile(file(), "utf8")).toBe(written);
+    expect((await readDeliveryRecord(companion))?.stages).toEqual({
+      apply: ["mate-apply-change", "acme-verify"],
+      build: ["acme-build"],
+    });
+  });
+
+  test("concurrent steps of one stage are all recorded", async () => {
+    await writeDeliveryRecord(companion, unlinkedRecord("acme-fix"));
+    const skills = ["acme-verify", "acme-lint", "acme-test", "acme-docs"];
+
+    await Promise.all(skills.map((skill) => recordStep(companion, "acme-fix", "apply", skill)));
+
+    expect((await readDeliveryRecord(companion))?.stages?.apply?.toSorted()).toEqual(
+      skills.toSorted(),
+    );
+  });
+
+  test("a change without a record gets an unlinked one", async () => {
+    await recordStep(companion, "acme-fix", "draft", "acme-draft");
+
+    expect(await readDeliveryRecord(companion)).toEqual({
+      ...unlinkedRecord("acme-fix"),
+      stages: { draft: ["acme-draft"] },
+    });
+  });
+
+  test("another write of the record keeps the steps", async () => {
+    await recordStep(companion, "acme-fix", "apply", "mate-apply-change");
+    const record = await readOrUnlinkedRecord(companion, "acme-fix");
+
+    await writeDeliveryRecord(
+      companion,
+      upsertDelivery(record, REPO, { branch: "workset/acme-fix" }),
+    );
+
+    expect((await readDeliveryRecord(companion))?.stages).toEqual({
+      apply: ["mate-apply-change"],
+    });
+  });
+
+  test("a value that is no list of skills reads as no steps and is replaced", async () => {
+    await fs.writeFile(
+      file(),
+      "version: 1\nchange: acme-fix\nstages:\n  apply: done\n  build: [acme-build, 3]\ndeliveries: []\n",
+    );
+
+    expect((await readDeliveryRecord(companion))?.stages).toEqual({ build: ["acme-build"] });
+
+    await recordStep(companion, "acme-fix", "apply", "mate-apply-change");
+
+    expect((await readDeliveryRecord(companion))?.stages).toEqual({
+      apply: ["mate-apply-change"],
+      build: ["acme-build"],
+    });
+  });
+
+  test("a stage's steps are dropped, the last one with the stages key", () => {
+    const record: DeliveryRecord = {
+      ...unlinkedRecord("acme-fix"),
+      stages: { apply: ["mate-apply-change"], submit: ["acme-pr-check"] },
+    };
+
+    expect(withoutStage(record, "submit").stages).toEqual({ apply: ["mate-apply-change"] });
+    expect(withoutStage(withoutStage(record, "submit"), "apply")).not.toHaveProperty("stages");
+    expect(withoutStage(record, "build")).toBe(record);
+  });
+
+  test("a damaged record is reported, not rewritten", async () => {
+    await fs.writeFile(file(), "deliveries: nope\n");
+
+    await expect(recordStep(companion, "acme-fix", "apply", "acme-a")).rejects.toThrow("malformed");
+    expect(await fs.readFile(file(), "utf8")).toBe("deliveries: nope\n");
   });
 });

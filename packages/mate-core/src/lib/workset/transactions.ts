@@ -35,7 +35,7 @@ import {
  * checks it again; a claim someone else won stops there.
  */
 
-export type RefusalKind = "prerequisite" | "access" | "conflict" | "factory-unavailable";
+export type RefusalKind = "prerequisite" | "access" | "conflict";
 
 export type ClaimOutcome =
   | {
@@ -57,8 +57,6 @@ export interface ClaimRequest {
   transactionId: string;
   /** The Workset's id for the commit subject; the first member's name without it. */
   workset?: string;
-  /** This installation runs the Workset now; Release waits until it stops. */
-  runningHere?: boolean;
 }
 
 function refused(kind: RefusalKind, reason: string): ClaimOutcome {
@@ -104,7 +102,7 @@ async function inboxChanges(dir: string, type: ArtifactType): Promise<Map<string
   return changes;
 }
 
-/** Claim needs an unclaimed group nobody builds; Release needs the owner and no local run. */
+/** Claim needs an unclaimed group nobody builds; Release needs the owner. */
 function ownerRefusal(
   request: ClaimRequest,
   claim: GroupClaim,
@@ -117,8 +115,7 @@ function ownerRefusal(
     }
     return branch ? refused("conflict", `in progress on ${branch}`) : null;
   }
-  if (!mine) return refused("access", "only its owner can release it");
-  return request.runningHere ? refused("conflict", "it runs here; stop the run first") : null;
+  return mine ? null : refused("access", "only its owner can release it");
 }
 
 async function presentLocally(companionPath: string, folder: string): Promise<boolean> {

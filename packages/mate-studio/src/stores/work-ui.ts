@@ -2,12 +2,10 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 /** A confirmation open on one Workset; held here so a live refetch never closes it. */
-export type WorkDialog =
-  | {
-      kind: "share" | "claim" | "release" | "start-manual" | "dispatch" | "park" | "move-to-later";
-      workset: string;
-    }
-  | { kind: "capture-start" };
+export interface WorkDialog {
+  kind: "share" | "claim" | "release" | "start-manual";
+  workset: string;
+}
 
 interface WorkUiState {
   /** Unsaved Scratchpad text by companion digest; kept for this tab across refetches and reloads. */

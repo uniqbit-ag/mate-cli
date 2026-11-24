@@ -12,7 +12,7 @@ import { deriveGroups, readChangeLinks } from "./groups";
 
 /**
  * The Workset record: `.mate/scratchpad/<id>.yaml`, local to the companion checkout and
- * ignored by Git. It holds an idea (and the factory's queue) before any change exists and
+ * ignored by Git. It holds an idea (and a Service plugin's queue) before any change exists and
  * may list the changes proposed from it; it is never shared. Records in the legacy shared
  * `worksets/` folder are still read, and move to the scratchpad on their next write.
  */

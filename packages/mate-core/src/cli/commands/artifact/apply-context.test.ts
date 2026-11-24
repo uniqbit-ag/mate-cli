@@ -69,7 +69,7 @@ async function upstreamPayload(
   return {
     changeName: "acme-queue",
     changeDir,
-    schemaName: "mate-v1",
+    schemaName: "mate-full",
     contextFiles: {
       proposal: [path.join(changeDir, "proposal.md")],
       tasks: [tasksFile],

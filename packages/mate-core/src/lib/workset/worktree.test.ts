@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { git, initRepo } from "../../../test/git-checkouts";
+import type { DeliveryRecord } from "../delivery/record";
 import { ARTIFACT_REFUSAL_HEADLINE } from "../../runtime/artifact-refusal";
 import { MATE_ENV } from "../../runtime/env-names";
 import { readProjectionFile } from "../../runtime/projection";
@@ -901,6 +902,45 @@ describe("pruneWorksetWorktrees", () => {
     );
     const result = await pruneWorksetWorktrees(companion, await done("acme-login"));
     expect(result.removed.map((entry) => entry.path)).toEqual([target]);
+  });
+
+  test("uses a Delivery Record already read for a change archived only elsewhere", async () => {
+    const { target } = await prepared();
+    fs.rmSync(path.join(companion, "openspec", "changes", "acme-login"), { recursive: true });
+    const anchor = "2026-11-05-acme-login";
+    const delivery: DeliveryRecord = {
+      version: 1,
+      change: "acme-login",
+      deliveries: [{ repository: "acme/web", branch: "workset/acme-login" }],
+    };
+    const result = await pruneWorksetWorktrees(companion, [
+      { id: "acme-login", changes: [anchor], records: new Map([[anchor, delivery]]) },
+    ]);
+    expect(result.removed.map((entry) => entry.path)).toEqual([target]);
+  });
+
+  test("reads an anchor not archived here from its active change", async () => {
+    const { target } = await prepared();
+    const result = await pruneWorksetWorktrees(companion, [
+      { id: "acme-login", changes: ["2026-11-05-acme-login"] },
+    ]);
+    expect(result.removed.map((entry) => entry.path)).toEqual([target]);
+  });
+
+  test("warns about a change whose Delivery Record is nowhere", async () => {
+    const { target } = await prepared();
+    fs.rmSync(path.join(companion, "openspec", "changes", "acme-login"), { recursive: true });
+    const result = await pruneWorksetWorktrees(companion, [
+      { id: "acme-login", changes: ["2026-11-05-acme-login"] },
+    ]);
+    expect(result).toEqual({
+      removed: [],
+      kept: [],
+      warnings: [
+        "2026-11-05-acme-login: no Delivery Record found, its worktrees were not cleaned up",
+      ],
+    });
+    expect(fs.existsSync(target)).toBe(true);
   });
 
   test("leaves the main checkout on the Delivery Branch", async () => {

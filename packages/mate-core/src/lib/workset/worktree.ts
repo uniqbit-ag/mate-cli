@@ -11,7 +11,7 @@ import { repoLocalRegistryPath } from "../../runtime/repo-local";
 import type { WrapRuntime } from "../../runtime/runtime-document-manifest";
 import { readWrapState, WRAP_RUNTIMES } from "../../runtime/wrap-state";
 import { cleanupWorkingRepository } from "../../tools/setup/working-repo-cleanup";
-import { locateChange } from "../change-layout";
+import { changeNameOf, type ChangeLocation, locateChange } from "../change-layout";
 import { classifyBranch, configuredProtectedPatterns } from "../delivery/branches";
 import { deliveryCheckout } from "../delivery/checkout";
 import { type DeliveryRecord, readDeliveryRecord } from "../delivery/record";
@@ -156,6 +156,8 @@ export interface PruneEntry {
 export interface PruneTarget {
   id: string;
   changes: readonly string[];
+  /** Delivery Records already read, by entry of `changes`; others are read from this checkout. */
+  records?: ReadonlyMap<string, DeliveryRecord>;
 }
 
 /** An Umbrella Repository's mirrored worktree of a Workset. */
@@ -185,7 +187,7 @@ function promptlessEnv(): NodeJS.ProcessEnv {
   } as NodeJS.ProcessEnv;
 }
 
-const runGit: GitRunner = (cwd, args, options = {}) =>
+export const runGit: GitRunner = (cwd, args, options = {}) =>
   new Promise<GitResult>((resolve) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     // Unbounded: a merge check pipes a whole `git log -p` range into `git patch-id`.
@@ -1126,26 +1128,42 @@ async function keepReason(
   return null;
 }
 
+/**
+ * The folder of `change` in this checkout; an archive anchor not archived here falls back
+ * to its undated change name, which a checkout behind the published commit still holds.
+ */
+async function localChange(companionPath: string, change: string): Promise<ChangeLocation | null> {
+  const found = await locateChange(companionPath, change);
+  if (found) return found;
+  const name = changeNameOf(change);
+  return name === change ? null : await locateChange(companionPath, name);
+}
+
 /** Recorded Delivery Branches per Working Repository; not-applicable deliveries name none. */
 async function recordedBranches(
   companionPath: string,
-  changes: readonly string[],
+  { changes, records }: PruneTarget,
   warnings: string[],
 ): Promise<Map<string, Set<string>>> {
   const byRepository = new Map<string, Set<string>>();
   for (const change of changes) {
-    // oxlint-disable-next-line no-await-in-loop -- a few small files, in order
-    const location = await locateChange(companionPath, change);
-    if (!location) continue;
-    let record: DeliveryRecord | null;
-    try {
+    let record = records?.get(change) ?? null;
+    if (!record) {
       // oxlint-disable-next-line no-await-in-loop -- a few small files, in order
-      record = await readDeliveryRecord(location.dir);
-    } catch (error) {
-      warnings.push(`${change}: cannot read its Delivery Record: ${errorMessage(error)}`);
+      const location = await localChange(companionPath, change);
+      try {
+        // oxlint-disable-next-line no-await-in-loop -- a few small files, in order
+        record = location ? await readDeliveryRecord(location.dir) : null;
+      } catch (error) {
+        warnings.push(`${change}: cannot read its Delivery Record: ${errorMessage(error)}`);
+        continue;
+      }
+    }
+    if (!record) {
+      warnings.push(`${change}: no Delivery Record found, its worktrees were not cleaned up`);
       continue;
     }
-    for (const delivery of record?.deliveries ?? []) {
+    for (const delivery of record.deliveries) {
       if (!delivery.branch || delivery.notApplicable) continue;
       const branches = byRepository.get(delivery.repository) ?? new Set<string>();
       branches.add(delivery.branch);
@@ -1275,7 +1293,7 @@ export async function pruneWorksetWorktrees(
   let index: LinkedIndex | undefined;
   for (const workset of done) {
     // oxlint-disable-next-line no-await-in-loop -- Worksets one at a time
-    const branches = await recordedBranches(companionPath, workset.changes, result.warnings);
+    const branches = await recordedBranches(companionPath, workset, result.warnings);
     if (branches.size === 0) continue;
     // oxlint-disable-next-line no-await-in-loop -- read once, on first need
     index ??= await linkedIndex(companionPath, git, (deps.cwd ?? process.cwd)());

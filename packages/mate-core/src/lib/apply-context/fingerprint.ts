@@ -1,3 +1,4 @@
+// oxlint-disable no-await-in-loop -- files are read in order and the first failure ends the run
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -63,7 +64,7 @@ function referencedPaths(payload: ApplyPayload): string[] | string {
       if (task && typeof task.sourcePath === "string") paths.add(task.sourcePath);
     }
   }
-  return [...paths].sort();
+  return [...paths].toSorted();
 }
 
 /** Tasks per source file; a string names the ambiguity that disables compaction. */

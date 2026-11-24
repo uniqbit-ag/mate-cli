@@ -318,152 +318,13 @@ function StartManualDialog({ companion, card }: { companion: string; card: Studi
   );
 }
 
-function DispatchDialog({ companion, card }: { companion: string; card: StudioWorkCard }) {
-  const { mutation, run, result } = useConfirm(companion);
-  const [mode, setMode] = useState<"propose-only" | "delivery">("delivery");
-  return (
-    <Frame
-      title={`Start ${card.title} in local factory`}
-      description="Runs on this installation's Local Docker factory. Both choices stop for your review before anything is built."
-      footer={
-        <Button
-          variant="primary"
-          disabled={mutation.isPending}
-          onClick={() =>
-            run({ action: "dispatch", workset: card.id, mode, members: card.memberNames })
-          }
-        >
-          Start in local factory
-        </Button>
-      }
-    >
-      <ModeChoice mode={mode} onChange={setMode} />
-      <Refusal result={result} />
-    </Frame>
-  );
-}
-
-function ModeChoice({
-  mode,
-  onChange,
-}: {
-  mode: "propose-only" | "delivery";
-  onChange: (mode: "propose-only" | "delivery") => void;
-}) {
-  return (
-    <fieldset className="m-0 grid gap-1.5 border-0 p-0 text-sm">
-      <legend className="mb-1 text-xs text-muted">How far it should go</legend>
-      <label className="flex items-start gap-2">
-        <input
-          type="radio"
-          name="factory-mode"
-          checked={mode === "propose-only"}
-          onChange={() => onChange("propose-only")}
-        />
-        <span>Propose only: plan it, then wait for you.</span>
-      </label>
-      <label className="flex items-start gap-2">
-        <input
-          type="radio"
-          name="factory-mode"
-          checked={mode === "delivery"}
-          onChange={() => onChange("delivery")}
-        />
-        <span>Start delivery: plan it, and build it once you approve the plan.</span>
-      </label>
-    </fieldset>
-  );
-}
-
-const SIMPLE = {
-  park: {
-    title: "Park proposal",
-    description:
-      "Takes the stopped plan out of the factory; it stays in Local work. Your claim, files, reports and conversation stay.",
-    button: "Park proposal",
-  },
-  "move-to-later": {
-    title: "Move to later",
-    description: "Stops waiting for the factory and returns the idea to Scratchpad.",
-    button: "Move to later",
-  },
-} as const;
-
-function SimpleDialog({
-  companion,
-  card,
-  kind,
-}: {
-  companion: string;
-  card: StudioWorkCard;
-  kind: keyof typeof SIMPLE;
-}) {
-  const { mutation, run, result } = useConfirm(companion);
-  const copy = SIMPLE[kind];
-  return (
-    <Frame
-      title={`${copy.title}: ${card.title}`}
-      description={copy.description}
-      footer={
-        <Button
-          variant="primary"
-          disabled={mutation.isPending}
-          onClick={() => run({ action: kind, workset: card.id })}
-        >
-          {copy.button}
-        </Button>
-      }
-    >
-      <Refusal result={result} />
-    </Frame>
-  );
-}
-
-export function CaptureStartDialog({
-  companion,
-  draft,
-  fields,
-  onStarted,
-}: {
-  companion: string;
-  draft: string;
-  fields: { repository?: string; ticket?: string };
-  onStarted: () => void;
-}) {
-  const { mutation, run, result } = useConfirm(companion);
-  const [mode, setMode] = useState<"propose-only" | "delivery">("delivery");
-  return (
-    <Frame
-      title="Start in local factory"
-      description="Saves the idea and starts it on this installation's Local Docker factory."
-      footer={
-        <Button
-          variant="primary"
-          disabled={mutation.isPending}
-          onClick={() =>
-            run({ action: "capture", text: draft, start: mode, ...fields }, () => {
-              onStarted();
-              useWorkUi.getState().close();
-            })
-          }
-        >
-          Start in local factory
-        </Button>
-      }
-    >
-      <ModeChoice mode={mode} onChange={setMode} />
-      <Refusal result={result} />
-    </Frame>
-  );
-}
-
 /** The open confirmation, for the Workset it names as the latest payload shows it. */
 export function WorkDialogs({
   companion,
   payload,
   dialog,
 }: DialogProps & { dialog: WorkDialog | null }) {
-  if (!dialog || dialog.kind === "capture-start") return null;
+  if (!dialog) return null;
   const card = payload.cards.find((entry) => entry.id === dialog.workset);
   if (!card) return null;
   switch (dialog.kind) {
@@ -482,9 +343,5 @@ export function WorkDialogs({
       );
     case "start-manual":
       return <StartManualDialog key={card.id} companion={companion} card={card} />;
-    case "dispatch":
-      return <DispatchDialog key={card.id} companion={companion} card={card} />;
-    default:
-      return <SimpleDialog key={card.id} companion={companion} card={card} kind={dialog.kind} />;
   }
 }

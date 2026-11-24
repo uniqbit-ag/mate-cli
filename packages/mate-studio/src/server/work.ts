@@ -50,12 +50,6 @@ function key(value: unknown): string {
   return candidate;
 }
 
-function mode(value: unknown): "propose-only" | "delivery" {
-  if (value !== "propose-only" && value !== "delivery")
-    fail("mode must be propose-only or delivery");
-  return value;
-}
-
 /** Shape and bounds only; core's services recheck everything they act on. */
 export function validateWorkAction(input: WorkActionInput): WorkActionInput {
   if (typeof input?.companion !== "string" || !COMPANION_DIGEST_PATTERN.test(input.companion)) {
@@ -76,7 +70,6 @@ export function validateWorkAction(input: WorkActionInput): WorkActionInput {
           ...capture,
           ...(repository ? { repository } : {}),
           ...(ticket ? { ticket } : {}),
-          ...(raw.start !== undefined ? { start: mode(raw.start) } : {}),
         };
       }
       case "refresh":
@@ -108,19 +101,6 @@ export function validateWorkAction(input: WorkActionInput): WorkActionInput {
           action: "start-manual",
           workset: name(raw.workset, "workset"),
           members: names(raw.members, "members"),
-        };
-      case "dispatch":
-        return {
-          action: "dispatch",
-          workset: name(raw.workset, "workset"),
-          mode: mode(raw.mode),
-          members: names(raw.members, "members"),
-        };
-      case "park":
-      case "move-to-later":
-        return {
-          action: action as "park" | "move-to-later",
-          workset: name(raw.workset, "workset"),
         };
     }
   })();
