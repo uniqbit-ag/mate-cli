@@ -734,9 +734,10 @@ export interface DiscoverSubmittedOptions {
   stateHome?: string;
   /**
    * Checks unsettled branch deliveries in the checkouts `environment` links, starting none after
-   * `budgetMs`, and counts the merges Git proves without recording them. Off when absent.
+   * `budgetMs`, and counts the merges Git proves without recording them. `environment` is
+   * resolved only when such a delivery exists. Off when absent.
    */
-  checkMerges?: { environment: DeliveryEnvironment; budgetMs: number };
+  checkMerges?: { environment: () => Promise<DeliveryEnvironment>; budgetMs: number };
 }
 
 /** Bound on discovery's fetch and reads. */
@@ -841,8 +842,8 @@ export async function discoverSubmitted(
 }
 
 /**
- * `submitted` with each merge the local check proves applied to its in-memory record and
- * settled again, and the deliveries found that way by change. Records nothing.
+ * `submitted` with each change settled as if the merges the local check proves were recorded,
+ * and the deliveries found that way by change. Records nothing: `record` stays the stored one.
  */
 async function withFoundMerges(
   submitted: SubmittedChange[],
@@ -852,12 +853,15 @@ async function withFoundMerges(
   found: Map<string, FoundDelivery[]>;
   mergeCheck: MergeCheck;
 }> {
+  if (!submitted.some((change) => change.delivery.record?.deliveries.some(settleable))) {
+    return { submitted, found: new Map(), mergeCheck: { ran: true, unchecked: [] } };
+  }
   const unchecked: UncheckedDelivery[] = [];
   // Skip-only deadline: a check already running finishes within its Git command budgets.
   const signal = budgetMs > 0 ? AbortSignal.timeout(budgetMs) : AbortSignal.abort();
   let merges: Awaited<ReturnType<typeof findLinkedMerges>>;
   try {
-    merges = await findLinkedMerges(environment, submitted, {
+    merges = await findLinkedMerges(await environment(), submitted, {
       signal,
       onUnchecked: (delivery) => unchecked.push(delivery),
     });
@@ -877,7 +881,10 @@ async function withFoundMerges(
     }
     if (applied.length === 0) return change;
     found.set(change.name, applied);
-    return { ...change, delivery: { ...settleDelivery(record, change.scoped), record } };
+    return {
+      ...change,
+      delivery: { ...change.delivery, ...settleDelivery(record, change.scoped) },
+    };
   });
   const failures = unchecked
     .filter((delivery) => delivery.error !== undefined)

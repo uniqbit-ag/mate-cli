@@ -1360,13 +1360,18 @@ reports the last fetched state as stale.
 Then it checks each unsettled branch delivery whose repository is linked on
 this machine for a merge, with local Git, as `mate companion sync` does. A
 merge it proves makes the change `merged` and can make its group publishable,
-but `pending` records nothing: with `--json` the change lists it in `found`
+but `pending` records nothing: with `--json` the change lists it in `found`,
+its `delivery.record` stays as stored,
 and its group carries `needsRefresh: true`, so the publish skill publishes that
-group with `--refresh`, which records the merge. The check starts no further
+group with `--refresh`, which records the merge. Without `--json` such a group
+reads `publishable with --refresh`. The check starts no further
 delivery after 30 seconds; `submitted.mergeCheck` names each delivery it left
 `unchecked`, which keeps its stored state, and a `warning` when a check failed.
-A repository not linked on this machine is not checked. `--no-merge-check`
-skips the check and lists the stored state only. It changes nothing else.
+A repository not linked on this machine is not checked. In Git mode `auto` the
+check first fetches the default and delivery branches into the linked checkout,
+and a recorded pull request's head when the branch and its recorded head are
+missing there. `--no-merge-check` skips the check and its fetches and lists the
+stored state only. `pending` changes nothing else.
 
 The `publish` target is a Delivery Group (`<repository>/<branch>` or
 `change/<name>`), a submitted change name, or the dated anchor

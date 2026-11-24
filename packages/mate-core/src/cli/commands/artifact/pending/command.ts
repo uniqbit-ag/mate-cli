@@ -206,7 +206,7 @@ function renderGroups(submitted: SubmittedDiscovery): string[] {
   return [
     `${count} submitted change${count === 1 ? "" : "s"} on ${submitted.pendingBranch} by Delivery Group (${freshness}):`,
     ...submitted.groups.flatMap((group) => [
-      `  ${inboxText(group.group)}${group.publishable ? "  publishable" : ""}${group.blocked ? "  blocked" : ""}`,
+      `  ${inboxText(group.group)}${group.publishable ? `  publishable${group.needsRefresh ? " with --refresh" : ""}` : ""}${group.blocked ? "  blocked" : ""}`,
       ...(group.heldBy.length > 0
         ? [`       held by unpublished ${group.heldBy.map(inboxText).join(", ")}`]
         : []),
@@ -268,17 +268,20 @@ function renderHuman(result: PendingResult): string[] {
  * publish). In Git mode `auto` the default and pending branches are fetched first; otherwise, or
  * when the fetch fails, the last fetched state is reported as `stale`. Then each unsettled branch
  * delivery in a repository linked on this machine is checked for a merge by local Git, starting
- * none after 30 s: a proven merge counts in `delivery` and `publishable`, is named in the change's
- * `found` and sets its group's `needsRefresh`, since nothing records it; `submitted.mergeCheck`
- * names the deliveries left `unchecked`, whose stored state stands. Separately, `pending` lists archives an earlier Mate left uncommitted, publishable
+ * none after 30 s: a proven merge counts in `delivery.status` and `publishable`, is named in the
+ * change's `found` and sets its group's `needsRefresh`, since nothing records it and
+ * `delivery.record` stays as stored; `submitted.mergeCheck` names the deliveries left `unchecked`,
+ * whose stored state stands. In Git mode `auto` the check first fetches the default and delivery
+ * branches into the linked checkout, and a recorded pull request's head when the branch and its
+ * recorded head are missing there. Separately, `pending` lists archives an earlier Mate left uncommitted, publishable
  * from this checkout only: archived OpenSpec changes whose own files — the archive directory or
  * the active directory archiving deleted — are still uncommitted in the companion working
  * tree, each with the uncommitted canonical specs it applied to, so the publication
  * workflow can offer exact selectable entries instead of parsing OpenSpec prose.
  * Uncommitted specs no pending change accounts for are reported separately, each with the
  * archives whose delta specs name it. Every reported entry carries `coveredByAll`, marking
- * what `mate artifact publish --all` would publish. Read-only:
- * nothing is validated, produced, committed, or pushed.
+ * what `mate artifact publish --all` would publish. Read-only apart
+ * from those fetches: nothing is validated, produced, committed, or pushed.
  * @flags
  * - `--json` — emit a machine-readable {@link PendingResult} instead of human-readable text.
  * - `--no-merge-check` — skip the merge check and report only stored merge results.
@@ -344,27 +347,15 @@ export async function runArtifactPendingCommand(
   // The local listing stands on its own; a failed discovery is reported, not fatal.
   // A declared type's submitted changes are listed in place of the built-in type's; an invalid
   // declaration is reported with the discovery.
-  // Without an environment the listing still stands, with the check reported as not run.
-  let environmentFailure: MergeCheck | undefined;
-  const environment = mergeCheck
-    ? await (deps.deliveryEnvironment ?? defaultDeliveryEnvironment)(context, capabilities).catch(
-        (error: unknown) => {
-          const warning = `merge check failed: ${errorMessage(error)}`;
-          environmentFailure = { ran: false, unchecked: [], warning };
-          return undefined;
-        },
-      )
-    : undefined;
+  const environment = () =>
+    (deps.deliveryEnvironment ?? defaultDeliveryEnvironment)(context, capabilities);
   const submitted = await declaredSubmitType(context.companionPath)
     .then((type) =>
       (deps.discoverSubmitted ?? discoverSubmitted)(context.companionPath, {
         fetch: gitAutoMode,
         ...(type ? { type } : {}),
-        ...(environment ? { checkMerges: { environment, budgetMs: MERGE_CHECK_BUDGET_MS } } : {}),
+        ...(mergeCheck ? { checkMerges: { environment, budgetMs: MERGE_CHECK_BUDGET_MS } } : {}),
       }),
-    )
-    .then((discovery) =>
-      environmentFailure ? { ...discovery, mergeCheck: environmentFailure } : discovery,
     )
     .catch((error: unknown): SubmittedDiscovery => ({
       pendingBranch: null,

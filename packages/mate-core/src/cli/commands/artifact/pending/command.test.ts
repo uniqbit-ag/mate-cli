@@ -254,6 +254,29 @@ describe("mate artifact pending", () => {
     );
   });
 
+  test("a group publishable only through a found merge names --refresh", async () => {
+    await runArtifactPendingCommand([], {
+      ...baseDeps({
+        discoverSubmitted: async () => ({
+          ...NOTHING_SUBMITTED,
+          groups: [
+            {
+              group: "acme_product/workset/acme-login",
+              changes: [],
+              blocked: false,
+              publishable: true,
+              heldBy: [],
+              needsRefresh: true,
+            },
+          ],
+        }),
+      }),
+      ...sink(),
+    });
+
+    expect(out[1]).toBe("  acme_product/workset/acme-login  publishable with --refresh");
+  });
+
   test("fetches the pending branch only in Git mode auto", async () => {
     const fetched: boolean[] = [];
     for (const auto of [true, false]) {

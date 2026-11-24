@@ -140,7 +140,7 @@ describe("merge check", () => {
       fetch: true,
       tmpRoot: fixture.root,
       stateHome: path.join(fixture.root, "home"),
-      checkMerges: { environment, budgetMs },
+      checkMerges: { environment: async () => environment, budgetMs },
     });
   }
 
@@ -160,7 +160,24 @@ describe("merge check", () => {
         found: [{ repository: PRODUCT, branch: BRANCH }],
         merges: [],
       });
+      expect(group.changes[0]!.delivery.record?.deliveries[0]?.merge).toBeUndefined();
       expect(git(fixture.remote, "rev-parse", INBOX).trim()).toBe(tip);
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "no delivery to check resolves no environment",
+    async () => {
+      const fixture = await setup();
+
+      const found = await discoverSubmitted(fixture.clone("acme-other"), {
+        fetch: true,
+        tmpRoot: fixture.root,
+        checkMerges: { environment: () => Promise.reject(new Error("acme")), budgetMs: 30_000 },
+      });
+
+      expect(found.mergeCheck).toEqual({ ran: true, unchecked: [] });
     },
     TIMEOUT,
   );
