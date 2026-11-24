@@ -18,8 +18,8 @@ import { validateDeclaration } from "./declarations";
 import { admitLocalPlugin, readLoadableEntries } from "./local";
 import { loadDynamicPlugin, type DynamicPluginLoadDeps } from "./loader";
 
-// Packages already registered in this process; re-hydration (e.g. right after
-// an install inside the same run) only picks up plugins that failed before.
+// Packages already registered or refused in this process; re-hydration (e.g.
+// right after an install inside the same run) only picks up plugins that failed to load.
 const hydratedPackages = new Set<string>();
 
 export function resetDynamicPluginHydration(): void {
@@ -122,7 +122,10 @@ export async function hydrateDynamicPlugins(deps: HydrateDynamicPluginsDeps = {}
       let plugin: Plugin | null = result.plugin;
       if (origin.kind === "local") {
         plugin = admitLocalPlugin(registry, plugin, declaration.package, warn);
-        if (!plugin) continue;
+        if (!plugin) {
+          hydratedPackages.add(declaration.package);
+          continue;
+        }
       } else {
         const namespace = plugin.cliNamespace ?? plugin.id;
         const holder = registry

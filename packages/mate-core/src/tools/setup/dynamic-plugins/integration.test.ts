@@ -430,11 +430,15 @@ export default () => ({
   description: "local fixture",
   defaultSelected: false,
   isEnabled: () => false,
-  apply: async () => {},
+  apply: async (ctx) => {
+    await ctx.mcp?.register({ name: "acme-gated-applied", command: "acme-gated-mcp" });
+    await ctx.instructions?.append("acme-gated-guidance");
+  },
   teardown: async () => {},
   gitignoreEntries: () => [".acme-gated/"],
   getRuntimeContributions: () => ({
     claude: {
+      hookMarkers: ["acme-gated-old"],
       hookGroups: [{
         event: "SessionStart",
         marker: "acme-gated-hook",
@@ -485,33 +489,22 @@ export default () => ({
     );
     const mcp = await fs.readFile(path.join(companionPath, ".mcp.json"), "utf8").catch(() => "");
     expect(mcp).not.toContain("acme-gated");
+    for (const file of ["CLAUDE.md", "AGENTS.md"]) {
+      const text = await fs.readFile(path.join(companionPath, file), "utf8").catch(() => "");
+      expect(text).not.toContain("acme-gated-guidance");
+    }
     const skill = path.join(companionPath, ".claude", "skills", "acme-gated");
     expect(await fs.stat(skill).catch(() => null)).toBeNull();
     const warning = warnings.join("\n");
-    for (const expected of [GATED, "skills", "MCP servers", "gitignore entries"]) {
+    for (const expected of [
+      GATED,
+      "skills",
+      "MCP servers",
+      "guidance sections",
+      "gitignore entries",
+    ]) {
       expect(warning).toContain(expected);
     }
-  });
-});
-
-describe("frozen restore startup", () => {
-  test("main hydrates without local plugins for a frozen install only", async () => {
-    const seen: unknown[] = [];
-    const deps = {
-      ...mainDeps("/unused", {}),
-      hydrateDynamicPlugins: async (options?: unknown) => {
-        seen.push(options);
-        throw new Error("stop after hydration");
-      },
-    } as MainDeps;
-
-    for (const args of [
-      ["install", "--yes", "--frozen-plugins"],
-      ["install", "--yes"],
-    ]) {
-      await expect(main(["bun", "mate", ...args], deps)).rejects.toThrow("stop after hydration");
-    }
-
-    expect(seen).toEqual([{ includeLocal: false }, { includeLocal: true }]);
+    expect(warning).not.toContain("hookMarkers");
   });
 });

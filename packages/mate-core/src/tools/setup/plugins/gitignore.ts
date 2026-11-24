@@ -76,7 +76,8 @@ export async function addManagedGitignoreEntries(
 ): Promise<void> {
   const { readFile, writeFile } = await import("node:fs/promises");
   const existing = await readFile(gitignorePath, "utf8").catch(() => "");
-  const lines = existing.split("\n");
+  const eol = existing.includes("\r\n") ? "\r\n" : "\n";
+  const lines = existing.split(/\r?\n/);
   const missing = entries.filter((entry) => !lines.includes(entry));
   if (missing.length === 0) return;
 
@@ -84,11 +85,12 @@ export async function addManagedGitignoreEntries(
   const end = start === -1 ? -1 : lines.indexOf(MANAGED_END(FRAMEWORK_NAME), start);
   if (end !== -1) {
     lines.splice(end, 0, ...missing);
-    await writeFile(gitignorePath, lines.join("\n"), "utf8");
+    await writeFile(gitignorePath, lines.join(eol), "utf8");
     return;
   }
   // A start marker without an end is left for the next setup to repair.
-  await writeFile(gitignorePath, appendManagedBlock(existing, FRAMEWORK_NAME, missing), "utf8");
+  const appended = appendManagedBlock(lines.join("\n"), FRAMEWORK_NAME, missing);
+  await writeFile(gitignorePath, appended.replaceAll("\n", eol), "utf8");
 }
 
 export function collectManagedGitignoreEntries(ctx: SetupContext, plugins: Plugin[]): string[] {

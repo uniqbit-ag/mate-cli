@@ -123,12 +123,12 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
   // text is printed, so their commands route like compiled-in ones
   // (including MCP servers whose command is their own cap subcommand) and
   // show up in `mate help`. Diagnostics stay on stderr; a missing or
-  // ambiguous companion makes this a no-op. A frozen restore and its
-  // verification ignore local plugins.
-  const ignoresLocalPlugins =
-    (command === "install" || command === "doctor") && isFrozenPluginInstall(argv);
-  // A package registers once per process, so a load here would pin the pre-install version for `plugin install`'s sync.
-  if (!(command === "plugin" && subcommand === "install")) {
+  // ambiguous companion makes this a no-op. A frozen verification ignores
+  // local plugins.
+  const ignoresLocalPlugins = command === "doctor" && isFrozenPluginInstall(argv);
+  // A package registers once per process, so a load here would pin the
+  // pre-install version for the install's own sync; both installs load after their plugin step.
+  if (!(command === "install" || (command === "plugin" && subcommand === "install"))) {
     await deps.hydrateDynamicPlugins({ includeLocal: !ignoresLocalPlugins });
   }
 

@@ -354,23 +354,27 @@ plugins:
 `mate install` and `mate companion setup` then install the listed plugins and
 remove any you deleted from the list. `mate doctor` reports local plugin failures.
 
-- **Tarball paths.** Use an absolute path or a `~/` path. Mate resolves a relative
-  `file:` path from `.mate/local-plugins/`. When you rebuild a tarball at the same
-  path, the next install picks up the new content.
+- **Tarball paths.** Use an absolute path or a `~/` path. `mate plugin install --local`
+  resolves a relative `file:` path from the current folder and writes it as an
+  absolute path. In a file you edit by hand, Mate resolves a relative `file:` path
+  from `.mate/local-plugins/`. When you rebuild a tarball at the same path, the next
+  install picks up the new content.
 - **Private registries.** npm runs in `.mate/local-plugins/`, so it reads your
   user-level npm config and an `.npmrc` in that folder. Mate does not link
   `.mate/plugins/.npmrc` there. Before you put a token in the folder, run
   `git check-ignore .mate/local-plugins/.npmrc` in the Companion Repository. It must
   print the path. If it prints nothing, run `mate companion setup` first.
-- **What a local plugin can add.** Claude hooks, Claude permission entries, Claude
-  plugin folders and CLI commands. Mate skips its skills, agent definitions,
-  guidance sections, MCP servers, OpenCode plugin references and gitignore entries,
-  and prints a warning that names them. This limit covers declared outputs only: the
-  plugin's own code runs with your rights and can still write files.
+- **What a local plugin can add.** A local plugin must be a capability plugin. It
+  can add Claude hooks, Claude permission entries, Claude plugin folders and CLI
+  commands. Mate skips its skills, agent definitions, guidance sections, MCP
+  servers, templates, OpenCode plugin references and gitignore entries, and prints
+  a warning that names them. This limit covers what Mate writes for the plugin:
+  the plugin's own code runs with your rights and can still write files.
 - **Refusals.** A package that `framework.yaml` declares, in the base list or under
-  an audience, cannot also be local. Mate also refuses a local file or workspace that
-  Git tracks, and tells you to run `git rm --cached`. Hubs do not support local
-  plugins.
+  an audience, cannot also be local. Mate skips such an entry, warns, and installs
+  the other local plugins. Mate refuses all local plugins when the file is invalid,
+  and when Git tracks the local file or workspace; it then tells you to run
+  `git rm --cached`. Hubs do not support local plugins.
 - **Removing one.** Mate does not remove the hook of a plugin you no longer declare.
   Delete it from `.claude/settings.local.json` by hand. If the plugin was declared in
   `framework.yaml` before, also remove the skills or MCP entries it wrote there.

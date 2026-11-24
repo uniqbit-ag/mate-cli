@@ -336,10 +336,11 @@ describe("runPluginInstallCommand", () => {
       expect(await frameworkText(companionPath)).toBe(before);
     });
 
-    test("an invalid local file fails a shared install", async () => {
+    test("an invalid local file refuses a shared install before framework.yaml changes", async () => {
       const companionPath = await makeCompanion();
       process.env.MATE_ARTIFACT_PATH = companionPath;
       await fs.writeFile(localFile(companionPath), "capabilities: []\n");
+      const before = await frameworkText(companionPath);
 
       const ok = await runPluginInstallCommand(["@acme/shared@1.0.0"], {
         installDeps: fakeInstall(() => "1.0.0"),
@@ -347,6 +348,23 @@ describe("runPluginInstallCommand", () => {
 
       expect(ok).toBe(false);
       expect(stderrWrites.join("")).toContain("framework.local.yaml");
+      expect(await frameworkText(companionPath)).toBe(before);
+    });
+
+    test("a relative file: version is written from the current folder", async () => {
+      const companionPath = await makeCompanion();
+      process.env.MATE_ARTIFACT_PATH = companionPath;
+      const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "plugin-install-cwd-"));
+      tempRoots.push(cwd);
+
+      await runPluginInstallCommand(["--local", "@acme/gated@file:./gated.tgz"], {
+        ...installs("1.0.0"),
+        cwd,
+      });
+
+      expect((await readLocal(companionPath)).plugins).toEqual([
+        { package: "@acme/gated", version: `file:${path.join(cwd, "gated.tgz")}` },
+      ]);
     });
 
     test("updates the version of a local entry", async () => {

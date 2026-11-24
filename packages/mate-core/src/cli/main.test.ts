@@ -217,18 +217,24 @@ describe("command gating", () => {
     expect(includeLocal).toEqual([false]);
   });
 
-  test("plugin install loads no plugins before the install", async () => {
-    const { deps } = recordingDeps();
-    let hydrated = false;
-    deps.hydrateDynamicPlugins = async () => {
-      hydrated = true;
-    };
+  for (const args of [
+    ["plugin", "install", "@acme/tool"],
+    ["install", "--yes"],
+    ["install", "--yes", "--frozen-plugins"],
+  ]) {
+    test(`${args.join(" ")} loads no plugins before the install`, async () => {
+      const { deps } = recordingDeps();
+      let hydrated = false;
+      deps.hydrateDynamicPlugins = async () => {
+        hydrated = true;
+      };
 
-    await main(["node", "mate", "plugin", "install", "@acme/tool"], deps);
+      await main(["node", "mate", ...args], deps);
 
-    expect(dispatched).toEqual(["plugin"]);
-    expect(hydrated).toBe(false);
-  });
+      expect(dispatched).toEqual([args[0]]);
+      expect(hydrated).toBe(false);
+    });
+  }
 
   test("report skips the background update check but keeps update enforcement", async () => {
     const { deps } = recordingDeps();

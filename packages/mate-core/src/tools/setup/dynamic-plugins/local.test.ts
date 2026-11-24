@@ -224,6 +224,22 @@ describe("local install step", () => {
     );
   });
 
+  test("a CRLF .gitignore gets the entries once, inside its managed block", async () => {
+    const dir = await companion(localEntry());
+    const gitignore = path.join(dir, ".gitignore");
+    await fs.writeFile(
+      gitignore,
+      "mine\r\n# mate managed: start\r\nnode_modules/\r\n# mate managed: end\r\n",
+    );
+
+    await install(dir, fakeNpm());
+    await install(dir, fakeNpm());
+
+    expect(await fs.readFile(gitignore, "utf8")).toBe(
+      `mine\r\n# mate managed: start\r\nnode_modules/\r\n${LOCAL_FILE}\r\n.mate/local-plugins/\r\n.mate/config/plugins.local.yaml\r\n# mate managed: end\r\n`,
+    );
+  });
+
   test("prunes an entry removed from the file, and all of them when the file goes", async () => {
     const dir = await companion(`${localEntry()}  - package: "@acme/other"\n    version: "1"\n`);
     const npm = fakeNpm();
@@ -248,19 +264,24 @@ describe("local install step", () => {
     expect(failures(outcome)).toEqual([{ package: GATED, status: "failed", error: "E404" }]);
   });
 
-  for (const [name, yaml] of [
-    ["an unknown key", `${localEntry()}capabilities: []\n`],
-    ["a conflict", localEntry("2.0.0", BASE.package)],
-  ] as const) {
-    test(`${name} is refused before npm runs`, async () => {
-      const dir = await companion(yaml);
-      const npm = fakeNpm();
-      const outcome = await install(dir, npm);
-      expect(failures(outcome)).toHaveLength(1);
-      expect(failures(outcome)[0]?.refused).toBe(true);
-      expect(npm.calls).not.toContain(localWorkspace(dir));
-    });
-  }
+  test("an unknown key is refused before npm runs", async () => {
+    const dir = await companion(`${localEntry()}capabilities: []\n`);
+    const npm = fakeNpm();
+    const outcome = await install(dir, npm);
+    expect(failures(outcome)).toHaveLength(1);
+    expect(failures(outcome)[0]?.refused).toBe(true);
+    expect(npm.calls).not.toContain(localWorkspace(dir));
+  });
+
+  test("a conflict leaves out its entry and installs the others", async () => {
+    const dir = await companion(
+      `${localEntry()}  - package: "${BASE.package}"\n    version: "2.0.0"\n`,
+    );
+    const outcome = await install(dir, fakeNpm());
+    expect(failures(outcome)).toEqual([]);
+    expect(await exists(pluginPackageRoot(dir, GATED, LOCAL_PLUGIN_ORIGIN))).toBe(true);
+    expect(await exists(pluginPackageRoot(dir, BASE.package, LOCAL_PLUGIN_ORIGIN))).toBe(false);
+  });
 
   test("a tracked file below the workspace is refused before npm runs", async () => {
     const dir = await companion(localEntry());
@@ -411,6 +432,33 @@ describe("local plugin hydration", () => {
 
     expect(ids).toEqual(["acme-shared"]);
     expect(warnings.join("\n")).toContain(GATED);
+  });
+
+  test("a local plugin that is no capability is skipped, and warned about once per process", async () => {
+    const dir = await companion(localEntry(), { plugins: [] });
+    await installFixture(
+      dir,
+      GATED,
+      LOCAL_PLUGIN_ORIGIN,
+      pluginSource("acme-gated").replace('kind: "capability"', 'kind: "provider"'),
+    );
+    const registry = new PluginRegistry([]);
+    const warnings: string[] = [];
+    const run = () =>
+      hydrateDynamicPlugins({
+        companionPath: dir,
+        registry,
+        host: fakeHost,
+        env: {},
+        warn: (message) => warnings.push(message),
+      });
+
+    await run();
+    await run();
+
+    expect(registry.getAll()).toEqual([]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("capabilit");
   });
 
   for (const [name, prepare] of [

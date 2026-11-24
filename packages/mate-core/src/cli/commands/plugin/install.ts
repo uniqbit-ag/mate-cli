@@ -13,8 +13,10 @@ import {
 } from "../../../tools/setup/dynamic-plugins/audiences";
 import { hydrateDynamicPlugins } from "../../../tools/setup/dynamic-plugins/hydrate";
 import type { PluginInstallDeps } from "../../../tools/setup/dynamic-plugins/install";
-import { declareLocalPlugin, isDeclaredLocally } from "../../../tools/setup/dynamic-plugins/local";
-import { LOCAL_PLUGINS_FILE_GITIGNORE_ENTRY } from "../../../tools/setup/dynamic-plugins/paths";
+import {
+  committedDeclarationProblems,
+  declareLocalPlugin,
+} from "../../../tools/setup/dynamic-plugins/local";
 import { installPluginWorkspaces } from "../../../tools/setup/dynamic-plugins/workspaces";
 import { reportPluginInstallResults, reportPluginWorkspaces } from "../install";
 
@@ -35,6 +37,14 @@ function withDeclaration(
   return declarations.map((declaration) =>
     declaration.package === packageName ? { ...declaration, version } : declaration,
   );
+}
+
+/** The local file sits in another directory, so a relative `file:` path is taken from `cwd` now. */
+function absoluteFileSpec(version: string, cwd: string): string {
+  if (!version.startsWith("file:") || version.startsWith("file://")) return version;
+  const target = version.slice("file:".length);
+  if (target.startsWith("~/") || path.isAbsolute(target)) return version;
+  return `file:${path.resolve(cwd, target)}`;
 }
 
 const INSTALL_USAGE = `usage: ${FRAMEWORK_NAME} plugin install [--local] <package>[@version]`;
@@ -62,7 +72,7 @@ function refuse(message: string): false {
  * companion then syncs the companion's agent runtime settings, as
  * `mate install` does.
  * @flags
- * - `--local` — declare the package in the untracked `.mate/config/framework.local.yaml` and install it into the ignored `.mate/local-plugins/`, for this machine only. No tracked file names it. Refused in a hub and for a package `framework.yaml` declares.
+ * - `--local` — declare the package in the untracked `.mate/config/framework.local.yaml` and install it into the ignored `.mate/local-plugins/`, for this machine only. No tracked file names it. A relative `file:` path is resolved from the current directory and written as an absolute path. Refused in a hub and for a package `framework.yaml` declares.
  */
 export async function runPluginInstallCommand(
   argv: string[],
@@ -79,9 +89,12 @@ export async function runPluginInstallCommand(
     const problem = unknownOption ? `unknown option ${unknownOption}; ` : "";
     return refuse(`${problem}${INSTALL_USAGE}`);
   }
-  const { package: packageName, version } = parsePackageSpec(spec);
+  const cwd = deps.cwd ?? process.cwd();
+  const parsed = parsePackageSpec(spec);
+  const packageName = parsed.package;
+  const version = local ? absoluteFileSpec(parsed.version, cwd) : parsed.version;
 
-  const context = await resolveInstallContext(deps.cwd ?? process.cwd());
+  const context = await resolveInstallContext(cwd);
   if (context.kind === "ambiguous") {
     process.stderr.write(`${context.message}\n`);
     process.exitCode = 1;
@@ -113,10 +126,13 @@ export async function runPluginInstallCommand(
       return refuse(problems.map((problem) => problem.message).join("\n"));
     }
   } else {
-    if (await isDeclaredLocally(context.companionPath, context.config, packageName)) {
-      return refuse(
-        `plugin "${packageName}" is declared in ${LOCAL_PLUGINS_FILE_GITIGNORE_ENTRY}, so framework.yaml cannot declare it too; remove it there first.`,
-      );
+    const problems = await committedDeclarationProblems(
+      context.companionPath,
+      context.config,
+      packageName,
+    );
+    if (problems.length > 0) {
+      return refuse(problems.map((problem) => problem.message).join("\n"));
     }
     const configPath = path.join(
       context.companionPath,

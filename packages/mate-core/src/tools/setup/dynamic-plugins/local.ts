@@ -14,6 +14,7 @@ import type {
   Plugin,
   RuntimeContributions,
   RuntimeContributionsByRuntime,
+  SetupContext,
 } from "../plugin";
 import { addManagedGitignoreEntries } from "../plugins/gitignore";
 import type { PluginRegistry } from "../registry";
@@ -77,12 +78,16 @@ async function trackedStateProblem(companionPath: string): Promise<string | null
   return `Git tracks local plugin state, so no local plugin is used: ${listed}${more > 0 ? ` and ${more} more` : ""}. Untrack it with \`git rm --cached\`.`;
 }
 
-/** What blocks writing local state. Without a local file, reading never reached the tracked check. */
+/**
+ * What blocks writing local state: problems with the file as a whole. A
+ * conflicting entry blocks nothing; hydration warns about it. Without a local
+ * file, reading never reached the tracked check.
+ */
 async function writeProblems(
   companionPath: string,
   read: LocalPluginRead,
 ): Promise<LocalPluginProblem[]> {
-  if (read.present) return read.problems;
+  if (read.present) return read.problems.filter((problem) => problem.package === undefined);
   const message = await trackedStateProblem(companionPath);
   return message ? [{ message }] : [];
 }
@@ -162,13 +167,30 @@ export async function readLocalPlugins(
   };
 }
 
-export async function isDeclaredLocally(
+/**
+ * What refuses declaring `packageName` in `framework.yaml`: the local file
+ * declares it, or the local step would refuse the install that follows.
+ */
+export async function committedDeclarationProblems(
   companionPath: string,
   framework: unknown,
   packageName: string,
-): Promise<boolean> {
-  const { declarations, problems } = await readLocalPlugins(companionPath, framework);
-  return [...declarations, ...problems].some((item) => item.package === packageName);
+): Promise<LocalPluginProblem[]> {
+  if (!supportsLocalPlugins(framework)) return [];
+  const read = await readLocalPlugins(companionPath, framework);
+  const problems = await writeProblems(companionPath, read);
+  if (problems.length > 0) return problems;
+  const declaredLocally = [...read.declarations, ...read.problems].some(
+    (item) => item.package === packageName,
+  );
+  return declaredLocally
+    ? [
+        {
+          package: packageName,
+          message: `plugin "${packageName}" is declared in ${LOCAL_FILE}, so framework.yaml cannot declare it too; remove it there first.`,
+        },
+      ]
+    : [];
 }
 
 /** The committed entries of the active audience, then this machine's local ones. */
@@ -261,8 +283,9 @@ function refusals(problems: LocalPluginProblem[]): PluginInstallResult[] {
 }
 
 /**
- * The local step of an ordinary install. Any refusal stops it before npm runs.
- * A deleted local file still prunes the workspace it leaves behind.
+ * The local step of an ordinary install. A problem with the whole file stops
+ * it before npm runs; a conflicting entry is left out. A deleted local file
+ * still prunes the workspace it leaves behind.
  */
 export async function installLocalPlugins(
   companionPath: string,
@@ -331,7 +354,12 @@ export async function declareLocalPlugin(
   return [];
 }
 
-const KEPT_CONTRIBUTIONS = new Set(["hookGroups", "permissionEntries", "pluginDirectories"]);
+const KEPT_CONTRIBUTIONS = new Set([
+  "hookGroups",
+  "hookMarkers",
+  "permissionEntries",
+  "pluginDirectories",
+]);
 
 const SKIPPED_CONTRIBUTION_LABELS: Record<string, string> = {
   skillTrees: "skills",
@@ -345,10 +373,14 @@ function isContributed(value: unknown): boolean {
   return Array.isArray(value) ? value.length > 0 : value !== undefined;
 }
 
+type SetupHandler = (ctx: SetupContext) => Promise<void>;
+
 /**
  * Limits a local plugin to outputs that stay on this machine. The contribution
- * list names what is kept, so a future kind is dropped until allowed. Local
- * plugins also stay out of the setup selector, whose answer `framework.yaml` saves.
+ * list names what is kept, so a future kind is dropped until allowed. Its
+ * setup handlers get services that write nothing, since MCP configs and
+ * instruction files are shared. Local plugins also stay out of the setup
+ * selector, whose answer `framework.yaml` saves.
  */
 function confineLocalPlugin(
   plugin: Plugin,
@@ -365,7 +397,36 @@ function confineLocalPlugin(
     );
   };
 
+  const services: Pick<SetupContext, "mcp" | "instructions" | "templates"> = {
+    mcp: { register: async () => report(["MCP servers"]) },
+    instructions: { append: async () => report(["guidance sections"]) },
+    templates: { render: async () => report(["templates"]) },
+  };
+  const withoutServices =
+    (handler: SetupHandler): SetupHandler =>
+    (ctx) =>
+      handler({ ...ctx, ...services });
+
   const capability = plugin as CapabilityPlugin;
+  plugin.apply = withoutServices(plugin.apply.bind(plugin));
+  plugin.teardown = withoutServices(plugin.teardown.bind(plugin));
+  if (capability.applyHub) capability.applyHub = withoutServices(capability.applyHub.bind(plugin));
+  if (capability.teardownHub) {
+    capability.teardownHub = withoutServices(capability.teardownHub.bind(plugin));
+  }
+  if (capability.forProvider) {
+    capability.forProvider = Object.fromEntries(
+      Object.entries(capability.forProvider).map(([provider, handler]) => [
+        provider,
+        {
+          ...handler,
+          apply: withoutServices(handler.apply.bind(handler)),
+          teardown: withoutServices(handler.teardown.bind(handler)),
+        },
+      ]),
+    );
+  }
+
   const contributions = capability.getRuntimeContributions?.bind(capability);
   if (contributions) {
     capability.getRuntimeContributions = async (ctx) => {
@@ -398,8 +459,9 @@ function confineLocalPlugin(
 }
 
 /**
- * The confined plugin to register, or null when a registered plugin already
- * holds its id or cap namespace: committed plugins always keep theirs.
+ * The confined plugin to register, or null when it is no capability or a
+ * registered plugin already holds its id or cap namespace: committed plugins
+ * always keep theirs.
  */
 export function admitLocalPlugin(
   registry: PluginRegistry,
@@ -407,6 +469,12 @@ export function admitLocalPlugin(
   packageName: string,
   warn: (message: string) => void,
 ): Plugin | null {
+  if (plugin.kind !== "capability") {
+    warn(
+      `local plugin "${packageName}" ("${plugin.id}") skipped: it is a ${plugin.kind} plugin; local plugins must be capabilities.`,
+    );
+    return null;
+  }
   const namespace = plugin.cliNamespace ?? plugin.id;
   const holder = registry
     .getAll()
