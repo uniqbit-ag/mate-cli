@@ -205,6 +205,37 @@ describe("command gating", () => {
     }
   });
 
+  test("doctor --frozen-plugins does not load local plugins", async () => {
+    const { deps } = recordingDeps();
+    const includeLocal: unknown[] = [];
+    deps.hydrateDynamicPlugins = async (options) => {
+      includeLocal.push(options?.includeLocal);
+    };
+
+    await main(["node", "mate", "doctor", "--json", "--frozen-plugins"], deps);
+
+    expect(includeLocal).toEqual([false]);
+  });
+
+  for (const args of [
+    ["plugin", "install", "@acme/tool"],
+    ["install", "--yes"],
+    ["install", "--yes", "--frozen-plugins"],
+  ]) {
+    test(`${args.join(" ")} loads no plugins before the install`, async () => {
+      const { deps } = recordingDeps();
+      let hydrated = false;
+      deps.hydrateDynamicPlugins = async () => {
+        hydrated = true;
+      };
+
+      await main(["node", "mate", ...args], deps);
+
+      expect(dispatched).toEqual([args[0]]);
+      expect(hydrated).toBe(false);
+    });
+  }
+
   test("report skips the background update check but keeps update enforcement", async () => {
     const { deps } = recordingDeps();
 

@@ -2,10 +2,16 @@ import fs from "node:fs/promises";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import type { PluginDeclaration } from "../../../lib/orchestrator/types";
-import { readAudienceSelection, readEffectiveEntries } from "./audiences";
+import {
+  pluginInstallCommand,
+  readAudienceSelection,
+  readEffectiveEntries,
+  readFrameworkRaw,
+} from "./audiences";
 import { validateDeclaration } from "./declarations";
+import { readLoadableEntries } from "./local";
 import { loadDynamicPlugin, type DynamicPluginLoadDeps } from "./loader";
-import { pluginPackageRoot } from "./paths";
+import { pluginPackageRoot, type PluginOrigin } from "./paths";
 
 export interface PluginVerificationFailure {
   package: string;
@@ -16,6 +22,11 @@ export interface PluginInspection {
   failures: PluginVerificationFailure[];
   /** IDs of the capabilities the loaded plugins provide. */
   capabilities: string[];
+}
+
+export interface PluginInspectionDeps extends DynamicPluginLoadDeps {
+  /** Also check this machine's local plugins; doctor does, restores never do. */
+  includeLocal?: boolean;
 }
 
 /**
@@ -33,37 +44,46 @@ export async function verifyDeclaredPlugins(
 
 export async function inspectDeclaredPlugins(
   companionPath: string,
-  deps: DynamicPluginLoadDeps = {},
+  deps: PluginInspectionDeps = {},
 ): Promise<PluginInspection> {
   const env = deps.env ?? process.env;
-  const failures: PluginVerificationFailure[] = [];
+  const audience = readAudienceSelection(env);
+  const { entries, problems } = deps.includeLocal
+    ? await readLoadableEntries(companionPath, await readFrameworkRaw(companionPath), audience)
+    : { entries: await readEffectiveEntries(companionPath, audience), problems: [] };
+
+  const failures: PluginVerificationFailure[] = problems.map((problem) => ({
+    package: problem.package ?? "(local plugins)",
+    reason: problem.message,
+  }));
   const capabilities: string[] = [];
-  const declarations: Array<{ declaration: PluginDeclaration; audience: string | null }> = [];
-  for (const { entry, audience } of await readEffectiveEntries(
-    companionPath,
-    readAudienceSelection(env),
-  )) {
+  const declarations: Array<{ declaration: PluginDeclaration; origin: PluginOrigin }> = [];
+  for (const { entry, origin } of entries) {
     const { declaration, error } = validateDeclaration(entry);
-    if (declaration) declarations.push({ declaration, audience });
+    if (declaration) declarations.push({ declaration, origin });
     else failures.push({ package: "(malformed entry)", reason: error ?? "invalid plugins entry" });
   }
 
-  for (const { declaration, audience } of declarations) {
+  for (const { declaration, origin } of declarations) {
     const name = declaration.package;
     // oxlint-disable-next-line no-await-in-loop -- declared order is part of the contract
     const installed = await fs
-      .access(pluginPackageRoot(companionPath, name, audience))
+      .access(pluginPackageRoot(companionPath, name, origin))
       .then(() => true)
       .catch(() => false);
     if (!installed) {
+      const install =
+        origin.kind === "local"
+          ? pluginInstallCommand(origin)
+          : `${FRAMEWORK_NAME} install --yes --frozen-plugins`;
       failures.push({
         package: name,
-        reason: `not installed; run setup (\`${FRAMEWORK_NAME} install --yes --frozen-plugins\`) to install it`,
+        reason: `not installed; run setup (\`${install}\`) to install it`,
       });
       continue;
     }
     // oxlint-disable-next-line no-await-in-loop -- declared order is part of the contract
-    const result = await loadDynamicPlugin(companionPath, declaration, { ...deps, env }, audience);
+    const result = await loadDynamicPlugin(companionPath, declaration, { ...deps, env }, origin);
     if (!result.ok) failures.push({ package: name, reason: result.warning });
     else if (result.plugin.kind === "capability") capabilities.push(result.plugin.id);
   }

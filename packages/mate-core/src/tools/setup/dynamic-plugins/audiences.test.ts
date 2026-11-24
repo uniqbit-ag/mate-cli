@@ -6,13 +6,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { stringify } from "yaml";
 
 import {
-  audienceInstallCommand,
   audiencePluginPackages,
   declaredAudiences,
   effectivePluginDeclarations,
   effectivePluginEntries,
   effectiveStudioAgent,
   normalizeBaseAudience,
+  pluginInstallCommand,
   pluginInstallTargets,
   readAudienceSelection,
   readEffectiveDeclarations,
@@ -160,14 +160,16 @@ describe("pluginInstallTargets", () => {
 describe("effectivePluginEntries", () => {
   test("keeps each entry's origin", () => {
     expect(effectivePluginEntries(raw, "ba")).toEqual([
-      { entry: base, audience: null },
-      { entry: { ...analyst, config: { mode: "ba" } }, audience: "ba" },
+      { entry: base, origin: { kind: "base" } },
+      { entry: { ...analyst, config: { mode: "ba" } }, origin: { kind: "audience", name: "ba" } },
     ]);
   });
 
   test("an unknown or reserved audience yields base entries only", () => {
-    expect(effectivePluginEntries(raw, "dev")).toEqual([{ entry: base, audience: null }]);
-    expect(effectivePluginEntries(raw, "base")).toEqual([{ entry: base, audience: null }]);
+    expect(effectivePluginEntries(raw, "dev")).toEqual([{ entry: base, origin: { kind: "base" } }]);
+    expect(effectivePluginEntries(raw, "base")).toEqual([
+      { entry: base, origin: { kind: "base" } },
+    ]);
   });
 });
 
@@ -180,10 +182,12 @@ describe("audiencePluginPackages", () => {
   });
 });
 
-describe("audienceInstallCommand", () => {
+describe("pluginInstallCommand", () => {
   test("names the selection that installs the workspace", () => {
-    expect(audienceInstallCommand(null)).toBe("mate install");
-    expect(audienceInstallCommand("ba")).toBe("MATE_AUDIENCE=ba mate install");
+    expect(pluginInstallCommand({ kind: "base" })).toBe("mate install");
+    expect(pluginInstallCommand({ kind: "audience", name: "ba" })).toBe(
+      "MATE_AUDIENCE=ba mate install",
+    );
   });
 });
 
@@ -264,9 +268,9 @@ describe("raw readers", () => {
 
   test("readEffectiveEntries reads each entry with its origin", async () => {
     const root = await companionWith(yaml);
-    expect((await readEffectiveEntries(root, "ba")).map((item) => item.audience)).toEqual([
-      null,
-      "ba",
+    expect((await readEffectiveEntries(root, "ba")).map((item) => item.origin)).toEqual([
+      { kind: "base" },
+      { kind: "audience", name: "ba" },
     ]);
   });
 

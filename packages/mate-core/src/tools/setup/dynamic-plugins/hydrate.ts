@@ -15,10 +15,11 @@ import {
   resolveAudience,
 } from "./audiences";
 import { validateDeclaration } from "./declarations";
+import { admitLocalPlugin, readLoadableEntries } from "./local";
 import { loadDynamicPlugin, type DynamicPluginLoadDeps } from "./loader";
 
-// Packages already registered in this process; re-hydration (e.g. right after
-// an install inside the same run) only picks up plugins that failed before.
+// Packages already registered or refused in this process; re-hydration (e.g.
+// right after an install inside the same run) only picks up plugins that failed to load.
 const hydratedPackages = new Set<string>();
 
 export function resetDynamicPluginHydration(): void {
@@ -31,6 +32,8 @@ export interface HydrateDynamicPluginsDeps extends DynamicPluginLoadDeps {
   companionPath?: string;
   registry?: PluginRegistry;
   warn?: (message: string) => void;
+  /** `false` for a frozen restore, which never reads `framework.local.yaml`. */
+  includeLocal?: boolean;
 }
 
 /**
@@ -72,7 +75,8 @@ function activateDeclaredPlugin(plugin: Plugin): Plugin {
 /**
  * Registers the companion's effective plugins (base plus the active
  * `MATE_AUDIENCE`) into the active registry — compiled-in plugins first
- * (they are already registered), declared order after. Runs before cap-command detection on every invocation. No-op
+ * (they are already registered), declared order after, this machine's local
+ * plugins last. Runs before cap-command detection on every invocation. No-op
  * without a companion or `plugins:` entries; all diagnostics go to stderr;
  * never throws.
  */
@@ -90,12 +94,17 @@ export async function hydrateDynamicPlugins(deps: HydrateDynamicPluginsDeps = {}
     if (!audience.ok) {
       warn(`${describeUnknownAudience(audience)}; applying the base configuration only`);
     }
-    const entries = effectivePluginEntries(raw, audience.ok ? audience.active : null);
+    const active = audience.ok ? audience.active : null;
+    const { entries, problems } =
+      deps.includeLocal === false
+        ? { entries: effectivePluginEntries(raw, active), problems: [] }
+        : await readLoadableEntries(companionPath, raw, active);
+    for (const problem of problems) warn(problem.message);
     if (entries.length === 0) return;
 
     const registry = deps.registry ?? getActiveDistribution().registry;
 
-    for (const { entry, audience: origin } of entries) {
+    for (const { entry, origin } of entries) {
       const { declaration, error } = validateDeclaration(entry);
       if (!declaration) {
         if (error) warn(error);
@@ -110,18 +119,27 @@ export async function hydrateDynamicPlugins(deps: HydrateDynamicPluginsDeps = {}
         continue;
       }
 
-      const namespace = result.plugin.cliNamespace ?? result.plugin.id;
-      const holder = registry
-        .getAll()
-        .find((existing) => (existing.cliNamespace ?? existing.id) === namespace);
-      if (holder) {
-        warn(
-          `plugin "${declaration.package}" ("${result.plugin.id}") claims cap namespace "${namespace}" already registered by "${holder.id}"; first registration wins.`,
-        );
+      let plugin: Plugin | null = result.plugin;
+      if (origin.kind === "local") {
+        plugin = admitLocalPlugin(registry, plugin, declaration.package, warn);
+        if (!plugin) {
+          hydratedPackages.add(declaration.package);
+          continue;
+        }
+      } else {
+        const namespace = plugin.cliNamespace ?? plugin.id;
+        const holder = registry
+          .getAll()
+          .find((existing) => (existing.cliNamespace ?? existing.id) === namespace);
+        if (holder) {
+          warn(
+            `plugin "${declaration.package}" ("${plugin.id}") claims cap namespace "${namespace}" already registered by "${holder.id}"; first registration wins.`,
+          );
+        }
       }
 
       registry.register({
-        plugin: activateDeclaredPlugin(result.plugin),
+        plugin: activateDeclaredPlugin(plugin),
         policy: declaration.policy ?? "optional",
       });
       hydratedPackages.add(declaration.package);
