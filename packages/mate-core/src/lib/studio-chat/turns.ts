@@ -95,7 +95,7 @@ export class ChatTurns {
         if (controller.signal.aborted) void stop();
         return new ReadableStream<UIMessageChunk>({
           pull: async (output) => {
-            let next: ReadableStreamReadResult<UIMessageChunk>;
+            let next: Awaited<ReturnType<typeof reader.read>>;
             try {
               next = await reader.read();
             } catch (error) {

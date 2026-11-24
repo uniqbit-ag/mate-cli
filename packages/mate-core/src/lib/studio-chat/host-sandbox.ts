@@ -532,8 +532,8 @@ export async function createHostSandbox(options: HostSandboxOptions): Promise<Ho
       request.stdin === true,
     );
     const handle = {
-      stdout: Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>,
-      stderr: Readable.toWeb(child.stderr!) as ReadableStream<Uint8Array>,
+      stdout: Readable.toWeb(child.stdout!) as unknown as ReadableStream<Uint8Array>,
+      stderr: Readable.toWeb(child.stderr!) as unknown as ReadableStream<Uint8Array>,
       wait: () => exited,
       kill: () => end(child, exited),
     };

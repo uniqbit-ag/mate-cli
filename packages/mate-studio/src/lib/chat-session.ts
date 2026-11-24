@@ -1,7 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { CHAT_SESSION_ROUTE, type ChatSession } from "@uniqbit/mate-core/studio";
 
-import { call } from "./agent-credential";
+import { call } from "./studio-call";
 
 /** What a chat turn for the companion can use; fixed while Studio runs, so read once. */
 export const chatSessionQuery = (companion: string) =>

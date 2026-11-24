@@ -418,6 +418,150 @@
     font-size: 0.9375rem;
     line-height: 1.7;
   }
+  /* The credential sheet. */
+  .agents-dialog .note {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.8125rem;
+  }
+  .agents-dialog kbd {
+    display: inline-grid;
+    place-items: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--muted);
+    font: 600 0.66rem / 1 var(--font-mono);
+  }
+  .agents-dialog button:not([role="tab"]) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel);
+    color: var(--text);
+    font-size: 0.8125rem;
+    white-space: nowrap;
+  }
+  .agents-dialog button:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .agents-dialog button:disabled {
+    opacity: 0.5;
+  }
+  .agents-dialog input {
+    width: 100%;
+    min-width: 0;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.875rem;
+    outline: none;
+  }
+  .agents-dialog input:focus {
+    border-color: var(--accent);
+  }
+  .outcome-dialog-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 24px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .outcome-dialog-heading {
+    display: grid;
+    flex: 1;
+    gap: 8px;
+    min-width: 0;
+  }
+  .outcome-dialog-heading h2 {
+    margin: 0;
+    font-size: 1.0625rem;
+    font-weight: 600;
+  }
+  .outcome-dialog-state {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.8125rem;
+  }
+  .agents-dialog .outcome-dialog-close {
+    flex: none;
+  }
+  .agents-dialog-body {
+    display: grid;
+    gap: 14px;
+    padding: 16px 20px;
+  }
+  .agents-tabs {
+    display: inline-flex;
+    gap: 6px;
+  }
+  .agents-tabs [role="tab"] {
+    height: 28px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.8125rem;
+  }
+  .agents-tabs [aria-selected="true"] {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--text);
+    font-weight: 600;
+  }
+  .agents-field {
+    display: grid;
+    gap: 6px;
+    font-size: 0.8125rem;
+  }
+  .agents-steps {
+    display: grid;
+    gap: 6px;
+    padding-left: 1.2em;
+    list-style: decimal;
+  }
+  .agents-steps code {
+    padding: 1px 5px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+  }
+  .factory-sheet {
+    display: grid;
+    gap: 12px;
+  }
+  .factory-sheet-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .factory-problems {
+    margin: 0;
+    padding: 0;
+    color: var(--bad);
+    font-size: 0.875rem;
+    list-style: none;
+  }
+
   /* A chat answer: Streamdown renders each markdown block in its own wrapper. */
   .chat-answer {
     font-size: 0.9375rem;

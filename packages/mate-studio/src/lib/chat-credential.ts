@@ -4,7 +4,7 @@ import {
   type CredentialStatus,
 } from "@uniqbit/mate-core/studio";
 
-import { call } from "./agent-credential";
+import { call } from "./studio-call";
 import { setCredentialText } from "./credential-text";
 
 /**

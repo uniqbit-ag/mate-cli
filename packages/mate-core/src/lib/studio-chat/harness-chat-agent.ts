@@ -1,7 +1,7 @@
 import type { UIMessageChunk } from "ai";
 
 import { type AgentCredential, credentialLabel } from "../agent-credential";
-import { companionAgentsText, companionSkills } from "../factory/runner/companion-context";
+import { companionAgentsText, companionSkills } from "./companion-context";
 import { readCompanionConfig } from "../orchestrator/config-store";
 import {
   CHAT_CREDENTIAL_REJECTED,
