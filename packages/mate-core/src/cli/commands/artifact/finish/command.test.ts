@@ -1071,30 +1071,53 @@ describe("runArtifactPublishCommand — Delivery Groups", () => {
     expect(process.exitCode).toBe(0);
   });
 
-  test("--confirm-merged with no Working Repository records the merge for the group's repository", async () => {
-    const { dir, change } = await submittedAcmeLogin();
-    const { deps } = groupDeps([]);
-    deps.deliveryEnvironment = UNLINKED;
-    let settled: string | null | undefined;
-    deps.publishSubmitted = async (_companion, target, publish) => {
-      settled = await publish.settle!(dir, ["acme-login"]);
-      return publication(target, "ok", { commit: "a".repeat(40) });
-    };
+  /** A Working Repository acme/web, which the acme/product group records no delivery for. */
+  const IN_ACME_WEB = {
+    ...UNLINKED,
+    resolveContext: async () => ({
+      ...makeContext(),
+      repository: { id: "acme-web", path: "/acme/web" },
+    }),
+    workingRepoGit: () => ({
+      currentBranch: async () => "main",
+      defaultBranch: async () => "main",
+      remoteUrl: async () => "git@github.com:acme/web.git",
+      unpushedCommits: async () => [],
+      branchExists: async () => false,
+      hasRef: async () => false,
+    }),
+  };
 
-    try {
-      await runArtifactPublishCommand([GROUP, "--confirm-merged", "--json"], deps);
-      expect(settled).toBeNull();
-      const record = await readDeliveryRecord(change);
-      expect(record?.deliveries).toEqual([
-        expect.objectContaining({
-          repository: "acme/product",
-          merge: expect.objectContaining({ state: "merged", source: "user" }),
-        }),
-      ]);
-    } finally {
-      await fs.rm(dir, { recursive: true, force: true });
-    }
-  });
+  test.each([
+    ["no Working Repository", UNLINKED],
+    ["a Working Repository of another repository", IN_ACME_WEB],
+  ])(
+    "--confirm-merged with %s records the merge for the group's repository",
+    async (_, environment) => {
+      const { dir, change } = await submittedAcmeLogin();
+      const { deps } = groupDeps([]);
+      deps.deliveryEnvironment = environment;
+      let settled: string | null | undefined;
+      deps.publishSubmitted = async (_companion, target, publish) => {
+        settled = await publish.settle!(dir, ["acme-login"]);
+        return publication(target, "ok", { commit: "a".repeat(40) });
+      };
+
+      try {
+        await runArtifactPublishCommand([GROUP, "--confirm-merged", "--json"], deps);
+        expect(settled).toBeNull();
+        const record = await readDeliveryRecord(change);
+        expect(record?.deliveries).toEqual([
+          expect.objectContaining({
+            repository: "acme/product",
+            merge: expect.objectContaining({ state: "merged", source: "user" }),
+          }),
+        ]);
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
   test("--all tries every group, dependencies first by the queue, and exits non-zero on a conflict", async () => {
     const calls: { target: string; deps: PublishDeps }[] = [];
