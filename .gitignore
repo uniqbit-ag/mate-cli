@@ -21,3 +21,5 @@ packages/mate-core/claude-capability-plugins/companion-mentions/.claude-plugin/t
 apps/mate-container/.local/
 # Studio's application, built into mate-core at pack time (scripts/studio-app/pack.ts)
 packages/mate-core/studio-dist/
+# local specs and audits; never committed
+/docs/
