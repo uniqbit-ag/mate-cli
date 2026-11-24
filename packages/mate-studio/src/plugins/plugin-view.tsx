@@ -1,6 +1,11 @@
-import type { StudioViewMount, StudioViewMountContext } from "@uniqbit/mate-core/studio";
+import type {
+  StudioViewLayout,
+  StudioViewMount,
+  StudioViewMountContext,
+} from "@uniqbit/mate-core/studio";
 import { useEffect, useRef, useState } from "react";
 
+import { cn } from "../lib/cn";
 import { studioConnection } from "../stores/connection";
 
 /** Loads a view module; the browser's own `import` outside tests. */
@@ -33,10 +38,13 @@ export async function mountPluginView(
 export function PluginView({
   moduleUrl,
   context,
+  layout = "page",
   load,
 }: {
   moduleUrl: string;
   context: StudioViewMountContext;
+  /** `"workspace"`: no inset; the module fills the main area. */
+  layout?: StudioViewLayout;
   load?: ModuleLoader;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -66,7 +74,13 @@ export function PluginView({
     };
   }, [moduleUrl, companion, apiBase, writable, load]);
   return (
-    <section className="plugin-view mx-8 min-h-0 flex-1 max-sm:mx-4">
+    <section
+      className={cn(
+        "plugin-view min-h-0 flex-1",
+        layout === "workspace" ? undefined : "mx-8 max-sm:mx-4",
+      )}
+      data-layout={layout}
+    >
       {failure ? (
         <p className="m-0 rounded-card border border-dashed border-rule px-6 py-7 text-muted">
           The view could not load: {failure}

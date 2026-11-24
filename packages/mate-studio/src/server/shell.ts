@@ -6,6 +6,7 @@ import {
   STUDIO_MODE_PARAM,
   type StudioMode,
   type StudioProfile,
+  type StudioViewLayout,
   type TerminalAgent,
 } from "@uniqbit/mate-core/studio";
 
@@ -53,6 +54,8 @@ export interface ShellPluginView {
   moduleUrl: string;
   /** The service route answering how many things in the view wait on the person. */
   attentionUrl?: string;
+  /** `"workspace"`: no page header or inset, sidebar held at icons. */
+  layout?: StudioViewLayout;
 }
 
 export interface ShellTerminal {
@@ -115,6 +118,7 @@ export const getShell = createServerFn({ method: "GET" })
                   ...(view.description ? { description: view.description } : {}),
                   moduleUrl: view.moduleUrl,
                   ...(view.attentionUrl ? { attentionUrl: view.attentionUrl } : {}),
+                  ...(view.layout ? { layout: view.layout } : {}),
                 },
               ]
             : [],

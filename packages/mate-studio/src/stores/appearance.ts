@@ -33,16 +33,21 @@ interface AppearanceState {
   theme: Theme;
   /** The navigation sidebar: labels shown, or icons only. */
   rail: Rail;
+  /** Workspace views (`<service>/<view>`) whose held sidebar the person expanded this page load. */
+  released: string[];
   /** Reads the remembered appearance once the page runs; the pre-paint script already applied it. */
   hydrate(): void;
   cycle(): void;
   toggleRail(): void;
+  /** Expands the sidebar a workspace view holds at icons; a remembered collapse is undone too. */
+  release(view: string): void;
 }
 
 /** The chosen appearance and sidebar width, remembered in this browser only. */
 export const useAppearance = create<AppearanceState>((set, get) => ({
   theme: "system",
   rail: "full",
+  released: [],
   hydrate: () =>
     set({
       theme: readTheme(),
@@ -60,5 +65,9 @@ export const useAppearance = create<AppearanceState>((set, get) => ({
     else document.documentElement.removeAttribute("data-rail");
     save(RAIL_STORAGE_KEY, next);
     set({ rail: next });
+  },
+  release: (view) => {
+    if (get().rail === "min") get().toggleRail();
+    set({ released: [...get().released, view] });
   },
 }));
