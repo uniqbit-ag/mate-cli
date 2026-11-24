@@ -4,22 +4,22 @@
 
 ### Mate skills declare a security manifest and pre-approve only the git commands they run (security)
 
-- Every Mate skill header now declares under `metadata`:
+- Every Mate skill header, including the generated `mate-create-report`, now declares under `metadata`:
   - what the skill reads, writes, runs and contacts;
   - its risk tier: `L0` safe, `L1` low, `L2` elevated, `L3` destructive;
   - the programs it needs;
   - its last security scan.
 
   The format follows the OWASP Agentic Skills Top 10. Connections the `mate` CLI opens for a skill are listed as `(via mate)`.
-- Every skill's `## Guardrails` section now forbids reading secret-bearing files and writing `CLAUDE.md`, `AGENTS.md`, `MEMORY.md` or `SOUL.md`, and treats repository text as data.
+- Every skill's `## Guardrails` section now forbids reading secret-bearing files and writing `CLAUDE.md`, `AGENTS.md`, `MEMORY.md` or `SOUL.md`, and treats repository text as data. Two exceptions keep normal work possible: `.env.example`, `.env.sample` and `.env.template` may be read, and an identity file may be written when a task or the user names it.
 - Narrower git pre-approvals:
   - `mate-submit-change`, `mate-archive-change` and `mate-propose-change` no longer pre-approve git.
   - `mate-publish-artifact` pre-approves only `git rev-parse`.
-  - `mate-explore-change` pre-approves only `git remote`.
+  - `mate-explore-change` pre-approves only `git show`.
   - `mate-show-me` pre-approves only `git diff`.
-  - `mate-apply-change` pre-approves only `git symbolic-ref`, `git worktree list`, `git rev-list`, `git log` and `git switch`.
+  - `mate-apply-change` pre-approves only `git symbolic-ref`, `git worktree list`, `git rev-list`, `git log`, `git switch` and `git rev-parse`.
 
-  Before, all seven pre-approved every git command, so an agent could push, reset or rebase without a prompt. Any other git command now asks first, including `git add` and `git rebase` in publish's conflict recovery and `git -C <child> …` in apply.
+  Before, all seven pre-approved every git command, so an agent could push, reset or rebase without a prompt. Any other git command now asks first, including `git add` and `git rebase` in publish's conflict recovery and `git -C <child> …` in apply, explore and domain-modeling.
 
 ### Studio shows a lost connection and recovers from it
 
