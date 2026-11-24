@@ -13,7 +13,10 @@ describe("deliveryGroupFor", () => {
       "acme-login",
       record([{ repository: "acme/product", branch: "workset/acme-login" }]),
     );
-    expect(result).toEqual({ group: "acme_product/workset/acme-login" });
+    expect(result).toEqual({
+      group: "acme_product/workset/acme-login",
+      repository: "acme/product",
+    });
   });
 
   test("keeps two repositories with the same branch name apart", () => {

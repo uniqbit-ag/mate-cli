@@ -11,6 +11,8 @@ import { endsRequirements, REQUIREMENT_HEADER } from "./requirement-blocks";
 export interface DeltaFailure {
   capability: string;
   requirement: string;
+  /** Why OpenSpec refused the delta, as it said, e.g. `not found`. */
+  reason?: string;
   /**
    * For a requirement changed since the delta base, the three texts to resolve it from: the
    * requirement at the base, the delta's version (null when the delta removes it or renames it
@@ -39,13 +41,13 @@ function lastLines(text: string, count = 5): string {
   return text.trim().split("\n").slice(-count).join("\n");
 }
 
-/** The delta named in OpenSpec's `<capability> <SECTION> failed for header "..."` line. */
+/** The delta named in OpenSpec's `<capability> <SECTION> failed for header "..." - <reason>` line. */
 export function deltaFailure(output: string): DeltaFailure | null {
   const match =
-    /^(\S+) (?:ADDED|MODIFIED|REMOVED|RENAMED) failed for header "### Requirement: (.+?)"/m.exec(
+    /^(\S+) (?:ADDED|MODIFIED|REMOVED|RENAMED) failed for header "### Requirement: (.+?)"(?: - (.+))?/m.exec(
       output,
     );
-  return match ? { capability: match[1]!, requirement: match[2]! } : null;
+  return match ? { capability: match[1]!, requirement: match[2]!, reason: match[3] } : null;
 }
 
 /** The canonical spec file of `capability`, relative to the companion root. */

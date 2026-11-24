@@ -835,6 +835,26 @@ describe.skipIf(!REAL_OPENSPEC)("publishSubmitted", () => {
   );
 
   test(
+    "a delta that drops a scenario names OpenSpec's reason",
+    async () => {
+      const fixture = await setup();
+      const mine = fixture.clone("acme-mine");
+      await submit(fixture, mine, "acme-login-ui", {
+        branch: "workset/acme-login",
+        merged: true,
+        // Its own scenario replaces `Works`, which the current requirement still has.
+        deltas: { widget: requirement("MODIFIED", "Widget renders", "The widget SHALL glow.") },
+      });
+
+      const result = await publishSubmitted(mine, LOGIN, deps(fixture));
+
+      expect(result.status).toBe("conflict");
+      expect(result.message).toContain('not present in the modified block: "Works"');
+    },
+    TIMEOUT,
+  );
+
+  test(
     "a validation failure pushes nothing and keeps the submitted change",
     async () => {
       const fixture = await setup();

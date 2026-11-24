@@ -86,6 +86,40 @@ function printPreflightErrorDocument(message: string): void {
   );
 }
 
+/**
+ * Built-in commands whose `--help` or `-h` main answers with the usage before any gate.
+ * `workflow` and `plugin install` print their own usage, `cap` its plugin's, and `claude` and
+ * `opencode` pass it to the agent.
+ */
+const MAIN_ANSWERS_HELP = new Set([
+  "install",
+  "plugin",
+  "artifact",
+  "companion",
+  "hub",
+  "report",
+  "studio",
+  "config",
+  "doctor",
+  "friction",
+  "update",
+  "working",
+  "wrap",
+  "session",
+  "vscode",
+  "unwrap",
+  "triage",
+]);
+
+/** True when `args` ask for help before a `--`, which passes what follows on untouched. */
+function asksForHelp(command: string, args: readonly string[]): boolean {
+  if (!MAIN_ANSWERS_HELP.has(command) || (command === "plugin" && args[0] === "install")) {
+    return false;
+  }
+  const end = args.indexOf("--");
+  return (end < 0 ? args : args.slice(0, end)).some((arg) => arg === "--help" || arg === "-h");
+}
+
 const FRICTION_GATE_NEEDS = new Map<string | undefined, GateNeeds>([
   ["list", { updateGuard: true, companion: true, install: true }],
   ["report", { companion: true }],
@@ -93,23 +127,27 @@ const FRICTION_GATE_NEEDS = new Map<string | undefined, GateNeeds>([
 
 export async function main(argv = process.argv, deps: MainDeps = mainDeps): Promise<void> {
   const [, , command, subcommand, ...rest] = argv;
+  const helpRequest = command !== undefined && asksForHelp(command, argv.slice(3));
 
   /**
    * A Claude plugin asks this on every mention of a plain session. It changes
    * nothing and prints only its answer, so it skips the runtime refresh,
    * plugin loading, the update checks and every gate.
    */
-  if (command === "session" && subcommand === "context") {
+  if (command === "session" && subcommand === "context" && !helpRequest) {
     await runSessionContextCommand(rest);
     return;
   }
 
-  if (command === "triage") {
+  if (command === "triage" && !helpRequest) {
     await runTriageCommand(argv.slice(3));
     return;
   }
 
-  if (!(await ensureRuntimeDirectory(command, deps.refreshRuntimeDirectory))) {
+  // Help needs no runtime paths, so a failed refresh only warns, as for `mate help`.
+  if (
+    !(await ensureRuntimeDirectory(helpRequest ? "help" : command, deps.refreshRuntimeDirectory))
+  ) {
     process.exitCode = 1;
     return;
   }
@@ -126,7 +164,7 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
   // ambiguous companion makes this a no-op.
   await deps.hydrateDynamicPlugins();
 
-  if (!command || command === "help" || command === "--help" || command === "-h") {
+  if (!command || command === "help" || command === "--help" || command === "-h" || helpRequest) {
     console.log(usage());
     return;
   }

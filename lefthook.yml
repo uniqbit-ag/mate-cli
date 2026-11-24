@@ -9,7 +9,9 @@ pre-commit:
       run: bun run lint -- --quiet
     pack-local-manifests:
       glob: "{apps/mate-cli,packages/mate-core}/package.json"
+      # git grep exits 1 for no match; 0 is a match and above 1 an error, so both fail.
       run: >-
-        ! git grep --cached -nE '"version": "[^"]*-local\.|"@uniqbit/mate-core": "file:'
-        -- apps/mate-cli/package.json packages/mate-core/package.json
+        git grep --cached -nE '"version": "[^"]*-local\.|"@uniqbit/mate-core": "file:'
+        -- apps/mate-cli/package.json packages/mate-core/package.json;
+        [ $? -eq 1 ]
       fail_text: "Staged manifests hold pack-local.sh's temporary values. Let it finish, then stage them again."
