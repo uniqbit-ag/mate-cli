@@ -54,7 +54,7 @@ export interface ShellPluginView {
   moduleUrl: string;
   /** The service route answering how many things in the view wait on the person. */
   attentionUrl?: string;
-  /** `"workspace"`: no page header or inset, sidebar held at icons. */
+  /** `"workspace"`: no page header or inset, agent terminal held collapsed. */
   layout?: StudioViewLayout;
 }
 

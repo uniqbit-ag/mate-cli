@@ -149,7 +149,14 @@ describe("the terminal frame", () => {
       ".studio-frame[data-terminal] { grid-template-columns: var(--rail-w) minmax(0, 1fr) clamp( 360px, var(--terminal-width, min(560px, 40vw)), 70vw );",
     );
     expect(FLAT).toContain(
-      ":root[data-terminal-collapsed] .studio-frame[data-terminal] { grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--terminal-strip, 44px);",
+      ":root[data-terminal-collapsed] .studio-frame[data-terminal], .studio-frame[data-terminal][data-terminal-held] { grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--terminal-strip, 44px);",
+    );
+  });
+
+  it("collapses the terminal a workspace view holds, like a remembered collapse", () => {
+    expect(FLAT).toContain(".studio-frame[data-terminal][data-terminal-held] .terminal-body,");
+    expect(FLAT).toContain(
+      ".studio-frame[data-terminal][data-terminal-held] .terminal-strip { display: flex; }",
     );
   });
 
