@@ -205,6 +205,37 @@ describe("command gating", () => {
     }
   });
 
+  test("doctor --frozen-plugins does not load local plugins", async () => {
+    const { deps } = recordingDeps();
+    const includeLocal: unknown[] = [];
+    deps.hydrateDynamicPlugins = async (options) => {
+      includeLocal.push(options?.includeLocal);
+    };
+
+    await main(["node", "mate", "doctor", "--json", "--frozen-plugins"], deps);
+
+    expect(includeLocal).toEqual([false]);
+  });
+
+  for (const args of [
+    ["plugin", "install", "@acme/tool"],
+    ["install", "--yes"],
+    ["install", "--yes", "--frozen-plugins"],
+  ]) {
+    test(`${args.join(" ")} loads no plugins before the install`, async () => {
+      const { deps } = recordingDeps();
+      let hydrated = false;
+      deps.hydrateDynamicPlugins = async () => {
+        hydrated = true;
+      };
+
+      await main(["node", "mate", ...args], deps);
+
+      expect(dispatched).toEqual([args[0]]);
+      expect(hydrated).toBe(false);
+    });
+  }
+
   test("report skips the background update check but keeps update enforcement", async () => {
     const { deps } = recordingDeps();
 
@@ -771,6 +802,54 @@ describe("command gating", () => {
       await main(["node", "mate", "--version"], deps);
       expect(gateCalls).toEqual([]);
       expect(dispatched).toEqual([]);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test("a help request after a built-in command prints usage and runs no gate or command", async () => {
+    const printed: string[] = [];
+    const logSpy = spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      printed.push(args.join(" "));
+    });
+    try {
+      const { gateCalls, deps } = recordingDeps({ rootKind: "companion" });
+      await main(["node", "mate", "companion", "sync", "--help"], deps);
+      await main(["node", "mate", "artifact", "submit", "acme-login", "-h"], deps);
+      // These two run before every gate; their help is still the usage.
+      await main(["node", "mate", "triage", "--help"], deps);
+      await main(["node", "mate", "session", "context", "--help"], deps);
+      expect(gateCalls).toEqual([]);
+      expect(dispatched).toEqual([]);
+      expect(printed).toHaveLength(4);
+      expect(process.exitCode ?? 0).toBe(0);
+
+      // A failed runtime refresh, fatal for `wrap` itself, does not block its help.
+      const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+      deps.refreshRuntimeDirectory = async () => {
+        throw new Error("read-only");
+      };
+      await main(["node", "mate", "wrap", "--help"], deps);
+      errorSpy.mockRestore();
+      expect(printed).toHaveLength(5);
+      expect(process.exitCode ?? 0).toBe(0);
+
+      // A command that answers its own help request still gets it.
+      await main(["node", "mate", "workflow", "--help"], deps);
+      expect(dispatched).toEqual(["workflow"]);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test("--help on every built-in command prints usage, except where the command answers it", async () => {
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      for (const command of BUILT_IN_COMMANDS) {
+        const { deps } = recordingDeps({ rootKind: "companion" });
+        await main(["node", "mate", command, "--help"], deps);
+      }
+      expect([...dispatched].sort()).toEqual(["cap", "claude", "opencode", "workflow"]);
     } finally {
       logSpy.mockRestore();
     }

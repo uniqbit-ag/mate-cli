@@ -41,6 +41,7 @@ describe("deltaFailure", () => {
     expect(deltaFailure(output)).toEqual({
       capability: "acme-widget",
       requirement: "Widget renders",
+      reason: "not found",
     });
   });
 

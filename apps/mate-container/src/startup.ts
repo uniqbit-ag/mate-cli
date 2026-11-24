@@ -369,7 +369,7 @@ export function prepareStartup(
   /** Runs before the requirement check: verified plugins' capabilities feed it. */
   const verifyResult = deps.run(
     deps.mate,
-    ["doctor", "--json"],
+    ["doctor", "--json", "--frozen-plugins"],
     companion,
     config.audience === null ? undefined : audienceEnv(config.audience),
   );

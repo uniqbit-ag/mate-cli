@@ -1,9 +1,10 @@
+import { git } from "../../../../test/git-checkouts";
 import { fakePluginInstallDeps } from "../../../../test/plugin-install";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { parse } from "yaml";
 
 import { parsePackageSpec, runPluginInstallCommand } from "./install";
@@ -65,6 +66,12 @@ const fakeInstall = (resolveTo: (pkg: string) => string) =>
       return { ok: true };
     },
   });
+
+/** A successful install with the companion sync stubbed out. */
+const installs = (version: string) => ({
+  installDeps: fakeInstall(() => version),
+  syncCompanion: async () => {},
+});
 
 beforeEach(() => {
   originalArtifactPath = process.env.MATE_ARTIFACT_PATH;
@@ -146,7 +153,7 @@ describe("runPluginInstallCommand", () => {
 
       expect(ok).toBe(true);
       expect(process.exitCode).toBe(0);
-      expect(stdoutWrites.join(" ")).toContain("mate plugin install <package>[@version]");
+      expect(stdoutWrites.join(" ")).toContain("mate plugin install [--local] <package>[@version]");
       expect(await fs.readFile(configFile, "utf8")).toBe(before);
       expect(installRan).toBe(false);
     });
@@ -205,14 +212,29 @@ describe("runPluginInstallCommand", () => {
     const companionPath = await makeCompanion();
     process.env.MATE_ARTIFACT_PATH = companionPath;
 
-    const ok = await runPluginInstallCommand(["@acme/custom-plugin@1.2.0"], {
-      installDeps: fakeInstall(() => "1.2.0"),
-    });
+    const ok = await runPluginInstallCommand(["@acme/custom-plugin@1.2.0"], installs("1.2.0"));
 
     expect(ok).toBe(true);
     const config = await readFrameworkYaml(companionPath);
     expect(config.plugins).toEqual([{ package: "@acme/custom-plugin", version: "1.2.0" }]);
     expect(logs.join(" ")).toContain("installed plugin @acme/custom-plugin@1.2.0");
+  });
+
+  test("a successful install syncs the companion with the new declaration", async () => {
+    const companionPath = await makeCompanion();
+    process.env.MATE_ARTIFACT_PATH = companionPath;
+    const syncCompanion = mock(async () => {});
+
+    await runPluginInstallCommand(["@acme/hooks@1.0.0"], {
+      installDeps: fakeInstall(() => "1.0.0"),
+      syncCompanion,
+    });
+
+    expect(syncCompanion).toHaveBeenCalledTimes(1);
+    expect(syncCompanion).toHaveBeenCalledWith(
+      companionPath,
+      expect.objectContaining({ plugins: [{ package: "@acme/hooks", version: "1.0.0" }] }),
+    );
   });
 
   test("updates the declared version when the package is already declared", async () => {
@@ -223,9 +245,7 @@ describe("runPluginInstallCommand", () => {
     ]);
     process.env.MATE_ARTIFACT_PATH = companionPath;
 
-    await runPluginInstallCommand(["@acme/custom-plugin@2.0.0"], {
-      installDeps: fakeInstall(() => "2.0.0"),
-    });
+    await runPluginInstallCommand(["@acme/custom-plugin@2.0.0"], installs("2.0.0"));
 
     const config = await readFrameworkYaml(companionPath);
     expect(config.plugins).toEqual([{ package: "@acme/custom-plugin", version: "2.0.0" }]);
@@ -234,31 +254,210 @@ describe("runPluginInstallCommand", () => {
   test("re-running with the same declared version does not rewrite framework.yaml", async () => {
     const companionPath = await makeCompanion();
     process.env.MATE_ARTIFACT_PATH = companionPath;
-    await runPluginInstallCommand(["@acme/custom-plugin@1.0.0"], {
-      installDeps: fakeInstall(() => "1.0.0"),
-    });
+    await runPluginInstallCommand(["@acme/custom-plugin@1.0.0"], installs("1.0.0"));
     const before = await fs.stat(path.join(companionPath, ".mate", "config", "framework.yaml"));
 
     await new Promise((resolve) => setTimeout(resolve, 5));
-    await runPluginInstallCommand(["@acme/custom-plugin@1.0.0"], {
-      installDeps: fakeInstall(() => "1.0.0"),
-    });
+    await runPluginInstallCommand(["@acme/custom-plugin@1.0.0"], installs("1.0.0"));
     const after = await fs.stat(path.join(companionPath, ".mate", "config", "framework.yaml"));
 
     expect(after.mtimeMs).toBe(before.mtimeMs);
+  });
+
+  describe("--local", () => {
+    const localFile = (root: string) => path.join(root, ".mate", "config", "framework.local.yaml");
+    const readLocal = async (root: string) =>
+      parse(await fs.readFile(localFile(root), "utf8")) as { plugins: unknown[] };
+    const frameworkText = (root: string) =>
+      fs.readFile(path.join(root, ".mate", "config", "framework.yaml"), "utf8");
+    const exists = (file: string) =>
+      fs.access(file).then(
+        () => true,
+        () => false,
+      );
+
+    for (const argv of [
+      ["--local", "@acme/gated@1.0.0"],
+      ["@acme/gated@1.0.0", "--local"],
+    ]) {
+      test(`declares and installs with ${argv.join(" ")}`, async () => {
+        const companionPath = await makeCompanion();
+        process.env.MATE_ARTIFACT_PATH = companionPath;
+        const before = await frameworkText(companionPath);
+
+        const ok = await runPluginInstallCommand(argv, installs("1.0.0"));
+
+        expect(ok).toBe(true);
+        expect((await readLocal(companionPath)).plugins).toEqual([
+          { package: "@acme/gated", version: "1.0.0" },
+        ]);
+        expect(
+          await exists(
+            path.join(companionPath, ".mate", "local-plugins", "node_modules", "@acme", "gated"),
+          ),
+        ).toBe(true);
+        expect(await frameworkText(companionPath)).toBe(before);
+        const gitignore = await fs.readFile(path.join(companionPath, ".gitignore"), "utf8");
+        expect(gitignore).toContain(".mate/config/framework.local.yaml");
+        expect(gitignore).toContain(".mate/local-plugins/");
+      });
+    }
+
+    test("a file: version keeps its full path", async () => {
+      const companionPath = await makeCompanion();
+      process.env.MATE_ARTIFACT_PATH = companionPath;
+
+      await runPluginInstallCommand(
+        ["--local", "@acme/gated@file:~/dist/gated.tgz"],
+        installs("1.0.0"),
+      );
+
+      expect((await readLocal(companionPath)).plugins).toEqual([
+        { package: "@acme/gated", version: "file:~/dist/gated.tgz" },
+      ]);
+    });
+
+    test("a package declared locally cannot also enter framework.yaml", async () => {
+      const companionPath = await makeCompanion();
+      process.env.MATE_ARTIFACT_PATH = companionPath;
+      await fs.writeFile(
+        localFile(companionPath),
+        'plugins:\n  - package: "@acme/gated"\n    version: "1.0.0"\n',
+      );
+      const before = await frameworkText(companionPath);
+
+      const ok = await runPluginInstallCommand(["@acme/gated@1.0.0"], {
+        installDeps: fakeInstall(() => "1.0.0"),
+      });
+
+      expect(ok).toBe(false);
+      expect(process.exitCode).toBe(1);
+      expect(stderrWrites.join("")).toContain("framework.local.yaml");
+      expect(await frameworkText(companionPath)).toBe(before);
+    });
+
+    test("an invalid local file refuses a shared install before framework.yaml changes", async () => {
+      const companionPath = await makeCompanion();
+      process.env.MATE_ARTIFACT_PATH = companionPath;
+      await fs.writeFile(localFile(companionPath), "capabilities: []\n");
+      const before = await frameworkText(companionPath);
+
+      const ok = await runPluginInstallCommand(["@acme/shared@1.0.0"], {
+        installDeps: fakeInstall(() => "1.0.0"),
+      });
+
+      expect(ok).toBe(false);
+      expect(stderrWrites.join("")).toContain("framework.local.yaml");
+      expect(await frameworkText(companionPath)).toBe(before);
+    });
+
+    test("a relative file: version is written from the current folder", async () => {
+      const companionPath = await makeCompanion();
+      process.env.MATE_ARTIFACT_PATH = companionPath;
+      const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "plugin-install-cwd-"));
+      tempRoots.push(cwd);
+
+      await runPluginInstallCommand(["--local", "@acme/gated@file:./gated.tgz"], {
+        ...installs("1.0.0"),
+        cwd,
+      });
+
+      expect((await readLocal(companionPath)).plugins).toEqual([
+        { package: "@acme/gated", version: `file:${path.join(cwd, "gated.tgz")}` },
+      ]);
+    });
+
+    test("updates the version of a local entry", async () => {
+      const companionPath = await makeCompanion();
+      process.env.MATE_ARTIFACT_PATH = companionPath;
+      await runPluginInstallCommand(["--local", "@acme/gated@1.0.0"], installs("2.0.0"));
+
+      await runPluginInstallCommand(["--local", "@acme/gated@2.0.0"], installs("2.0.0"));
+
+      expect((await readLocal(companionPath)).plugins).toEqual([
+        { package: "@acme/gated", version: "2.0.0" },
+      ]);
+    });
+
+    test("refuses a package framework.yaml declares", async () => {
+      const companionPath = await makeCompanion([
+        "plugins:",
+        '  - package: "@acme/base"',
+        '    version: "1.0.0"',
+      ]);
+      process.env.MATE_ARTIFACT_PATH = companionPath;
+
+      const ok = await runPluginInstallCommand(["--local", "@acme/base@1.0.0"], {
+        installDeps: fakeInstall(() => "1.0.0"),
+      });
+
+      expect(ok).toBe(false);
+      expect(process.exitCode).toBe(1);
+      expect(stderrWrites.join(" ")).toContain("@acme/base");
+      expect(await exists(localFile(companionPath))).toBe(false);
+    });
+
+    test("refuses a tracked workspace before the first local entry exists", async () => {
+      const companionPath = await makeCompanion();
+      process.env.MATE_ARTIFACT_PATH = companionPath;
+      const tracked = ".mate/local-plugins/package.json";
+      await fs.mkdir(path.dirname(path.join(companionPath, tracked)), { recursive: true });
+      await fs.writeFile(path.join(companionPath, tracked), "{}\n");
+      git(companionPath, "init", "-q");
+      git(companionPath, "add", "-f", tracked);
+
+      const ok = await runPluginInstallCommand(["--local", "@acme/gated@1.0.0"], {
+        installDeps: fakeInstall(() => "1.0.0"),
+      });
+
+      expect(ok).toBe(false);
+      expect(process.exitCode).toBe(1);
+      expect(stderrWrites.join(" ")).toContain("git rm --cached");
+      expect(await exists(localFile(companionPath))).toBe(false);
+    });
+
+    test("refuses a hub and writes no file", async () => {
+      const hubPath = await makeHub();
+      process.env.MATE_ARTIFACT_PATH = hubPath;
+
+      const ok = await runPluginInstallCommand(["--local", "@acme/gated@1.0.0"], {
+        installDeps: fakeInstall(() => "1.0.0"),
+        setupHub: async () => {},
+      });
+
+      expect(ok).toBe(false);
+      expect(process.exitCode).toBe(1);
+      expect(await exists(localFile(hubPath))).toBe(false);
+      expect(await exists(path.join(hubPath, ".gitignore"))).toBe(false);
+    });
+
+    test("an unknown option after the package is refused", async () => {
+      const companionPath = await makeCompanion();
+      process.env.MATE_ARTIFACT_PATH = companionPath;
+
+      const ok = await runPluginInstallCommand(["@acme/gated@1.0.0", "--force"]);
+
+      expect(ok).toBe(false);
+      expect(stderrWrites.join(" ")).toContain("unknown option --force");
+      expect((await readFrameworkYaml(companionPath)).plugins).toBeUndefined();
+    });
   });
 
   test("a failed install reports the failure and the registry config hint", async () => {
     const companionPath = await makeCompanion();
     process.env.MATE_ARTIFACT_PATH = companionPath;
 
+    const syncCompanion = mock(async () => {});
+
     const ok = await runPluginInstallCommand(["@acme/broken@1.0.0"], {
       installDeps: fakePluginInstallDeps({
         runNpmInstall: async () => ({ ok: false, detail: "registry unreachable" }),
       }),
+      syncCompanion,
     });
 
     expect(ok).toBe(false);
+    expect(syncCompanion).not.toHaveBeenCalled();
     expect(stderrWrites.join(" ")).toContain("registry unreachable");
     expect(stderrWrites.join(" ")).toContain("npm config set");
   });

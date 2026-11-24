@@ -127,9 +127,11 @@ export function describeFailure(failure: ChainFailure, defaultBranch: string): s
   if (failure.kind === "stale") {
     return `${change}: "${inboxText(failure.failure.requirement)}" in ${inboxText(failure.failure.capability)} changed on ${defaultBranch} since the delta was written`;
   }
-  return failure.failure
-    ? `${change}: its ${inboxText(failure.failure.capability)} delta for "${inboxText(failure.failure.requirement)}" no longer applies to ${defaultBranch}`
-    : `${change}: it no longer applies to ${defaultBranch} (${inboxText(failure.detail)})`;
+  if (!failure.failure) {
+    return `${change}: it no longer applies to ${defaultBranch} (${inboxText(failure.detail)})`;
+  }
+  const { capability, requirement, reason } = failure.failure;
+  return `${change}: its ${inboxText(capability)} delta for "${inboxText(requirement)}" no longer applies to ${defaultBranch}${reason ? ` (${inboxText(reason)})` : ""}`;
 }
 
 /** `value` as one POSIX shell word: names come from teammates' specs. */

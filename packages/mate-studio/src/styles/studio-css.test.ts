@@ -136,7 +136,7 @@ describe("the views' class names", () => {
         .find(
           (classes) =>
             /(?:^|\s)outline-none(?:\s|$)/.test(classes) &&
-            /(?:^|\s)focus(?:-visible)?:outline(?:-\d+)?(?:\s|$)/.test(classes),
+            /(?:^|\s)focus(?:-visible|-within)?:outline(?:-\d+|-\[[^\]]+\])?(?:\s|$)/.test(classes),
         );
       expect({ file, ringless: ringless ?? null }).toEqual({ file, ringless: null });
     }

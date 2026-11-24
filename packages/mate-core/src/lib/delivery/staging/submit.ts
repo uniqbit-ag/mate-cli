@@ -680,26 +680,36 @@ export async function hasUnsubmittedWork(
  * The `submitted` members of `groups`, those in `named` left out, that {@link submitGroups} pushes
  * as edited. Call it before refreshing them: a refresh rewrites `delivery.yaml`, which the
  * comparison covers. A member Git cannot judge is left out, since {@link submitGroups} fails its
- * group.
+ * group. `recordOnly`: only its Delivery Record differs from what this checkout last submitted or
+ * took, so its content already passed a check.
  */
 export async function editedSubmittedMembers(
   companionPath: string,
   groups: ReadonlySet<string>,
   named: readonly string[],
   deps: Pick<SubmitDeps, "git" | "artifactType" | "stateHome"> = {},
-): Promise<LocalMember[]> {
+): Promise<(LocalMember & { recordOnly: boolean })[]> {
   const type = deps.artifactType ?? defaultArtifactType();
   const git = (deps.git ?? defaultGit)(companionPath);
   const submitted = readSubmittedFolders(companionPath, deps.stateHome);
-  const edited: LocalMember[] = [];
+  const edited: (LocalMember & { recordOnly: boolean })[] = [];
   for (const member of await localMembers(companionPath, type)) {
     if (member.state !== "submitted" || !groups.has(member.group)) continue;
     if (named.includes(member.name)) continue;
     const relative = sourcePathOf(type, member.name);
     // oxlint-disable-next-line no-await-in-loop -- a few members per group
-    if ((await editedSinceSubmit(git, companionPath, relative, submitted)) === true) {
-      edited.push(member);
-    }
+    if ((await editedSinceSubmit(git, companionPath, relative, submitted)) !== true) continue;
+    const content = submitted[relative]?.content;
+    // oxlint-disable-next-line no-await-in-loop -- a few members per group
+    const files = content === undefined ? null : await ownFiles(git, companionPath, relative);
+    const recordOnly =
+      files !== null &&
+      // oxlint-disable-next-line no-await-in-loop -- a few members per group
+      (await folderDigest(
+        path.join(companionPath, ...relative.split("/")),
+        files.filter((file) => file !== DELIVERY_FILE),
+      )) === content;
+    edited.push({ ...member, recordOnly });
   }
   return edited;
 }

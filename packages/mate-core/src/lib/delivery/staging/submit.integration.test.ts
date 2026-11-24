@@ -19,7 +19,7 @@ import {
 import { companionGit } from "../../../runtime/companion-git";
 import { readSubmittedFolders } from "../../../runtime/companion-git-state";
 import type { RunOpenSpec } from "../../openspec-cli";
-import { readDeliveryRecord, upsertDelivery, writeDeliveryRecord } from "../record";
+import { readDeliveryRecord, sameRepository, upsertDelivery, writeDeliveryRecord } from "../record";
 import { submitChanges, type SubmitOutcome, type SubmitRequest } from "../submit-change";
 import { openspecArtifactType } from "./openspec-type";
 import {
@@ -1125,10 +1125,64 @@ describe("submitChanges", () => {
 
       expect(outcome).toMatchObject({
         results: [
-          { change: "acme-login-ui", status: "waiting", waitingFor: ["acme-login-db"] },
+          {
+            change: "acme-login-ui",
+            status: "waiting",
+            waitingFor: ["acme-login-db"],
+            message: expect.stringContaining("acme-login-db (its delivery was refused: "),
+          },
           { change: "acme-login-api", status: "waiting", waitingFor: ["acme-login-db"] },
         ],
       });
+      expect(inboxTip(fixture)).toBe(before);
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "an edited member whose merged branch holds uncommitted work holds the group back",
+    async () => {
+      const fixture = await setup();
+      const login = await submittedLogin(fixture);
+      const [api] = login.dirs;
+      // A second delivery only this member records, so no named change's check covers it.
+      const webRoot = path.join(fixture.root, "web");
+      fs.mkdirSync(webRoot);
+      const web = makeProductRepo(webRoot);
+      web.commitOn("workset/acme-login-web", "web.txt", "web\n");
+      web.squashMerge("workset/acme-login-web", "Web");
+      const record = await readDeliveryRecord(api!);
+      await writeDeliveryRecord(
+        api!,
+        upsertDelivery(record!, "acme/web", { branch: "workset/acme-login-web" }),
+      );
+      git(web.clone, "switch", "-q", "workset/acme-login-web");
+      fs.writeFileSync(path.join(web.clone, "web.txt"), "web, not committed\n");
+      const edited = fs.readFileSync(path.join(api!, "delivery.yaml"), "utf8");
+      const before = inboxTip(fixture);
+      const environment = productEnvironment(login.companion, login.product);
+
+      const outcome = await submitChanges(
+        {
+          ...environment,
+          checkoutOf: async (repository) =>
+            sameRepository(repository, "acme/web") ? web.clone : environment.checkoutOf(repository),
+        },
+        { changes: ["acme-login-ui"] },
+        { ...deps(fixture), runOpenSpec: recordingOpenSpec() },
+      );
+
+      expect(outcome).toMatchObject({
+        results: [
+          {
+            change: "acme-login-ui",
+            status: "waiting",
+            waitingFor: ["acme-login-api"],
+            message: expect.stringContaining("refused: uncommitted-work"),
+          },
+        ],
+      });
+      expect(fs.readFileSync(path.join(api!, "delivery.yaml"), "utf8")).toBe(edited);
       expect(inboxTip(fixture)).toBe(before);
     },
     TIMEOUT,
@@ -1188,7 +1242,10 @@ describe("submitChanges", () => {
       const record = await readDeliveryRecord(api!);
       await writeDeliveryRecord(api!, upsertDelivery(record!, PRODUCT, { head: login.head }));
 
-      const outcome = await submitUi(fixture, login);
+      // Its content passed a check at submit; one failing now must not hold the group back.
+      const outcome = await submitUi(fixture, login, {
+        runOpenSpec: recordingOpenSpec({ invalid: ["acme-login-api"] }),
+      });
 
       expect(outcome).toMatchObject({
         results: [
