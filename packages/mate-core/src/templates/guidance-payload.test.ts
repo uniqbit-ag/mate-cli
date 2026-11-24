@@ -10,6 +10,9 @@ import { buildCompanionGuidance } from "../runtime/companion-guidance";
  * Model-visible Mate guidance, in UTF-8 bytes (not tokens). Baselines were captured
  * before reduce-workflow-token-overhead, with the same sanitized inputs.
  */
+/** Per-skill allowance for the security manifest in each skill's frontmatter, added after the baselines. */
+const SECURITY_MANIFEST_BYTES = 1_400;
+
 const BASELINE = {
   policy: 5782,
   "mate-full/schema.yaml": 12204,
@@ -147,13 +150,15 @@ describe("workflow guidance payload", () => {
       Object.entries(BASELINE).reduce(
         (sum, [key, value]) => (key === "conventions" ? sum : sum + value),
         0,
-      ) + baselineReads;
+      ) +
+      baselineReads +
+      2 * SECURITY_MANIFEST_BYTES;
     const after = Object.values(current).reduce((sum, value) => sum + value, 0) + conventionReads;
 
     expect(current.policy).toBeLessThan(BASELINE.policy);
     expect(current["mate-full/schema.yaml"]).toBeLessThan(BASELINE["mate-full/schema.yaml"]);
     expect(current["mate-propose-change/SKILL.md"]).toBeLessThan(
-      BASELINE["mate-propose-change/SKILL.md"],
+      BASELINE["mate-propose-change/SKILL.md"] + SECURITY_MANIFEST_BYTES,
     );
     expect(conventionReads).toBeLessThan(baselineReads);
     expect(after).toBeLessThan(before);
