@@ -543,7 +543,7 @@ describe("createHostSandbox", () => {
     await box.stop();
     sandbox = null;
     expect((await proc.wait()).exitCode).not.toBe(0);
-    expect(() => process.kill(Number(pid.trim()), 0)).toThrow();
+    expect(await gone(Number(pid.trim()))).toBe(true);
     expect(await fs.stat(home).catch(() => null)).toBeNull();
     await expect(box.run({ command: "true" })).rejects.toThrow(/stopped/);
   });
