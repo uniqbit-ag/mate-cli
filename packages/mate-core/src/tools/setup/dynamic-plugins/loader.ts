@@ -12,8 +12,13 @@ import {
   type CreatePlugin,
   type PluginHost,
 } from "./host";
-import { audienceInstallCommand } from "./audiences";
-import { dynamicPluginsWorkspaceRoot, pluginPackageRoot } from "./paths";
+import { pluginInstallCommand } from "./audiences";
+import {
+  BASE_PLUGIN_ORIGIN,
+  dynamicPluginsWorkspaceRoot,
+  pluginPackageRoot,
+  type PluginOrigin,
+} from "./paths";
 
 interface PluginManifest {
   mate?: { pluginApiVersion?: unknown };
@@ -38,8 +43,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Loads one declared plugin from the workspace of its origin (`audience`:
- * `null` for a base plugin, else the audience declaring it): installed-presence
+ * Loads one declared plugin from the workspace of its origin: installed-presence
  * check, API version gate before import, entry-point resolution via that
  * workspace's own module resolver, dynamic import, factory
  * resolution, effective config, factory invocation. Every failure class
@@ -50,10 +54,10 @@ export async function loadDynamicPlugin(
   companionPath: string,
   declaration: PluginDeclaration,
   deps: DynamicPluginLoadDeps = {},
-  audience: string | null = null,
+  origin: PluginOrigin = BASE_PLUGIN_ORIGIN,
 ): Promise<DynamicPluginLoadResult> {
   const name = declaration.package;
-  const packageRoot = pluginPackageRoot(companionPath, name, audience);
+  const packageRoot = pluginPackageRoot(companionPath, name, origin);
 
   let manifest: PluginManifest;
   try {
@@ -63,7 +67,7 @@ export async function loadDynamicPlugin(
   } catch {
     return {
       ok: false,
-      warning: `plugin "${name}" is not installed; run \`${audienceInstallCommand(audience)}\`.`,
+      warning: `plugin "${name}" is not installed; run \`${pluginInstallCommand(origin)}\`.`,
     };
   }
 
@@ -94,9 +98,7 @@ export async function loadDynamicPlugin(
   let entryPath: string;
   try {
     const workspaceRequire = createRequire(
-      pathToFileURL(
-        path.join(dynamicPluginsWorkspaceRoot(companionPath, audience), "package.json"),
-      ),
+      pathToFileURL(path.join(dynamicPluginsWorkspaceRoot(companionPath, origin), "package.json")),
     );
     entryPath = workspaceRequire.resolve(name);
   } catch (error) {

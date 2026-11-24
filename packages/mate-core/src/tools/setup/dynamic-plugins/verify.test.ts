@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { pluginPackageRoot } from "./paths";
+import { audienceOrigin, pluginPackageRoot } from "./paths";
 import { inspectDeclaredPlugins, verifyDeclaredPlugins } from "./verify";
 
 const roots: string[] = [];
@@ -35,7 +35,7 @@ async function install(
   marker?: string,
   audience: string | null = null,
 ): Promise<void> {
-  const root = pluginPackageRoot(dir, name, audience);
+  const root = pluginPackageRoot(dir, name, audienceOrigin(audience));
   await fs.mkdir(root, { recursive: true });
   await fs.writeFile(
     path.join(root, "package.json"),

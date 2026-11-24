@@ -31,9 +31,9 @@ function lstatOrNull(candidate: string): fs.Stats | null {
   }
 }
 
-function lsFiles(repoPath: string, relativePath: string) {
+function lsFiles(repoPath: string, ...relativePaths: string[]) {
   return {
-    args: ["ls-files", "-z", "--", `:(icase,literal)${relativePath}`],
+    args: ["ls-files", "-z", "--", ...relativePaths.map((entry) => `:(icase,literal)${entry}`)],
     options: { cwd: path.resolve(repoPath), encoding: "utf8" as const, env: gitEnvironment() },
   };
 }
@@ -45,6 +45,17 @@ export async function gitTracks(repoPath: string, relativePath: string): Promise
     return listed(stdout, options.cwd, relativePath);
   } catch {
     return false;
+  }
+}
+
+/** The tracked files at or below the repo-relative `paths`; empty when Git cannot answer. */
+export async function gitTrackedUnder(repoPath: string, paths: string[]): Promise<string[]> {
+  try {
+    const { args, options } = lsFiles(repoPath, ...paths);
+    const { stdout } = await execFileAsync("git", args, options);
+    return stdout.split("\0").filter(Boolean);
+  } catch {
+    return [];
   }
 }
 

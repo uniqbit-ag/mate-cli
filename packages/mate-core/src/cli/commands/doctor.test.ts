@@ -337,6 +337,37 @@ describe("runDoctorCommand", () => {
     }
   });
 
+  test("--frozen-plugins leaves a missing local plugin out of the report", async () => {
+    const root = await makeTempDir("doctor-local-plugins-");
+    const configDir = path.join(root, `.${FRAMEWORK_NAME}`, "config");
+    await fs.mkdir(configDir, { recursive: true });
+    await fs.writeFile(path.join(configDir, "framework.yaml"), "allowedAgents:\n  - claude\n");
+    await fs.writeFile(
+      path.join(configDir, "framework.local.yaml"),
+      'plugins:\n  - package: "@acme/gated"\n    version: "1.0.0"\n',
+    );
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    const stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
+    const originalExitCode = process.exitCode;
+    const failedPackages = async (argv: string[]) => {
+      const output = await captureStdout(() =>
+        runDoctorCommand(argv, { cwd: root, globalConfigStore }),
+      );
+      const { pluginFailures } = JSON.parse(output) as {
+        pluginFailures: Array<{ package: string }>;
+      };
+      return pluginFailures.map((failure) => failure.package);
+    };
+
+    try {
+      expect(await failedPackages(["--json"])).toEqual(["@acme/gated"]);
+      expect(await failedPackages(["--json", "--frozen-plugins"])).toEqual([]);
+    } finally {
+      stderrSpy.mockRestore();
+      process.exitCode = originalExitCode ?? 0;
+    }
+  });
+
   test("omits the declared plugins section and keeps a zero exit when plugins verify", async () => {
     const root = await makeTempDir("doctor-plugins-ok-");
     const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");

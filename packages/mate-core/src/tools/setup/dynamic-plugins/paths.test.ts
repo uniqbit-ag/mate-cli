@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  audienceOrigin,
   audienceWorkspacesRoot,
   dynamicPluginsWorkspaceRoot,
   pluginLocalOverridesPath,
@@ -25,15 +26,17 @@ describe("plugin paths", () => {
   });
 
   test("an audience workspace lives under .mate/plugins/audiences/<name>", () => {
-    expect(dynamicPluginsWorkspaceRoot("/companion", null)).toBe("/companion/.mate/plugins");
-    expect(dynamicPluginsWorkspaceRoot("/companion", "ba")).toBe(
+    expect(dynamicPluginsWorkspaceRoot("/companion", audienceOrigin(null))).toBe(
+      "/companion/.mate/plugins",
+    );
+    expect(dynamicPluginsWorkspaceRoot("/companion", audienceOrigin("ba"))).toBe(
       "/companion/.mate/plugins/audiences/ba",
     );
     expect(audienceWorkspacesRoot("/companion")).toBe("/companion/.mate/plugins/audiences");
   });
 
   test("an audience plugin's package root resolves into its audience workspace", () => {
-    expect(pluginPackageRoot("/companion", "@acme/reader", "ba")).toBe(
+    expect(pluginPackageRoot("/companion", "@acme/reader", audienceOrigin("ba"))).toBe(
       "/companion/.mate/plugins/audiences/ba/node_modules/@acme/reader",
     );
   });

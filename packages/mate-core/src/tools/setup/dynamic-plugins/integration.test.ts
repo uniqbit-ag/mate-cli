@@ -12,10 +12,16 @@ import { ConfigStore } from "../../../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
 import { syncCompanionFiles } from "../../setup";
 import type { ProviderPlugin } from "../plugin";
+import { createGitignorePlugin } from "../plugins/gitignore";
 import { PluginRegistry } from "../registry";
 import { hydrateDynamicPlugins, resetDynamicPluginHydration } from "./hydrate";
 import { installDeclaredPlugins, type NpmInstallRunner } from "./install";
-import { dynamicPluginsWorkspaceRoot } from "./paths";
+import {
+  dynamicPluginsWorkspaceRoot,
+  LOCAL_PLUGIN_ORIGIN,
+  localPluginsFilePath,
+  pluginPackageRoot,
+} from "./paths";
 
 const tempRoots: string[] = [];
 let restoreEnvironment: () => void;
@@ -391,5 +397,111 @@ describe("dynamic plugin Claude plugin folders", () => {
 
     await fs.writeFile(configPath, [...declared, ""].join("\n"), "utf8");
     expect(await syncFresh()).toMatchObject({ launch: [], loadWarnings: [] });
+  });
+
+  test("doctor reports a local plugin that is not installed", async () => {
+    const { companionPath } = await companionWithShipper();
+    await fs.writeFile(
+      localPluginsFilePath(companionPath),
+      'plugins:\n  - package: "@acme/gated"\n    version: "1.0.0"\n',
+    );
+    activateDistribution().register(claudeProvider);
+
+    const report = await collectDoctorReport({
+      cwd: companionPath,
+      env: {},
+      globalConfigStore: new GlobalConfigStore(path.join(companionPath, "global.yaml")),
+    });
+
+    expect(report.pluginFailures?.map((failure) => failure.package)).toEqual(["@acme/gated"]);
+  });
+});
+
+describe("local plugin confinement", () => {
+  const GATED = "@acme/gated";
+  const GATED_SOURCE = `
+export default () => ({
+  id: "acme-gated",
+  kind: "capability",
+  label: "Acme Gated",
+  description: "local fixture",
+  defaultSelected: false,
+  isEnabled: () => false,
+  apply: async (ctx) => {
+    await ctx.mcp?.register({ name: "acme-gated-applied", command: "acme-gated-mcp" });
+    await ctx.instructions?.append("acme-gated-guidance");
+  },
+  teardown: async () => {},
+  gitignoreEntries: () => [".acme-gated/"],
+  getRuntimeContributions: () => ({
+    claude: {
+      hookMarkers: ["acme-gated-old"],
+      hookGroups: [{
+        event: "SessionStart",
+        marker: "acme-gated-hook",
+        group: { hooks: [{ type: "command", command: "acme-gated-hook" }] },
+      }],
+      mcpServers: [{ name: "acme-gated", command: "acme-gated-mcp" }],
+      skillTrees: [{ name: "acme-gated", sourceDir: "/nonexistent" }],
+    },
+  }),
+});
+`;
+
+  test("a setup pass applies the hook and skips the skill, MCP server and ignore entry", async () => {
+    const companionPath = await makeTempDir("dynamic-plugins-local-");
+    const configPath = path.join(companionPath, ".mate", "config", "framework.yaml");
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(configPath, "allowedAgents: [claude]\ncapabilities: []\n", "utf8");
+    await fs.writeFile(
+      localPluginsFilePath(companionPath),
+      `plugins:\n  - package: "${GATED}"\n    version: "1.0.0"\n`,
+    );
+    const root = pluginPackageRoot(companionPath, GATED, LOCAL_PLUGIN_ORIGIN);
+    await fs.mkdir(root, { recursive: true });
+    await fs.writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: GATED, version: "1.0.0", type: "module", main: "index.js" }),
+    );
+    await fs.writeFile(path.join(root, "index.js"), GATED_SOURCE);
+    const registry = activateDistribution();
+    registry.register(claudeProvider);
+    registry.register(createGitignorePlugin("mate", () => registry.getAll()));
+    const warnings: string[] = [];
+
+    await hydrateDynamicPlugins({
+      companionPath,
+      env: {},
+      warn: (message) => warnings.push(message),
+    });
+    await syncCompanionFiles(companionPath, await new ConfigStore(configPath).load());
+
+    const settings = await fs.readFile(
+      path.join(companionPath, ".claude", "settings.local.json"),
+      "utf8",
+    );
+    expect(settings).toContain("acme-gated-hook");
+    expect(await fs.readFile(path.join(companionPath, ".gitignore"), "utf8")).not.toContain(
+      ".acme-gated/",
+    );
+    const mcp = await fs.readFile(path.join(companionPath, ".mcp.json"), "utf8").catch(() => "");
+    expect(mcp).not.toContain("acme-gated");
+    for (const file of ["CLAUDE.md", "AGENTS.md"]) {
+      const text = await fs.readFile(path.join(companionPath, file), "utf8").catch(() => "");
+      expect(text).not.toContain("acme-gated-guidance");
+    }
+    const skill = path.join(companionPath, ".claude", "skills", "acme-gated");
+    expect(await fs.stat(skill).catch(() => null)).toBeNull();
+    const warning = warnings.join("\n");
+    for (const expected of [
+      GATED,
+      "skills",
+      "MCP servers",
+      "guidance sections",
+      "gitignore entries",
+    ]) {
+      expect(warning).toContain(expected);
+    }
+    expect(warning).not.toContain("hookMarkers");
   });
 });

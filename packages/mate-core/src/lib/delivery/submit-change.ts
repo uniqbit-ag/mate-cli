@@ -31,6 +31,7 @@ import { openspecArtifactType } from "./staging/openspec-type";
 import { loadSubmitWorkflow } from "./staging/registry";
 import {
   dropSubmitted,
+  editedSubmittedMembers,
   groupOfChange,
   localMembers,
   submissionState,
@@ -63,7 +64,7 @@ export interface SubmitResult {
   group: string | null;
   /** Local members of the group that keep it from being submitted. */
   waitingFor: string[];
-  /** Whether this run pushed the group's folders. */
+  /** Whether this run pushed the group's folders; for an edited `submitted` member, its own. */
   pushed: boolean;
   /** The submit commit this run pushed. */
   commit: string | null;
@@ -184,6 +185,7 @@ async function prepare(
   type: ArtifactType,
   workflow: Workflow,
   deps: SubmitChangeDeps,
+  check = true,
 ): Promise<{ refusal: DeliveryRefusal } | { result: SubmitResult } | { prepared: Prepared }> {
   const outcome = await recordDelivery(
     environment,
@@ -238,16 +240,23 @@ async function prepare(
   deps.onWarnings?.(change, warnings, settlement.unscoped);
 
   const fields = { defaultBranch, diagnostics, record, settlement, outcomes, warnings };
-  const failure = await type.check(cwd, change);
+  const failure = check ? await type.check(cwd, change) : null;
   if (failure) return { prepared: { ...fields, change, group: named.group, failure } };
   return { prepared: { ...fields, change, group: named.group } };
 }
 
-function groupMessage(change: string, submission: GroupSubmission): string {
+function groupMessage(
+  change: string,
+  submission: GroupSubmission,
+  refused: ReadonlyMap<string, string>,
+): string {
   const { group, push } = submission;
   if (submission.status === "waiting") {
-    return submission.waitingFor.length > 0
-      ? `${change} is not submitted: group ${group} lands together and waits for: ${submission.waitingFor.join(", ")}. Finish or drop them, then submit again; nothing was pushed.`
+    const waiting = submission.waitingFor.map((name) =>
+      refused.has(name) ? `${name} (its delivery was refused: ${refused.get(name)})` : name,
+    );
+    return waiting.length > 0
+      ? `${change} is not submitted: group ${group} lands together and waits for: ${waiting.join(", ")}. Finish, fix or drop them, then submit again; nothing was pushed.`
       : `Checked ${change}; nothing was pushed.`;
   }
   const place = push?.pendingBranch ?? "the pending branch";
@@ -291,10 +300,11 @@ async function readySiblings(
  * dependencies, incomplete planning, an unfinished required stage of the Delivery Path and its
  * Delivery Group, and the type's `check` runs. The
  * other active changes of its Delivery Group join when every task of theirs is checked and they
- * pass the same steps. A group is then pushed whole, in one commit that sets its changes
- * `submitted`, or not at all: while a member has open tasks or fails its check, the group waits
- * and no state changes. Never archives and never writes canonical specs; merge state is
- * reported, never a refusal.
+ * pass the same steps, as do its `submitted` members edited since this checkout submitted or took
+ * them. A group is then pushed whole, in one commit that sets its changes `submitted`, or not at
+ * all: while a member has open tasks, fails its check, cannot be refreshed or has a merged branch
+ * with uncommitted work, the group waits and no state changes. Never archives and never writes
+ * canonical specs; merge state is reported, never a refusal.
  */
 export async function submitChanges(
   environment: DeliveryEnvironment,
@@ -310,23 +320,26 @@ export async function submitChanges(
     deps.artifactType ?? environment.artifactType ?? openspecArtifactType(deps.runOpenSpec);
   const cwd = environment.companionPath;
   const workflow = environment.workflow ?? (await loadSubmitWorkflow(cwd)).workflow;
-  // Every change is refused or accepted before any record is written, so a refused later one
-  // leaves no earlier record changed. The merge check runs here too: a delivery Git would settle
-  // while its work tree holds uncommitted work is refused before that merge is recorded.
-  for (const change of request.changes) {
-    // oxlint-disable-next-line no-await-in-loop -- a few changes per run
-    const checked = await recordDelivery(
+  // A delivery Git would settle while its work tree holds uncommitted work is refused before that
+  // merge is recorded.
+  const dryRun = (own: SubmitRequest, change: string) =>
+    recordDelivery(
       environment,
       {
-        ...deliveryRequest(request, change),
+        ...deliveryRequest(own, change),
         dryRun: true,
         refresh: true,
         refreshAll: true,
-        ...(request.fetch ? { fetch: true } : {}),
+        ...(own.fetch ? { fetch: true } : {}),
         refuseUncommitted: true,
       },
       deps,
     );
+  // Every change is refused or accepted before any record is written, so a refused later one
+  // leaves no earlier record changed.
+  for (const change of request.changes) {
+    // oxlint-disable-next-line no-await-in-loop -- a few changes per run
+    const checked = await dryRun(request, change);
     if ("refusal" in checked) return checked;
   }
   const steps: ({ result: SubmitResult } | { prepared: Prepared })[] = [];
@@ -337,34 +350,67 @@ export async function submitChanges(
     steps.push(step);
   }
   const named = steps.flatMap((step) => ("prepared" in step ? [step.prepared] : []));
+  const groups = new Set(named.map((entry) => entry.group));
   const siblings = await readySiblings(
     cwd,
     type,
-    new Set(named.map((entry) => entry.group)),
+    groups,
     request.changes,
     deps.openTasks ?? openTasks,
   );
+  /** Why each unnamed change could not be prepared, for the message of the group waiting for it. */
+  const refused = new Map<string, string>();
+  const prepareUnnamed = async (
+    change: string,
+    extra: Pick<SubmitRequest, "skipBranch"> = {},
+    check = true,
+  ): Promise<void> => {
+    const own: SubmitRequest = {
+      changes: [change],
+      ...extra,
+      ...(request.fetch ? { fetch: true } : {}),
+    };
+    const checked = await dryRun(own, change);
+    const step =
+      "refusal" in checked
+        ? checked
+        : await prepare(environment, own, change, type, workflow, deps, check);
+    if ("refusal" in step) refused.set(change, step.refusal.reason);
+    else if ("prepared" in step) steps.push(step);
+  };
+  // One that cannot be prepared stays active, so its group waits for it.
   for (const change of siblings) {
     // oxlint-disable-next-line no-await-in-loop -- warnings reach stderr change by change
-    const step = await prepare(
-      environment,
-      { changes: [change], ...(request.fetch ? { fetch: true } : {}) },
-      change,
-      type,
-      workflow,
-      deps,
-    );
-    // One that cannot be prepared stays active, so its group waits for it.
-    if ("prepared" in step) steps.push(step);
+    await prepareUnnamed(change);
+  }
+  // The archive alias pushes nothing, and its `--json` stays one object for one change.
+  const edited = request.holdPush
+    ? []
+    : await editedSubmittedMembers(cwd, groups, request.changes, { ...deps, artifactType: type });
+  const editedNames = new Set(edited.map((member) => member.name));
+  // Accepted once already, so a change nobody named never answers `needs-branch`. One whose
+  // content is as last submitted skips its check: that content passed one, and the push may keep
+  // a teammate's copy instead.
+  for (const member of edited) {
+    // oxlint-disable-next-line no-await-in-loop -- warnings reach stderr change by change
+    await prepareUnnamed(member.name, { skipBranch: true }, !member.recordOnly);
   }
   const prepared = steps.flatMap((step) => ("prepared" in step ? [step.prepared] : []));
 
   // A group with a failed check is not pushed at all: it waits for the failing changes.
   const failing = new Map<string, string[]>();
-  for (const entry of prepared.filter((each) => each.failure)) {
-    failing.set(entry.group, [...(failing.get(entry.group) ?? []), entry.change]);
+  const hold = (group: string, change: string): void => {
+    failing.set(group, [...(failing.get(group) ?? []), change]);
+  };
+  for (const entry of prepared.filter((each) => each.failure)) hold(entry.group, entry.change);
+  // `submitGroups` would push one unprepared: a `submitted` member never makes a group wait there.
+  for (const member of edited) {
+    if (!prepared.some((entry) => entry.change === member.name)) hold(member.group, member.name);
   }
-  const ready = prepared.filter((entry) => !failing.has(entry.group));
+  // Left unnamed: `submitGroups` pushes them anyway, and a name would accept a pending block.
+  const ready = prepared.filter(
+    (entry) => !failing.has(entry.group) && !editedNames.has(entry.change),
+  );
   const held: GroupSubmission[] = [...failing].map(([group, waitingFor]) => ({
     group,
     status: "waiting",
@@ -408,18 +454,20 @@ export async function submitChanges(
     const push = submission.push;
     const landed = submission.status === "pushed" || submission.status === "unchanged";
     const state: SubmissionState = landed ? "submitted" : current;
+    // The push leaves out an edited member whose copy on the pending branch stands.
+    const carried = !editedNames.has(entry.change) || push?.changes.includes(entry.change) === true;
     results.set(entry, {
       ...base,
       status: landed ? "submitted" : submission.status === "waiting" ? "waiting" : "failed",
       waitingFor: submission.waitingFor,
-      pushed: submission.status === "pushed",
+      pushed: submission.status === "pushed" && carried,
       commit: push?.commit ?? null,
       pendingBranch: push?.pendingBranch ?? null,
       state,
       record: { ...entry.record, state },
       ...(push?.reason ? { reason: push.reason } : {}),
       ...(push?.secretFindings ? { secretFindings: push.secretFindings } : {}),
-      message: groupMessage(entry.change, submission),
+      message: groupMessage(entry.change, submission, refused),
     });
   }
   return {

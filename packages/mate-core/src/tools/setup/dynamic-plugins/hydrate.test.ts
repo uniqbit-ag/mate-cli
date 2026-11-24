@@ -10,7 +10,7 @@ import { PluginRegistry } from "../registry";
 import type { Plugin } from "../plugin";
 import type { PluginHost } from "./host";
 import { hydrateDynamicPlugins, resetDynamicPluginHydration } from "./hydrate";
-import { pluginPackageRoot } from "./paths";
+import { audienceOrigin, pluginPackageRoot } from "./paths";
 
 const tempRoots: string[] = [];
 
@@ -69,7 +69,11 @@ async function writeCompanion(options: {
     "utf8",
   );
   if (options.installed !== false) {
-    const root = pluginPackageRoot(companionPath, PACKAGE, options.audience ?? null);
+    const root = pluginPackageRoot(
+      companionPath,
+      PACKAGE,
+      audienceOrigin(options.audience ?? null),
+    );
     await fs.mkdir(root, { recursive: true });
     await fs.writeFile(
       path.join(root, "package.json"),
