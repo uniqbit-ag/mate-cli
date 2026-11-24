@@ -8,6 +8,7 @@ import {
   requirement,
   type StagingFixture,
 } from "../../../../test/staging-fixture";
+import type { RunOpenSpec } from "../../openspec-cli";
 import { openspecArtifactType } from "./openspec-type";
 
 const TIMEOUT = 60_000;
@@ -15,6 +16,18 @@ const fixtures: StagingFixture[] = [];
 
 afterEach(() => {
   for (const fixture of fixtures.splice(0)) fixture.cleanup();
+});
+
+test("a failed check whose JSON names no failing issue reports stderr", async () => {
+  const runner: RunOpenSpec = async () => ({
+    code: 1,
+    stdout: '{"items":[]}\n',
+    stderr: "acme: cannot read widget/spec.md",
+  });
+
+  expect(await openspecArtifactType(runner).check("/companion", "acme-login")).toBe(
+    "acme: cannot read widget/spec.md",
+  );
 });
 
 describe.skipIf(!REAL_OPENSPEC)("the OpenSpec type's check", () => {

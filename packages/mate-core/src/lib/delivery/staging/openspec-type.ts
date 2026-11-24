@@ -112,8 +112,13 @@ async function checkChange(
   if (run.code === 0) return null;
   if (run.code === null) return `openspec validate ${change} --strict ran out of time`;
   const failing = failingIssues(run.stdout);
-  if (failing) return failing.join("\n") || `openspec validate ${change} --strict failed`;
-  const output = (run.stderr || run.stdout).trim().split("\n").slice(-5).join("\n");
+  if (failing && failing.length > 0) return failing.join("\n");
+  // JSON naming no failure says nothing here, so only stderr can say why.
+  const output = (run.stderr || (failing ? "" : run.stdout))
+    .trim()
+    .split("\n")
+    .slice(-5)
+    .join("\n");
   return output || `openspec validate ${change} --strict failed`;
 }
 
