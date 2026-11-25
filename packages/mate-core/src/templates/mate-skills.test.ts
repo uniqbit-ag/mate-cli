@@ -1413,8 +1413,9 @@ describe("bundled Delivery Path stage skills", () => {
     // Main's closing rule is kept word for word, since sessions follow it best (60 of 60 on the
     // smallest model); with the command and the earlier-steps paragraph of apply and submit it
     // costs about 2.5% over main's 121440 bytes; the security manifests add about 7 KB more,
-    // and the guardrail exceptions (example env files, named identity files) about 0.5 KB.
-    expect(bytes).toBeLessThan(133_500);
+    // the guardrail exceptions (example env files, named identity files) about 0.5 KB, and the
+    // read-only pending calls' `--no-merge-check` 34 bytes.
+    expect(bytes).toBeLessThan(133_550);
   });
 
   test("no Next steps example offers a mate command", async () => {
