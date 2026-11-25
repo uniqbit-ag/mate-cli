@@ -182,7 +182,8 @@ interface ReadOptions {
 
 export type FrictionScope = { companion: string } | "all";
 
-function companionFilter(target: string): (candidate: string) => boolean {
+/** Matches companion paths that resolve to the same real path as `target`. */
+export function companionFilter(target: string): (candidate: string) => boolean {
   if (!target) return () => false;
   const wanted = realPath(target);
   const seen = new Map<string, boolean>();
@@ -227,6 +228,15 @@ function readMonth<T>(
   return scanMonth(family, month, accept, homeDir).records;
 }
 
+/** The family's months on disk, oldest first; none when the log folder is unreadable. */
+function retainedMonths(family: Family, homeDir?: string): string[] {
+  try {
+    return logMonths(frictionLogDir(homeDir), family).toSorted();
+  } catch {
+    return [];
+  }
+}
+
 function readFamily<T extends { at: string }>(
   family: Family,
   accept: (value: unknown) => value is T,
@@ -234,15 +244,8 @@ function readFamily<T extends { at: string }>(
 ): T[] {
   const now = options.now ?? new Date();
   const since = new Date(now.getTime() - options.sinceDays * DAY_MS);
-  const dir = frictionLogDir(options.homeDir);
-  let months: string[];
-  try {
-    months = logMonths(dir, family).filter((month) => month >= monthOf(since));
-  } catch {
-    return [];
-  }
-  return months
-    .toSorted()
+  return retainedMonths(family, options.homeDir)
+    .filter((month) => month >= monthOf(since))
     .flatMap((month) => readMonth(family, month, accept, options.homeDir))
     .filter((record) => {
       const at = Date.parse(record.at);
@@ -283,17 +286,38 @@ function findRecord<T>(
   match: (record: T) => boolean,
   homeDir?: string,
 ): T | null {
-  let months: string[];
-  try {
-    months = logMonths(frictionLogDir(homeDir), family);
-  } catch {
-    return null;
-  }
-  for (const month of months.toSorted().toReversed()) {
+  for (const month of retainedMonths(family, homeDir).toReversed()) {
     const found = readMonth(family, month, accept, homeDir).find(match);
     if (found) return found;
   }
   return null;
+}
+
+function findRecords<T>(
+  family: Family,
+  accept: (value: unknown) => value is T,
+  match: (record: T) => boolean,
+  homeDir?: string,
+): T[] {
+  return retainedMonths(family, homeDir).flatMap((month) =>
+    readMonth(family, month, accept, homeDir).filter(match),
+  );
+}
+
+/** Every event that matches, in any retained month, oldest file first. */
+export function findEvents(
+  match: (event: FrictionEvent) => boolean,
+  options: { homeDir?: string } = {},
+): FrictionEvent[] {
+  return findRecords("events", isFrictionEvent, match, options.homeDir);
+}
+
+/** Every report that matches, in any retained month, oldest file first. */
+export function findReports(
+  match: (report: FrictionReport) => boolean,
+  options: { homeDir?: string } = {},
+): FrictionReport[] {
+  return findRecords("reports", isFrictionReport, match, options.homeDir);
 }
 
 /** The event with this id in any retained month, or null. */

@@ -40,6 +40,7 @@ export type {
   StudioSocketPeer,
   StudioTerminalHost,
   StudioView,
+  StudioViewLayout,
   StudioViewMount,
   StudioViewMountContext,
   StudioWorksetSessions,

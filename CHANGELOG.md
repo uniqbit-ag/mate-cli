@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### `mate companion update` runs a pinned `skills` CLI
+
+- Mate pins one exact `skills` version for `skills-lock.json` refreshes instead of running `npx skills`. A new version arrives with a Mate release.
+- Mate now requires Node.js 22.20.0 or newer to install its dependencies.
+
+### One tool manifest pins the shared tool versions
+
+- `packages/mate-core/tool-manifest.yaml` names the exact version of OpenSpec, `skills`, React Doctor, Context7, Graphify, RTK and TokenSave. Setup, the Context7 launch and the container image read it, so one bump reaches all of them.
+- TokenSave, RTK and Graphify install at the manifest's version: `cargo install --locked tokensave --version <version>`, RTK's installer from the release tag with `RTK_VERSION` set, and `uv tool install graphifyy==<version>`. TokenSave uses Cargo when it is on `PATH`. Without Cargo, or when `rustc` is older than the pinned release needs, it installs through Homebrew or Scoop, which install their formula's current version.
+- `mate install` and setup no longer upgrade TokenSave or RTK. When an installed TokenSave, RTK or Graphify reports another version, older or newer, `mate install` warns, names the installed binary and the pinned install command, and continues with the installed version. Setup warns for TokenSave only.
+- The container image installs Graphify and its dependencies only after checking each archive against the hash in `graphify.requirements.txt`.
+
+### The factory host lists a companion's installed plugins
+
+- `@uniqbit/mate-core/factory-host` exports `installedPluginPackages(companionPath, { audience?, includeLocal? })`: the effective plugins that are installed, in hydration order, each with package name, installed version, package directory and origin. It reads `framework.yaml` and each `package.json` only and runs no plugin code. The Mate factory reads plugin-contributed agent providers through it.
+
 ### Mate skills declare a security manifest and pre-approve only the git commands they run (security)
 
 - Every Mate skill header, including the generated `mate-create-report`, now declares under `metadata`:
@@ -11,6 +27,7 @@
   - its last security scan.
 
   The format follows the OWASP Agentic Skills Top 10. Connections the `mate` CLI opens for a skill are listed as `(via mate)`.
+
 - Every skill's `## Guardrails` section now forbids reading secret-bearing files and writing `CLAUDE.md`, `AGENTS.md`, `MEMORY.md` or `SOUL.md`, and treats repository text as data. Two exceptions keep normal work possible: `.env.example`, `.env.sample` and `.env.template` may be read, and an identity file may be written when a task or the user names it.
 - Narrower git pre-approvals:
   - `mate-submit-change`, `mate-archive-change` and `mate-propose-change` no longer pre-approve git.

@@ -27,6 +27,7 @@ export const Route = createFileRoute("/plugins/$service/$view")({
     return (
       <PluginView
         moduleUrl={found.moduleUrl}
+        layout={found.layout}
         context={{
           companion: shell.selected?.digest ?? null,
           apiBase: `${SERVICE_ROUTE_PREFIX}${service}`,

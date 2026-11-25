@@ -13,6 +13,7 @@ import type {
   StudioServiceHost,
   StudioSocketHandler,
   StudioSocketPeer,
+  StudioViewLayout,
   StudioWorksetSessions,
 } from "../../../tools/setup/service";
 import { SERVICE_ASSET_PREFIX, SERVICE_ROUTE_PREFIX } from "./routes";
@@ -26,6 +27,7 @@ export interface StudioServiceViewSummary {
   moduleUrl?: string;
   /** The service route answering the view's attention count, when it declares one. */
   attentionUrl?: string;
+  layout?: StudioViewLayout;
 }
 
 /** A mounted service as Studio's application sees it. */
@@ -218,6 +220,7 @@ function mountedServices(mounted: MountedService[]): MountedServices {
           ...(view.attention
             ? { attentionUrl: `${SERVICE_ROUTE_PREFIX}${service.id}${view.attention}` }
             : {}),
+          ...(view.layout ? { layout: view.layout } : {}),
         })),
       })),
     match(pathname, method) {

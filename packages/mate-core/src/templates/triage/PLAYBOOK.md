@@ -24,7 +24,13 @@ Ask what went wrong, unless the person already said it. Ask what they expected i
 
 Read `context.md` in this folder. It holds the machine facts, the Agent Runtimes found, the issue repository and the doctor report.
 
-When `context.md` names `friction-events.jsonl` or `friction-reports.jsonl`, read them. Use `friction-states.json` to tell open items from handled ones: a fingerprint or Free Report without an entry there is open, and so is a `fixed` one marked `reopened`. Start with the open fingerprints that repeat most within one session (`sessionId`): a refusal that repeats in one session is the clearest sign of a Mate problem. Look at a `fixed`, `reported` or `dismissed` item only when it relates to the problem or the person asks. A `reported` item's `link` is an existing issue: in step 6 and 7, treat it as the matching issue. A report in `friction-reports.jsonl` is an agent's own judgement of an event; its `eventId` links it to the event.
+When `context.md` names `friction-events.jsonl` or `friction-reports.jsonl`, read them. Use `friction-states.json` to tell open items from handled ones: a fingerprint or Free Report without an entry there is open, and so is a `fixed` one marked `reopened`.
+
+When `context.md` names a Triage Target, start from that target, whatever its Friction State: the person chose it. Look at other items only when they relate to it or the person asks.
+
+Without a Triage Target, start with the open fingerprints that repeat most within one session (`sessionId`): a refusal that repeats in one session is the clearest sign of a Mate problem.
+
+Look at a `fixed`, `reported` or `dismissed` item other than the Triage Target only when it relates to the problem or the person asks. A `reported` item's `link` is an existing issue: in step 6 and 7, treat it as the matching issue. A report in `friction-reports.jsonl` is an agent's own judgement of an event; its `eventId` links it to the event.
 
 You may run read-only Mate commands, such as `doctor`, under the name shown in `Invoked as`.
 
@@ -108,5 +114,7 @@ Once the chosen outcome is done, ask the person whether to record it. Only after
 - a fix: `mate friction mark "<fingerprint|report-id>" --state fixed --note "<what changed>"`
 - a posted issue or comment: `mate friction mark "<fingerprint|report-id>" --state reported --link <issue or comment URL>`
 - no Mate problem: `mate friction mark "<fingerprint|report-id>" --state dismissed --note "<why>"`
+
+With a Triage Target, offer recording for the target, and for another item only when the same outcome covers it.
 
 The note and the link are kept on this machine; give no secret and no product detail in them. When the person chose nothing, record `dismissed` only when they said so in step 7.

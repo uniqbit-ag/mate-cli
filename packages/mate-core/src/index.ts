@@ -21,6 +21,7 @@ export {
   type NormalizedRegistration,
 } from "./tools/setup/registry";
 export { ensureCapabilityEnabled, type EnsureCapabilityEnabledDeps } from "./cli/plugin-commands";
+export { toolVersion } from "./lib/tool-manifest";
 // Dynamic plugin authors: import from this package as TYPES ONLY. Runtime
 // imports resolve a second, uninitialized copy of mate-core inside the
 // plugin's own node_modules; all runtime behavior flows through PluginHost.

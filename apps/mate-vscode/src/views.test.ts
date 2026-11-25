@@ -4,7 +4,13 @@ import os from "node:os";
 import path from "node:path";
 
 import { countTasks, readOpenChanges, readyToSubmit } from "./changes";
-import { MateNotFoundError, prepareWorkspace, runMateJson, shellQuote } from "./mate";
+import {
+  MateNotFoundError,
+  pendingArtifacts,
+  prepareWorkspace,
+  runMateJson,
+  shellQuote,
+} from "./mate";
 import { toPendingItems } from "./pending";
 import { resolveRepository, umbrellaWorktrees } from "./repository";
 import { umbrellaFixture } from "./umbrella.fixture";
@@ -195,6 +201,17 @@ describe("runMateJson", () => {
       stderr: "warning\nmate: no companion is linked\n",
     })).catch((caught: Error) => caught);
     expect((error as Error).message).toBe("mate: no companion is linked");
+  });
+});
+
+describe("pendingArtifacts", () => {
+  test("skips the merge check, which fetches into the Working Repository", async () => {
+    let command = "";
+    await pendingArtifacts("/work", async (line) => {
+      command = line;
+      return { code: 0, stdout: "{}", stderr: "" };
+    });
+    expect(command).toContain("'--no-merge-check'");
   });
 });
 

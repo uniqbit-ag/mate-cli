@@ -12,6 +12,7 @@ import { useStudioClicks } from "../lib/page-actions";
 import { usePrefetchViews } from "../lib/prefetch-views";
 import { useAppearance } from "../stores/appearance";
 import { usePageUi } from "../stores/page-ui";
+import { heldBy, useTerminalUi } from "../stores/terminal-ui";
 import { CommandPalette } from "./command-palette";
 import { CompanionPicker } from "./companion-picker";
 import { ConnectionBanner } from "./connection-banner";
@@ -53,11 +54,19 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
         (entry) => entry.service === pluginParams.service && entry.view === pluginParams.view,
       )
     : undefined;
+  const workspace = pluginView?.layout === "workspace";
+  const workspaceKey = pluginView ? `${pluginView.service}/${pluginView.view}` : null;
+  const released = useTerminalUi((state) => state.released);
+  // A workspace view holds the agent terminal collapsed until the person expands it.
+  const held = heldBy(workspace ? workspaceKey : null, released);
   const digest = shell.selected?.digest;
   useStudioEvents(digest);
   useStudioClicks();
   useRailKey();
   usePrefetchViews(shell.selected ? search : {}, shell.studioMode, shell.enabledModes);
+  useEffect(() => {
+    useTerminalUi.getState().setWorkspace(workspace ? workspaceKey : null);
+  }, [workspace, workspaceKey]);
   useEffect(() => {
     if (!digest) return;
     try {
@@ -73,6 +82,7 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
         data-companion={digest}
         data-terminal={shell.terminal ? "" : undefined}
         data-picker={shell.selected ? undefined : ""}
+        data-terminal-held={held ? "" : undefined}
       >
         <NavigationProgress />
         <TopBar shell={shell} search={search} />
@@ -80,7 +90,9 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
         {shell.selected ? <Sidebar shell={shell} search={search} view={view} /> : null}
         <main className="studio-main flex min-h-0 min-w-0 flex-col overflow-auto" id="studio-main">
           <ConnectionBanner />
-          {shell.selected ? (
+          {shell.selected && workspace ? (
+            <Outlet />
+          ) : shell.selected ? (
             <>
               <PageHeader
                 title={pluginView ? pluginView.label : VIEW_TITLES[view]}
@@ -102,7 +114,7 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
             />
           )}
         </main>
-        {shell.terminal ? <TerminalSidebar terminal={shell.terminal} /> : null}
+        {shell.terminal ? <TerminalSidebar terminal={shell.terminal} heldBy={held} /> : null}
       </div>
       <CommandPalette shell={shell} search={search} />
       <Toasts search={search} />

@@ -84,7 +84,7 @@ propose steps below.
    `mate artifact link "<change-name>" --spec-base --json`, so a requirement someone changes
    meanwhile conflicts at publication instead of being overwritten. Then compare the
    requirements the delta specs modify or remove with `touches` of each change in
-   `mate artifact pending --json`: for a match, tell the user the change and its
+   `mate artifact pending --json --no-merge-check`: for a match, tell the user the change and its
    `author`, since the one published second is refused as a conflict until resolved.
 
    **Dependent changes.** A `dependsOn` change that is submitted or active in this

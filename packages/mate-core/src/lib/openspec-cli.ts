@@ -79,6 +79,15 @@ export const openSpecCliDeps = {
   locate: (): OpenSpecLocation => resolveOpenSpec(),
 };
 
+/**
+ * How to start a CLI mate-core depends on. A JS entry runs on the current runtime, not its
+ * `#!/usr/bin/env node` shebang, which needs an executable bit and `node` on PATH and does
+ * not work on Windows.
+ */
+export function bundledCliCommand(bin: string, args: string[]): [string, string[]] {
+  return /\.m?js$/.test(bin) ? [process.execPath, [bin, ...args]] : [bin, args];
+}
+
 /** The CLI every OpenSpec process Mate starts runs. */
 export function locateOpenSpec(): OpenSpecLocation {
   return openSpecCliDeps.locate();
@@ -91,11 +100,7 @@ export function runOpenSpec(args: string[], options: OpenSpecRunOptions): Promis
     return Promise.resolve({ code: 1, stdout: "", stderr: location.missing, missing: true });
   }
   return new Promise((resolve) => {
-    // A JS entry runs on the current runtime, not its `#!/usr/bin/env node` shebang,
-    // which needs an executable bit and `node` on PATH and does not work on Windows.
-    const [command, commandArgs] = location.bin.endsWith(".js")
-      ? [process.execPath, [location.bin, ...args]]
-      : [location.bin, args];
+    const [command, commandArgs] = bundledCliCommand(location.bin, args);
     const child = spawn(command, commandArgs, {
       cwd: options.cwd,
       env: { ...(options.env ?? process.env), ...OPENSPEC_ENV },

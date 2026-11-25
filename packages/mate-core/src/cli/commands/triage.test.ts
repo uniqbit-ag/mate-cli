@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { createTempDir } from "../../../../../test/fixtures";
 import { resetActiveDistribution, setActiveDistribution } from "../../distribution";
 import type { launchAgent } from "../../lib/triage/launch";
-import { launchedTriageSessionDir } from "../../lib/triage/session";
+import { launchedTriageSessionDir, triageRoot } from "../../lib/triage/session";
+import { appendEvent, appendReport } from "../../runtime/friction-log";
 import { PluginRegistry } from "../../tools/setup/registry";
 import * as doctorCmd from "./doctor";
 import { runTriageCommand, type TriageDeps } from "./triage";
@@ -186,6 +187,128 @@ describe("mate triage", () => {
     expect(out.join("\n")).toContain("prompt.md");
     expect(err.join("\n")).toContain("No agent was found");
     expect(process.exitCode).toBe(1);
+  });
+
+  describe("with a Triage Target", () => {
+    const fingerprint = "command:artifact submit:1";
+
+    function recordEvent(home: string, companion: string) {
+      return appendEvent(
+        {
+          kind: "command-failure",
+          fingerprint,
+          mateVersion: "1.2.3",
+          runtime: "claude",
+          sessionId: "s1",
+          companion,
+          repositoryPath: null,
+          detail: {},
+        },
+        { homeDir: home },
+      )!;
+    }
+
+    function recordReport(home: string, companion: string, eventId: string | null) {
+      return appendReport(
+        {
+          eventId,
+          kind: "bug",
+          cost: null,
+          subject: "acme",
+          expected: "acme",
+          evidence: null,
+          workaround: null,
+          mateVersion: "1.2.3",
+          companion,
+          sessionId: null,
+          runtime: null,
+        },
+        { homeDir: home },
+      );
+    }
+
+    test("starts a session from a recorded fingerprint", async () => {
+      const { deps, root } = await setup([]);
+      recordEvent(deps.env!.HOME!, root);
+
+      await runTriageCommand([fingerprint, "--no-launch"], deps);
+
+      expect(process.exitCode || 0).toBe(0);
+      const context = out
+        .find((line) => line.trim().startsWith("context:"))!
+        .split(": ")
+        .at(-1)!;
+      const text = fs.readFileSync(context.trim(), "utf8");
+      expect(text).toContain(`Triage Target: \`${fingerprint}\``);
+      expect(text).toContain(`Invoked as: \`mate triage "${fingerprint}" --no-launch\``);
+    });
+
+    test("inside an agent session, names the target in the command to run", async () => {
+      const { deps, root } = await setup(["claude"]);
+      recordEvent(deps.env!.HOME!, root);
+
+      await runTriageCommand([fingerprint], {
+        ...deps,
+        env: { ...deps.env, CLAUDE_CODE_SESSION_ID: "s1" },
+      });
+
+      expect(out.join("\n")).toContain(`Run \`mate triage "${fingerprint}"\` in your own terminal`);
+    });
+
+    test("finds a Free Report by its id in upper case", async () => {
+      const { deps, root } = await setup([]);
+      const report = recordReport(deps.env!.HOME!, root, null);
+
+      await runTriageCommand([report.id.toUpperCase(), "--no-launch"], deps);
+
+      expect(err).toEqual([]);
+      expect(process.exitCode || 0).toBe(0);
+    });
+
+    test("refuses an unknown target, writes no session and prunes none", async () => {
+      const { deps } = await setup([]);
+      const old = path.join(triageRoot(deps.env!.HOME), "2020-01-01T00-00-00-000Z");
+      fs.mkdirSync(old, { recursive: true });
+
+      await runTriageCommand(["refusal:acme:none", "--no-launch"], deps);
+
+      expect(err.join("\n")).toContain("refusal:acme:none");
+      expect(process.exitCode).toBe(1);
+      expect(fs.readdirSync(triageRoot(deps.env!.HOME))).toEqual([path.basename(old)]);
+    });
+
+    test("refuses a report on an event and names its fingerprint", async () => {
+      const { deps, root } = await setup([]);
+      const home = deps.env!.HOME!;
+      const event = recordEvent(home, root);
+      const report = recordReport(home, root, event.id);
+
+      await runTriageCommand([report.id, "--no-launch"], deps);
+
+      expect(err.join("\n")).toContain(`fingerprint ${fingerprint}. Triage that fingerprint`);
+      expect(process.exitCode).toBe(1);
+      expect(fs.existsSync(triageRoot(home))).toBe(false);
+    });
+
+    test("refuses an empty target with the usage", async () => {
+      const { deps } = await setup([]);
+
+      await runTriageCommand([""], deps);
+
+      expect(err.join("\n")).toContain("the Triage Target is empty");
+      expect(process.exitCode).toBe(1);
+      expect(fs.existsSync(triageRoot(deps.env!.HOME))).toBe(false);
+    });
+
+    test("refuses two targets with the usage", async () => {
+      const { deps } = await setup([]);
+
+      await runTriageCommand(["refusal:artifact:write", "refusal:secret:read"], deps);
+
+      expect(err.join("\n")).toContain("Usage:");
+      expect(process.exitCode).toBe(1);
+      expect(fs.existsSync(triageRoot(deps.env!.HOME))).toBe(false);
+    });
   });
 
   test("refuses an unknown agent before writing a session", async () => {

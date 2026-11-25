@@ -148,7 +148,7 @@ describe("buildCompanionGuidance", () => {
       "is not the truth: only publication lands it on the companion's default branch",
     );
     expect(withOpenspec).toContain(
-      "mate artifact pending --json lists them with author, touched requirements, ref and path",
+      "mate artifact pending --json --no-merge-check lists them with author, touched requirements, ref and path",
     );
     expect(withOpenspec).toContain(
       "read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it",

@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import { parse } from "yaml";
@@ -8,6 +9,7 @@ import { DEFAULT_CONFIG_FILE } from "./config";
 
 import {
   CONTAINER_ROOT,
+  globalToolsLockDrift,
   isMovingReference,
   readImageInputs,
   REQUIRED_TOOL_COMMANDS,
@@ -145,22 +147,16 @@ describe("dependency locks", () => {
     }
   });
 
-  test("the global tool lock pins the Mate and OpenSpec versions the inputs declare", () => {
-    const manifest = JSON.parse(
-      fs.readFileSync(path.join(CONTAINER_ROOT, inputs.locks.global_tools!.manifest), "utf8"),
-    ) as { dependencies: Record<string, string> };
-    expect(manifest.dependencies["@uniqbit/mate"]).toBe(inputs.mate.version);
-    expect(manifest.dependencies["@fission-ai/openspec"]).toBe(inputs.tools.openspec!.version);
-    expect(manifest.dependencies["@upstash/context7-mcp"]).toBe(inputs.tools.context7!.version);
+  test("the global tool lock pins the Mate, OpenSpec and Context7 versions the inputs declare", () => {
+    expect(globalToolsLockDrift(inputs, CONTAINER_ROOT)).toEqual([]);
   });
 
-  test("the image carries the Context7 server version the CLI pins", () => {
-    const plugin = fs.readFileSync(
-      path.join(CONTAINER_ROOT, "..", "mate-cli", "src", "plugins", "context7.ts"),
-      "utf8",
-    );
-    const pinned = /CONTEXT7_MCP_VERSION = "([^"]+)"/.exec(plugin)?.[1];
-    expect(pinned).toBe(inputs.tools.context7!.version);
+  test("the graphify lock and its input name the manifest's graphify version", () => {
+    const pin = `graphifyy==${inputs.tools.graphify!.version}`;
+    for (const file of ["graphify.in", "graphify.requirements.txt"]) {
+      const text = fs.readFileSync(path.join(CONTAINER_ROOT, "locks", file), "utf8");
+      expect(text.match(/^graphifyy==\S+/m)?.[0], file).toBe(pin);
+    }
   });
 
   test("the local workspace lock declares exactly the distribution-owned packages", () => {
@@ -218,5 +214,72 @@ describe("the compose example matches the image", () => {
     const mounted = service.volumes.map((entry) => entry.split(":")[1]);
     expect(mounted).toContain(inputs.runtime.companions_dir);
     expect(mounted).toContain(DEFAULT_CONFIG_FILE);
+  });
+});
+
+describe("shared tools from mate-core's tool manifest", () => {
+  const rtk = "  rtk: { detect: rtk, version: 1.1.0, source: github_release }\n";
+  let root: string;
+
+  function read(imageExtra = "", manifestExtra = "") {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "acme-image-inputs-"));
+    fs.writeFileSync(
+      path.join(root, "image-inputs.yaml"),
+      `schema: 1
+mate: { version: 0.20.0 }
+tools:
+  bun: { detect: bun, version: 1.4.2, source: base_image }
+${imageExtra}locks:
+  global_tools: { manifest: global-tools.package.json, lockfile: unused.json }
+`,
+    );
+    fs.writeFileSync(
+      path.join(root, "tool-manifest.yaml"),
+      `schema: 1
+tools:
+  openspec: { detect: openspec, package: "@fission-ai/openspec", version: 1.16.0, source: npm_global }
+  context7: { detect: context7-mcp, package: "@upstash/context7-mcp", version: 4.2.0, source: npm_global }
+  skills: { detect: skills, package: skills, version: 1.7.6, source: npm_dependency }
+  tokensave:
+    detect: tokensave
+    version: 7.16.0
+    source: github_release
+    artifacts:
+      amd64: { file: tokensave-v7.16.0-x86_64-linux.tar.gz, sha256: ${"a".repeat(64)} }
+${manifestExtra}`,
+    );
+    fs.writeFileSync(
+      path.join(root, "global-tools.package.json"),
+      JSON.stringify({
+        dependencies: {
+          "@uniqbit/mate": "0.20.0",
+          "@fission-ai/openspec": "1.15.0",
+          "@upstash/context7-mcp": "4.2.0",
+        },
+      }),
+    );
+    return readImageInputs(
+      path.join(root, "image-inputs.yaml"),
+      path.join(root, "tool-manifest.yaml"),
+    );
+  }
+
+  afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  test("a tool listed in both files is rejected", () => {
+    expect(() => read(rtk, rtk)).toThrow("rtk is listed in both");
+  });
+
+  test("a manifest bump the npm lock missed fails the lock check", () => {
+    expect(globalToolsLockDrift(read(), root)).toEqual([
+      "@fission-ai/openspec: lock 1.15.0, inputs 1.16.0",
+    ]);
+  });
+
+  test("a manifest download reaches the image tools with its digest; npm dependencies do not", () => {
+    const merged = read();
+    expect(merged.tools.tokensave!.version).toBe("7.16.0");
+    expect(merged.tools.tokensave!.artifacts!.amd64!.sha256).toBe("a".repeat(64));
+    expect(merged.tools.skills).toBeUndefined();
   });
 });

@@ -19,8 +19,8 @@ interface TokensaveCapDeps {
  * runs in. Requires the `tokensave` capability to be enabled
  * in `.mate/config/framework.yaml` and a registered working repo for the
  * current `MATE_REPO_ID`. Ensures the `tokensave` binary is installed in that
- * repo (via {@link ensureTokensaveInstalled}) before forwarding. Never upgrades:
- * this runs mid-session (e.g. `mate cap index`), and upgrades belong to `mate setup`.
+ * repo (via {@link ensureTokensaveInstalled}) before forwarding. Never checks its version:
+ * this runs mid-session (e.g. `mate cap index`), and the check belongs to `mate setup`.
  * @remarks The child process's exit code is propagated via `process.exitCode`.
  */
 export async function runTokensaveCapCommand(

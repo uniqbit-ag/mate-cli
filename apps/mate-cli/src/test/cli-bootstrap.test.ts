@@ -172,8 +172,9 @@ describe("Node package bootstrap", () => {
     const script = [
       "#!/bin/sh",
       'if [ "$1" = "--version" ]; then exit 0; fi',
-      `printf "started\\n" > ${JSON.stringify(startedCapture)}`,
+      // Trap before announcing the start: a signal between the two would kill the shell.
       `trap 'printf "%s\\n" "$0" > ${JSON.stringify(signalCapture)}; exit 0' INT TERM`,
+      `printf "started\\n" > ${JSON.stringify(startedCapture)}`,
       "while :; do sleep 1; done",
       "",
     ].join("\n");

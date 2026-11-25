@@ -206,6 +206,18 @@ describe("command projection", () => {
     expect(commandFingerprint(detail)).toBe("command:opencode:1");
   });
 
+  test("keeps no word-like value as subcommand of a command without subcommands", () => {
+    const id = "a2e4644c-0000-4000-8000-000000000000";
+    const detail = commandDetail({
+      args: ["triage", id, "--no-launch"],
+      exitCode: 1,
+      errorText: `mate: ${id} is a report on an event`,
+    });
+
+    expect(JSON.stringify(detail)).not.toContain(id);
+    expect(commandFingerprint(detail)).toBe("command:triage:1");
+  });
+
   test("names the command a cap namespace ran, and no path a namespace takes first", () => {
     const fingerprint = (args: string[]) =>
       commandFingerprint(commandDetail({ args, exitCode: 1, errorText: "" }));

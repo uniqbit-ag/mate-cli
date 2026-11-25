@@ -78,6 +78,23 @@ describe("mounting a plugin view", () => {
     expect(log).toEqual(["load /studio/plugins/acme/board/view.js", "unmount"]);
   });
 
+  it("insets a view, and leaves a workspace view edge to edge", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const load = acmeModule([]);
+    const page = await render(<PluginView moduleUrl="/a.js" context={CONTEXT} load={load} />);
+    const section = page.container.querySelector("section.plugin-view")!;
+    expect(section.getAttribute("data-layout")).toBe("page");
+    expect(section.className).toContain("mx-8");
+    await page.unmount();
+    const workspace = await render(
+      <PluginView moduleUrl="/a.js" context={CONTEXT} layout="workspace" load={load} />,
+    );
+    const filled = workspace.container.querySelector("section.plugin-view")!;
+    expect(filled.getAttribute("data-layout")).toBe("workspace");
+    expect(filled.className).not.toContain("mx-8");
+    await workspace.unmount();
+  });
+
   it("says why a view could not load", async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const view = await render(

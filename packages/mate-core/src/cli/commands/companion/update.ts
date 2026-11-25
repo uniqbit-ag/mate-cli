@@ -14,6 +14,7 @@ import {
   type LinkRefreshResult,
 } from "../../../lib/orchestrator/refresh-working-claude-links";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
+import { runSkillsCli } from "../../../lib/skills-cli";
 import {
   fetchLatestVersion,
   getCurrentVersion,
@@ -27,7 +28,6 @@ import {
   type CompanionSyncOptions,
 } from "../../../tools/setup";
 import type { ManagedOutputOwner, ManagedOutputReport } from "../../../tools/setup/plugin";
-import { runCommand } from "../../../tools/setup/utils";
 import { confirm } from "../../confirm";
 import { defaultGitOps, type GitOps } from "../artifact/finish/git";
 import { resolveCompanionPath } from "./tui";
@@ -132,8 +132,7 @@ export const companionUpdateDeps: CompanionUpdateDeps = {
       .access(path.join(companionPath, SKILLS_LOCKFILE))
       .then(() => true)
       .catch(() => false),
-  runSkillsUpdate: (companionPath) =>
-    runCommand("npx", ["skills", "update", "-p", "-y"], { cwd: companionPath }),
+  runSkillsUpdate: (companionPath) => runSkillsCli(["update", "-p", "-y"], companionPath),
   createGitOps: (companionPath) => defaultGitOps(companionPath, undefined),
   snapshotPath,
   confirm,

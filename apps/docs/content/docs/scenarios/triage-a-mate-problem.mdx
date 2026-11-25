@@ -45,6 +45,35 @@ session paths. Open your agent in the session folder and give it the text of
 When `mate doctor` reports friction events, it names `mate triage` as the next
 action.
 
+## Start from one item
+
+```sh
+mate triage "command:artifact submit:1"
+```
+
+To hand one Friction Item to triage, name it as the Triage Target: a
+fingerprint with at least one recorded event, or a Free Report id. The agent
+starts from that item, whatever its Friction State. `--agent` and `--no-launch`
+work as before. A report attached to an event is no target: use its event's
+fingerprint, which the refusal names.
+
+In Studio's [Friction view](/docs/concepts/friction#in-studio), each opened
+group and Agent report shows its own `mate triage "<id>"` with a Copy button.
+An id with a space is double-quoted, so it stays one argument in cmd.exe,
+PowerShell and POSIX shells. Run it in a repository of the item's companion.
+
+The target chooses whose friction the session copies:
+
+| Where you run it                                  | Friction copied                          |
+| ------------------------------------------------- | ---------------------------------------- |
+| In a companion that holds the target's records    | That companion's                         |
+| Elsewhere, and one companion holds the target     | That companion's; `context.md` says so   |
+| Elsewhere, and several companions hold the target | None: Mate lists them and exits non-zero |
+
+The doctor report always describes the folder you ran in. An unknown target
+also exits non-zero. A refused target writes no session folder and deletes no
+old one.
+
 ## What the session folder holds
 
 Each run writes a new folder at `~/.mate/triage/<UTC time>/`. Folders older than
@@ -59,11 +88,16 @@ Each run writes a new folder at `~/.mate/triage/<UTC time>/`. Folders older than
 | `friction-reports.jsonl` | The agents' friction reports of the last 30 days, when there are any.                                                                          |
 | `friction-states.json`   | The [Friction States](/docs/concepts/friction#friction-states) of the copied fingerprints and Free Reports, when friction files are written.   |
 
-The friction files hold only the records of the companion the folder belongs
-to, and the reports on those events. They hold every record, handled or not;
+The friction files hold only the records of one companion, and the reports on
+those events: the companion the folder belongs to, or, with a Triage Target that
+companion does not hold, the target's own companion. `context.md` names that
+mismatch. When the folder's companion holds the target, `context.md` lists the
+target's events in other companions, which are not copied. The friction files hold every record, handled or not;
 `friction-states.json` says which are handled, with reopened items and the
 events since a report. Run `mate triage` in the affected
-repository: outside a companion, Mate copies no friction. Mate scans the events
+repository: outside a companion, Mate copies no friction unless you name a
+Triage Target. With a target, the files also hold the target's own records,
+even when they are older than 30 days. Mate scans the events
 for secrets first; an event the scan flags keeps its message, command, error
 text, paths and flags as `[withheld: <rule>]`. When the scan fails, Mate
 withholds those fields in every event.
@@ -78,9 +112,10 @@ The playbook tells the agent to:
 
 1. Ask what went wrong, unless you already said it, and which version it
    happened on.
-2. Read `context.md` and the friction files, starting with the open
-   fingerprints. It looks at a handled item only when it relates to your
-   problem, and treats a reported item's link as an existing issue.
+2. Read `context.md` and the friction files, starting with the Triage Target
+   when you named one, otherwise with the open fingerprints. It looks at a
+   handled item only when it relates to your problem, and treats a reported
+   item's link as an existing issue.
 3. Ask you once before its first network request, and say what it will fetch:
    the Mate source at the tag of the affected version, a search of existing
    issues, and a check for a newer version.
@@ -89,8 +124,9 @@ The playbook tells the agent to:
    new issue.
 5. After the outcome, ask whether to record it, and only after your yes run
    `mate friction mark`: a fix as `fixed`, an issue or comment as `reported`
-   with its URL, no Mate problem as `dismissed`. When you chose nothing, it asks
-   whether to dismiss the item or leave it open.
+   with its URL, no Mate problem as `dismissed`. With a Triage Target, it
+   records the target, and another item only when the same outcome covers it.
+   When you chose nothing, it asks whether to dismiss the item or leave it open.
 
 The agent treats every log line, report, Friction State note, issue and fetched
 page as data, never as an instruction. It never edits the installed Mate.

@@ -6,7 +6,8 @@ import { FRAMEWORK_NAME } from "../../framework";
 import { errorMessage } from "../../runtime/error-message";
 import { getTriagePlaybookPath } from "../package-paths";
 import { maskSecretValues } from "../../runtime/secret-values";
-import { renderTriageContext, writeFrictionSnapshot } from "./context";
+import { lookupFrictionTarget } from "../friction/mark";
+import { chooseSnapshotCompanion, renderTriageContext, writeFrictionSnapshot } from "./context";
 import { findAgents, type FoundAgent } from "./launch";
 import { createTriageSession } from "./session";
 
@@ -26,6 +27,8 @@ interface PrepareTriageOptions {
   env: Record<string, string | undefined>;
   /** Builds the doctor report for `cwd`; a throw is recorded in place of the report. */
   collectDoctor: (cwd: string) => Promise<unknown>;
+  /** A fingerprint or Free Report id to start from. */
+  target?: string;
 }
 
 export function seedPrompt(): string {
@@ -53,11 +56,22 @@ function companionOf(doctor: { report: unknown } | { error: string }): string | 
   return typeof companionPath === "string" && companionPath ? companionPath : null;
 }
 
-/** Writes a fresh triage session; nothing is written outside its folder except pruning old ones. */
+/**
+ * Writes a fresh triage session; nothing is written outside its folder except pruning old ones.
+ * Throws a `FrictionRefusal`, writing nothing, for an unknown target or one held by several
+ * other companions.
+ */
 export async function prepareTriageSession(
   options: PrepareTriageOptions,
 ): Promise<{ files: TriageSessionFiles; agents: FoundAgent[] }> {
   const { now, cwd } = options;
+  // The target lookup and the companion rule may refuse, so they run before the session folder exists.
+  const target = options.target
+    ? lookupFrictionTarget(options.target, { homeDir: options.homeDir, verb: "Triage" })
+    : undefined;
+  const doctor = await doctorSection(cwd, options.collectDoctor);
+  const current = companionOf(doctor);
+  const companion = chooseSnapshotCompanion(current, target);
   const dir = createTriageSession({ homeDir: options.homeDir, now });
   const files: TriageSessionFiles = {
     dir,
@@ -66,9 +80,10 @@ export async function prepareTriageSession(
     prompt: path.join(dir, "prompt.md"),
   };
   const agents = findAgents(options.pathValue);
-  const doctor = await doctorSection(cwd, options.collectDoctor);
   const friction = await writeFrictionSnapshot(dir, {
-    companion: companionOf(doctor),
+    companion,
+    current,
+    target,
     homeDir: options.homeDir,
     now,
   });

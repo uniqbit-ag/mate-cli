@@ -135,6 +135,7 @@ async function submit(
       now: () => new Date("2026-10-28T10:00:00.000Z"),
       runOpenSpec: fakeOpenSpec(),
       submitGroups: fakeGroups(),
+      preflightGroup: async () => ({ status: "passed" }),
       ...deps,
     },
   );
@@ -219,7 +220,10 @@ describe("submitChanges", () => {
 
   test("holdPush records and checks but pushes nothing", async () => {
     await linkBranch("x");
-    const result = await submit({ holdPush: true });
+    const result = await submit(
+      { holdPush: true },
+      { preflightGroup: async () => ({ status: "failed", change: "x", message: "refused" }) },
+    );
     expect(result).toMatchObject({ status: "waiting", waitingFor: [], state: "active" });
     expect(result.message).toBe("Checked x; nothing was pushed.");
     expect(calls).toEqual(["status", "validate"]);

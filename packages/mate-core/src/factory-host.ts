@@ -65,5 +65,11 @@ export { readWorksetStages, type WorksetWithStage } from "./lib/workset/stages";
 export { buildCompanionGuidance } from "./playbooks/companion-guidance";
 export { errorMessage } from "./runtime/error-message";
 export { resolveSecretPolicy } from "./runtime/policy";
+export {
+  installedPluginPackages,
+  type InstalledPluginPackage,
+  type InstalledPluginsOptions,
+} from "./tools/setup/dynamic-plugins/installed";
+export type { PluginOrigin } from "./tools/setup/dynamic-plugins/paths";
 export { deployReactDoctorSkill } from "./tools/setup/capabilities/react-doctor";
 export { applyMateSkills, MATE_SKILLS } from "./tools/setup/mate";

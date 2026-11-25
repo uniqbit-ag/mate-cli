@@ -22,11 +22,16 @@ export interface Checkout {
 }
 
 export interface RepositoryAccessDeps {
-  openCheckout?: (path: string) => Checkout;
+  openCheckout?: (path: string, signal?: AbortSignal) => Checkout;
+  /** Once aborted, the checkouts' merge queries and fetches are killed. */
+  signal?: AbortSignal;
 }
 
-function defaultOpenCheckout(path: string): Checkout {
-  return { git: mergeGit(path), defaultBranch: () => workingRepoGit(path).defaultBranch() };
+function defaultOpenCheckout(path: string, signal?: AbortSignal): Checkout {
+  return {
+    git: mergeGit(path, signal ? { signal } : {}),
+    defaultBranch: () => workingRepoGit(path).defaultBranch(),
+  };
 }
 
 /**
@@ -48,7 +53,7 @@ export function repositoryAccessFor(
       const working = slug && sameRepository(slug, repository) ? environment.workingRepo : null;
       let localAccess: Promise<LocalMergeAccess | null> | undefined;
       const local = (): Promise<LocalMergeAccess | null> =>
-        (localAccess ??= openLocal(environment, repository, deps.openCheckout));
+        (localAccess ??= openLocal(environment, repository, deps));
       let otherDefault: Promise<string> | undefined;
       const defaultBranch = working
         ? () => working.git.defaultBranch()
@@ -72,11 +77,11 @@ export function repositoryAccessFor(
 async function openLocal(
   environment: DeliveryEnvironment,
   repository: string,
-  open: ((path: string) => Checkout) | undefined,
+  deps: RepositoryAccessDeps,
 ): Promise<LocalMergeAccess | null> {
   const path = await environment.checkoutOf?.(repository);
   if (!path) return null;
-  const checkout = (open ?? defaultOpenCheckout)(path);
+  const checkout = (deps.openCheckout ?? defaultOpenCheckout)(path, deps.signal);
   if (!(await checkout.git.isRepository())) return null;
   const defaultBranch = await checkout.defaultBranch();
   const fetched = new Map<string, Promise<FetchResult>>();

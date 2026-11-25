@@ -85,6 +85,7 @@ function deps(overrides: Partial<SubmitCommandDeps> = {}): SubmitCommandDeps {
     now: () => new Date("2026-10-28T10:00:00.000Z"),
     runOpenSpec: openSpec(),
     submitGroups: groups("pushed"),
+    preflightGroup: async () => ({ status: "passed" }),
     stdout: (line) => out.push(line),
     stderr: (line) => err.push(line),
     ...overrides,
