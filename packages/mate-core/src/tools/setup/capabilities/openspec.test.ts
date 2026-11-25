@@ -20,7 +20,7 @@ import {
 interface MinimalSchema {
   name: string;
   version: number;
-  artifacts: { id: string; template: string; requires: string[] }[];
+  artifacts: { id: string; template: string; requires: string[]; instruction: string }[];
   apply: { requires: string[]; tracks: string; instruction: string };
 }
 
@@ -726,6 +726,12 @@ describe("createOpenspecPlugin", () => {
     for (const marker of ["- **Given**", "- **When**", "- **Then**"]) {
       expect(spec).toContain(marker);
     }
+    expect(schema.artifacts[0].instruction).toContain(
+      "A MODIFIED story MUST keep every scenario name the current requirement has",
+    );
+    expect(schema.artifacts[0].instruction).toMatch(
+      /give each new\s+criterion its own `#### Scenario:` heading/,
+    );
     expect(tasks).toContain("schema: mate-minimal");
     expect(tasks).toContain("scopes:");
     expect(schema.artifacts.some((artifact) => ["proposal", "design"].includes(artifact.id))).toBe(

@@ -1292,7 +1292,27 @@ before `submit` open (unchecked tasks, or no tasks) is submitted with a warning
 of kind `stage-open` that names the stage, what is open, and the skill to run.
 Submitting counts every other step before `mate-submit-change` not reported
 with `mate workflow done`, and names them in a warning of kind `step-counted`.
-Like every warning, neither blocks. A failed check or push fails the submit and changes no state;
+Like every warning, neither blocks.
+
+Before it pushes, submit archives the group as publication would: in a
+temporary worktree of the fetched default branch, after the group's unpublished
+`dependsOn` chain, in publication order, with the copy of each member that the
+push leaves on the inbox. A dependency on the inbox is read from there, as
+publication reads it, unless this run pushes it from your checkout. When
+publication would refuse a member, the check fails: the message names the
+change and OpenSpec's reason, and nothing is pushed. A refused change this run
+submits fails, and the rest of its group waits for it; a refused change on the
+inbox that this run does not submit fails every change of its group. A change
+whose requirement changed on the default branch since its delta was written
+does not fail the check when this run pushes it and the inbox does not block it
+yet: submit pushes it with a warning of kind `preflight-blocked`, and
+publication blocks the group until you resolve the change with
+`mate artifact resolve`. The members after it are not checked until you resolve
+it and run submit again, so do that before you publish. When the dependency
+chain cannot be built, or the fetch fails, a warning of kind
+`preflight-skipped` names the cause. Your checkout is not touched.
+
+A failed check or push fails the submit and changes no state;
 run it again, and an unchanged resubmit adds no commit. A change already
 submitted is pushed again only when you edited it since. Submit then treats it
 like the other changes of the group, even when you did not name it: it refreshes
@@ -1442,8 +1462,8 @@ capability, and the requirement, or the invalid spec, and records `blocked`
 branch, so `mate artifact pending` and the session banner show it on every
 machine. With `--json`, the result's `conflict` carries the requirement as the
 delta was written against it, the change's version, and the default branch's.
-Resolve it from any machine: write each requirement as it should read to a file
-and run
+Resolve it from any machine: write the body of each requirement as it should
+read, without its `### Requirement:` heading, to a file and run
 `mate artifact resolve <change> --capability <capability> --requirement <name> --file <file>`,
 one `--capability --requirement --file` triple per requirement. It rewrites the
 submitted folder, takes the default tip as the new delta base, clears the block,

@@ -28,6 +28,7 @@ import type { BranchOutcome } from "./refresh";
 import { repositoryAccessFor } from "./repository-access";
 import { sourceDir, type ArtifactType } from "./staging/artifact-type";
 import { openspecArtifactType } from "./staging/openspec-type";
+import { preflightGroup } from "./staging/preflight";
 import { loadSubmitWorkflow } from "./staging/registry";
 import {
   dropSubmitted,
@@ -36,6 +37,7 @@ import {
   localMembers,
   submissionState,
   submitGroups,
+  waitingMembers,
   type DropResult,
   type GroupSubmission,
   type PendingFailure,
@@ -108,18 +110,27 @@ export interface SubmitChangeDeps extends RecordDeliveryDeps, Omit<SubmitDeps, "
   openTasks?: typeof openTasks;
   /**
    * Called per change once before its check runs, so warnings are visible even when the check or
-   * the push fails or hangs. Never called for `needs-branch` or a refusal.
+   * the push fails or hangs, and once per group whose pre-flight was skipped, read only the last
+   * fetched refs, or found a change publication will block. Never called for `needs-branch` or a
+   * refusal.
    */
   onWarnings?: (change: string, warnings: SubmitWarning[], unscoped: UnscopedDelivery[]) => void;
   /** Pushes the groups; {@link submitGroups} by default. */
   submitGroups?: typeof submitGroups;
+  /** Archives a group as publication would; {@link preflightGroup} by default. */
+  preflightGroup?: typeof preflightGroup;
 }
 
 /** A change past recording and its check, before the group push. */
 type Prepared = Omit<
   SubmitResult,
   "status" | "group" | "waitingFor" | "pushed" | "commit" | "pendingBranch" | "state" | "message"
-> & { group: string; failure?: string };
+> & {
+  group: string;
+  failure?: string;
+  /** The failure is the group's pre-flight refusal of a change other than this one. */
+  groupRefused?: boolean;
+};
 
 /**
  * What submitting leaves unfinished for `change`, as warnings: `stage-open` for
@@ -295,16 +306,76 @@ async function readySiblings(
 }
 
 /**
+ * Runs {@link preflightGroup} once per group of `prepared` that is not `held` and has no member
+ * left to wait for, with the names `submitGroups` gets: `edited` members are left out. A refused
+ * member fails as its check would and is returned; a refused change outside `prepared` fails
+ * every member of its group. A skipped or blocking pre-flight warns on each member and through
+ * `onWarnings`.
+ */
+async function preflight(
+  companionPath: string,
+  type: ArtifactType,
+  prepared: readonly Prepared[],
+  held: ReadonlyMap<string, unknown>,
+  edited: ReadonlySet<string>,
+  deps: SubmitChangeDeps,
+): Promise<Prepared[]> {
+  const run = deps.preflightGroup ?? preflightGroup;
+  const locals = await localMembers(companionPath, type);
+  const refused: Prepared[] = [];
+  const pushing = new Map<string, string[]>();
+  for (const group of new Set(prepared.map((entry) => entry.group))) {
+    const named = prepared.filter((entry) => entry.group === group).map((entry) => entry.change);
+    if (held.has(group) || waitingMembers(locals, group, named).length > 0) continue;
+    pushing.set(
+      group,
+      named.filter((name) => !edited.has(name)),
+    );
+  }
+  for (const [group, names] of pushing) {
+    const entries = prepared.filter((entry) => entry.group === group);
+    // Fetched: the push builds on the remote's current inbox and default tip.
+    // oxlint-disable-next-line no-await-in-loop -- one worktree at a time
+    const outcome = await run(companionPath, group, names, {
+      ...deps,
+      artifactType: type,
+      fetch: true,
+      pushing,
+    });
+    if (outcome.status === "failed") {
+      const target = entries.find((entry) => entry.change === outcome.change);
+      for (const entry of target ? [target] : entries) {
+        entry.failure = outcome.message;
+        if (!target) entry.groupRefused = true;
+        refused.push(entry);
+      }
+      continue;
+    }
+    if (outcome.status === "passed" && !outcome.message) continue;
+    const warning: SubmitWarning = {
+      kind: outcome.status === "blocked" ? "preflight-blocked" : "preflight-skipped",
+      change: outcome.status === "blocked" ? outcome.change : entries[0]!.change,
+      message: outcome.message!,
+    };
+    for (const entry of entries) entry.warnings.push(warning);
+    deps.onWarnings?.(entries[0]!.change, [warning], []);
+  }
+  return refused;
+}
+
+/**
  * The Submit change stage for `request.changes` and their Worksets: each named change's delivery
  * is recorded and refreshed, with warnings about overlapping requirements, unsubmitted
  * dependencies, incomplete planning, an unfinished required stage of the Delivery Path and its
  * Delivery Group, and the type's `check` runs. The
  * other active changes of its Delivery Group join when every task of theirs is checked and they
  * pass the same steps, as do its `submitted` members edited since this checkout submitted or took
- * them. A group is then pushed whole, in one commit that sets its changes `submitted`, or not at
- * all: while a member has open tasks, fails its check, cannot be refreshed or has a merged branch
- * with uncommitted work, the group waits and no state changes. Never archives and never writes
- * canonical specs; merge state is reported, never a refusal.
+ * them. A group whose members all pass is then archived as publication would, in a temporary
+ * worktree; a member that archive refuses fails its check. A group is then pushed whole, in one
+ * commit that sets its changes `submitted`, or not at all: while a member has open tasks, fails
+ * its check, cannot be refreshed or has a merged branch with uncommitted work, the group waits
+ * and no state changes. Never archives in this checkout and never writes canonical specs; merge
+ * state is reported, never a refusal.
  */
 export async function submitChanges(
   environment: DeliveryEnvironment,
@@ -407,6 +478,11 @@ export async function submitChanges(
   for (const member of edited) {
     if (!prepared.some((entry) => entry.change === member.name)) hold(member.group, member.name);
   }
+  // The archive alias pushes nothing, so publication's view of a push does not apply.
+  const archiveRefused = request.holdPush
+    ? []
+    : await preflight(cwd, type, prepared, failing, editedNames, deps);
+  for (const entry of archiveRefused) hold(entry.group, entry.change);
   // Left unnamed: `submitGroups` pushes them anyway, and a name would accept a pending block.
   const ready = prepared.filter(
     (entry) => !failing.has(entry.group) && !editedNames.has(entry.change),
@@ -435,7 +511,7 @@ export async function submitChanges(
 
   const results = new Map<Prepared, SubmitResult>();
   for (const entry of prepared) {
-    const { failure, ...fields } = entry;
+    const { failure, groupRefused, ...fields } = entry;
     const base = { ...fields, waitingFor: [], pushed: false, commit: null, pendingBranch: null };
     // oxlint-disable-next-line no-await-in-loop -- a few changes per run
     const current = await submissionState(sourceDir(cwd, type, entry.change));
@@ -445,7 +521,9 @@ export async function submitChanges(
         status: "failed",
         state: current,
         reason: "check-failed",
-        message: `mate: ${entry.change} failed its check; nothing was pushed.\n${failure}`,
+        message: groupRefused
+          ? `mate: ${entry.change} was not submitted: publication would refuse its group ${entry.group}; nothing was pushed.\n${failure}`
+          : `mate: ${entry.change} failed its check; nothing was pushed.\n${failure}`,
       });
       continue;
     }

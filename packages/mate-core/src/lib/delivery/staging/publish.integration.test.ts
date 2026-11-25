@@ -18,6 +18,7 @@ import {
 } from "../../../../test/staging-fixture";
 import { openspecArtifactType } from "./openspec-type";
 import { discoverSubmitted } from "./pending";
+import { preflightGroup } from "./preflight";
 import { publicationQueue, publishSubmitted, type PublishDeps } from "./publish";
 import { resolveSubmitted } from "./resolve";
 import { submitGroups } from "./submit";
@@ -488,6 +489,12 @@ describe.skipIf(!REAL_OPENSPEC)("publishSubmitted", () => {
       expect(commitCount(fixture, INBOX)).toBe(inboxBefore);
 
       // Submitted again by name, unchanged: a modification is not accepted that way.
+      expect(
+        await preflightGroup(alpha, "acme_product/workset/acme-alpha", ["acme-alpha"], {
+          ...deps(fixture),
+          fetch: true,
+        }),
+      ).toMatchObject({ status: "failed", change: "acme-alpha" });
       const [again] = await submitGroups(alpha, ["acme-alpha"], {
         tmpRoot: fixture.root,
         stateHome: path.join(fixture.root, "home-acme-alpha"),
@@ -683,6 +690,13 @@ describe.skipIf(!REAL_OPENSPEC)("publishSubmitted", () => {
       const conflict = await publishSubmitted(alpha, "acme-alpha", deps(fixture));
       expect(conflict).toMatchObject({ status: "conflict", conflict: { ours: null } });
       expect(conflict.message).toContain("submit it again unchanged");
+      // Submit's pre-flight lets that resubmission through.
+      expect(
+        await preflightGroup(alpha, "acme_product/workset/acme-alpha", ["acme-alpha"], {
+          ...deps(fixture),
+          fetch: true,
+        }),
+      ).toEqual({ status: "passed" });
 
       const [again] = await submitGroups(alpha, ["acme-alpha"], {
         tmpRoot: fixture.root,
