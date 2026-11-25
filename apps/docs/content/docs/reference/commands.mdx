@@ -1455,8 +1455,8 @@ capability, and the requirement, or the invalid spec, and records `blocked`
 branch, so `mate artifact pending` and the session banner show it on every
 machine. With `--json`, the result's `conflict` carries the requirement as the
 delta was written against it, the change's version, and the default branch's.
-Resolve it from any machine: write each requirement as it should read to a file
-and run
+Resolve it from any machine: write the body of each requirement as it should
+read, without its `### Requirement:` heading, to a file and run
 `mate artifact resolve <change> --capability <capability> --requirement <name> --file <file>`,
 one `--capability --requirement --file` triple per requirement. It rewrites the
 submitted folder, takes the default tip as the new delta base, clears the block,
