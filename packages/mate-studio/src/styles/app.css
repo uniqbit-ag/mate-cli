@@ -321,14 +321,19 @@
           70vw
         );
     }
-    :root[data-terminal-collapsed] .studio-frame[data-terminal] {
+    /* A workspace view holds the terminal collapsed until the person expands it. */
+    :root[data-terminal-collapsed] .studio-frame[data-terminal],
+    .studio-frame[data-terminal][data-terminal-held] {
       grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--terminal-strip, 44px);
     }
     :root[data-terminal-collapsed] .studio-frame[data-terminal] .terminal-body,
-    :root[data-terminal-collapsed] .studio-frame[data-terminal] .terminal-resize {
+    :root[data-terminal-collapsed] .studio-frame[data-terminal] .terminal-resize,
+    .studio-frame[data-terminal][data-terminal-held] .terminal-body,
+    .studio-frame[data-terminal][data-terminal-held] .terminal-resize {
       display: none;
     }
-    :root[data-terminal-collapsed] .studio-frame[data-terminal] .terminal-strip {
+    :root[data-terminal-collapsed] .studio-frame[data-terminal] .terminal-strip,
+    .studio-frame[data-terminal][data-terminal-held] .terminal-strip {
       display: flex;
     }
   }

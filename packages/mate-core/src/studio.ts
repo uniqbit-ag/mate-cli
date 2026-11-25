@@ -13,7 +13,11 @@ export type {
   StudioServiceSummary,
   StudioServiceViewSummary,
 } from "./cli/commands/studio/service-host";
-export type { StudioViewMount, StudioViewMountContext } from "./tools/setup/service";
+export type {
+  StudioViewLayout,
+  StudioViewMount,
+  StudioViewMountContext,
+} from "./tools/setup/service";
 export {
   formatCollectedAt,
   healthNote,

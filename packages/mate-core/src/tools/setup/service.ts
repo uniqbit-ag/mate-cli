@@ -187,7 +187,15 @@ export interface StudioView {
    * person. Studio shows a count above zero on the view's navigation entry.
    */
   attention?: string;
+  /**
+   * `"workspace"`: the view fills Studio's main area edge to edge, without Studio's page header
+   * (the view shows its own), and the agent terminal stays collapsed while the view is shown, until
+   * the person expands it. Default `"page"`.
+   */
+  layout?: StudioViewLayout;
 }
+
+export type StudioViewLayout = "page" | "workspace";
 
 /** What a view module's `mount` export receives in the browser. */
 export interface StudioViewMountContext {

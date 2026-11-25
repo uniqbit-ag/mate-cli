@@ -206,6 +206,11 @@ path below its prefix, that answers `{ "count": <number> }` for
 `?companion=<digest>`. Studio shows a count above zero on the view's
 navigation entry and asks again when the companion's Workset board changes.
 
+A view with `layout: "workspace"` fills Studio's main area edge to edge:
+Studio shows no page header and no inset around it, so the view shows its own
+title, and the agent terminal stays collapsed while the view is shown, until
+the person expands it. Without `layout`, Studio frames the view like its own.
+
 ### Workset terminal sessions
 
 `worksetSessions` lets Studio's terminal open a session for a Workset: the

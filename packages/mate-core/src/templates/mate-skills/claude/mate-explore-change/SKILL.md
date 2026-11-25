@@ -42,7 +42,7 @@ large for one change is suggested as several.
    its Confirmed points as settled and start from its Unresolved questions and
    Assumptions. `openspec list` also names changes awaiting publication: a change whose `openspec/changes/<name>/delivery.yaml` says
    `state: submitted` is not what the user is working on and never the current
-   behaviour. Run `mate artifact pending --json` once: each submitted change lists its
+   behaviour. Run `mate artifact pending --json --no-merge-check` once: each submitted change lists its
    `author` and `touches` (the capability and requirement it rewrites or removes). When
    one touches what this exploration is about, name the change and its author to the
    user and read only that change's delta for that capability, from the companion with
