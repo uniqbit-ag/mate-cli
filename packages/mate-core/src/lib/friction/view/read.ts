@@ -45,7 +45,16 @@ export function readFrictionRecords(scope: FrictionScope, window: FrictionWindow
     homeDir: window.homeDir,
     now: window.now,
   });
-  const stored = readFrictionStates(window.homeDir);
+  return joinFrictionStates(events, reports, window.homeDir);
+}
+
+/** Adds the Friction States of the given records' fingerprints and Free Reports. */
+export function joinFrictionStates(
+  events: FrictionEvent[],
+  reports: FrictionReport[],
+  homeDir?: string,
+): FrictionRecords {
+  const stored = readFrictionStates(homeDir);
   const fingerprints: Record<string, FrictionGroupState> = {};
   for (const [fingerprint, grouped] of byFingerprint(events)) {
     const state = stored.fingerprints[fingerprint];

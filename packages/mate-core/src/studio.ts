@@ -154,6 +154,7 @@ export {
   type SubjectType,
 } from "./runtime/friction-vocabulary";
 export { FRAMEWORK_NAME } from "./runtime/framework";
+export { formatCommand } from "./runtime/command-arg";
 export type { UsageRequest } from "./lib/usage/cache";
 export type {
   CompanionUsageSnapshot,

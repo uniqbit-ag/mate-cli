@@ -67,7 +67,7 @@ export function usage(): string {
     "   [--workaround <text>] [--json]",
     ` ${n} friction mark <fingerprint|report-id> --state <open|fixed|reported|dismissed>`,
     "   [--note <text>] [--link <url>] [--json]",
-    ` ${n} triage [--agent <claude|opencode>] [--no-launch]`,
+    ` ${n} triage ["<fingerprint|report-id>"] [--agent <claude|opencode>] [--no-launch]`,
     ` ${n} report [--days N] [--input FILE|-] [--json]`,
     ` ${n} studio [--writable] [--terminal] [--detach-timeout <minutes>]`,
     ` ${n} studio serve --port <port> [--host <host>] [--writable] [--terminal]`,
