@@ -130,7 +130,8 @@ function notOwn(facts: OwnershipFacts): string | null {
   return "claim it first";
 }
 
-function unsynced(sharing: SharingFacts): string | null {
+/** Why this checkout's copy is not the shared one to work from, or `null`. */
+export function unsynced(sharing: SharingFacts): string | null {
   if (sharing.remoteOnly) {
     return "take its changes into this checkout first with `mate artifact take`";
   }

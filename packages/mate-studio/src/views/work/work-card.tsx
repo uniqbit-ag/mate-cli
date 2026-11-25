@@ -179,9 +179,11 @@ function CardMembers({ card }: { card: StudioWorkCard }) {
       {card.members.map((member) => (
         <li key={member.name} className="flex flex-wrap items-center gap-3 text-xs">
           <code className="font-mono">{member.name}</code>
-          <StatusWord marker={member.problem ? "issue" : STAGE_MARKERS[member.stage]}>
-            {member.delivered ? "Delivered" : member.stageLabel}
-          </StatusWord>
+          {card.sharing.remoteOnly ? null : (
+            <StatusWord marker={member.problem ? "issue" : STAGE_MARKERS[member.stage]}>
+              {member.delivered ? "Delivered" : member.stageLabel}
+            </StatusWord>
+          )}
           {member.problem ? <span className="text-bad">{member.problem}</span> : null}
         </li>
       ))}
@@ -201,9 +203,12 @@ export function CardHeading({ card }: { card: StudioWorkCard }) {
     <div className="grid min-w-0 flex-1 gap-1">
       <span className="line-clamp-2 font-medium [overflow-wrap:anywhere]">{card.title}</span>
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-        <StatusWord marker={card.diagnostics.length > 0 ? "issue" : STAGE_MARKERS[card.stage]}>
-          {card.done ? "Done" : card.stageLabel}
-        </StatusWord>
+        {/* Stages are read from the checkout's files; a change only on the inbox has none. */}
+        {card.sharing.remoteOnly && card.diagnostics.length === 0 ? null : (
+          <StatusWord marker={card.diagnostics.length > 0 ? "issue" : STAGE_MARKERS[card.stage]}>
+            {card.done ? "Done" : card.stageLabel}
+          </StatusWord>
+        )}
         {/* A change's card is titled by its id; name the id only when the title differs. */}
         {card.title === card.id ? null : (
           <code className="min-w-0 truncate font-mono text-xs text-muted">{card.id}</code>

@@ -132,6 +132,23 @@ describe("Work on a plain installation", () => {
     );
   });
 
+  it("says nothing is left to claim when all shared work is in Local work", () => {
+    const mine = card({ claim: { kind: "mine", label: "Acme Developer" }, sharing: SHARED });
+    expect(render(payload({ cards: [mine] }), "remote")).toContain("No shared work to claim.");
+    expect(render(payload({ cards: [card()] }), "remote")).toContain("Nothing shared.");
+  });
+
+  it("names no stage for work only on the inbox", () => {
+    const markup = render(
+      payload({
+        cards: [card({ bucket: "remote", sharing: { ...SHARED, remoteOnly: true } })],
+      }),
+      "remote",
+    );
+    expect(markup).toContain("Only on the inbox");
+    expect(markup).not.toContain("Review proposal");
+  });
+
   it("names progress on a Delivery Branch and the sync state", async () => {
     const markup = render(
       payload({

@@ -110,6 +110,11 @@ describe("Work on a plain installation", () => {
     const work = await handler.services.work(digest);
     const buckets = Object.fromEntries(work.cards.map((card) => [card.id, card.bucket]));
     expect(buckets).toEqual({ "acme-audit-log": "scratchpad", "acme-login": "local" });
+    const idea = work.cards.find((card) => card.id === "acme-audit-log")!;
+    expect(idea.offers.map((offer) => offer.action)).toEqual([
+      "explore-workset",
+      "propose-workset",
+    ]);
     expect(work.operator).toEqual({ id: "author@acme.test", label: "Acme Author" });
     handler.close();
   });
@@ -257,6 +262,28 @@ describe("guards", () => {
     ).toEqual({ ok: true });
     await act(handler, { action: "refresh" });
     expect(await cardOf()).toMatchObject({ bucket: "local", claim: { kind: "mine" } });
+    handler.close();
+  });
+
+  test("claimed work this checkout lacks offers no prompt until it is taken", async () => {
+    git(teammate, "switch", "-q", "-c", "mate/inbox");
+    writeChange(teammate, "acme-login");
+    commitAll(teammate, "propose acme-login");
+    git(teammate, "push", "-q", "origin", "mate/inbox");
+    const handler = handlerFor();
+    expect(await act(handler, { action: "refresh" })).toEqual({ ok: true });
+    expect(
+      await act(handler, {
+        action: "claim",
+        workset: "acme-login",
+        members: ["acme-login"],
+        key: "c3",
+      }),
+    ).toMatchObject({ ok: true });
+    const card = (await handler.services.work(digest)).cards.find(
+      (entry) => entry.id === "acme-login",
+    );
+    expect(card).toMatchObject({ bucket: "local", sharing: { remoteOnly: true }, offers: [] });
     handler.close();
   });
 

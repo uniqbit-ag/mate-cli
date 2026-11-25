@@ -5,7 +5,7 @@ import type {
   WorkRequest,
   WorkResult,
 } from "@uniqbit/mate-core/studio";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { Button } from "../../components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../../components/ui/dialog";
@@ -70,10 +70,14 @@ function useConfirm(companion: string) {
   const mutation = useWorkAction(companion);
   // One key per open dialog: a double click resubmits the same attempt.
   const [key] = useState(newWorkKey);
-  const run = (request: WorkRequest, onOk?: (result: WorkResult) => void) =>
+  const run = (
+    request: WorkRequest,
+    onOk?: (result: WorkResult) => void,
+    onRefused?: (result: Extract<WorkResult, { ok: false }>) => void,
+  ) =>
     mutation.mutate(request, {
       onSuccess: (result) => {
-        if (!result.ok) return;
+        if (!result.ok) return onRefused?.(result);
         if (onOk) onOk(result);
         else close();
       },
@@ -153,9 +157,11 @@ function ShareDialog({ companion, card }: { companion: string; card: StudioWorkC
   const { mutation, run, key, result } = useConfirm(companion);
   const [include, setInclude] = useState<string[]>([]);
   const { mutate } = preview;
-  useEffect(() => {
-    mutate({ action: "share-preview", workset: card.id, include });
-  }, [mutate, card.id, include]);
+  const loadPreview = useCallback(
+    () => mutate({ action: "share-preview", workset: card.id, include }),
+    [mutate, card.id, include],
+  );
+  useEffect(() => loadPreview(), [loadPreview]);
   const shown: SharePreview | undefined = preview.data?.ok ? preview.data.preview : undefined;
   const blocked =
     !shown ||
@@ -172,7 +178,15 @@ function ShareDialog({ companion, card }: { companion: string; card: StudioWorkC
           variant="primary"
           disabled={blocked || mutation.isPending}
           onClick={() =>
-            shown && run({ action: "share", workset: card.id, hash: shown.hash, include, key })
+            shown &&
+            run(
+              { action: "share", workset: card.id, hash: shown.hash, include, key },
+              undefined,
+              (refused) => {
+                // The confirmed hash no longer matches; a new preview gives the next Share a current one.
+                if (refused.kind === "stale") loadPreview();
+              },
+            )
           }
         >
           Share

@@ -20,6 +20,7 @@ import {
   type WorkContext,
   type WorkFacts,
   type WorkMemberStatus,
+  unsynced,
   workActionRefusal,
 } from "../../../lib/workset/projection";
 import { createOutcome, WorksetError } from "../../../lib/workset/record";
@@ -127,6 +128,13 @@ function wantedOffers(
   stage: WorksetStageId,
 ): { id: string; subject: string }[] {
   const active = activeMembers(entry);
+  // A Scratchpad idea: exploring first is optional, so both prompts are offered.
+  if (entry.record.changes.length === 0) {
+    return [
+      { id: "explore-workset", subject: entry.id },
+      { id: "propose-workset", subject: entry.id },
+    ];
+  }
   if (active.length === 0) {
     const id = stage === "clarify-intent" ? "explore-workset" : "propose-workset";
     return [{ id, subject: entry.id }];
@@ -262,7 +270,11 @@ async function assembleWork(
         artifacts: Object.fromEntries(
           active.map((change) => [change, [`openspec/changes/${change}/proposal.md`]]),
         ),
-        offers: card.bucket === "remote" ? [] : offersFor(entry, facts.stage.stage, input),
+        // A prompt works on the checkout's copy, so none is offered until it is the shared one.
+        offers:
+          card.bucket === "remote" || unsynced(facts.sharing)
+            ? []
+            : offersFor(entry, facts.stage.stage, input),
         needsYou: needsPerson(card),
       };
     })

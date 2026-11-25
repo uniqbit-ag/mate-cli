@@ -55,6 +55,9 @@ const EMPTY: Record<WorkBucket, string> = {
   remote: "Nothing shared. Refresh to look at the team branch.",
 };
 
+/** Remote work is empty while shared work sits in Local work: yours, claimed or built here. */
+const REMOTE_EMPTY_WITH_SHARED = "No shared work to claim.";
+
 /** A drop's bucket and action, when the card under drag accepts the bucket it is over. */
 function dropOf(active: Active, over: Over | null) {
   const bucket = (over?.data.current as { bucket?: WorkBucket } | undefined)?.bucket;
@@ -125,6 +128,9 @@ export function Work({ payload, search }: { payload: StudioWorkPayload; search: 
     useSensor(KeyboardSensor, { coordinateGetter: bucketKeys }),
   );
   const byBucket = (name: WorkBucket) => payload.cards.filter((card) => card.bucket === name);
+  const anyShared = payload.cards.some(
+    (card) => card.sharing.presence === "shared" || card.sharing.presence === "partial",
+  );
   const select = (next: WorkBucket) =>
     void navigate({
       to: "/work",
@@ -203,6 +209,7 @@ export function Work({ payload, search }: { payload: StudioWorkPayload; search: 
               key={name}
               bucket={name}
               cards={byBucket(name)}
+              empty={name === "remote" && anyShared ? REMOTE_EMPTY_WITH_SHARED : EMPTY[name]}
               selected={bucket === name}
               writable={payload.writable}
             >
@@ -286,12 +293,14 @@ function BucketTab({
 function Lane({
   bucket,
   cards,
+  empty,
   selected,
   writable,
   children,
 }: {
   bucket: WorkBucket;
   cards: StudioWorkCard[];
+  empty: string;
   selected: boolean;
   writable: boolean;
   children?: ReactNode;
@@ -330,7 +339,7 @@ function Lane({
       </header>
       {children}
       {cards.length === 0 ? (
-        <EmptyNote className="px-4 py-4 text-sm">{EMPTY[bucket]}</EmptyNote>
+        <EmptyNote className="px-4 py-4 text-sm">{empty}</EmptyNote>
       ) : (
         <ul
           className="m-0 list-none overflow-hidden rounded-card border border-rule bg-page p-0"

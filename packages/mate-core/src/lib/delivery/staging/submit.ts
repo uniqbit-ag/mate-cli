@@ -967,11 +967,15 @@ export async function takeSubmitted(
     [],
     deps.stateHome,
   );
+  const submitted = record?.status === 0 && /^state:\s*submitted\s*$/m.test(record.stdout);
+  const next = submitted
+    ? `Edit it, then submit it again with \`mate artifact submit ${name}\`.`
+    : `Continue it, then submit it with \`mate artifact submit ${name}\` once it is done.`;
   return {
     change: name,
     status: "taken",
     path: relative,
-    message: `Took ${name} into ${relative} as ${pendingPlace(remote)} has it. Edit it, then submit it again with \`mate artifact submit ${name}\`.`,
+    message: `Took ${name} into ${relative} as ${pendingPlace(remote)} has it. ${next}`,
   };
 }
 
