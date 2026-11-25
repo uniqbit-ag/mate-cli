@@ -1364,9 +1364,10 @@ but `pending` records nothing: with `--json` the change lists it in `found`,
 its `delivery.record` stays as stored,
 and its group carries `needsRefresh: true`, so the publish skill publishes that
 group with `--refresh`, which records the merge. Without `--json` such a group
-reads `publishable with --refresh`. The check starts no further
-delivery after 30 seconds; `submitted.mergeCheck` names each delivery it left
-`unchecked`, which keeps its stored state, and a `warning` when a check failed.
+reads `publishable with --refresh`. The check stops after 30 seconds and
+cancels the Git commands still running; `submitted.mergeCheck` names each
+delivery it left `unchecked`, which keeps its stored state, and a `warning`
+when a check or its fetch failed.
 A repository not linked on this machine is not checked. In Git mode `auto` the
 check first fetches the default and delivery branches into the linked checkout,
 and a recorded pull request's head when the branch and its recorded head are

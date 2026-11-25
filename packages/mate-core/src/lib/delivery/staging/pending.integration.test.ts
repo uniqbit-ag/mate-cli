@@ -127,7 +127,7 @@ describe("merge check", () => {
     const companion = fixture.clone("acme-mine");
     await submit(fixture, companion, "acme-login");
     product.squashMerge(BRANCH, "Acme login (#42)");
-    return { fixture, companion, environment: productEnvironment(companion, product) };
+    return { fixture, product, companion, environment: productEnvironment(companion, product) };
   }
 
   function check(
@@ -229,6 +229,55 @@ describe("merge check", () => {
         [],
         [{ change: "acme-login", repository: PRODUCT, branch: BRANCH }],
       ]);
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "a failed fetch or link lookup leaves the delivery unchecked with a warning",
+    async () => {
+      const { fixture, product, companion, environment } = await squashMerged();
+      const failingLookup = {
+        ...environment,
+        checkoutOf: () => Promise.reject(new Error("acme registry")),
+      };
+
+      const lookup = await check(fixture, companion, failingLookup);
+      git(product.clone, "remote", "set-url", "origin", path.join(fixture.root, "missing.git"));
+      const fetch = await check(fixture, companion, environment);
+
+      for (const [result, cause] of [
+        [lookup, "acme registry"],
+        [fetch, "git fetch failed"],
+      ] as const) {
+        expect(result.groups[0]!.changes[0]).toMatchObject({ delivery: { status: "waiting" } });
+        expect(result.mergeCheck).toMatchObject({
+          ran: true,
+          unchecked: [{ change: "acme-login", repository: PRODUCT, branch: BRANCH }],
+        });
+        expect(result.mergeCheck?.warning).toContain(cause);
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "the budget stops a fetch that hangs",
+    async () => {
+      const { fixture, product, companion, environment } = await squashMerged();
+      git(product.clone, "config", "protocol.ext.allow", "always");
+      git(product.clone, "remote", "set-url", "origin", "ext::sleep 25");
+
+      const started = Date.now();
+      const found = await check(fixture, companion, environment, 1_000);
+
+      // The fetch's own budget is 20 s.
+      expect(Date.now() - started).toBeLessThan(10_000);
+      expect(found.groups[0]!.changes[0]).toMatchObject({ delivery: { status: "waiting" } });
+      expect(found.mergeCheck).toEqual({
+        ran: true,
+        unchecked: [{ change: "acme-login", repository: PRODUCT, branch: BRANCH }],
+      });
     },
     TIMEOUT,
   );

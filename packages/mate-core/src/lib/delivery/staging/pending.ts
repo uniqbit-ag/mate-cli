@@ -733,8 +733,8 @@ export interface DiscoverSubmittedOptions {
   /** Home of Mate's local companion state; `HOME` by default. */
   stateHome?: string;
   /**
-   * Checks unsettled branch deliveries in the checkouts `environment` links, starting none after
-   * `budgetMs`, and counts the merges Git proves without recording them. `environment` is
+   * Checks unsettled branch deliveries in the checkouts `environment` links, stopping every check
+   * after `budgetMs`, and counts the merges Git proves without recording them. `environment` is
    * resolved only when such a delivery exists. Off when absent.
    */
   checkMerges?: { environment: () => Promise<DeliveryEnvironment>; budgetMs: number };
@@ -857,7 +857,7 @@ async function withFoundMerges(
     return { submitted, found: new Map(), mergeCheck: { ran: true, unchecked: [] } };
   }
   const unchecked: UncheckedDelivery[] = [];
-  // Skip-only deadline: a check already running finishes within its Git command budgets.
+  // Kills the checks' Git commands too, so the budget bounds the whole check.
   const signal = budgetMs > 0 ? AbortSignal.timeout(budgetMs) : AbortSignal.abort();
   let merges: Awaited<ReturnType<typeof findLinkedMerges>>;
   try {
@@ -866,7 +866,7 @@ async function withFoundMerges(
       onUnchecked: (delivery) => unchecked.push(delivery),
     });
   } catch (error) {
-    const warning = `merge check failed: ${errorMessage(error)}`;
+    const warning = `could not run: ${errorMessage(error)}`;
     return { submitted, found: new Map(), mergeCheck: { ran: false, unchecked: [], warning } };
   }
   const found = new Map<string, FoundDelivery[]>();

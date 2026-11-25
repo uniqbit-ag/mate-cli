@@ -22,7 +22,14 @@ export interface ProcessResult {
 export type SpawnProcess = (
   command: string,
   args: readonly string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; input?: string; timeoutMs?: number },
+  options: {
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    input?: string;
+    timeoutMs?: number;
+    /** Kills the process once aborted; the result then counts as timed out. */
+    signal?: AbortSignal;
+  },
 ) => Promise<ProcessResult>;
 
 export interface PatchMatch {
@@ -134,6 +141,8 @@ export interface MergeGitDeps {
   containmentLimit?: number;
   /** Wall time one containment search may take; 5 s by default. */
   containmentBudgetMs?: number;
+  /** Once aborted, running Git commands are killed and new ones fail at once. */
+  signal?: AbortSignal;
 }
 
 /** Upstream commits compared by patch identity at most; more is asked instead. */
@@ -179,12 +188,20 @@ export const spawnProcess: SpawnProcess = (command, args, options) =>
       env: options.env,
       stdio: ["pipe", "pipe", "pipe"],
       timeout: options.timeoutMs,
+      ...(options.signal ? { signal: options.signal } : {}),
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.on("error", (error) => resolve({ code: -1, stdout: "", stderr: error.message }));
+    child.on("error", (error) =>
+      resolve({
+        code: -1,
+        stdout: "",
+        stderr: error.message,
+        ...(options.signal?.aborted ? { timedOut: true } : {}),
+      }),
+    );
     child.on("close", (code, signal) =>
       resolve({
         code: code ?? -1,
@@ -229,7 +246,10 @@ export function localGitEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.Proces
 }
 
 export function mergeGit(repoPath: string, deps: MergeGitDeps = {}): MergeGit {
-  const spawnFn = deps.spawn ?? spawnProcess;
+  const baseSpawn = deps.spawn ?? spawnProcess;
+  const spawnFn: SpawnProcess = deps.signal
+    ? (command, args, options) => baseSpawn(command, args, { ...options, signal: deps.signal })
+    : baseSpawn;
   const base = gitEnvironment(deps.env ?? process.env) as NodeJS.ProcessEnv;
   const promptless = promptlessEnv(base);
   const localEnv: NodeJS.ProcessEnv = { ...promptless, GIT_NO_LAZY_FETCH: "1" };
@@ -247,10 +267,14 @@ export function mergeGit(repoPath: string, deps: MergeGitDeps = {}): MergeGit {
     (await value("config", "--get", "extensions.partialClone")) !== null;
 
   const supportsContainment = (): Promise<boolean> => {
-    let known = containmentSupport.get(spawnFn);
+    let known = containmentSupport.get(baseSpawn);
     if (!known) {
-      known = git(["version"]).then((result) => result.code === 0 && hasWriteTree(result.stdout));
-      containmentSupport.set(spawnFn, known);
+      known = git(["version"]).then((result) => {
+        // A killed probe proves nothing about this Git.
+        if (result.timedOut) containmentSupport.delete(baseSpawn);
+        return result.code === 0 && hasWriteTree(result.stdout);
+      });
+      containmentSupport.set(baseSpawn, known);
     }
     return known;
   };
@@ -392,7 +416,7 @@ export function mergeGit(repoPath: string, deps: MergeGitDeps = {}): MergeGit {
       if (!(await supportsContainment())) return "unknown";
       const upstream = remoteRef(defaultBranch);
       const tip = await verify(upstream);
-      const notContained = notContainedMemo(spawnFn);
+      const notContained = notContainedMemo(baseSpawn);
       const key = `${repoPath}\0${head}\0${tip}`;
       // Unchanged head and default tip: a repeated refresh does not test every candidate again.
       if (tip && notContained.has(key)) return "none";

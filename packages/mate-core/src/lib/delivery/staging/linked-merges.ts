@@ -1,5 +1,11 @@
 import type { DeliveryEnvironment } from "../environment";
-import { findDelivery, type Delivery, type DeliveryPatch, type DeliveryRecord } from "../record";
+import {
+  findDelivery,
+  sameRepository,
+  type Delivery,
+  type DeliveryPatch,
+  type DeliveryRecord,
+} from "../record";
 import { isSettled, refreshRecord, type RefreshCache } from "../refresh";
 import { repositoryAccessFor, type RepositoryAccessDeps } from "../repository-access";
 
@@ -21,11 +27,12 @@ export interface UncheckedDelivery {
 
 export interface FindLinkedMergesDeps extends RepositoryAccessDeps {
   now?: () => Date;
-  /** Once aborted, no further check starts. */
+  /** Once aborted, no further check starts and running checks' Git commands are killed. */
   signal?: AbortSignal;
   /**
-   * Called for each delivery left unchecked. Without it a failed check throws, and deliveries
-   * skipped after an abort go unreported.
+   * Called for each delivery left unchecked, including one whose fetch failed and that Git found
+   * unmerged. Without it the first failed check stops the others and then throws, and skipped
+   * deliveries go unreported.
    */
   onUnchecked?: (delivery: UncheckedDelivery) => void;
 }
@@ -60,7 +67,14 @@ export async function findLinkedMerges(
   submitted: readonly { name: string; delivery: { record: DeliveryRecord | null } }[],
   deps: FindLinkedMergesDeps = {},
 ): Promise<Map<string, FoundMerge[]>> {
-  const access = repositoryAccessFor(environment, deps);
+  const stop = new AbortController();
+  const signal = deps.signal ? AbortSignal.any([deps.signal, stop.signal]) : stop.signal;
+  const access = repositoryAccessFor(environment, { openCheckout: deps.openCheckout, signal });
+  const unchecked = (
+    { change, repository, branch }: Omit<UncheckedDelivery, "error">,
+    error?: unknown,
+  ) =>
+    deps.onUnchecked?.({ change, repository, branch, ...(error === undefined ? {} : { error }) });
   const linked = new Map<string, Promise<boolean>>();
   const isLinked = (repository: string): Promise<boolean> => {
     const key = repository.toLowerCase();
@@ -77,29 +91,31 @@ export async function findLinkedMerges(
     const record = change.delivery.record;
     if (!record) continue;
     for (const delivery of record.deliveries.filter(settleable)) {
-      // oxlint-disable-next-line no-await-in-loop -- one registry read, then cached
-      if (!(await isLinked(delivery.repository))) continue;
-      const check = {
-        index: checks.length,
-        change: change.name,
-        record,
-        repository: delivery.repository,
-        branch: delivery.branch,
-      };
+      const { repository, branch } = delivery;
+      let isLinkedHere: boolean;
+      try {
+        // oxlint-disable-next-line no-await-in-loop -- one registry read, then cached
+        isLinkedHere = await isLinked(repository);
+      } catch (error) {
+        if (!deps.onUnchecked) throw error;
+        unchecked({ change: change.name, repository, branch }, error);
+        continue;
+      }
+      if (!isLinkedHere) continue;
+      const check = { index: checks.length, change: change.name, record, repository, branch };
       checks.push(check);
-      const key = delivery.repository.toLowerCase();
+      const key = repository.toLowerCase();
       queues.set(key, [...(queues.get(key) ?? []), check]);
     }
   }
 
   const cache: RefreshCache = new Map();
   const merges: (FoundMerge | null)[] = checks.map(() => null);
-  const unchecked = ({ change, repository, branch }: Check, error?: unknown) =>
-    deps.onUnchecked?.({ change, repository, branch, ...(error === undefined ? {} : { error }) });
+  let failure: { error: unknown } | undefined;
   await Promise.all(
     [...queues.values()].map(async (queue) => {
       for (const check of queue) {
-        if (deps.signal?.aborted) {
+        if (signal.aborted) {
           unchecked(check);
           continue;
         }
@@ -115,24 +131,40 @@ export async function findLinkedMerges(
             cache,
           });
         } catch (error) {
-          if (!deps.onUnchecked) throw error;
-          unchecked(check, error ?? new Error("merge check failed"));
+          if (deps.onUnchecked) {
+            unchecked(check, error ?? new Error("merge check failed"));
+          } else {
+            failure ??= { error };
+            stop.abort();
+          }
           continue;
         }
         const after = findDelivery(refreshed.record, repository);
-        if (after?.merge?.state !== "merged" || !after.branch) continue;
-        merges[index] = {
-          repository: after.repository,
-          branch: after.branch,
-          patch: {
-            merge: after.merge,
-            ...(after.head ? { head: after.head } : {}),
-            ...(after.pr ? { pr: after.pr } : {}),
-          },
-        };
+        if (after?.merge?.state === "merged" && after.branch) {
+          merges[index] = {
+            repository: after.repository,
+            branch: after.branch,
+            patch: {
+              merge: after.merge,
+              ...(after.head ? { head: after.head } : {}),
+              ...(after.pr ? { pr: after.pr } : {}),
+            },
+          };
+          continue;
+        }
+        // Killed mid-check, or answered from refs a failed fetch left stale: no answer.
+        if (signal.aborted) {
+          unchecked(check);
+          continue;
+        }
+        const fetch = refreshed.outcomes.find((outcome) =>
+          sameRepository(outcome.repository, repository),
+        )?.fetch;
+        if (fetch?.ok === false) unchecked(check, new Error(fetch.message ?? "git fetch failed"));
       }
     }),
   );
+  if (failure) throw failure.error;
 
   const found = new Map<string, FoundMerge[]>();
   for (const check of checks) {
