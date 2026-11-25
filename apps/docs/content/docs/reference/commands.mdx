@@ -1290,14 +1290,17 @@ Like every warning, neither blocks.
 Before it pushes, submit archives the group as publication would: in a
 temporary worktree of the fetched default branch, after the group's unpublished
 `dependsOn` chain, in publication order, with the copy of each member that the
-push leaves on the inbox. When publication would refuse a member, the check
-fails: the message names the change and OpenSpec's reason, and nothing is
-pushed. A refusal of a change other than the one you submit fails every change
-of its group. A change whose requirement changed on the default branch since its
-delta was written does not fail the check when this run pushes it and the inbox
-does not block it yet: submit pushes it with a warning of kind
-`preflight-blocked`, and publication blocks the group until you resolve the
-change with `mate artifact resolve`. When the
+push leaves on the inbox. A dependency on the inbox is read from there, as
+publication reads it, unless this run pushes it from your checkout. When
+publication would refuse a member, the check fails: the message names the
+change and OpenSpec's reason, and nothing is pushed. A refused change this run
+submits fails, and the rest of its group waits for it; a refused change on the
+inbox that this run does not submit fails every change of its group. A change
+whose requirement changed on the default branch since its delta was written
+does not fail the check when this run pushes it and the inbox does not block it
+yet: submit pushes it with a warning of kind `preflight-blocked`, and
+publication blocks the group until you resolve the change with
+`mate artifact resolve`; the members after it are not checked. When the
 dependency chain cannot be built, or the fetch fails, a warning of kind
 `preflight-skipped` names the cause. Your checkout is not touched.
 

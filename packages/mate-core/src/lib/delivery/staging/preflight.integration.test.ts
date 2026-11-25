@@ -148,6 +148,36 @@ describe.skipIf(!REAL_OPENSPEC)("the publication pre-flight at submit", () => {
   );
 
   test(
+    "a dependency of another group edited here since it was submitted is applied as submitted, as publication applies it",
+    async () => {
+      const fixture = await setup();
+      const checkout = loginCheckout(fixture);
+      checkout.product.commitOn("workset/acme-auth", "auth.txt", "auth\n");
+      checkout.product.commitOn(LOGIN_BRANCH, "login-2.txt", "login\n");
+      const api = proposeLocally(fixture, checkout.companion, "acme-login-api", {
+        branch: "workset/acme-auth",
+        deltas: { "acme-auth": requirement("ADDED", "Login", "The acme SHALL log in.") },
+      });
+      await submitGroups(checkout.companion, ["acme-login-api"], storage(fixture));
+      const delta = path.join(api, "specs", "acme-auth", "spec.md");
+      fs.writeFileSync(
+        delta,
+        fs.readFileSync(delta, "utf8").replace("Requirement: Login", "Requirement: Sign-in"),
+      );
+      proposeLocally(fixture, checkout.companion, "acme-login-ui", {
+        branch: LOGIN_BRANCH,
+        dependsOn: ["acme-login-api"],
+        deltas: { "acme-auth": requirement("MODIFIED", "Login", "The acme SHALL log in fast.") },
+      });
+
+      const result = await submit(fixture, checkout, "acme-login-ui");
+
+      expect(result).toMatchObject({ status: "submitted", pushed: true });
+    },
+    TIMEOUT,
+  );
+
+  test(
     "a dependency that exists nowhere skips the pre-flight with a warning and submits",
     async () => {
       const fixture = await setup();

@@ -91,7 +91,10 @@ export interface RunMember {
   dependsOn: string[];
   /** The submitted copy, for its delta base; absent for a local change. */
   submitted?: SubmittedChange;
-  /** A blocked change submitted again: when submit accepts the block, the default tip is its base. */
+  /**
+   * A blocked change submitted again: when submit accepts the block, the default tip is its base.
+   * Set on a submitted copy only once submit is known to accept it.
+   */
   rebased?: boolean;
 }
 
@@ -261,9 +264,9 @@ export async function runChain<T>(
           const folder = sourcePathOf(type, member.name);
           // Submit then moves the base to the tip, as it does for an accepted block.
           const accepted =
-            base !== null &&
             member.rebased === true &&
-            (await acceptsBlock(type, work, "HEAD", folder, base, start));
+            (member.source === "submitted" ||
+              (base !== null && (await acceptsBlock(type, work, "HEAD", folder, base, start))));
           return accepted ? null : base;
         }),
       );

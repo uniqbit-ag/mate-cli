@@ -110,8 +110,9 @@ export interface SubmitChangeDeps extends RecordDeliveryDeps, Omit<SubmitDeps, "
   openTasks?: typeof openTasks;
   /**
    * Called per change once before its check runs, so warnings are visible even when the check or
-   * the push fails or hangs, and once per group whose pre-flight was skipped. Never called for
-   * `needs-branch` or a refusal.
+   * the push fails or hangs, and once per group whose pre-flight was skipped, read only the last
+   * fetched refs, or found a change publication will block. Never called for `needs-branch` or a
+   * refusal.
    */
   onWarnings?: (change: string, warnings: SubmitWarning[], unscoped: UnscopedDelivery[]) => void;
   /** Pushes the groups; {@link submitGroups} by default. */
@@ -322,18 +323,25 @@ async function preflight(
   const run = deps.preflightGroup ?? preflightGroup;
   const locals = await localMembers(companionPath, type);
   const refused: Prepared[] = [];
+  const pushing = new Map<string, string[]>();
   for (const group of new Set(prepared.map((entry) => entry.group))) {
-    const entries = prepared.filter((entry) => entry.group === group);
-    const named = entries.map((entry) => entry.change);
+    const named = prepared.filter((entry) => entry.group === group).map((entry) => entry.change);
     if (held.has(group) || waitingMembers(locals, group, named).length > 0) continue;
-    // Fetched: the push builds on the remote's current inbox and default tip.
-    // oxlint-disable-next-line no-await-in-loop -- one worktree at a time
-    const outcome = await run(
-      companionPath,
+    pushing.set(
       group,
       named.filter((name) => !edited.has(name)),
-      { ...deps, artifactType: type, fetch: true },
     );
+  }
+  for (const [group, names] of pushing) {
+    const entries = prepared.filter((entry) => entry.group === group);
+    // Fetched: the push builds on the remote's current inbox and default tip.
+    // oxlint-disable-next-line no-await-in-loop -- one worktree at a time
+    const outcome = await run(companionPath, group, names, {
+      ...deps,
+      artifactType: type,
+      fetch: true,
+      pushing,
+    });
     if (outcome.status === "failed") {
       const target = entries.find((entry) => entry.change === outcome.change);
       for (const entry of target ? [target] : entries) {
