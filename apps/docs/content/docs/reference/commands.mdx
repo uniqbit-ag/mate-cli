@@ -1300,8 +1300,9 @@ whose requirement changed on the default branch since its delta was written
 does not fail the check when this run pushes it and the inbox does not block it
 yet: submit pushes it with a warning of kind `preflight-blocked`, and
 publication blocks the group until you resolve the change with
-`mate artifact resolve`; the members after it are not checked. When the
-dependency chain cannot be built, or the fetch fails, a warning of kind
+`mate artifact resolve`. The members after it are not checked until you resolve
+it and run submit again, so do that before you publish. When the dependency
+chain cannot be built, or the fetch fails, a warning of kind
 `preflight-skipped` names the cause. Your checkout is not touched.
 
 A failed check or push fails the submit and changes no state;

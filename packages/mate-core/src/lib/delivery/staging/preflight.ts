@@ -166,7 +166,7 @@ export async function preflightGroup(
         return {
           status: "blocked",
           change: failing.name,
-          message: `publication will block group ${group}${fetched}: ${reason}. It is pushed anyway, as only its copy on the pending branch can be resolved; no member after it was checked. ${remedy}`,
+          message: `publication will block group ${group}${fetched}: ${reason}. It is pushed anyway, as only its copy on the pending branch can be resolved; no member after it was checked, so once it is resolved, run \`mate artifact submit ${inboxText(failing.name)}\` again before you publish. ${remedy}`,
         };
       }
       return {
