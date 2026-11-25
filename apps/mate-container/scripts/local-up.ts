@@ -21,7 +21,7 @@ import path from "node:path";
 import { stringify } from "yaml";
 
 import { findContainerRuntime } from "../src/container-runtime";
-import { CONTAINER_ROOT } from "../src/image-inputs";
+import { CONTAINER_ROOT, TOOL_MANIFEST_FILE } from "../src/image-inputs";
 
 const REPO_ROOT = path.resolve(CONTAINER_ROOT, "..", "..");
 const LOCAL_DIR = path.join(CONTAINER_ROOT, ".local");
@@ -102,10 +102,13 @@ function copiedSources(dockerfile: string): string[] {
 
 /**
  * A digest of everything the release recipe builds from: the recipe, the
- * pins, every lock, and the files it copies. A different digest means the
- * base image no longer matches this branch.
+ * pins, the shared tool manifest, every lock, and the files it copies. A
+ * different digest means the base image no longer matches this branch.
  */
-export function localInputsDigest(root: string = CONTAINER_ROOT): string {
+export function localInputsDigest(
+  root: string = CONTAINER_ROOT,
+  manifestFile: string = TOOL_MANIFEST_FILE,
+): string {
   const dockerfile = fs.readFileSync(path.join(root, "Dockerfile"), "utf8");
   const files = new Set(
     ["Dockerfile", "image-inputs.yaml", "locks", ...copiedSources(dockerfile)]
@@ -118,6 +121,9 @@ export function localInputsDigest(root: string = CONTAINER_ROOT): string {
     hash.update(fs.readFileSync(path.join(root, relative)));
     hash.update("\0");
   }
+  // Outside the build context, but its tools are merged into the build args.
+  hash.update("tool-manifest.yaml\0");
+  hash.update(fs.readFileSync(manifestFile));
   return hash.digest("hex");
 }
 

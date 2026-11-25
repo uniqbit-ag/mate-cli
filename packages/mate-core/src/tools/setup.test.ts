@@ -13,6 +13,7 @@ import { GlobalConfigStore } from "../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../lib/orchestrator/repository-link";
 import { project } from "../lib/orchestrator/working-repo-projection";
 import { openSpecCliDeps } from "../lib/openspec-cli";
+import { toolVersion } from "../lib/tool-manifest";
 import { MATE_SPECS_RULE } from "./setup/capabilities/openspec";
 import { TOKENSAVE_STORE_DIR, tokensaveDeps } from "./setup/capabilities/tokensave";
 import {
@@ -1565,7 +1566,7 @@ describe("applySetupCompatibilities — tokensave", () => {
     const originalRun = tokensaveDeps.run;
     tokensaveDeps.run = mock((args: string[]) => {
       if (args[0] === "--version") {
-        return { ok: true, stderr: "", stdout: "tokensave 0.0.0" };
+        return { ok: true, stderr: "", stdout: `tokensave ${toolVersion("tokensave")}` };
       }
       return { ok: true, stderr: "", stdout: "" };
     });
@@ -1612,7 +1613,7 @@ describe("applySetupCompatibilities — tokensave", () => {
     const originalRun = tokensaveDeps.run;
     tokensaveDeps.run = mock((args: string[]) => {
       if (args[0] === "--version") {
-        return { ok: true, stderr: "", stdout: "tokensave 0.0.0" };
+        return { ok: true, stderr: "", stdout: `tokensave ${toolVersion("tokensave")}` };
       }
       return { ok: true, stderr: "", stdout: "" };
     });
@@ -1664,7 +1665,7 @@ describe("applySetupCompatibilities — tokensave", () => {
     const originalRun = tokensaveDeps.run;
     tokensaveDeps.run = mock((args: string[]) => {
       if (args[0] === "--version") {
-        return { ok: true, stderr: "", stdout: "tokensave 0.0.0" };
+        return { ok: true, stderr: "", stdout: `tokensave ${toolVersion("tokensave")}` };
       }
 
       return { ok: true, stderr: "", stdout: "" };

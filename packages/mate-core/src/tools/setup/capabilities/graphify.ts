@@ -4,8 +4,10 @@ import path from "node:path";
 import type { CapabilityPlugin, RuntimeContributionsByRuntime, SetupContext } from "../plugin";
 import type { InstallRequirement } from "../install-contract";
 import {
+  installedVersionOutput,
   isCommandOnPath,
   pruneEmptyAncestors,
+  resolveCommandOnPath,
   runCommandSilently,
   runShellCommand,
 } from "../utils";
@@ -13,6 +15,7 @@ import { confirm } from "../../../cli/confirm";
 import { FRAMEWORK_NAME } from "../../../framework";
 import { isDeclinedByMember, type ReadMemberChoices } from "../../../lib/member-choices";
 import { getWrapperBinPath, withoutMateWrapperDirs } from "../../../lib/package-paths";
+import { toolVersion, warnOnVersionDrift } from "../../../lib/tool-manifest";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import { isInstalledViaUvTool } from "../package-managers/uv";
 import { stripSectionFromFile } from "../providers/agent-file-sections";
@@ -39,7 +42,7 @@ export const GRAPHIFY_STORE_SEGMENT = ".graphify";
 const GRAPHIFY_SKILL_NAME = "graphify";
 export const GRAPHIFY_OUTPUT_SUBDIR = "graphify-out";
 
-const GRAPHIFY_INSTALL_CMD = `uv tool install graphifyy`;
+const GRAPHIFY_INSTALL_CMD = `uv tool install graphifyy==${toolVersion("graphify")}`;
 const GRAPHIFY_GITIGNORE_ENTRIES = [
   "# graphify cache (contains absolute local paths)",
   ".graphify/*/graphify-out/cache/",
@@ -155,6 +158,18 @@ export interface GraphifyPluginDeps {
   runCommand?: GraphifyRunCommand;
   runProviderInstall?: GraphifyProviderInstall;
   readMemberChoices?: ReadMemberChoices;
+  installedGraphifyVersion?: () => Promise<string | null>;
+}
+
+/** The real `graphify` on PATH; Mate's wrapper is skipped. */
+function graphifyBinaryPath(): string | undefined {
+  return resolveCommandOnPath("graphify", withoutMateWrapperDirs(process.env.PATH ?? ""));
+}
+
+/** What the real `graphify --version` prints, else null. */
+async function defaultInstalledGraphifyVersion(): Promise<string | null> {
+  const binary = graphifyBinaryPath();
+  return binary ? installedVersionOutput(binary) : null;
 }
 
 export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityPlugin {
@@ -206,6 +221,13 @@ export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityP
         detect: () => graphifyOnPath() || checkUvTool("graphifyy"),
         install: () => runCommand(GRAPHIFY_INSTALL_CMD),
         verify: () => graphifyOnPath() || checkUvTool("graphifyy"),
+        update: async () =>
+          warnOnVersionDrift(
+            "graphify",
+            await (deps.installedGraphifyVersion ?? defaultInstalledGraphifyVersion)(),
+            GRAPHIFY_INSTALL_CMD,
+            graphifyBinaryPath(),
+          ),
       },
     ],
 
