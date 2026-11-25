@@ -270,9 +270,7 @@ RUN bun /opt/mate/tools/startup/write-bundle-manifest.ts /opt/mate/prebuilt "${M
 # from the lock; `--no-deps` resolves nothing the lock does not list and
 # `--no-build` refuses sdists. (`uv tool install --with-requirements` checks no
 # hashes.) The version assertion ties the build argument to the lock.
-ENV UV_TOOL_DIR=/opt/mate/uv/tools \
-    UV_TOOL_BIN_DIR=/usr/local/bin \
-    UV_PYTHON_INSTALL_DIR=/opt/mate/uv/python \
+ENV UV_PYTHON_INSTALL_DIR=/opt/mate/uv/python \
     UV_NO_MODIFY_PATH=1
 COPY locks/graphify.requirements.txt /opt/mate/locks/graphify.requirements.txt
 RUN uv python install "${GRAPHIFY_PYTHON_VERSION}" \

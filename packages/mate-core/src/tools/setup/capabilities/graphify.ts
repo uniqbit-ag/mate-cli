@@ -161,9 +161,14 @@ export interface GraphifyPluginDeps {
   installedGraphifyVersion?: () => Promise<string | null>;
 }
 
-/** What the real `graphify --version` prints (Mate's wrapper is skipped), else null. */
+/** The real `graphify` on PATH; Mate's wrapper is skipped. */
+function graphifyBinaryPath(): string | undefined {
+  return resolveCommandOnPath("graphify", withoutMateWrapperDirs(process.env.PATH ?? ""));
+}
+
+/** What the real `graphify --version` prints, else null. */
 async function defaultInstalledGraphifyVersion(): Promise<string | null> {
-  const binary = resolveCommandOnPath("graphify", withoutMateWrapperDirs(process.env.PATH ?? ""));
+  const binary = graphifyBinaryPath();
   return binary ? installedVersionOutput(binary) : null;
 }
 
@@ -221,6 +226,7 @@ export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityP
             "graphify",
             await (deps.installedGraphifyVersion ?? defaultInstalledGraphifyVersion)(),
             GRAPHIFY_INSTALL_CMD,
+            graphifyBinaryPath(),
           ),
       },
     ],

@@ -35,11 +35,14 @@ function rtkInstallDir(): string {
   return process.env.RTK_INSTALL_DIR || path.join(os.homedir(), ".local", "bin");
 }
 
-/** True when `rtk` is on PATH or in its install directory; the latter joins this process's PATH. */
+/**
+ * True when `rtk` is on PATH or in its install directory; the latter is appended to this
+ * process's PATH, last, so its other binaries never shadow the member's.
+ */
 function locateRtk(installDir: string): boolean {
   if (isCommandOnPath("rtk", process.env.PATH ?? "")) return true;
   if (!isCommandOnPath("rtk", installDir)) return false;
-  process.env.PATH = [installDir, process.env.PATH].filter(Boolean).join(path.delimiter);
+  process.env.PATH = [process.env.PATH, installDir].filter(Boolean).join(path.delimiter);
   return true;
 }
 
@@ -85,7 +88,7 @@ export function createRtkPlugin(deps: RtkDeps = {}): CapabilityPlugin {
     const binary = (deps.rtkBinaryPath ?? defaultRtkBinaryPath)();
     if (!binary) return;
     const installed = await (deps.installedRtkVersion ?? installedVersionOutput)(binary);
-    warnOnVersionDrift("rtk", installed, RTK_INSTALL_CMD);
+    warnOnVersionDrift("rtk", installed, RTK_INSTALL_CMD, binary);
   };
 
   return {

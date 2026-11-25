@@ -7,6 +7,7 @@ import { BRAND_ACCENT } from "../brand/palette";
 import { useSpinnerFrame } from "../lib/components/spinner";
 import type { InstallPlan, InstallPlanItem, InstallRequirementResult } from "../lib/install";
 import { runInstallPlan } from "../lib/install";
+import { holdToolNotices } from "../lib/tool-manifest";
 
 type Execution = { ok: boolean; results: InstallRequirementResult[] };
 
@@ -178,8 +179,10 @@ export function InstallExecutionView({
 export async function renderInstallExecution(plan: InstallPlan): Promise<Execution> {
   return new Promise((resolve) => {
     let app: ReturnType<typeof render> | undefined;
+    const releaseNotices = holdToolNotices();
     const finish = (execution: Execution) => {
       app?.unmount();
+      releaseNotices();
       resolve(execution);
     };
     app = render(<InstallExecutionView plan={plan} onDone={finish} />);

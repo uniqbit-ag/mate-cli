@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 
 import {
   DEFAULT_SECRET_DENY_PATTERNS,
@@ -132,7 +132,7 @@ describe("tokensavePlugin.apply", () => {
     expect(runShellCommandMock).not.toHaveBeenCalled();
 
     // The graph build (init/sync) is the job of `mate cap index`, never plugin apply.
-    expect(calls.map((c) => c[0][0])).toEqual(["--version", "--version", "install", "install"]);
+    expect(calls.map((c) => c[0][0])).toEqual(["--version", "install", "install"]);
     expect(calls[0][1]).toBe(repoDir);
   });
 
@@ -331,9 +331,8 @@ describe("tokensavePlugin.apply", () => {
       "install",
       "aovestdipaperino/tap/tokensave",
     ]);
-    // Verifies install, re-checks the binary, checks its version; no init/sync — that is `mate cap index`.
+    // Probes the binary, re-probes it after the install; no init/sync — that is `mate cap index`.
     expect(runMock.mock.calls.map((call) => call[0][0])).toEqual([
-      "--version",
       "--version",
       "--version",
       "install",
@@ -376,7 +375,7 @@ describe("tokensavePlugin.apply", () => {
     ).toBe("cargo install --locked tokensave --version 7.15.0");
   });
 
-  test("prefers the pinned cargo install over brew when Rust is new enough", async () => {
+  test("plans the pinned cargo install over brew without probing rustc", async () => {
     const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
     const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));
     tempRoots.push(companionDir, repoDir);
@@ -390,6 +389,27 @@ describe("tokensavePlugin.apply", () => {
         config: makeCtx(companionDir).config,
       })[0]?.command,
     ).toBe("cargo install --locked tokensave --version 7.15.0");
+    expect(rustcVersionMock).not.toHaveBeenCalled();
+  });
+
+  test("installs with brew when Rust is below the pinned release's minimum", async () => {
+    tokensaveDeps.rustcVersion = () => ({ ok: true, stderr: "", stdout: "rustc 1.94.0" });
+    tokensaveDeps.isCommandOnPath = (command) => command === "brew" || command === "cargo";
+    tokensaveDeps.pathValue = () => "/opt/homebrew/bin:/usr/bin";
+    const [requirement] = tokensavePlugin.getInstallRequirements!({
+      config: makeCtx("/tmp/acme").config,
+    });
+
+    const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await requirement!.install();
+    } finally {
+      stderr.mockRestore();
+    }
+
+    expect(runCommandMock.mock.calls).toEqual([
+      ["brew", ["install", "aovestdipaperino/tap/tokensave"]],
+    ]);
   });
 
   test("rejects cargo installation when Rust is below the minimum", async () => {

@@ -10,8 +10,8 @@
 ### One tool manifest pins the shared tool versions
 
 - `packages/mate-core/tool-manifest.yaml` names the exact version of OpenSpec, `skills`, React Doctor, Context7, Graphify, RTK and TokenSave. Setup, the Context7 launch and the container image read it, so one bump reaches all of them.
-- TokenSave, RTK and Graphify install at the manifest's version: `cargo install --locked tokensave --version <version>`, RTK's installer from the release tag with `RTK_VERSION` set, and `uv tool install graphifyy==<version>`. Homebrew and Scoop stay available and install their formula's current version.
-- `mate install` and setup no longer upgrade TokenSave or RTK. When an installed TokenSave, RTK or Graphify reports another version, older or newer, Mate warns, names the pinned install command, and continues with the installed version.
+- TokenSave, RTK and Graphify install at the manifest's version: `cargo install --locked tokensave --version <version>`, RTK's installer from the release tag with `RTK_VERSION` set, and `uv tool install graphifyy==<version>`. TokenSave uses Cargo when it is on `PATH`. Without Cargo, or when `rustc` is older than the pinned release needs, it installs through Homebrew or Scoop, which install their formula's current version.
+- `mate install` and setup no longer upgrade TokenSave or RTK. When an installed TokenSave, RTK or Graphify reports another version, older or newer, Mate warns, names the installed binary and the pinned install command, and continues with the installed version.
 - The container image installs Graphify and its dependencies only after checking each archive against the hash in `graphify.requirements.txt`.
 
 ### The factory host lists a companion's installed plugins

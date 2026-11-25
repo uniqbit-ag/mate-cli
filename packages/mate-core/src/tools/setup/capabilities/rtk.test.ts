@@ -171,7 +171,7 @@ describe("RTK install requirement", () => {
     expect(await requirement!.detect()).toBe(false);
     await requirement!.install();
     expect(await requirement!.verify!()).toBe(true);
-    expect(process.env.PATH!.split(path.delimiter)[0]).toBe(installDir);
+    expect(process.env.PATH!.split(path.delimiter).at(-1)).toBe(installDir);
   });
 });
 
