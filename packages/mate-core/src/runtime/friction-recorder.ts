@@ -119,7 +119,20 @@ export function commandDetail(failure: CommandFailure): CommandDetail {
 }
 
 const COMMAND_WORD = /^[a-z][a-z0-9-]*$/;
-const RUNTIME_LAUNCHES = new Set(["claude", "opencode"]);
+/** Commands whose second word is a subcommand; elsewhere it can be a value, such as an id. */
+const WITH_SUBCOMMAND = new Set([
+  "artifact",
+  "cap",
+  "companion",
+  "friction",
+  "hub",
+  "plugin",
+  "session",
+  "studio",
+  "vscode",
+  "workflow",
+  "working",
+]);
 const CAP_WITHOUT_COMMAND = new Set(["graphify", "index", "sync"]);
 const REDACTED_VALUE_MIN = 3;
 
@@ -129,7 +142,7 @@ function commandWords(args: string[]): { command: string | null; subcommand: str
     return value && COMMAND_WORD.test(value) ? value : null;
   };
   const command = positional(0);
-  const subcommand = command && !RUNTIME_LAUNCHES.has(command) ? positional(1) : null;
+  const subcommand = command && WITH_SUBCOMMAND.has(command) ? positional(1) : null;
   const capCommand =
     command === "cap" && subcommand && !CAP_WITHOUT_COMMAND.has(subcommand) ? positional(2) : null;
   return { command, subcommand: capCommand ? `${subcommand} ${capCommand}` : subcommand };
