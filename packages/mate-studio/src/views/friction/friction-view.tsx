@@ -1,5 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
+  formatCommand,
   FRAMEWORK_NAME,
   FRICTION_VIEW_DAYS,
   REPORT_KINDS,
@@ -119,10 +120,13 @@ function Counted({ label, counts }: { label: string; counts: Record<string, numb
 
 function ItemFooter({
   name,
+  target,
   item,
   onMark,
 }: {
   name: string;
+  /** The fingerprint or report id `mate triage` takes. */
+  target: string;
   item: Pick<FrictionGroup | FrictionFreeReport, "state" | "open">;
   onMark: MarkItem;
 }) {
@@ -132,6 +136,18 @@ function ItemFooter({
         <ItemState state={item.state} time={<FrictionTime at={item.state.at} />} />
       ) : null}
       <MarkActions name={name} handled={!item.open} onMark={onMark} />
+      <div
+        role="group"
+        aria-label={`Triage ${name}`}
+        className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs"
+      >
+        <p className="m-0 text-muted">
+          To investigate this item, run in your own terminal, in a repository of its companion:
+        </p>
+        <div className="w-full max-w-xl min-w-0">
+          <CommandLine text={formatCommand([FRAMEWORK_NAME, "triage", target])} label="command" />
+        </div>
+      </div>
     </div>
   );
 }
@@ -312,7 +328,7 @@ function GroupItem({
           </ul>
         </section>
       ) : null}
-      <ItemFooter name={group.title} item={group} onMark={onMark} />
+      <ItemFooter name={group.title} target={group.fingerprint} item={group} onMark={onMark} />
     </Row>
   );
 }
@@ -355,7 +371,7 @@ function FreeReportItem({
           ["Workaround", report.workaround],
         ]}
       />
-      <ItemFooter name={report.subject} item={report} onMark={onMark} />
+      <ItemFooter name={report.subject} target={report.id} item={report} onMark={onMark} />
     </Row>
   );
 }

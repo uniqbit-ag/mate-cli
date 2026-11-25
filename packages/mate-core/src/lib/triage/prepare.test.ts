@@ -12,6 +12,7 @@ import { getTriagePlaybookPath } from "../package-paths";
 import { markFriction } from "../friction/mark";
 import { writeFrictionSnapshot } from "./context";
 import { prepareTriageSession } from "./prepare";
+import { triageRoot } from "./session";
 
 const now = new Date("2027-03-14T12:00:00.000Z");
 const roots: string[] = [];
@@ -39,15 +40,17 @@ function useDistribution(issueRepository?: string) {
 function prepare(
   f: Awaited<ReturnType<typeof fixture>>,
   collectDoctor: (cwd: string) => Promise<unknown> = async (cwd) => ({ kind: "core", cwd }),
+  target?: string,
 ) {
   return prepareTriageSession({
-    argv: ["--no-launch"],
+    argv: target ? [target, "--no-launch"] : ["--no-launch"],
     cwd: f.cwd,
     homeDir: f.home,
     now,
     pathValue: f.bin,
     env: process.env,
     collectDoctor,
+    target,
   });
 }
 
@@ -56,11 +59,12 @@ function event(
   at: Date,
   home = companion,
   detail: Record<string, unknown> = {},
+  fingerprint = "refusal:artifact:write",
 ) {
   appendEvent(
     {
       kind: "refusal",
-      fingerprint: "refusal:artifact:write",
+      fingerprint,
       mateVersion: "1.2.3",
       runtime: "claude",
       sessionId: "s1",
@@ -334,6 +338,90 @@ describe("prepareTriageSession", () => {
       "prompt.md",
     ]);
     expect(fs.readFileSync(files.context, "utf8")).toContain("No friction was recorded");
+  });
+
+  describe("with a Triage Target", () => {
+    const fingerprint = "refusal:artifact:write";
+    const recent = new Date("2027-03-10T00:00:00Z");
+
+    function companions(f: Awaited<ReturnType<typeof fixture>>) {
+      const acme = path.join(f.root, "acme-companion");
+      const beta = path.join(f.root, "beta-companion");
+      fs.mkdirSync(acme);
+      fs.mkdirSync(beta);
+      return { acme, beta };
+    }
+
+    const prepareTarget = (f: Awaited<ReturnType<typeof fixture>>, current: string | null) =>
+      prepare(f, current ? inCompanion(current) : async (cwd) => ({ cwd }), fingerprint);
+
+    const copiedEvents = (dir: string) =>
+      fs
+        .readFileSync(path.join(dir, "friction-events.jsonl"), "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+    const copiedCompanions = (dir: string) => copiedEvents(dir).map((copied) => copied.companion);
+
+    test("copies the current companion's friction when it holds the target", async () => {
+      const f = await fixture();
+      const { acme, beta } = companions(f);
+      event(acme, recent, f.home);
+      event(beta, recent, f.home);
+
+      const { files } = await prepareTarget(f, acme);
+
+      const context = fs.readFileSync(files.context, "utf8");
+
+      expect(copiedCompanions(files.dir)).toEqual([acme]);
+      expect(context).not.toContain("The snapshot holds");
+      expect(context).toContain(`other companions, not copied here: ${beta} (1).`);
+    });
+
+    test("copies the target's only companion and notes the mismatch", async () => {
+      const f = await fixture();
+      const { acme, beta } = companions(f);
+      event(acme, recent, f.home);
+      event(beta, recent, f.home, {}, "refusal:secret:read");
+
+      const { files } = await prepareTarget(f, beta);
+      const context = fs.readFileSync(files.context, "utf8");
+
+      expect(copiedCompanions(files.dir)).toEqual([acme]);
+      expect(context).toContain(`Triage Target: \`${fingerprint}\`, a fingerprint`);
+      expect(context).toContain(`friction of companion ${acme}`);
+      expect(context).toContain(`belongs to companion ${beta}; the doctor report describes`);
+    });
+
+    test("refuses a target of several other companions and writes no session", async () => {
+      const f = await fixture();
+      const { acme, beta } = companions(f);
+      event(acme, recent, f.home);
+      event(beta, recent, f.home);
+
+      const refused = prepareTarget(f, null);
+
+      await expect(refused).rejects.toThrow(`${acme}, ${beta}`);
+      expect(fs.existsSync(triageRoot(f.home))).toBe(false);
+    });
+
+    test("copies a 45-day-old target but no other event older than 30 days", async () => {
+      const f = await fixture();
+      const { acme } = companions(f);
+      event(acme, new Date("2027-01-28T00:00:00Z"), f.home);
+      event(acme, new Date("2027-01-28T00:00:00Z"), f.home, {}, "refusal:secret:read");
+      event(acme, new Date("2027-03-09T00:00:00Z"), f.home, {}, "refusal:secret:read");
+
+      const { files } = await prepareTarget(f, acme);
+      const fingerprints = copiedEvents(files.dir).map(
+        (copied) => `${copied.fingerprint} ${copied.at.slice(0, 10)}`,
+      );
+
+      expect(fingerprints).toEqual([
+        "refusal:artifact:write 2027-01-28",
+        "refusal:secret:read 2027-03-09",
+      ]);
+    });
   });
 
   test("copies the shipped playbook and names it and the context file in the prompt", async () => {

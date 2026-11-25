@@ -1,6 +1,8 @@
 import readline from "node:readline/promises";
 
 import { FRAMEWORK_NAME } from "../../framework";
+import { FrictionRefusal } from "../../lib/friction/fields";
+import { formatCommand } from "../../runtime/command-arg";
 import {
   launchAgent,
   TRIAGE_AGENT_NAMES,
@@ -18,11 +20,12 @@ import { currentSession } from "../../runtime/session-id";
 import { collectDoctorReport } from "./doctor";
 
 interface TriageArgs {
+  target?: string;
   agent: TriageAgent | null;
   launch: boolean;
 }
 
-const TRIAGE_USAGE = `Usage: ${FRAMEWORK_NAME} triage [--agent <${TRIAGE_AGENTS.join("|")}>] [--no-launch]`;
+const TRIAGE_USAGE = `Usage: ${FRAMEWORK_NAME} triage ["<fingerprint|report-id>"] [--agent <${TRIAGE_AGENTS.join("|")}>] [--no-launch]`;
 
 function parseTriageArgs(argv: string[]): TriageArgs | { error: string } {
   const args: TriageArgs = { agent: null, launch: true };
@@ -37,6 +40,12 @@ function parseTriageArgs(argv: string[]): TriageArgs | { error: string } {
         return { error: `--agent must be one of: ${TRIAGE_AGENTS.join(", ")}` };
       }
       args.agent = value as TriageAgent;
+    } else if (!arg.startsWith("-")) {
+      if (arg.trim() === "") return { error: "the Triage Target is empty" };
+      if (args.target !== undefined) {
+        return { error: `triage takes one Triage Target; got a second: ${arg}` };
+      }
+      args.target = arg;
     } else {
       return { error: `unknown triage option: ${arg}` };
     }
@@ -102,6 +111,8 @@ function printPaths(files: TriageSessionFiles): void {
  * shipped playbook, a seed prompt and a 30-day friction snapshot) and starts
  * Claude Code or OpenCode in it, directly and not through a Mate launch.
  * Runs before every gate, so it works when Mate itself does not.
+ * An optional Triage Target (a fingerprint or Free Report id) focuses the
+ * session on that item and chooses the snapshot's companion.
  * `--no-launch` only prints the session paths.
  */
 export async function runTriageCommand(argv: string[] = [], deps: TriageDeps = {}): Promise<void> {
@@ -113,20 +124,30 @@ export async function runTriageCommand(argv: string[] = [], deps: TriageDeps = {
     return;
   }
   const env = deps.env ?? process.env;
-  const { files, agents } = await prepareTriageSession({
-    argv,
-    cwd: deps.cwd ?? process.cwd(),
-    homeDir: env.HOME,
-    now: deps.now ?? new Date(),
-    pathValue: env.PATH ?? "",
-    env,
-    collectDoctor: deps.collectDoctor ?? ((cwd) => collectDoctorReport({ cwd, write: false })),
-  });
+  let prepared: Awaited<ReturnType<typeof prepareTriageSession>>;
+  try {
+    prepared = await prepareTriageSession({
+      argv,
+      cwd: deps.cwd ?? process.cwd(),
+      homeDir: env.HOME,
+      now: deps.now ?? new Date(),
+      pathValue: env.PATH ?? "",
+      env,
+      collectDoctor: deps.collectDoctor ?? ((cwd) => collectDoctorReport({ cwd, write: false })),
+      target: args.target,
+    });
+  } catch (error) {
+    if (!(error instanceof FrictionRefusal)) throw error;
+    console.error(`${FRAMEWORK_NAME}: ${error.message}`);
+    process.exitCode = 1;
+    return;
+  }
+  const { files, agents } = prepared;
   printPaths(files);
   if (!args.launch) return;
   if (currentSession(env)) {
     console.log(
-      `No agent started: this is an agent session. Run \`${FRAMEWORK_NAME} triage\` in your own terminal.`,
+      `No agent started: this is an agent session. Run \`${formatCommand([FRAMEWORK_NAME, "triage", ...argv])}\` in your own terminal.`,
     );
     return;
   }

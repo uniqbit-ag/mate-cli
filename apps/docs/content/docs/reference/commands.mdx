@@ -286,13 +286,13 @@ companion.
 
 ## Installation And Health
 
-| Command                                                  | Purpose                                                                            |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `mate install [--yes]`                                   | Install and verify core requirements or refresh the active companion requirements. |
-| `mate plugin install [--local] <package>[@version]`      | Declare a plugin and install it in one step.                                       |
-| `mate doctor`                                            | Show context, policy, selected capabilities, and tool status.                      |
-| `mate config [--vscode]`                                 | Open the global `~/.mate` configuration directory.                                 |
-| `mate triage [--agent <claude\|opencode>] [--no-launch]` | Hand a Mate problem to your coding agent in a triage session.                      |
+| Command                                                                               | Purpose                                                                            |
+| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `mate install [--yes]`                                                                | Install and verify core requirements or refresh the active companion requirements. |
+| `mate plugin install [--local] <package>[@version]`                                   | Declare a plugin and install it in one step.                                       |
+| `mate doctor`                                                                         | Show context, policy, selected capabilities, and tool status.                      |
+| `mate config [--vscode]`                                                              | Open the global `~/.mate` configuration directory.                                 |
+| `mate triage ["<fingerprint\|report-id>"] [--agent <claude\|opencode>] [--no-launch]` | Hand a Mate problem to your coding agent in a triage session.                      |
 
 `mate install --yes` skips interactive confirmation and is required when the
 process has no TTY. It can run before a companion is linked; in that context it
@@ -328,7 +328,14 @@ next action.
 OpenCode in it directly, not through a Mate launch. It runs before every gate,
 so it works when the installation, an update or the companion blocks other
 commands. `--agent` picks the agent when both are installed; `--no-launch` only
-prints the session paths. It ends with the agent's exit code. See
+prints the session paths. It ends with the agent's exit code.
+
+An optional Triage Target, a fingerprint with at least one recorded event or a
+Free Report id, starts the session from that item. The snapshot
+then also holds the target's own records older than 30 days, and its companion
+is the current folder's when it holds the target, otherwise the target's only
+companion. An unknown target, a report on an event, or a target of several
+other companions exits 1 and writes no session. See
 [Triage a Mate Problem](/docs/scenarios/triage-a-mate-problem).
 
 ### Local Plugins

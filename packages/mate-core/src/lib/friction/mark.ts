@@ -1,4 +1,12 @@
-import { findEvent, findFingerprint, findReport, readReportIds } from "../../runtime/friction-log";
+import {
+  findEvent,
+  findEvents,
+  findFingerprint,
+  findReport,
+  type FrictionEvent,
+  type FrictionReport,
+  readReportIds,
+} from "../../runtime/friction-log";
 import {
   FrictionStateFileError,
   type FrictionStatesFile,
@@ -32,6 +40,10 @@ export type MarkResult =
 
 const REPORT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Report ids are stored in lower case; a fingerprint is kept exactly as given. */
+const canonicalTarget = (target: string) =>
+  REPORT_ID.test(target) ? target.toLowerCase() : target;
+
 const unknownTarget = (target: string) =>
   new FrictionRefusal(
     "unknown-target",
@@ -62,6 +74,38 @@ function checkLink(link: string | null, state: MarkState): void {
   }
 }
 
+/** A Friction Item a person can mark or triage, with its records from the whole Friction Log. */
+export type FrictionTarget =
+  | { id: string; kind: "fingerprint"; events: FrictionEvent[] }
+  | { id: string; kind: "report"; report: FrictionReport };
+
+/**
+ * Looks a fingerprint or Free Report id up in the whole Friction Log; throws a `FrictionRefusal`
+ * for an unknown id or a report on an event. `verb` names the action the refusal points to.
+ */
+export function lookupFrictionTarget(
+  given: string,
+  options: { homeDir?: string; verb?: string } = {},
+): FrictionTarget {
+  const { homeDir, verb = "Mark" } = options;
+  const target = canonicalTarget(given);
+  if (!REPORT_ID.test(target)) {
+    const events = findEvents((event) => event.fingerprint === target, { homeDir });
+    if (events.length === 0) throw unknownTarget(target);
+    return { id: target, kind: "fingerprint", events };
+  }
+  const report = findReport(target, { homeDir });
+  if (!report) throw unknownTarget(target);
+  if (report.eventId) {
+    const event = findEvent(report.eventId, { homeDir });
+    throw new FrictionRefusal(
+      "report-on-event",
+      `${target} is a report on an event; it follows the state of its fingerprint${event ? ` ${event.fingerprint}` : ""}. ${verb} that fingerprint instead; nothing was changed.`,
+    );
+  }
+  return { id: target, kind: "report", report };
+}
+
 function resolveTarget(
   target: string,
   known: { fingerprints: object; reports: object },
@@ -70,18 +114,11 @@ function resolveTarget(
   if (Object.hasOwn(known.fingerprints, target)) return "fingerprints";
   if (Object.hasOwn(known.reports, target)) return "reports";
   if (!REPORT_ID.test(target)) {
+    // Stops at the newest match; mark needs no full scan.
     if (!findFingerprint(target, { homeDir })) throw unknownTarget(target);
     return "fingerprints";
   }
-  const report = findReport(target, { homeDir });
-  if (!report) throw unknownTarget(target);
-  if (report.eventId) {
-    const event = findEvent(report.eventId, { homeDir });
-    throw new FrictionRefusal(
-      "report-on-event",
-      `${target} is a report on an event; it follows the state of its fingerprint${event ? ` ${event.fingerprint}` : ""}. Mark that fingerprint instead; nothing was changed.`,
-    );
-  }
+  lookupFrictionTarget(target, { homeDir });
   return "reports";
 }
 
@@ -100,11 +137,12 @@ function forgetExpiredReports(
  * live here once for every caller; the Friction Log is never written.
  */
 export async function markFriction(
-  target: string,
+  given: string,
   state: MarkState,
   input: MarkInput,
   deps: MarkDeps = {},
 ): Promise<MarkResult> {
+  const target = canonicalTarget(given);
   try {
     const note = textOrNull(input.note);
     const link = textOrNull(input.link);

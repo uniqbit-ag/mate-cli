@@ -171,6 +171,54 @@ describe("the friction list", () => {
   });
 });
 
+describe("the per-item triage command", () => {
+  const triageOf = (page: ReturnType<typeof panel>, heading: string) =>
+    page.queryByRole("group", { name: `Triage ${heading}` });
+  const command = (group: HTMLElement) => ({
+    shown: group.querySelector("code")!.textContent,
+    copied: group.querySelector("[data-copy]")!.getAttribute("data-copy"),
+  });
+
+  test("an opened group copies exactly its quoted fingerprint; collapsed, it shows none", () => {
+    const page = panel(
+      frictionFixture({ groups: [frictionGroup({ fingerprint: "command:artifact submit:1" })] }),
+    );
+    expect(triageOf(page, ARTIFACT_GROUP)).toBeNull();
+    openGroup(page);
+    const expected = 'mate triage "command:artifact submit:1"';
+    expect(command(triageOf(page, ARTIFACT_GROUP)!)).toEqual({
+      shown: expected,
+      copied: expected,
+    });
+  });
+
+  test("a dismissed Agent report shows its triage command", () => {
+    const page = panel(
+      frictionFixture({
+        groups: [],
+        freeReports: [
+          frictionFreeReport({
+            id: "r-dismissed",
+            subject: SUBJECT,
+            state: {
+              state: "dismissed",
+              at: "2026-11-10T10:00:00Z",
+              by: "person",
+              note: null,
+              link: null,
+            },
+            open: false,
+          }),
+        ],
+      }),
+      idle,
+      { ...DEFAULT_FRICTION_FILTERS, state: "handled" },
+    );
+    openRow(rowOf(page, SUBJECT));
+    expect(command(triageOf(page, SUBJECT)!).copied).toBe("mate triage r-dismissed");
+  });
+});
+
 describe("the agent reports", () => {
   const freeReport = (fields: Partial<FrictionFreeReport> = {}) =>
     frictionFreeReport({
