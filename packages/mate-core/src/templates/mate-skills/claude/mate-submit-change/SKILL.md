@@ -76,8 +76,7 @@ it with `mate workflow done <skill> "<change-name>"`; otherwise name it above th
      - `--not-applicable "<reason>"` — for a specification-only change;
      - `--skip-branch` — when the user skips the question; publication will ask again.
    - `failed` → no state changed. Report the `message`: a failed check
-     (`reason` `check-failed`, typically a validation error or publication's refusal of
-     the group, found by archiving it as publication would) or a failed push. For
+     (`reason` `check-failed`, typically a validation error) or a failed push. For
      `secret`, report each finding's path, line and rule, never a value. Re-running
      submit retries; an unchanged resubmit adds no commit.
 
@@ -91,10 +90,7 @@ it with `mate workflow done <skill> "<change-name>"`; otherwise name it above th
    planning artifacts its schema requires that are missing (`incomplete-planning`), a
    stage of the Delivery Path left unfinished (`stage-open`, naming what is open and the
    skill to run), steps counted as done that nobody reported (`step-counted`, naming
-   each), a change publication will block until it is resolved with `mate artifact resolve`
-   (`preflight-blocked`), a publication pre-flight that was skipped or read only the last
-   fetched refs (`preflight-skipped`), or a branch that names no Delivery Group.
-   Warnings never block. Then report the `group`
+   each), or a branch that names no Delivery Group. Warnings never block. Then report the `group`
    and the delivery: each branch with its merge result and source (`git` or
    `user`) and PR link, or the not-applicable reason. An open or unknown merge is
    information, not a failure and not an action: never offer to record it
