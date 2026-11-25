@@ -100,7 +100,7 @@ export async function preflightGroup(
           return { ...member, ...(rebased ? { rebased: true } : {}) };
         }),
     );
-    if (members.length === 0) return passed(fetched, group);
+    if (members.length === 0) return passed(context.fetchError, group);
 
     // Publication refuses a change it cannot date; submit dates every folder it pushes.
     if (remote) {
@@ -148,7 +148,7 @@ export async function preflightGroup(
         `it depends on ${run.missing.map(inboxText).join(", ")}, which is neither here, submitted nor published`,
       );
     }
-    if (run.status !== "conflict") return passed(fetched, group);
+    if (run.status !== "conflict") return passed(context.fetchError, group);
     const { failure } = run;
     // describeFailure leaves out archive's own refusal once it parsed the delta; it names what to fix.
     const refusal =
@@ -160,19 +160,18 @@ export async function preflightGroup(
     }
     const failing = members.find((member) => member.name === change);
     if (failure.kind === "stale") {
-      const remedy = failureRemedy(failure);
       // Its base stays as recorded, so refusing would hold it here for good.
       if (failing?.source === "local" && !failing.submitted?.blocked) {
         return {
           status: "blocked",
           change: failing.name,
-          message: `publication will block group ${group}${fetched}: ${reason}. It is pushed anyway, as only its copy on the pending branch can be resolved; no member after it was checked, so once it is resolved, run \`mate artifact submit ${inboxText(failing.name)}\` again before you publish. ${remedy}`,
+          message: `publication will block group ${group}${fetched}: ${reason}. It is pushed anyway, as only its copy on the pending branch can be resolved. ${failureRemedy(failure, [failing.name])} Do that before you publish: no member after it was checked.`,
         };
       }
       return {
         status: "failed",
         change,
-        message: `publication would refuse group ${group}${fetched}: ${reason}. ${remedy}`,
+        message: `publication would refuse group ${group}${fetched}: ${reason}. ${failureRemedy(failure, names)}`,
       };
     }
     return {
@@ -230,11 +229,11 @@ async function pushAccepts(context: ChainContext, name: string): Promise<boolean
   return acceptsBlock(type, git, pendingRef(remote), sourcePathOf(type, name), base, tip);
 }
 
-function passed(fetched: string, group: string): PreflightResult {
-  return fetched
+function passed(fetchError: string | undefined, group: string): PreflightResult {
+  return fetchError
     ? {
         status: "passed",
-        message: `the publication pre-flight of group ${group}${fetched} passed; publication may still refuse it.`,
+        message: `the publication pre-flight of group ${group} passed on the last fetched state only; publication may still refuse it. Cause: ${fetchError}`,
       }
     : { status: "passed" };
 }

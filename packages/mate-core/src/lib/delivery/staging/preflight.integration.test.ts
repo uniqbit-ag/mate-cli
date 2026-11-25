@@ -227,6 +227,9 @@ describe.skipIf(!REAL_OPENSPEC)("the publication pre-flight at submit", () => {
       const blocked = result.warnings.filter((warning) => warning.kind === "preflight-blocked");
       expect(blocked).toHaveLength(1);
       expect(blocked[0]!.message).toContain("mate artifact resolve");
+      expect(blocked[0]!.message).toContain(
+        "then run `mate artifact submit 'acme-login-ui'` again",
+      );
     },
     TIMEOUT,
   );

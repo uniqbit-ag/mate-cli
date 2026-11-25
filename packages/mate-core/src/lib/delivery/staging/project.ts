@@ -127,6 +127,8 @@ export interface ChainContext {
   published: ReadonlySet<string>;
   /** Why the refs are the last fetched ones, as a message suffix; empty otherwise. */
   warning: string;
+  /** The failed fetch's error that {@link warning} wraps. */
+  fetchError?: string;
   tmpRoot?: string;
   /** The `dependsOn` of a change in this checkout; null when it has no folder here. */
   localDependencies: (change: string) => Promise<string[] | null>;
@@ -142,10 +144,13 @@ export async function chainContext(
   const git = gitFor(companionPath);
   let remote: StagingRemote | null = await stagingRemote(git);
   let warning = "";
+  let fetchError: string | undefined;
   if (remote && deps.fetch) {
     const fetched = await fetchPendingBranches(git, remote);
-    if ("error" in fetched) warning = ` (${fetched.error}; read the last fetched state)`;
-    else remote = fetched;
+    if ("error" in fetched) {
+      fetchError = fetched.error;
+      warning = ` (${fetched.error}; read the last fetched state)`;
+    } else remote = fetched;
   }
   const baseRef =
     remote &&
@@ -164,6 +169,7 @@ export async function chainContext(
     submitted,
     published,
     warning,
+    ...(fetchError ? { fetchError } : {}),
     ...(deps.tmpRoot ? { tmpRoot: deps.tmpRoot } : {}),
     localDependencies: async (change) => {
       const dir = sourceDir(companionPath, type, change);
