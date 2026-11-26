@@ -167,4 +167,48 @@ describe("hub setup scope", () => {
     await expect(fs.access(path.join(hubPath, ".claude", "agents", "acme.md"))).rejects.toThrow();
     await expect(fs.access(path.join(hubPath, ".opencode", "agents", "acme.md"))).rejects.toThrow();
   });
+
+  test("Claude hub teardown removes only what hub apply wrote", async () => {
+    const hubPath = await makeTempDir();
+    const operatorFiles = {
+      "AGENTS.md": "# Acme agents\n",
+      "CLAUDE.md": "# Acme claude\n",
+      [path.join(".claude", "settings.json")]: '{ "acme": true }\n',
+    };
+    await fs.mkdir(path.join(hubPath, ".claude"), { recursive: true });
+    for (const [file, content] of Object.entries(operatorFiles)) {
+      await fs.writeFile(path.join(hubPath, file), content);
+    }
+    const config: FrameworkConfig = {
+      type: "hub",
+      allowedAgents: ["claude"],
+      packageManagers: [],
+      capabilities: [],
+    };
+    const claude = createClaudePlugin();
+    setActiveDistribution({
+      config: { runtime: "bun", version: "test" },
+      registry: new PluginRegistry([claude]),
+    });
+    const ctx: SetupContext = {
+      companionPath: hubPath,
+      config,
+      mode: "setup",
+      activeProviders: ["claude"],
+      scope: "hub",
+    };
+
+    await claude.apply(ctx);
+    await claude.hosting?.mcp?.register(ctx, { name: "acme", command: "acme", args: ["serve"] });
+    await fs.access(path.join(hubPath, ".claude", "settings.local.json"));
+    await fs.access(path.join(hubPath, ".mcp.json"));
+
+    await claude.teardown(ctx);
+
+    for (const [file, content] of Object.entries(operatorFiles)) {
+      expect(await fs.readFile(path.join(hubPath, file), "utf8")).toBe(content);
+    }
+    await expect(fs.access(path.join(hubPath, ".claude", "settings.local.json"))).rejects.toThrow();
+    await expect(fs.access(path.join(hubPath, ".mcp.json"))).rejects.toThrow();
+  });
 });

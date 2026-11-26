@@ -800,6 +800,13 @@ async function teardownClaude(companionPath: string, allowedAgents: string[]): P
   }
 }
 
+// Hub roots hold operator files (AGENTS.md, CLAUDE.md, settings.json); remove only what hub apply wrote.
+async function teardownClaudeHub(ctx: SetupContext): Promise<void> {
+  await fs.rm(getCompanionClaudeSettingsPath(ctx.companionPath), { force: true });
+  await fs.rm(getCompanionClaudeMcpConfigPath(ctx.companionPath), { force: true });
+  await pruneEmptyAncestors(path.join(ctx.companionPath, ".claude"), ctx.companionPath);
+}
+
 async function teardownLegacyClaudeBin(companionPath: string): Promise<void> {
   try {
     await fs.rm(path.join(companionPath, ".claude", "bin"), { recursive: true, force: true });
@@ -946,6 +953,10 @@ export function createClaudePlugin(): ProviderPlugin {
       await syncCompanionClaudeSettings(ctx.companionPath, ctx.config);
     },
     async teardown(ctx) {
+      if (ctx.scope === "hub") {
+        await teardownClaudeHub(ctx);
+        return;
+      }
       await teardownClaude(ctx.companionPath, ctx.config.allowedAgents ?? []);
     },
   };
