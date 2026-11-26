@@ -378,9 +378,15 @@ mcpManager:
   the requirement and refuses commands such as `mate artifact`. Canaries up to
   `1.0.0-canary.8` write none of its servers, and reject a companion that sets
   `mcpManager` under an audience, so update Mate before you use `mcpManager`.
-- **Working Repositories.** OpenCode sessions in a Working Repository get these
-  servers. Claude Code sessions there do not get them yet, as with Context7:
-  only a Claude Code session started in the companion loads them.
+- **Working Repositories.** Claude Code and OpenCode sessions in a wrapped
+  Working Repository get these servers. The wrap carries every server in the
+  companion's `.mcp.json` to Claude Code and every server in its
+  `.opencode/opencode.json` to OpenCode, so the server of another capability,
+  such as Context7, arrives the same way. They are the servers of the audience
+  the companion checkout was last synced for. For Claude Code, Mate files them
+  under the repository root, so start the session at the root to get them. A
+  relative path in a companion entry would resolve against the session's
+  directory, so the wrap reports it as a warning; use an absolute path.
 
 ## Index Synchronization
 

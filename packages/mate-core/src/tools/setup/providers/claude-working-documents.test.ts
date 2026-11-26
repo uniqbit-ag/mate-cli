@@ -9,7 +9,10 @@ import {
   placeRuntimeDocument,
   removeRuntimeDocument,
 } from "../../../lib/orchestrator/projection-runtime-documents";
-import type { RenderedRuntimeDocument } from "../../../runtime/runtime-document-manifest";
+import {
+  CLAUDE_LOCAL_CONFIG_DOCUMENT,
+  type RenderedRuntimeDocument,
+} from "../../../runtime/runtime-document-manifest";
 import { renderWorkingRuntimeDocuments } from "../../setup";
 import { renderSecretDenyEntries } from "./claude";
 
@@ -172,5 +175,66 @@ describe("the Claude working target", () => {
     expect(await removeRuntimeDocument(repoPath, CLAUDE_SETTINGS_DOCUMENT)).toBe("removed");
 
     expect(await fs.readFile(target, "utf8")).toBe(before);
+  });
+});
+
+describe("folding the companion .mcp.json", () => {
+  async function renderLocalMcp(
+    mcpJson: string | undefined,
+    capabilities: { name: string }[] = [],
+  ) {
+    const { companionPath, repoPath } = await fixture();
+    const mcpConfigPath = path.join(companionPath, ".mcp.json");
+    if (mcpJson !== undefined) await fs.writeFile(mcpConfigPath, mcpJson);
+    const { documents, warnings } = await renderWorkingRuntimeDocuments(
+      companionPath,
+      { allowedAgents: ["claude"], capabilities },
+      repoPath,
+    );
+    const local = documents.find((document) => document.path === CLAUDE_LOCAL_CONFIG_DOCUMENT);
+    return {
+      servers: (local?.regions[0] as { entries?: unknown } | undefined)?.entries,
+      warnings,
+      mcpConfigPath,
+    };
+  }
+
+  test("carries a companion server exactly as declared", async () => {
+    const acmeDocs = { type: "http", url: "https://docs.acme.example/mcp" };
+
+    const { servers, warnings } = await renderLocalMcp(
+      JSON.stringify({ mcpServers: { "acme-docs": acmeDocs } }),
+    );
+
+    expect(servers).toEqual({ "acme-docs": acmeDocs });
+    expect(warnings).toEqual([]);
+  });
+
+  test("a declared server wins over a companion entry of the same name", async () => {
+    const { servers } = await renderLocalMcp(
+      JSON.stringify({ mcpServers: { tokensave: { command: "acme-other" } } }),
+      [{ name: "tokensave" }],
+    );
+
+    expect(servers).toEqual({ tokensave: { command: "tokensave", args: ["serve"] } });
+  });
+
+  test.each([
+    ["no", undefined],
+    ["an unparseable", "{"],
+  ])("%s companion file renders the Mate servers only", async (_label, mcpJson) => {
+    const { servers, warnings } = await renderLocalMcp(mcpJson, [{ name: "tokensave" }]);
+
+    expect(servers).toEqual({ tokensave: { command: "tokensave", args: ["serve"] } });
+    expect(warnings).toEqual([]);
+  });
+
+  test("returns one warning for a relative command", async () => {
+    const { warnings, mcpConfigPath } = await renderLocalMcp(
+      JSON.stringify({ mcpServers: { acme: { command: "./bin/acme-mcp" } } }),
+    );
+
+    expect(warnings).toEqual([expect.stringContaining("mcpServers.acme.command")]);
+    expect(warnings[0]).toContain(mcpConfigPath);
   });
 });

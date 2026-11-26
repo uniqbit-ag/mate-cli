@@ -68,6 +68,7 @@ import {
   mateTokensaveRouteHookGroups,
   mateTurnHookGroups,
 } from "./claude-plugin-hooks";
+import { relativePathWarnings } from "./relative-path-warnings";
 import { getSetupRootTemplates } from "./utils";
 
 async function configureClaudeGuidance(companionPath: string): Promise<void> {
@@ -539,6 +540,9 @@ export async function renderClaudeWorkingDocuments(
   const pluginFolders = (
     await inspectClaudePluginFolders(inputs, { bundledPluginRoot: getClaudePluginRoot() })
   ).published;
+  // Servers a Capability registered during setup exist only in this file.
+  const companionMcpConfigPath = getCompanionClaudeMcpConfigPath(ctx.companionPath);
+  const companionMcpServers = (await readClaudeMcpConfig(companionMcpConfigPath)).config.mcpServers;
   return {
     documents: [
       ...renderedDocument(
@@ -570,11 +574,14 @@ export async function renderClaudeWorkingDocuments(
         {
           at: ["projects", repoRoot, "mcpServers"],
           kind: "map",
-          entries: renderManagedClaudeMcpServers(inputs),
+          entries: { ...companionMcpServers, ...renderManagedClaudeMcpServers(inputs) },
         },
       ]),
     ],
-    warnings: [],
+    warnings: relativePathWarnings(companionMcpConfigPath, companionMcpServers, ["mcpServers"], {
+      document: CLAUDE_LOCAL_CONFIG_DOCUMENT,
+      resolvesAgainst: "the session's directory",
+    }),
   };
 }
 
