@@ -11,6 +11,11 @@ import {
   type RunOpenSpec,
 } from "../../../lib/openspec-cli";
 import { getWrapperBinPath } from "../../../lib/package-paths";
+import {
+  DEFAULT_SCHEMA,
+  LEGACY_SCHEMA_ALIASES,
+  SHIPPED_SCHEMAS,
+} from "../../../lib/delivery/stages";
 import { FRAMEWORK_NAME } from "../../../framework";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
 import { removeRecorded } from "../managed-output";
@@ -20,7 +25,7 @@ import type {
   RuntimeContributionsByRuntime,
   SetupContext,
 } from "../plugin";
-import { mergeDir, pruneEmptyAncestors } from "../utils";
+import { mergeDir, pruneEmptyAncestors, type MergeTransform } from "../utils";
 import { applyMateSkills, MATE_SKILLS, readSkillAuthor, teardownMateSkills } from "../mate";
 import { getSharedSkillsDir, isSharedSkillRootActive } from "../providers/agents-skill-root";
 import { skillIgnoreEntries } from "../mate-skill-copies";
@@ -61,8 +66,14 @@ const OPENSPEC_COMMAND_IDS = [
 /** Skill roots earlier Mate versions let the OpenSpec CLI generate workflow skills into. */
 const GENERATED_SKILL_ROOTS = [".claude", ".agents", ".opencode"] as const;
 
-/** Every Mate-owned schema is installed for availability; only one is ever activated as the companion default. */
-const MATE_SCHEMA_NAMES = ["mate-v1", "mate-minimal"] as const;
+/**
+ * Every Mate-owned schema folder: the shipped schemas from source and each legacy alias,
+ * generated from its schema. All are installed for availability; only one is the default.
+ */
+const MATE_SCHEMA_NAMES: readonly string[] = [
+  ...SHIPPED_SCHEMAS,
+  ...Object.keys(LEGACY_SCHEMA_ALIASES),
+];
 
 const MATE_SCHEMA_SOURCE_ROOT = path.join(
   import.meta.dirname,
@@ -83,8 +94,10 @@ export const MATE_SPECS_RULE_MARKER = "[mate] ";
  */
 export const MATE_SPECS_RULE = `${MATE_SPECS_RULE_MARKER}A main spec at openspec/specs/<capability>/spec.md MUST begin with flat frontmatter: type: spec, capability: <capability>, repository: <org/repository> (one scalar), areas: [<area>, ...] (a flat list in the delta's scope order), and tags: [openspec/spec]. Project repository and areas from the delta's paired scopes; never copy scopes, change, or delta tags onto a main spec. Delta specs under openspec/changes/<name>/specs/ keep their \`mate:delta\` comment. Full rules: openspec/mate-conventions.yaml.`;
 
-/** What Mate writes besides its entry; anything beyond the two is user content. */
-const MANAGED_CONFIG_SCHEMA_ONLY = "schema: mate-v1";
+/** What Mate writes besides its entry, now or as an earlier default; anything beyond is user content. */
+const MANAGED_CONFIG_SCHEMA_ONLY: ReadonlySet<string> = new Set(
+  [DEFAULT_SCHEMA, ...Object.keys(LEGACY_SCHEMA_ALIASES)].map((schema) => `schema: ${schema}`),
+);
 
 /** The schema a fresh `openspec init` writes into config.yaml. */
 const OPENSPEC_INIT_SCHEMA = "spec-driven";
@@ -306,13 +319,13 @@ async function removeManagedOpenSpecConfig(companionPath: string): Promise<void>
   }
 
   let remaining = content;
-  if (content.trim() !== MANAGED_CONFIG_SCHEMA_ONLY) {
+  if (!MANAGED_CONFIG_SCHEMA_ONLY.has(content.trim())) {
     const doc = parseDocument(content);
     if (doc.errors.length > 0 || !removeMateSpecsRule(doc)) return;
     remaining = doc.toString(CONFIG_TO_STRING);
   }
 
-  if (remaining.trim() === MANAGED_CONFIG_SCHEMA_ONLY) {
+  if (MANAGED_CONFIG_SCHEMA_ONLY.has(remaining.trim())) {
     await fs.rm(configPath, { force: true });
     await pruneEmptyAncestors(path.dirname(configPath), companionPath);
   } else {
@@ -332,7 +345,7 @@ async function ensureManagedOpenSpecConfig(companionPath: string): Promise<void>
 
   if (content === undefined) {
     await fs.mkdir(path.dirname(configPath), { recursive: true });
-    const fresh = new Document({ schema: "mate-v1", rules: { specs: [MATE_SPECS_RULE] } });
+    const fresh = new Document({ schema: DEFAULT_SCHEMA, rules: { specs: [MATE_SPECS_RULE] } });
     await fs.writeFile(configPath, fresh.toString(CONFIG_TO_STRING), "utf8");
     return;
   }
@@ -346,12 +359,13 @@ async function ensureManagedOpenSpecConfig(companionPath: string): Promise<void>
     return;
   }
   const ruleChanged = upsertMateSpecsRule(doc);
-  // Mate's `mate-v1` replaces a missing schema or the one `openspec init` writes; any other is a user choice.
+  // Mate's default replaces a missing schema or the one `openspec init` writes; any other,
+  // a legacy alias included, is kept.
   const current = isMap(doc.contents) ? doc.get("schema") : undefined;
   const schemaChanged =
     isMap(doc.contents) &&
     (current === undefined || current === null || current === OPENSPEC_INIT_SCHEMA);
-  if (schemaChanged) doc.set("schema", "mate-v1");
+  if (schemaChanged) doc.set("schema", DEFAULT_SCHEMA);
   if (!schemaChanged && !ruleChanged) return;
   const merged = doc.toString(CONFIG_TO_STRING);
   if (merged !== content) await fs.writeFile(configPath, merged, "utf8");
@@ -368,19 +382,44 @@ async function teardownOpenSpecSchema(companionPath: string): Promise<void> {
   await removeManagedOpenSpecConfig(companionPath);
 }
 
+/**
+ * Renames schema `from` → `to` in a schema file: only `schema.yaml`'s `name` and description
+ * and the templates' `schema:` frontmatter, so prose naming `from` stays.
+ */
+function renameSchema(from: string, to: string): MergeTransform {
+  return (fileName, content) =>
+    fileName === "schema.yaml"
+      ? content
+          .replace(new RegExp(`^name: ${from}$`, "m"), `name: ${to}`)
+          .replace(/^description: /m, `description: Earlier name of ${from} - `)
+      : content.replace(new RegExp(`^schema: ${from}$`, "m"), `schema: ${to}`);
+}
+
 async function reconcileOpenSpecSchema(ctx: SetupContext): Promise<void> {
   await Promise.all(
-    MATE_SCHEMA_NAMES.map((schemaName) =>
+    SHIPPED_SCHEMAS.map((schemaName) =>
       mergeDir(
         path.join(MATE_SCHEMA_SOURCE_ROOT, schemaName),
         getMateSchemaDir(ctx.companionPath, schemaName),
       ),
     ),
   );
-  await fs.rm(
-    path.join(getMateSchemaDir(ctx.companionPath, "mate-v1"), "templates", "explore-brief.md"),
-    { force: true },
+  await Promise.all(
+    Object.entries(LEGACY_SCHEMA_ALIASES).map(([alias, schemaName]) =>
+      mergeDir(
+        path.join(MATE_SCHEMA_SOURCE_ROOT, schemaName),
+        getMateSchemaDir(ctx.companionPath, alias),
+        renameSchema(schemaName, alias),
+      ),
+    ),
   );
+  // Older Mate shipped an explore brief template; drop the stale copies.
+  for (const schemaName of MATE_SCHEMA_NAMES) {
+    await fs.rm(
+      path.join(getMateSchemaDir(ctx.companionPath, schemaName), "templates", "explore-brief.md"),
+      { force: true },
+    );
+  }
   await fs.copyFile(MATE_CONVENTIONS_SOURCE, getMateConventionsPath(ctx.companionPath));
 
   await ensureManagedOpenSpecConfig(ctx.companionPath);

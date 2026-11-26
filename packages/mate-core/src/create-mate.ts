@@ -1,6 +1,9 @@
 import { main } from "./cli/main";
 import { setActiveDistribution, type DistributionConfig } from "./distribution";
 import { FRAMEWORK_NAME } from "./framework";
+import { currentSession } from "./lib/session-attribution";
+import { runRecordingFailure } from "./runtime/command-friction";
+import { createMcpManagerPlugin } from "./tools/setup/capabilities/mcp-manager";
 import { createBunPlugin } from "./tools/setup/package-managers/bun";
 import { createUvPlugin } from "./tools/setup/package-managers/uv";
 import type { PluginRegistration } from "./tools/setup/plugin";
@@ -24,7 +27,8 @@ export interface MateCli {
  * Assemble a distribution from an identity config and plugin registration
  * entries. Distributions choose their plugin set; the framework always adds
  * bun as the required runtime substrate, uv for the capabilities that install
- * through it (enabled only by them, e.g. Graphify), plus gitignore management
+ * through it (enabled only by them, e.g. Graphify), the `mcp-manager`
+ * Capability (enabled by a `mcpManager` section), plus gitignore management
  * named after the framework identity (built last since it reads the full
  * plugin set). Returns the runnable CLI.
  */
@@ -33,16 +37,21 @@ export function createMate({ config, plugins, main: runMain = main }: CreateMate
     ...plugins,
     { plugin: createBunPlugin(), policy: "required" },
     { plugin: createUvPlugin(), policy: "optional" },
+    createMcpManagerPlugin(),
     createGitignorePlugin(FRAMEWORK_NAME),
   ]);
   setActiveDistribution({ config, registry });
   return {
     config,
     registry,
-    run: (argv = process.argv) =>
-      runMain(argv).catch((error) => {
-        console.error(error instanceof Error ? error.message : String(error));
-        process.exitCode = 1;
-      }),
+    run: async (argv = process.argv) =>
+      runRecordingFailure(
+        {
+          args: argv.slice(2),
+          session: currentSession(process.env),
+          mateVersion: config.version,
+        },
+        () => runMain(argv),
+      ),
   };
 }

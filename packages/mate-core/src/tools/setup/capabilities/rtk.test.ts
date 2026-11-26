@@ -31,7 +31,6 @@ describe("createRtkPlugin", () => {
     const plugin = createRtkPlugin({
       confirm: confirmMock,
       isRtkOnPath: () => false,
-      isBrewAvailable: () => true,
       runRtkInstallCmd: runInstall,
       readMemberChoices: async () => ({ rtk: "declined" }),
     });
@@ -42,42 +41,20 @@ describe("createRtkPlugin", () => {
     expect(runInstall).not.toHaveBeenCalled();
   });
 
-  test("prompts the Homebrew installer when RTK is missing", async () => {
+  test("prompts the pinned installer when RTK is missing", async () => {
     const confirmMock = mock(async () => false);
     const stdoutSpy = spyOn(process.stdout, "write").mockImplementation(() => true);
     try {
       const plugin = createRtkPlugin({
         confirm: confirmMock,
         isRtkOnPath: () => false,
-        isBrewAvailable: () => true,
-      });
-
-      await plugin.apply(makeCtx());
-
-      expect(stdoutSpy).toHaveBeenCalledWith(
-        expect.stringContaining("brew install rtk-ai/tap/rtk"),
-      );
-      expect(confirmMock).toHaveBeenCalledTimes(1);
-    } finally {
-      stdoutSpy.mockRestore();
-    }
-  });
-
-  test("uses the fallback installer without Homebrew", async () => {
-    const confirmMock = mock(async () => false);
-    const stdoutSpy = spyOn(process.stdout, "write").mockImplementation(() => true);
-    try {
-      const plugin = createRtkPlugin({
-        confirm: confirmMock,
-        isRtkOnPath: () => false,
-        isBrewAvailable: () => false,
       });
 
       await plugin.apply(makeCtx());
 
       expect(stdoutSpy).toHaveBeenCalledWith(
         expect.stringContaining(
-          "curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh",
+          "curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/v1.1.0/install.sh | RTK_VERSION=v1.1.0 sh",
         ),
       );
     } finally {
@@ -127,125 +104,106 @@ describe("createRtkPlugin", () => {
       expect(runInstallMock).not.toHaveBeenCalled();
     });
 
-    test(`${provider} teardown uninstalls only when no other provider is active`, async () => {
-      const runRtkMock = mock(async () => {});
-      const plugin = createRtkPlugin({ isRtkOnPath: () => true, runRtkInstallCmd: runRtkMock });
+    describe(`${provider} teardown`, () => {
+      const other = provider === "claude" ? "opencode" : "claude";
+      const uninstall =
+        provider === "claude" ? "rtk init -g --uninstall" : "rtk init -g --uninstall --opencode";
+      const withRtk = { allowedAgents: [], capabilities: [{ name: "rtk" }] };
+      const withoutRtk = { allowedAgents: [], capabilities: [] };
 
-      await plugin.forProvider![provider].teardown({
-        ...makeCtx(),
-        activeProviders: [],
-      });
-      expect(runRtkMock).toHaveBeenCalledWith(
-        provider === "claude" ? "rtk init -g --uninstall" : "rtk init -g --uninstall --opencode",
-      );
+      async function teardownCommands(ctx: Partial<SetupContext>): Promise<string[]> {
+        const ran: string[] = [];
+        const plugin = createRtkPlugin({
+          isRtkOnPath: () => true,
+          runRtkInstallCmd: async (cmd) => {
+            ran.push(cmd);
+          },
+        });
+        await plugin.forProvider![provider].teardown({ ...makeCtx(), ...ctx });
+        return ran;
+      }
 
-      runRtkMock.mockClear();
-      await plugin.forProvider![provider].teardown({
-        ...makeCtx(),
-        activeProviders: [provider === "claude" ? "opencode" : "claude"],
+      test("leaves the integration alone without an earlier selection", async () => {
+        expect(await teardownCommands({})).toEqual([]);
       });
-      expect(runRtkMock).not.toHaveBeenCalled();
+
+      test("leaves the integration alone when the provider did not use RTK before", async () => {
+        const unselected = { config: withoutRtk, activeProviders: [provider] };
+        expect(await teardownCommands({ config: withoutRtk, previousSetup: unselected })).toEqual(
+          [],
+        );
+        const inactive = { config: withRtk, activeProviders: [other] };
+        expect(await teardownCommands({ previousSetup: inactive })).toEqual([]);
+      });
+
+      test("uninstalls when the provider leaves RTK use", async () => {
+        const previousSetup = { config: withRtk, activeProviders: [provider] };
+        expect(await teardownCommands({ previousSetup })).toEqual([uninstall]);
+      });
+
+      test("keeps the integration while another provider stays active for RTK", async () => {
+        const previousSetup = { config: withRtk, activeProviders: [provider, other] };
+        expect(await teardownCommands({ previousSetup, activeProviders: [other] })).toEqual([]);
+      });
+
+      test("uninstalls when RTK is deselected with both providers active", async () => {
+        const activeProviders = [provider, other];
+        const previousSetup = { config: withRtk, activeProviders };
+        expect(
+          await teardownCommands({ config: withoutRtk, activeProviders, previousSetup }),
+        ).toEqual([uninstall]);
+      });
     });
   }
 });
 
-describe("RTK upgrade", () => {
-  const home = "/home/acme";
-
-  async function upgrade(deps: Parameters<typeof createRtkPlugin>[0]): Promise<string[]> {
-    const ran: string[] = [];
+describe("RTK install requirement", () => {
+  test("verifies a fresh install in the installer's directory when PATH lacks it", async () => {
+    const installDir = fs.mkdtempSync(path.join(os.tmpdir(), "mate-rtk-"));
+    process.env.PATH = fs.mkdtempSync(path.join(os.tmpdir(), "mate-empty-path-"));
     const [requirement] = createRtkPlugin({
-      isBrewAvailable: () => false,
-      homeDir: () => home,
-      runRtkCommandSilently: async (cmd) => {
-        ran.push(cmd);
+      installDir,
+      runRtkInstallCmd: async () => {
+        fs.writeFileSync(path.join(installDir, "rtk"), "#!/bin/sh\n", { mode: 0o755 });
       },
-      ...deps,
-    }).getInstallRequirements!(makeCtx().config);
-    await requirement!.update!();
-    return ran;
-  }
+    }).getInstallRequirements!({ config: {} });
 
-  const local = `${home}/.local/bin/rtk`;
-
-  test("upgrades the Homebrew formula the rtk on PATH comes from", async () => {
-    expect(
-      await upgrade({ rtkBinaryPath: () => "/opt/homebrew/bin/rtk", brewFormulaOf: () => "rtk" }),
-    ).toEqual(["brew upgrade rtk"]);
-    expect(
-      await upgrade({
-        rtkBinaryPath: () => "/opt/homebrew/bin/rtk",
-        brewFormulaOf: () => "rtk-ai/tap/rtk",
-      }),
-    ).toEqual(["brew upgrade rtk-ai/tap/rtk"]);
+    expect(await requirement!.detect()).toBe(false);
+    await requirement!.install();
+    expect(await requirement!.verify!()).toBe(true);
+    expect(process.env.PATH!.split(path.delimiter).at(-1)).toBe(installDir);
   });
+});
 
-  test("reads the formula from the keg's install receipt", async () => {
-    const prefix = fs.mkdtempSync(path.join(os.tmpdir(), "acme-brew-"));
-    try {
-      const keg = path.join(prefix, "Cellar", "rtk", "1.1.0");
-      fs.mkdirSync(path.join(keg, "bin"), { recursive: true });
-      fs.writeFileSync(path.join(keg, "bin", "rtk"), "");
-      fs.mkdirSync(path.join(prefix, "bin"));
-      fs.symlinkSync(path.join(keg, "bin", "rtk"), path.join(prefix, "bin", "rtk"));
-      const binary = () => path.join(prefix, "bin", "rtk");
-      expect(await upgrade({ rtkBinaryPath: binary })).toEqual(["brew upgrade rtk"]);
-      const receipt = { source: { tap: "rtk-ai/tap" } };
-      fs.writeFileSync(path.join(keg, "INSTALL_RECEIPT.json"), JSON.stringify(receipt));
-      expect(await upgrade({ rtkBinaryPath: binary })).toEqual(["brew upgrade rtk-ai/tap/rtk"]);
-    } finally {
-      fs.rmSync(prefix, { recursive: true, force: true });
-    }
-  });
-
-  test("runs the installer of a newer release, pinned to its tag, for ~/.local/bin/rtk", async () => {
-    expect(
-      await upgrade({
-        rtkBinaryPath: () => local,
-        brewFormulaOf: () => null,
-        latestRtkTag: async () => "v1.2.0",
-        installedRtkVersion: () => "1.1.0",
-      }),
-    ).toEqual([
-      "curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/v1.2.0/install.sh | RTK_VERSION=v1.2.0 sh",
-    ]);
-  });
-
-  test("runs nothing when ~/.local/bin/rtk is current or the latest release is unknown", async () => {
-    const current = {
-      rtkBinaryPath: () => local,
-      brewFormulaOf: () => null,
-      installedRtkVersion: () => "1.1.0",
+describe("RTK version check", () => {
+  test.each([
+    ["1.1.0", false],
+    ["1.2.0", true],
+    [null, false],
+  ])("installed %p: never upgrades, warns: %p", async (installed, warns) => {
+    const ran: string[] = [];
+    const run = async (cmd: string) => {
+      ran.push(cmd);
     };
-    expect(await upgrade({ ...current, latestRtkTag: async () => "v1.1.0" })).toEqual([]);
-    expect(await upgrade({ ...current, latestRtkTag: async () => null })).toEqual([]);
-  });
-
-  test("leaves any other installation alone", async () => {
-    const latestRtkTag = async () => "v9.9.9";
-    expect(
-      await upgrade({
-        rtkBinaryPath: () => `${home}/.cargo/bin/rtk`,
-        brewFormulaOf: () => null,
-        latestRtkTag,
-      }),
-    ).toEqual([]);
-    expect(await upgrade({ rtkBinaryPath: () => null, latestRtkTag })).toEqual([]);
-  });
-
-  test("a failed upgrade warns and never throws", async () => {
     const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
-      await upgrade({
+      const [requirement] = createRtkPlugin({
+        runRtkInstallCmd: run,
+        runRtkCommandSilently: run,
         rtkBinaryPath: () => "/opt/homebrew/bin/rtk",
-        brewFormulaOf: () => "rtk",
-        runRtkCommandSilently: async () => {
-          throw new Error("Command failed: brew upgrade rtk (exit 1)");
-        },
-      });
-      expect(stderr).toHaveBeenCalledWith(
-        expect.stringContaining("rtk: automatic upgrade failed: Command failed: brew upgrade rtk"),
-      );
+        installedRtkVersion: async () => installed,
+      }).getInstallRequirements!({ config: makeCtx().config });
+      await requirement!.update!();
+
+      expect(ran).toEqual([]);
+      const warnings = stderr.mock.calls
+        .map(([chunk]) => String(chunk))
+        .filter((line) => line.includes("pins 1.1.0"));
+      expect(warnings).toHaveLength(warns ? 1 : 0);
+      if (warns) {
+        expect(warnings[0]).toContain("rtk 1.2.0 is installed");
+        expect(warnings[0]).toContain("rtk-ai/rtk/v1.1.0/install.sh | RTK_VERSION=v1.1.0 sh");
+      }
     } finally {
       stderr.mockRestore();
     }

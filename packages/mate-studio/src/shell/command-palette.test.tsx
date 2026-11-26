@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { StudioMode } from "@uniqbit/mate-core/studio";
 
+import { positioned } from "../../test/positioned";
 import type { CompanionViewData } from "../server/views";
 import type { ShellData } from "../server/shell";
 
@@ -29,7 +30,15 @@ const shell = (studioMode: StudioMode): ShellData => ({
   collectedAt: null,
   metrics: null,
   writable: false,
-  factoryMode: true,
+  addsCompanions: false,
+  pluginViews: [
+    {
+      service: "acme",
+      view: "board",
+      label: "Acme board",
+      moduleUrl: "/studio/plugins/acme/board/main.js",
+    },
+  ],
   terminal: null,
 });
 
@@ -42,8 +51,13 @@ async function mount(studioMode: StudioMode = "engineering") {
     error: null,
     studioMode,
     changes: [
-      { name: "archive-spec-drift-check", completedTasks: 0, totalTasks: 13, artifacts: [] },
-      { name: "acme-build", completedTasks: 2, totalTasks: 5, artifacts: [] },
+      positioned({
+        name: "archive-spec-drift-check",
+        completedTasks: 0,
+        totalTasks: 13,
+        artifacts: [],
+      }),
+      positioned({ name: "acme-build", completedTasks: 2, totalTasks: 5, artifacts: [] }),
     ],
     warnings: [],
   } satisfies CompanionViewData);
@@ -104,7 +118,7 @@ describe("the command palette", () => {
     page.unmount();
   });
 
-  it("leaves a Slash the page already took, such as the Factory filter", async () => {
+  it("leaves a Slash the page already took, such as a view's own filter", async () => {
     const { page, doc } = await mount();
     const take = (event: Event) => event.preventDefault();
     window.addEventListener("keydown", take, true);
@@ -115,14 +129,15 @@ describe("the command palette", () => {
     page.unmount();
   });
 
-  it("offers views, changes, next steps and actions", async () => {
+  it("offers views, plugin views, changes, next steps and actions", async () => {
     const { page, doc } = await mount();
     await open(doc);
     const listed = options(doc).join(" | ");
     for (const entry of [
       "Overview",
       "Workflow",
-      "Factory",
+      "Friction",
+      "Acme board",
       "archive-spec-drift-check",
       "Copy next step: /mate-apply-change archive-spec-drift-check",
       "Refresh",
@@ -158,12 +173,13 @@ describe("the command palette", () => {
     page.unmount();
   });
 
-  it("offers no Workflow, Skills or Factory in Analysis", async () => {
+  it("offers no Workflow or Skills in Analysis", async () => {
     const { page, doc } = await mount("analysis");
     await open(doc);
     const listed = options(doc);
-    expect(listed.some((entry) => /^(Workflow|Skills|Factory)View$/.test(entry ?? ""))).toBe(false);
+    expect(listed.some((entry) => /^(Workflow|Skills)View$/.test(entry ?? ""))).toBe(false);
     expect(listed.some((entry) => entry?.startsWith("Overview"))).toBe(true);
+    expect(listed).toContain("FrictionView");
     page.unmount();
   });
 });

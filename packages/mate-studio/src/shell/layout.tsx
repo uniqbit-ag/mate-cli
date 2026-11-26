@@ -12,8 +12,10 @@ import { useStudioClicks } from "../lib/page-actions";
 import { usePrefetchViews } from "../lib/prefetch-views";
 import { useAppearance } from "../stores/appearance";
 import { usePageUi } from "../stores/page-ui";
+import { heldBy, useTerminalUi } from "../stores/terminal-ui";
 import { CommandPalette } from "./command-palette";
 import { CompanionPicker } from "./companion-picker";
+import { ConnectionBanner } from "./connection-banner";
 import { shellQuery } from "../lib/studio-queries";
 import type { StudioSearch } from "../lib/search";
 import { NavigationProgress } from "./navigation-progress";
@@ -44,11 +46,27 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
     useMatches({
       select: (matches) => matches.findLast((match) => match.staticData.view)?.staticData.view,
     }) ?? "dashboard";
+  const pluginParams = useMatches({
+    select: (matches) => matches.findLast((match) => match.staticData.pluginView)?.params,
+  }) as { service?: string; view?: string } | undefined;
+  const pluginView = pluginParams
+    ? shell.pluginViews.find(
+        (entry) => entry.service === pluginParams.service && entry.view === pluginParams.view,
+      )
+    : undefined;
+  const workspace = pluginView?.layout === "workspace";
+  const workspaceKey = pluginView ? `${pluginView.service}/${pluginView.view}` : null;
+  const released = useTerminalUi((state) => state.released);
+  // A workspace view holds the agent terminal collapsed until the person expands it.
+  const held = heldBy(workspace ? workspaceKey : null, released);
   const digest = shell.selected?.digest;
   useStudioEvents(digest);
   useStudioClicks();
   useRailKey();
   usePrefetchViews(shell.selected ? search : {}, shell.studioMode, shell.enabledModes);
+  useEffect(() => {
+    useTerminalUi.getState().setWorkspace(workspace ? workspaceKey : null);
+  }, [workspace, workspaceKey]);
   useEffect(() => {
     if (!digest) return;
     try {
@@ -64,17 +82,25 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
         data-companion={digest}
         data-terminal={shell.terminal ? "" : undefined}
         data-picker={shell.selected ? undefined : ""}
+        data-terminal-held={held ? "" : undefined}
       >
         <NavigationProgress />
         <TopBar shell={shell} search={search} />
         {/* Choosing a companion is the whole page: no views to navigate yet. */}
         {shell.selected ? <Sidebar shell={shell} search={search} view={view} /> : null}
         <main className="studio-main flex min-h-0 min-w-0 flex-col overflow-auto" id="studio-main">
-          {shell.selected ? (
+          <ConnectionBanner />
+          {shell.selected && workspace ? (
+            <Outlet />
+          ) : shell.selected ? (
             <>
               <PageHeader
-                title={VIEW_TITLES[view]}
-                description={VIEW_DESCRIPTIONS[shell.studioMode][view]}
+                title={pluginView ? pluginView.label : VIEW_TITLES[view]}
+                description={
+                  pluginView
+                    ? (pluginView.description ?? "")
+                    : VIEW_DESCRIPTIONS[shell.studioMode][view]
+                }
               />
               <div className="flex min-h-0 flex-1 flex-col pt-3">
                 <Outlet />
@@ -84,11 +110,11 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
             <CompanionPicker
               companions={shell.companions}
               writable={shell.writable}
-              factoryMode={shell.factoryMode}
+              addsCompanions={shell.addsCompanions}
             />
           )}
         </main>
-        {shell.terminal ? <TerminalSidebar terminal={shell.terminal} /> : null}
+        {shell.terminal ? <TerminalSidebar terminal={shell.terminal} heldBy={held} /> : null}
       </div>
       <CommandPalette shell={shell} search={search} />
       <Toasts search={search} />
@@ -99,6 +125,8 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
 declare module "@tanstack/react-router" {
   interface StaticDataRouteOption {
     view?: StudioView;
+    /** A plugin service's view, mounted from its own module. */
+    pluginView?: boolean;
   }
 }
 

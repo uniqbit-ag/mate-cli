@@ -1,7 +1,7 @@
 # The Mate appliance image.
 #
 # Everything the appliance needs is installed here, at exact versions checked
-# against apps/mate-container/image-inputs.yaml. Startup does filesystem work
+# against apps/mate-container/image-inputs.yaml and mate-core's tool manifest. Startup does filesystem work
 # only: it copies a prebuilt workspace and starts two processes. No package
 # manager, dependency resolver, download, native build, or installation script
 # runs in a started container.
@@ -13,8 +13,9 @@
 # syntax=docker/dockerfile:1
 
 # ---------------------------------------------------------------------------
-# Pins. Kept in sync with image-inputs.yaml, which is the release-owned source
-# and which the workflow reads to pass these in.
+# Pins. Kept in sync with image-inputs.yaml and, for the shared capability
+# tools, packages/mate-core/tool-manifest.yaml; the workflow reads both through
+# `readImageInputs()` to pass these in.
 # ---------------------------------------------------------------------------
 ARG NODE_IMAGE=node@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
 ARG BUN_IMAGE=oven/bun@sha256:4f6e31d1a54d6a3dd312daef655fc998101b5043d52e12592ac293ef04b9bc73
@@ -265,18 +266,20 @@ RUN bun /opt/mate/tools/startup/write-bundle-manifest.ts /opt/mate/prebuilt "${M
  && test -f /opt/mate/prebuilt-manifest.json
 
 # --- graphify, from a hash-locked requirements file ------------------------
-# `uv tool install graphifyy` would resolve transitive dependencies afresh on
-# every rebuild; installing from the compiled, hashed requirements does not.
-ENV UV_TOOL_DIR=/opt/mate/uv/tools \
-    UV_TOOL_BIN_DIR=/usr/local/bin \
-    UV_PYTHON_INSTALL_DIR=/opt/mate/uv/python \
+# `uv pip install --require-hashes` fails on any archive whose hash differs
+# from the lock; `--no-deps` resolves nothing the lock does not list and
+# `--no-build` refuses sdists. (`uv tool install --with-requirements` checks no
+# hashes.) The version assertion ties the build argument to the lock.
+ENV UV_PYTHON_INSTALL_DIR=/opt/mate/uv/python \
     UV_NO_MODIFY_PATH=1
 COPY locks/graphify.requirements.txt /opt/mate/locks/graphify.requirements.txt
 RUN uv python install "${GRAPHIFY_PYTHON_VERSION}" \
- && uv tool install --no-cache \
-      --python "${GRAPHIFY_PYTHON_VERSION}" \
-      --with-requirements /opt/mate/locks/graphify.requirements.txt \
-      "graphifyy==${GRAPHIFY_VERSION}" \
+ && uv venv --no-cache /opt/mate/graphify --python "${GRAPHIFY_PYTHON_VERSION}" \
+ && uv pip install --no-cache --python /opt/mate/graphify \
+      --require-hashes --no-deps --no-build \
+      -r /opt/mate/locks/graphify.requirements.txt \
+ && test "$(/opt/mate/graphify/bin/python -c 'import importlib.metadata as m; print(m.version("graphifyy"))')" = "${GRAPHIFY_VERSION}" \
+ && ln -sf /opt/mate/graphify/bin/graphify /usr/local/bin/graphify \
  && graphify --version
 
 # --- the unprivileged identity the container runs as -----------------------

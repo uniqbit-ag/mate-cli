@@ -71,9 +71,9 @@ describe("the stylesheet", () => {
   });
 
   it("declares no colour literal outside the terminal, which stays black in both appearances", () => {
-    const own = FLAT.replace(rule(".terminal-view, .outcome-terminal"), "");
+    const own = FLAT.replace(rule(".terminal-view"), "");
     expect(own).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/);
-    expect(rule(".terminal-view, .outcome-terminal")).toContain("background: #000;");
+    expect(rule(".terminal-view")).toContain("background: #000;");
   });
 
   it("loads no resource from another host", () => {
@@ -128,6 +128,19 @@ describe("the views' class names", () => {
       }
     }
   });
+
+  it("never pair outline-none with a focus outline, which then draws no ring", () => {
+    for (const [file, text] of sources) {
+      const ringless = text
+        .split(/["'`]/)
+        .find(
+          (classes) =>
+            /(?:^|\s)outline-none(?:\s|$)/.test(classes) &&
+            /(?:^|\s)focus(?:-visible|-within)?:outline(?:-\d+|-\[[^\]]+\])?(?:\s|$)/.test(classes),
+        );
+      expect({ file, ringless: ringless ?? null }).toEqual({ file, ringless: null });
+    }
+  });
 });
 
 describe("the terminal frame", () => {
@@ -136,7 +149,14 @@ describe("the terminal frame", () => {
       ".studio-frame[data-terminal] { grid-template-columns: var(--rail-w) minmax(0, 1fr) clamp( 360px, var(--terminal-width, min(560px, 40vw)), 70vw );",
     );
     expect(FLAT).toContain(
-      ":root[data-terminal-collapsed] .studio-frame[data-terminal] { grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--terminal-strip, 44px);",
+      ":root[data-terminal-collapsed] .studio-frame[data-terminal], .studio-frame[data-terminal][data-terminal-held] { grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--terminal-strip, 44px);",
+    );
+  });
+
+  it("collapses the terminal a workspace view holds, like a remembered collapse", () => {
+    expect(FLAT).toContain(".studio-frame[data-terminal][data-terminal-held] .terminal-body,");
+    expect(FLAT).toContain(
+      ".studio-frame[data-terminal][data-terminal-held] .terminal-strip { display: flex; }",
     );
   });
 

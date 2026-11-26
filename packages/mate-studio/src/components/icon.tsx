@@ -22,7 +22,6 @@ const PATHS = {
   terminal: "M3 4h14v12H3zM6 8l2.5 2L6 12m4 0h4",
   check: "m5 10.5 3 3 7-7",
   play: "M7 5v10l8-5z",
-  factory: "M3 17V9l4 2.5V9l4 2.5V5h3l1 12zM3 17h14",
   plus: "M10 4v12M4 10h12",
   external: "M11 4h5v5M16 4l-7 7M14 12v4H4V6h4",
   sidebar: "M3 4h14v12H3zM8 4v12",
@@ -32,6 +31,7 @@ const PATHS = {
   // Three round dots: zero-length segments drawn by the round line cap.
   more: "M5 10h.01M10 10h.01M15 10h.01",
   trash: "M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10M9 9v4m2-4v4",
+  alert: "M10 3.5 17 16H3zM10 8.5v3.5m0 2h.01",
 } as const;
 
 export type IconName = keyof typeof PATHS;

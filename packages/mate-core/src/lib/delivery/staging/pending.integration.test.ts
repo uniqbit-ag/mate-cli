@@ -4,11 +4,13 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { git } from "../../../../test/git-checkouts";
+import { makeProductRepo, productEnvironment, PRODUCT } from "../../../../test/product-repo";
 import {
   changeLocally,
   makeStagingFixture,
   type StagingFixture,
 } from "../../../../test/staging-fixture";
+import type { DeliveryEnvironment } from "../environment";
 import { discoverSubmitted } from "./pending";
 import { submitGroups } from "./submit";
 
@@ -109,6 +111,173 @@ describe("discoverSubmitted", () => {
       git(admin, "push", "-q", "origin", "HEAD:main");
 
       expect((await discover(fixture, fixture.clone("acme-other"))).groups).toEqual([]);
+    },
+    TIMEOUT,
+  );
+});
+
+describe("merge check", () => {
+  const BRANCH = "workset/acme-login";
+
+  /** `acme-login` submitted on a branch of the product repository that was then squash-merged. */
+  async function squashMerged() {
+    const fixture = await setup();
+    const product = makeProductRepo(fixture.root);
+    product.commitOn(BRANCH, "login.txt", "login\n");
+    const companion = fixture.clone("acme-mine");
+    await submit(fixture, companion, "acme-login");
+    product.squashMerge(BRANCH, "Acme login (#42)");
+    return { fixture, product, companion, environment: productEnvironment(companion, product) };
+  }
+
+  function check(
+    fixture: StagingFixture,
+    companion: string,
+    environment: DeliveryEnvironment,
+    budgetMs = 30_000,
+  ) {
+    return discoverSubmitted(companion, {
+      fetch: true,
+      tmpRoot: fixture.root,
+      stateHome: path.join(fixture.root, "home"),
+      checkMerges: { environment: async () => environment, budgetMs },
+    });
+  }
+
+  test(
+    "a squash merge in a linked checkout makes the group publishable without recording it",
+    async () => {
+      const { fixture, companion, environment } = await squashMerged();
+      const tip = git(fixture.remote, "rev-parse", INBOX).trim();
+
+      const found = await check(fixture, companion, environment);
+
+      expect(found.mergeCheck).toEqual({ ran: true, unchecked: [] });
+      const group = found.groups[0]!;
+      expect(group).toMatchObject({ publishable: true, needsRefresh: true });
+      expect(group.changes[0]).toMatchObject({
+        delivery: { status: "merged" },
+        found: [{ repository: PRODUCT, branch: BRANCH }],
+        merges: [],
+      });
+      expect(group.changes[0]!.delivery.record?.deliveries[0]?.merge).toBeUndefined();
+      expect(git(fixture.remote, "rev-parse", INBOX).trim()).toBe(tip);
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "no delivery to check resolves no environment",
+    async () => {
+      const fixture = await setup();
+
+      const found = await discoverSubmitted(fixture.clone("acme-other"), {
+        fetch: true,
+        tmpRoot: fixture.root,
+        checkMerges: { environment: () => Promise.reject(new Error("acme")), budgetMs: 30_000 },
+      });
+
+      expect(found.mergeCheck).toEqual({ ran: true, unchecked: [] });
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "a group publishable through a dependency's found merge needs a refresh too",
+    async () => {
+      const { fixture, companion, environment } = await squashMerged();
+      const ui = changeLocally(companion, "acme-ui", {
+        state: "submitted",
+        files: { "design.md": "---\ndependsOn: [acme-login]\n---\n" },
+      });
+      fs.writeFileSync(
+        path.join(ui, "delivery.yaml"),
+        "version: 1\nchange: acme-ui\nstate: submitted\ndeliveries:\n  - repository: acme/product\n    branch: workset/acme-ui\n    merge:\n      state: merged\n      source: user\n      checkedAt: 2026-11-24T00:00:00Z\n",
+      );
+      const [submission] = await submitGroups(companion, ["acme-ui"], {
+        tmpRoot: fixture.root,
+        stateHome: path.join(fixture.root, "home"),
+      });
+      expect(submission?.status).toBe("pushed");
+
+      const found = await check(fixture, companion, environment);
+
+      const dependent = found.groups.find((group) => group.group.endsWith("workset/acme-ui"));
+      expect(dependent).toMatchObject({ publishable: true, needsRefresh: true });
+      expect(dependent!.changes[0]!.found).toBeUndefined();
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "an unlinked repository and a delivery not checked in time keep their stored state",
+    async () => {
+      const { fixture, companion, environment } = await squashMerged();
+      const unlinked = { ...environment, workingRepo: null, checkoutOf: async () => null };
+
+      const results = [
+        await check(fixture, companion, unlinked),
+        await check(fixture, companion, environment, 0),
+      ];
+
+      for (const result of results) {
+        expect(result.groups[0]).toMatchObject({ publishable: false });
+        expect(result.groups[0]!.needsRefresh).toBeUndefined();
+        expect(result.groups[0]!.changes[0]).toMatchObject({ delivery: { status: "waiting" } });
+      }
+      expect(results.map((result) => result.mergeCheck?.unchecked)).toEqual([
+        [],
+        [{ change: "acme-login", repository: PRODUCT, branch: BRANCH }],
+      ]);
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "a failed fetch or link lookup leaves the delivery unchecked with a warning",
+    async () => {
+      const { fixture, product, companion, environment } = await squashMerged();
+      const failingLookup = {
+        ...environment,
+        checkoutOf: () => Promise.reject(new Error("acme registry")),
+      };
+
+      const lookup = await check(fixture, companion, failingLookup);
+      git(product.clone, "remote", "set-url", "origin", path.join(fixture.root, "missing.git"));
+      const fetch = await check(fixture, companion, environment);
+
+      for (const [result, cause] of [
+        [lookup, "acme registry"],
+        [fetch, "git fetch failed"],
+      ] as const) {
+        expect(result.groups[0]!.changes[0]).toMatchObject({ delivery: { status: "waiting" } });
+        expect(result.mergeCheck).toMatchObject({
+          ran: true,
+          unchecked: [{ change: "acme-login", repository: PRODUCT, branch: BRANCH }],
+        });
+        expect(result.mergeCheck?.warning).toContain(cause);
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "the budget stops a fetch that hangs",
+    async () => {
+      const { fixture, product, companion, environment } = await squashMerged();
+      git(product.clone, "config", "protocol.ext.allow", "always");
+      git(product.clone, "remote", "set-url", "origin", "ext::sleep 25");
+
+      const started = Date.now();
+      const found = await check(fixture, companion, environment, 1_000);
+
+      // The fetch's own budget is 20 s.
+      expect(Date.now() - started).toBeLessThan(10_000);
+      expect(found.groups[0]!.changes[0]).toMatchObject({ delivery: { status: "waiting" } });
+      expect(found.mergeCheck).toEqual({
+        ran: true,
+        unchecked: [{ change: "acme-login", repository: PRODUCT, branch: BRANCH }],
+      });
     },
     TIMEOUT,
   );

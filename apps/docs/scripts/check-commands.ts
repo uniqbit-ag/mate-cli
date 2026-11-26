@@ -19,12 +19,9 @@ const referenceFile = join(contentDir, "reference", "commands.mdx");
 const undocumented = new Set([
   "companion register",
   "companion prepare",
-  "factory serve",
-  "factory attach",
   "hub init",
   "hub add",
   "hub sync",
-  "plugin install",
   "report",
   // Machine Caller contract for editor plugins.
   "session add",

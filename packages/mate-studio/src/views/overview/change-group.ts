@@ -1,6 +1,16 @@
-import type { StudioChange, StudioSubmittedChange } from "@uniqbit/mate-core/studio";
+import {
+  defaultWorkflow,
+  stagesBeforeWork,
+  stepStage,
+  type HandoffAction,
+  type SkillAction,
+  type StudioChange,
+  type StudioSubmittedChange,
+  type Workflow,
+  type WorkflowStage,
+} from "@uniqbit/mate-core/studio";
 
-/** What a change needs next, read from its validation and task counts (design D5). */
+/** What a change needs next, read from its validation and task counts, else its stage. */
 export type ChangeGroup = "needs-you" | "building" | "ready";
 
 export const CHANGE_GROUPS: readonly ChangeGroup[] = ["needs-you", "building", "ready"];
@@ -11,7 +21,14 @@ export const GROUP_TITLES: Record<ChangeGroup, string> = {
   ready: "Ready to submit",
 };
 
+/** The stages a change is ready at: `submit`, and `publish` after it. */
+const READY_STAGES: ReadonlySet<string> = new Set(["submit", "publish"]);
+
 export function changeGroup(change: StudioChange): ChangeGroup {
+  // Without a plan there are no tasks: its stage alone says what it needs.
+  if (change.planned === false) {
+    return READY_STAGES.has(change.position?.stage?.id ?? "") ? "ready" : "needs-you";
+  }
   const total = change.totalTasks ?? 0;
   const done = change.completedTasks ?? 0;
   if (change.valid === false || total === 0 || done === 0) return "needs-you";
@@ -39,6 +56,10 @@ export function groupChanges(changes: StudioChange[]): Record<ChangeGroup, Studi
 export interface ChangeStep {
   /** The Delivery Path stage the change is at. */
   stage: string;
+  /** Id of that stage in the companion's workflow; null for a change at no stage. */
+  stageId: string | null;
+  /** True when a person reviews at this stage. */
+  review: boolean;
   /** One line on where it is. */
   situation: string;
   /** What the person does next, and the prompt that does it. */
@@ -46,48 +67,73 @@ export interface ChangeStep {
   prompt: string;
 }
 
-export function changeStep(change: StudioChange): ChangeStep {
-  const total = change.totalTasks ?? 0;
-  const done = change.completedTasks ?? 0;
-  if (change.valid === false) {
-    const issues = change.issueCount ?? 0;
+const DEFAULT_WORKFLOW = defaultWorkflow();
+
+/** The stages a change walks: the required ones up to submit, as its panel lists them. */
+export function changePath(workflow: Workflow = DEFAULT_WORKFLOW): WorkflowStage[] {
+  const passed = stagesBeforeWork(workflow);
+  return workflow.stages.filter(
+    (stage) =>
+      !stage.optional &&
+      !(stage.kind === "skill" && stage.milestone === "published") &&
+      !passed.includes(stage),
+  );
+}
+
+/** The prompt of a skill action in the fallback `/name` syntax. */
+const promptOf = (action: SkillAction): string =>
+  `/${action.skill}${action.change ? ` ${action.change}` : ""}`;
+
+/** The artifact id of a review action (`Review specs: <path>`); null for another text. */
+const reviewedId = (action: HandoffAction): string | null =>
+  action.kind === "text" ? (/^Review ([^:]+):/.exec(action.text)?.[1] ?? null) : null;
+
+const NOT_PLACED: ChangeStep = {
+  stage: "Not placed",
+  stageId: null,
+  review: false,
+  situation: "Its position is not known",
+  next: "Reload Studio",
+  prompt: "",
+};
+
+/**
+ * Where the change is on the companion's Delivery Path and what comes next, as its payload
+ * position says: what `mate workflow next` computes for it.
+ */
+export function changeStep(
+  change: StudioChange,
+  workflow: Workflow = DEFAULT_WORKFLOW,
+): ChangeStep {
+  const { position } = change;
+  if (!position) return NOT_PLACED;
+  const { stage } = position;
+  if (!stage) {
     return {
-      stage: "Propose change",
-      situation: `${issues} validation ${issues === 1 ? "issue" : "issues"}`,
-      next: "Fix the plan so it validates",
-      prompt: `/mate-propose-change ${change.name}`,
+      stage: "Dropped",
+      stageId: null,
+      review: false,
+      situation: "Withdrawn",
+      next: "Nothing to do",
+      prompt: "",
     };
   }
-  if (total === 0) {
+  const { actions } = position.handoff;
+  const action = actions.find((entry): entry is SkillAction => entry.kind === "skill");
+  const at = { stage: stage.label, stageId: stage.id, prompt: action ? promptOf(action) : "" };
+  if (stage.kind === "review") {
+    const reviews = actions.map(reviewedId).filter((id): id is string => id !== null);
+    const follows = action ? stepStage(workflow, action.skill)?.label : undefined;
     return {
-      stage: "Propose change",
-      situation: "No tasks yet",
-      next: "Finish the plan",
-      prompt: `/mate-propose-change ${change.name}`,
-    };
-  }
-  if (done === 0) {
-    return {
-      stage: "Human review",
+      ...at,
+      review: true,
       situation: "Plan ready for review",
-      next: "Review the plan, then apply it",
-      prompt: `/mate-apply-change ${change.name}`,
+      next: `Review ${reviews.length > 0 ? reviews.join(", ") : "the plan"}, then run ${follows ?? "the next stage"}`,
     };
   }
-  if (done < total) {
-    return {
-      stage: "Apply change",
-      situation: `${total - done} ${total - done === 1 ? "task" : "tasks"} left`,
-      next: "Continue the build",
-      prompt: `/mate-apply-change ${change.name}`,
-    };
-  }
-  return {
-    stage: "Submit change",
-    situation: "All tasks done",
-    next: "Submit the change",
-    prompt: `/mate-submit-change ${change.name}`,
-  };
+  // A later step of the stage is named by its skill.
+  const runs = !action || action.skill === stage.entry ? stage.label : action.skill;
+  return { ...at, review: false, situation: position.open ?? "Ready", next: `Run ${runs}` };
 }
 
 export interface ChangeProgress {

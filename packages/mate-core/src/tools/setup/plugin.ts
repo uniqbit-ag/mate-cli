@@ -2,6 +2,7 @@ import type { FrameworkConfig, LinkedRepository } from "../../lib/orchestrator/t
 import type { SessionKind } from "../../runtime/session-kind";
 import type { InstallRequirement, InstallRequirementContext } from "./install-contract";
 import type { ClaudeHookGroup } from "../../runtime/claude-hook-group";
+import type { PluginService } from "./service";
 
 export type SetupScope = "companion" | "hub";
 
@@ -17,6 +18,11 @@ export interface SetupContext {
   config: FrameworkConfig;
   mode: "setup" | "sync";
   activeProviders: string[];
+  /**
+   * The selection before this setup run; absent on every sync. Lets a teardown with
+   * machine-wide effects act only on what this run actually deselected.
+   */
+  previousSetup?: { config: FrameworkConfig; activeProviders: string[] };
   /** Hub setup runs providers but excludes companion-only surfaces. */
   scope?: SetupScope;
   /** Working repository path when syncing from a linked repo (e.g. during launch). */
@@ -72,11 +78,25 @@ export interface McpServerDescriptor {
   command?: string;
   args?: string[];
   url?: string;
+  /** Remote transport; absent leaves the runtime's default. */
+  transport?: "http" | "sse";
+  /** Literal values, written as given. */
   env?: Record<string, string>;
+  /** Variable names the runtime expands at start; a value is never written. */
+  envRefs?: string[];
+  /** Header name to a literal prefix and one variable the runtime expands at start. */
+  headerRefs?: Record<string, { prefix: string; variable: string }>;
 }
 
 export interface McpService {
   register(descriptor: McpServerDescriptor): Promise<void>;
+  /**
+   * MCP server names other plugins own in this pass, by name to plugin id:
+   * those registered so far and those enabled Capabilities declare.
+   */
+  owners?(): Promise<ReadonlyMap<string, string>>;
+  /** Registers nothing more this pass and keeps the plugin's previous servers in place, reporting `reason`. */
+  withhold?(reason: string): void;
 }
 
 export interface InstructionsService {
@@ -142,6 +162,8 @@ export interface Plugin {
   cliCommands?: PluginCliCommand[];
   /** CLI namespace for `cliCommands` under `<distribution> cap`; defaults to `id`. */
   cliNamespace?: string;
+  /** A service next to Mate: its command, daemon connection and Studio contribution. */
+  service?: PluginService;
 }
 
 /**

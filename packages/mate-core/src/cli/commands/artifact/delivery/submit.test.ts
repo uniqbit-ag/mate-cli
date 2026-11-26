@@ -85,6 +85,7 @@ function deps(overrides: Partial<SubmitCommandDeps> = {}): SubmitCommandDeps {
     now: () => new Date("2026-10-28T10:00:00.000Z"),
     runOpenSpec: openSpec(),
     submitGroups: groups("pushed"),
+    preflightGroup: async () => ({ status: "passed" }),
     stdout: (line) => out.push(line),
     stderr: (line) => err.push(line),
     ...overrides,
@@ -104,6 +105,8 @@ async function run(
 beforeEach(async () => {
   companion = await fs.mkdtemp(path.join(os.tmpdir(), "artifact-submit-"));
   await fs.mkdir(changeDir("x"), { recursive: true });
+  // Every task checked, so no stage before submit is open.
+  await fs.writeFile(path.join(changeDir("x"), "tasks.md"), "- [x] 1.1 Acme\n");
   pushed = [];
   process.exitCode = 0;
 });

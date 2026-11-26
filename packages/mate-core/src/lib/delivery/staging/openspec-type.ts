@@ -1,14 +1,11 @@
-import {
-  ARCHIVE_RELATIVE_DIR,
-  CHANGES_RELATIVE_DIR,
-  changeNameOf,
-  parseAnchor,
-  SPECS_RELATIVE_DIR,
-} from "../../change-layout";
+import path from "node:path";
+
+import { OPENSPEC_CHANGE_LAYOUT, SPECS_RELATIVE_DIR } from "../../change-layout";
+import { fileExists } from "../../fs-utils";
 import { runOpenSpec, type RunOpenSpec } from "../../openspec-cli";
-import { deltaRequirementEdits } from "../overlap";
+import { deltaRequirementEdits, taskCounts } from "../overlap";
 import { DELIVERY_FILE } from "../record";
-import type { ArtifactType, ValidationFailure } from "./artifact-type";
+import type { ArtifactType, ReviewFile, ValidationFailure } from "./artifact-type";
 import { replayArchive, resolveRequirement, staleRequirement } from "./replay";
 
 /** Name of the OpenSpec type and its trailer prefix. */
@@ -16,6 +13,14 @@ const OPENSPEC_TYPE = "openspec";
 
 /** Bound on one OpenSpec run of a hook, so a hung CLI ends as that hook's failure. */
 const OPENSPEC_TIMEOUT_MS = 120_000;
+
+/** The planning artifacts of a change, in review order. */
+const PLANNING_ARTIFACTS: readonly ReviewFile[] = [
+  { id: "proposal", file: "proposal.md" },
+  { id: "specs", file: "specs/" },
+  { id: "design", file: "design.md" },
+  { id: "tasks", file: "tasks.md" },
+];
 
 /** The capability of a canonical spec path, or null for any other path. */
 function capabilityOf(file: string): string | null {
@@ -25,13 +30,18 @@ function capabilityOf(file: string): string | null {
 
 interface ValidatedItem {
   valid?: boolean;
-  issues?: Array<{ level?: string; message?: string }>;
+  issues?: Array<{ level?: string; path?: string; message?: string }>;
 }
 
-/** The `items` of `openspec validate --json` output, or null when it is not that JSON. */
-function validatedItems(stdout: string): ValidatedItem[] | null {
+interface Validation {
+  items?: ValidatedItem[];
+  status?: Array<{ severity?: string; message?: string }>;
+}
+
+/** `openspec validate --json` output, or null when it is not that JSON. */
+function parseValidation(stdout: string): Validation | null {
   try {
-    return (JSON.parse(stdout) as { items?: ValidatedItem[] }).items ?? null;
+    return JSON.parse(stdout) as Validation;
   } catch {
     return null;
   }
@@ -55,7 +65,7 @@ async function validateSpec(
   if (run.code === null) {
     return { path: file, detail: `openspec validate ${capability} ran out of time` };
   }
-  const items = validatedItems(run.stdout);
+  const items = parseValidation(run.stdout)?.items;
   if (!items) {
     if (run.code === 0) return null;
     const output = (run.stderr || run.stdout).trim().split("\n").slice(-3).join("\n");
@@ -70,19 +80,45 @@ async function validateSpec(
   return { path: file, detail: errors.join("; ") || "invalid" };
 }
 
+/**
+ * The failing lines of `openspec validate --strict --json` output: each ERROR and WARNING issue
+ * (strict fails on both, INFO fails nothing) and each error status, such as an unknown change.
+ * Null when the output is not that JSON.
+ */
+function failingIssues(stdout: string): string[] | null {
+  const parsed = parseValidation(stdout);
+  if (!parsed) return null;
+  const issues = (parsed.items ?? [])
+    .filter((item) => item.valid === false)
+    .flatMap((item) => item.issues ?? [])
+    .filter((issue) => (issue.level === "ERROR" || issue.level === "WARNING") && issue.message)
+    .map((issue) => `[${issue.level}] ${issue.path ? `${issue.path}: ` : ""}${issue.message}`);
+  const statuses = (parsed.status ?? []).flatMap((status) =>
+    status.severity === "error" && status.message ? [status.message] : [],
+  );
+  return [...issues, ...statuses];
+}
+
 /** Why `openspec validate <change> --strict` refuses the change in `dir`, or null. */
 async function checkChange(
   dir: string,
   change: string,
   runner: RunOpenSpec,
 ): Promise<string | null> {
-  const run = await runner(["validate", "--strict", "--no-interactive", "--", change], {
+  const run = await runner(["validate", "--strict", "--json", "--no-interactive", "--", change], {
     cwd: dir,
     timeout: OPENSPEC_TIMEOUT_MS,
   });
   if (run.code === 0) return null;
   if (run.code === null) return `openspec validate ${change} --strict ran out of time`;
-  const output = (run.stderr || run.stdout).trim().split("\n").slice(-5).join("\n");
+  const failing = failingIssues(run.stdout);
+  if (failing && failing.length > 0) return failing.join("\n");
+  // JSON naming no failure says nothing here, so only stderr can say why.
+  const output = (run.stderr || (failing ? "" : run.stdout))
+    .trim()
+    .split("\n")
+    .slice(-5)
+    .join("\n");
   return output || `openspec validate ${change} --strict failed`;
 }
 
@@ -94,11 +130,8 @@ async function checkChange(
 export function openspecArtifactType(runner: RunOpenSpec = runOpenSpec): ArtifactType {
   return {
     name: OPENSPEC_TYPE,
-    source: CHANGES_RELATIVE_DIR,
-    archiveRoot: ARCHIVE_RELATIVE_DIR,
+    ...OPENSPEC_CHANGE_LAYOUT,
     deliveryFile: DELIVERY_FILE,
-    isRecordId: (id) => parseAnchor(id) !== null,
-    recordName: changeNameOf,
     check: (dir, name) => checkChange(dir, name, runner),
     apply: (dir, name, options) =>
       replayArchive(dir, name, runner, { timeout: OPENSPEC_TIMEOUT_MS, ...options }),
@@ -118,6 +151,16 @@ export function openspecArtifactType(runner: RunOpenSpec = runOpenSpec): Artifac
         if (failure) return failure;
       }
       return null;
+    },
+    async plan(changeDir) {
+      const { total, open } = await taskCounts(changeDir);
+      return { totalTasks: total, completedTasks: total - open };
+    },
+    async reviews(changeDir) {
+      const present = await Promise.all(
+        PLANNING_ARTIFACTS.map((artifact) => fileExists(path.join(changeDir, artifact.file))),
+      );
+      return PLANNING_ARTIFACTS.filter((_, index) => present[index]);
     },
   };
 }

@@ -304,6 +304,58 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
       },
       {
         "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -1161,6 +1213,58 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
       },
       {
         "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -1835,6 +1939,14 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
           {
             "hooks": [
               {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
                 "args": [
                   "hook-prompt-submit",
                 ],
@@ -1848,10 +1960,36 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
       {
         "at": [
           "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
           "Stop",
         ],
         "kind": "list",
         "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
           {
             "hooks": [
               {
@@ -2769,6 +2907,14 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
           {
             "hooks": [
               {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
                 "args": [
                   "hook-prompt-submit",
                 ],
@@ -2782,10 +2928,36 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
       {
         "at": [
           "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
           "Stop",
         ],
         "kind": "list",
         "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
           {
             "hooks": [
               {
@@ -3428,6 +3600,58 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -4210,6 +4434,58 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
       },
       {
         "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -4626,7 +4902,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 1`] = `
     },
   },
   "claudeSkills": {
-    "mate-react-doctor/SKILL.md": "2ecf137679df",
+    "mate-react-doctor/SKILL.md": "ec2ac7fb877c",
     "mate-react-doctor/references/explain.md": "86754a7e5436",
   },
   "opencodeConfig": null,
@@ -4810,6 +5086,58 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
       },
       {
         "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -4949,7 +5277,7 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 1`] = `
   "opencodeSkills": {},
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-react-doctor/SKILL.md": "2ecf137679df",
+    "mate-react-doctor/SKILL.md": "ec2ac7fb877c",
     "mate-react-doctor/references/explain.md": "86754a7e5436",
   },
 }
@@ -5323,7 +5651,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
     },
   },
   "claudeSkills": {
-    "mate-react-doctor/SKILL.md": "2ecf137679df",
+    "mate-react-doctor/SKILL.md": "ec2ac7fb877c",
     "mate-react-doctor/references/explain.md": "86754a7e5436",
   },
   "opencodeConfig": {
@@ -5347,7 +5675,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
   "opencodeSkills": {},
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-react-doctor/SKILL.md": "2ecf137679df",
+    "mate-react-doctor/SKILL.md": "ec2ac7fb877c",
     "mate-react-doctor/references/explain.md": "86754a7e5436",
   },
 }
@@ -5560,6 +5888,58 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -5999,31 +6379,31 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
     },
   },
   "claudeSkills": {
-    "mate-apply-change/SKILL.md": "f7d77753982d",
+    "mate-apply-change/SKILL.md": "340456564b7f",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "fa61cbd0bc83",
-    "mate-archive-change/SKILL.md": "675ef32ae065",
-    "mate-backfill-spec/SKILL.md": "d07cd4a60169",
-    "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
-    "mate-create-report/SKILL.md": "b4d92b44719a",
-    "mate-domain-modeling/SKILL.md": "92f3e1f5faa2",
+    "mate-archive-change/SKILL.md": "873bf06b5e57",
+    "mate-backfill-spec/SKILL.md": "c79288929dea",
+    "mate-clarify-intent/SKILL.md": "abaa8ee3b3b5",
+    "mate-create-report/SKILL.md": "0fb49a040d6c",
+    "mate-domain-modeling/SKILL.md": "5b9f27e88a6c",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-explore-change/SKILL.md": "564a76ff5424",
+    "mate-explore-change/SKILL.md": "f41800334a80",
     "mate-explore-change/references/openspec-explore.md": "3cf63d55e3d2",
-    "mate-grill-me/SKILL.md": "ab55b002ba24",
-    "mate-grill-with-docs/SKILL.md": "b542b610c484",
-    "mate-grilling/SKILL.md": "f37ff4dd9b6d",
-    "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "6611fd807099",
-    "mate-propose-change/references/mate-revise.md": "71c39ce2dacb",
+    "mate-grill-me/SKILL.md": "6d713f1240ca",
+    "mate-grill-with-docs/SKILL.md": "682f2d8123ac",
+    "mate-grilling/SKILL.md": "0e14a416f8a3",
+    "mate-interview-me/SKILL.md": "c35ec1f14f79",
+    "mate-propose-change/SKILL.md": "a94163171ac9",
+    "mate-propose-change/references/mate-revise.md": "1f90002ee95d",
     "mate-propose-change/references/openspec-propose.md": "dbd00207ffa4",
     "mate-propose-change/references/openspec-update-change.md": "0b0f6dee9f1e",
-    "mate-publish-artifact/SKILL.md": "3949b7486a14",
+    "mate-publish-artifact/SKILL.md": "54ba2f6a8959",
     "mate-publish-artifact/references/openspec.md": "83196c70960c",
-    "mate-show-me/SKILL.md": "78de9f9ecadd",
-    "mate-simplify-code/SKILL.md": "d3c7287ce35e",
-    "mate-submit-change/SKILL.md": "78d379618f2b",
+    "mate-show-me/SKILL.md": "263dceace1b6",
+    "mate-simplify-code/SKILL.md": "ede560857729",
+    "mate-submit-change/SKILL.md": "bf2e8c54586e",
   },
   "opencodeConfig": null,
   "opencodePlugins": {},
@@ -6065,7 +6445,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 2`] = `
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
     <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>
     <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository; areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
-    <rule id="openspec-publish" severity="critical">Submit publishes nothing: it pushes an OpenSpec change folder (state: submitted) to the inbox mate/inbox to await its merge. A submitted change is not the truth: only publication lands it on the companion's default branch. openspec/specs/ is current; mate artifact project "<name>" shows the unpublished outcome. mate artifact pending --json lists them with author, touched requirements, ref and path; read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it; implement or revise one only when the user names it: mate artifact take "<name>" brings it into the checkout when it is missing there, then resubmit it with mate-submit-change. Publish only through mate-publish-artifact (mate artifact publish "<name>" --json), after the user selects and confirms the commit and push, for a Delivery Group whose delivery branch is merged. It creates no tag. Never hand-commit or hand-tag one. Publish archives submitted changes and never submits: submitting is a precondition (mate-submit-change, before the merge).</rule>
+    <rule id="openspec-publish" severity="critical">Submit publishes nothing: it pushes an OpenSpec change folder (state: submitted) to the inbox mate/inbox to await its merge. A submitted change is not the truth: only publication lands it on the companion's default branch. openspec/specs/ is current; mate artifact project "<name>" shows the unpublished outcome. mate artifact pending --json --no-merge-check lists them with author, touched requirements, ref and path; read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it; implement or revise one only when the user names it: mate artifact take "<name>" brings it into the checkout when it is missing there, then resubmit it with mate-submit-change. Publish only through mate-publish-artifact (mate artifact publish "<name>" --json), after the user selects and confirms the commit and push, for a Delivery Group whose delivery branch is merged. It creates no tag. Never hand-commit or hand-tag one. Publish archives submitted changes and never submits: submitting is a precondition (mate-submit-change, before the merge).</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -6200,6 +6580,58 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -6363,31 +6795,31 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
   "opencodeSkills": {},
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-apply-change/SKILL.md": "f7d77753982d",
+    "mate-apply-change/SKILL.md": "340456564b7f",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "c132265690b4",
-    "mate-archive-change/SKILL.md": "675ef32ae065",
-    "mate-backfill-spec/SKILL.md": "d07cd4a60169",
-    "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
-    "mate-create-report/SKILL.md": "b4d92b44719a",
-    "mate-domain-modeling/SKILL.md": "92f3e1f5faa2",
+    "mate-archive-change/SKILL.md": "873bf06b5e57",
+    "mate-backfill-spec/SKILL.md": "c79288929dea",
+    "mate-clarify-intent/SKILL.md": "abaa8ee3b3b5",
+    "mate-create-report/SKILL.md": "0fb49a040d6c",
+    "mate-domain-modeling/SKILL.md": "5b9f27e88a6c",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-explore-change/SKILL.md": "564a76ff5424",
+    "mate-explore-change/SKILL.md": "f41800334a80",
     "mate-explore-change/references/openspec-explore.md": "5bfcc2eefbd8",
-    "mate-grill-me/SKILL.md": "ab55b002ba24",
-    "mate-grill-with-docs/SKILL.md": "b542b610c484",
-    "mate-grilling/SKILL.md": "f37ff4dd9b6d",
-    "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "6611fd807099",
-    "mate-propose-change/references/mate-revise.md": "71c39ce2dacb",
+    "mate-grill-me/SKILL.md": "6d713f1240ca",
+    "mate-grill-with-docs/SKILL.md": "682f2d8123ac",
+    "mate-grilling/SKILL.md": "0e14a416f8a3",
+    "mate-interview-me/SKILL.md": "c35ec1f14f79",
+    "mate-propose-change/SKILL.md": "a94163171ac9",
+    "mate-propose-change/references/mate-revise.md": "1f90002ee95d",
     "mate-propose-change/references/openspec-propose.md": "c1f1d1291283",
     "mate-propose-change/references/openspec-update-change.md": "098ef729c37f",
-    "mate-publish-artifact/SKILL.md": "3949b7486a14",
+    "mate-publish-artifact/SKILL.md": "54ba2f6a8959",
     "mate-publish-artifact/references/openspec.md": "83196c70960c",
-    "mate-show-me/SKILL.md": "78de9f9ecadd",
-    "mate-simplify-code/SKILL.md": "d3c7287ce35e",
-    "mate-submit-change/SKILL.md": "78d379618f2b",
+    "mate-show-me/SKILL.md": "263dceace1b6",
+    "mate-simplify-code/SKILL.md": "ede560857729",
+    "mate-submit-change/SKILL.md": "bf2e8c54586e",
   },
 }
 `;
@@ -6429,7 +6861,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 2`] = `
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
     <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>
     <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository; areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
-    <rule id="openspec-publish" severity="critical">Submit publishes nothing: it pushes an OpenSpec change folder (state: submitted) to the inbox mate/inbox to await its merge. A submitted change is not the truth: only publication lands it on the companion's default branch. openspec/specs/ is current; mate artifact project "<name>" shows the unpublished outcome. mate artifact pending --json lists them with author, touched requirements, ref and path; read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it; implement or revise one only when the user names it: mate artifact take "<name>" brings it into the checkout when it is missing there, then resubmit it with mate-submit-change. Publish only through mate-publish-artifact (mate artifact publish "<name>" --json), after the user selects and confirms the commit and push, for a Delivery Group whose delivery branch is merged. It creates no tag. Never hand-commit or hand-tag one. Publish archives submitted changes and never submits: submitting is a precondition (mate-submit-change, before the merge).</rule>
+    <rule id="openspec-publish" severity="critical">Submit publishes nothing: it pushes an OpenSpec change folder (state: submitted) to the inbox mate/inbox to await its merge. A submitted change is not the truth: only publication lands it on the companion's default branch. openspec/specs/ is current; mate artifact project "<name>" shows the unpublished outcome. mate artifact pending --json --no-merge-check lists them with author, touched requirements, ref and path; read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it; implement or revise one only when the user names it: mate artifact take "<name>" brings it into the checkout when it is missing there, then resubmit it with mate-submit-change. Publish only through mate-publish-artifact (mate artifact publish "<name>" --json), after the user selects and confirms the commit and push, for a Delivery Group whose delivery branch is merged. It creates no tag. Never hand-commit or hand-tag one. Publish archives submitted changes and never submits: submitting is a precondition (mate-submit-change, before the merge).</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -6778,31 +7210,31 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     },
   },
   "claudeSkills": {
-    "mate-apply-change/SKILL.md": "f7d77753982d",
+    "mate-apply-change/SKILL.md": "340456564b7f",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "fa61cbd0bc83",
-    "mate-archive-change/SKILL.md": "675ef32ae065",
-    "mate-backfill-spec/SKILL.md": "d07cd4a60169",
-    "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
-    "mate-create-report/SKILL.md": "b4d92b44719a",
-    "mate-domain-modeling/SKILL.md": "92f3e1f5faa2",
+    "mate-archive-change/SKILL.md": "873bf06b5e57",
+    "mate-backfill-spec/SKILL.md": "c79288929dea",
+    "mate-clarify-intent/SKILL.md": "abaa8ee3b3b5",
+    "mate-create-report/SKILL.md": "0fb49a040d6c",
+    "mate-domain-modeling/SKILL.md": "5b9f27e88a6c",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-explore-change/SKILL.md": "564a76ff5424",
+    "mate-explore-change/SKILL.md": "f41800334a80",
     "mate-explore-change/references/openspec-explore.md": "3cf63d55e3d2",
-    "mate-grill-me/SKILL.md": "ab55b002ba24",
-    "mate-grill-with-docs/SKILL.md": "b542b610c484",
-    "mate-grilling/SKILL.md": "f37ff4dd9b6d",
-    "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "6611fd807099",
-    "mate-propose-change/references/mate-revise.md": "71c39ce2dacb",
+    "mate-grill-me/SKILL.md": "6d713f1240ca",
+    "mate-grill-with-docs/SKILL.md": "682f2d8123ac",
+    "mate-grilling/SKILL.md": "0e14a416f8a3",
+    "mate-interview-me/SKILL.md": "c35ec1f14f79",
+    "mate-propose-change/SKILL.md": "a94163171ac9",
+    "mate-propose-change/references/mate-revise.md": "1f90002ee95d",
     "mate-propose-change/references/openspec-propose.md": "dbd00207ffa4",
     "mate-propose-change/references/openspec-update-change.md": "0b0f6dee9f1e",
-    "mate-publish-artifact/SKILL.md": "3949b7486a14",
+    "mate-publish-artifact/SKILL.md": "54ba2f6a8959",
     "mate-publish-artifact/references/openspec.md": "83196c70960c",
-    "mate-show-me/SKILL.md": "78de9f9ecadd",
-    "mate-simplify-code/SKILL.md": "d3c7287ce35e",
-    "mate-submit-change/SKILL.md": "78d379618f2b",
+    "mate-show-me/SKILL.md": "263dceace1b6",
+    "mate-simplify-code/SKILL.md": "ede560857729",
+    "mate-submit-change/SKILL.md": "bf2e8c54586e",
   },
   "opencodeConfig": {
     "$schema": "https://opencode.ai/config.json",
@@ -6825,31 +7257,31 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
   "opencodeSkills": {},
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-apply-change/SKILL.md": "f7d77753982d",
+    "mate-apply-change/SKILL.md": "340456564b7f",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "c132265690b4",
-    "mate-archive-change/SKILL.md": "675ef32ae065",
-    "mate-backfill-spec/SKILL.md": "d07cd4a60169",
-    "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
-    "mate-create-report/SKILL.md": "b4d92b44719a",
-    "mate-domain-modeling/SKILL.md": "92f3e1f5faa2",
+    "mate-archive-change/SKILL.md": "873bf06b5e57",
+    "mate-backfill-spec/SKILL.md": "c79288929dea",
+    "mate-clarify-intent/SKILL.md": "abaa8ee3b3b5",
+    "mate-create-report/SKILL.md": "0fb49a040d6c",
+    "mate-domain-modeling/SKILL.md": "5b9f27e88a6c",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-explore-change/SKILL.md": "564a76ff5424",
+    "mate-explore-change/SKILL.md": "f41800334a80",
     "mate-explore-change/references/openspec-explore.md": "5bfcc2eefbd8",
-    "mate-grill-me/SKILL.md": "ab55b002ba24",
-    "mate-grill-with-docs/SKILL.md": "b542b610c484",
-    "mate-grilling/SKILL.md": "f37ff4dd9b6d",
-    "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "6611fd807099",
-    "mate-propose-change/references/mate-revise.md": "71c39ce2dacb",
+    "mate-grill-me/SKILL.md": "6d713f1240ca",
+    "mate-grill-with-docs/SKILL.md": "682f2d8123ac",
+    "mate-grilling/SKILL.md": "0e14a416f8a3",
+    "mate-interview-me/SKILL.md": "c35ec1f14f79",
+    "mate-propose-change/SKILL.md": "a94163171ac9",
+    "mate-propose-change/references/mate-revise.md": "1f90002ee95d",
     "mate-propose-change/references/openspec-propose.md": "c1f1d1291283",
     "mate-propose-change/references/openspec-update-change.md": "098ef729c37f",
-    "mate-publish-artifact/SKILL.md": "3949b7486a14",
+    "mate-publish-artifact/SKILL.md": "54ba2f6a8959",
     "mate-publish-artifact/references/openspec.md": "83196c70960c",
-    "mate-show-me/SKILL.md": "78de9f9ecadd",
-    "mate-simplify-code/SKILL.md": "d3c7287ce35e",
-    "mate-submit-change/SKILL.md": "78d379618f2b",
+    "mate-show-me/SKILL.md": "263dceace1b6",
+    "mate-simplify-code/SKILL.md": "ede560857729",
+    "mate-submit-change/SKILL.md": "bf2e8c54586e",
   },
 }
 `;
@@ -6886,7 +7318,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
     <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>
     <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository; areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
-    <rule id="openspec-publish" severity="critical">Submit publishes nothing: it pushes an OpenSpec change folder (state: submitted) to the inbox mate/inbox to await its merge. A submitted change is not the truth: only publication lands it on the companion's default branch. openspec/specs/ is current; mate artifact project "<name>" shows the unpublished outcome. mate artifact pending --json lists them with author, touched requirements, ref and path; read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it; implement or revise one only when the user names it: mate artifact take "<name>" brings it into the checkout when it is missing there, then resubmit it with mate-submit-change. Publish only through mate-publish-artifact (mate artifact publish "<name>" --json), after the user selects and confirms the commit and push, for a Delivery Group whose delivery branch is merged. It creates no tag. Never hand-commit or hand-tag one. Publish archives submitted changes and never submits: submitting is a precondition (mate-submit-change, before the merge).</rule>
+    <rule id="openspec-publish" severity="critical">Submit publishes nothing: it pushes an OpenSpec change folder (state: submitted) to the inbox mate/inbox to await its merge. A submitted change is not the truth: only publication lands it on the companion's default branch. openspec/specs/ is current; mate artifact project "<name>" shows the unpublished outcome. mate artifact pending --json --no-merge-check lists them with author, touched requirements, ref and path; read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it; implement or revise one only when the user names it: mate artifact take "<name>" brings it into the checkout when it is missing there, then resubmit it with mate-submit-change. Publish only through mate-publish-artifact (mate artifact publish "<name>" --json), after the user selects and confirms the commit and push, for a Delivery Group whose delivery branch is merged. It creates no tag. Never hand-commit or hand-tag one. Publish archives submitted changes and never submits: submitting is a precondition (mate-submit-change, before the merge).</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -6933,7 +7365,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
     <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>
     <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository; areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
-    <rule id="openspec-publish" severity="critical">Submit publishes nothing: it pushes an OpenSpec change folder (state: submitted) to the inbox mate/inbox to await its merge. A submitted change is not the truth: only publication lands it on the companion's default branch. openspec/specs/ is current; mate artifact project "<name>" shows the unpublished outcome. mate artifact pending --json lists them with author, touched requirements, ref and path; read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it; implement or revise one only when the user names it: mate artifact take "<name>" brings it into the checkout when it is missing there, then resubmit it with mate-submit-change. Publish only through mate-publish-artifact (mate artifact publish "<name>" --json), after the user selects and confirms the commit and push, for a Delivery Group whose delivery branch is merged. It creates no tag. Never hand-commit or hand-tag one. Publish archives submitted changes and never submits: submitting is a precondition (mate-submit-change, before the merge).</rule>
+    <rule id="openspec-publish" severity="critical">Submit publishes nothing: it pushes an OpenSpec change folder (state: submitted) to the inbox mate/inbox to await its merge. A submitted change is not the truth: only publication lands it on the companion's default branch. openspec/specs/ is current; mate artifact project "<name>" shows the unpublished outcome. mate artifact pending --json --no-merge-check lists them with author, touched requirements, ref and path; read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it; implement or revise one only when the user names it: mate artifact take "<name>" brings it into the checkout when it is missing there, then resubmit it with mate-submit-change. Publish only through mate-publish-artifact (mate artifact publish "<name>" --json), after the user selects and confirms the commit and push, for a Delivery Group whose delivery branch is merged. It creates no tag. Never hand-commit or hand-tag one. Publish archives submitted changes and never submits: submitting is a precondition (mate-submit-change, before the merge).</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -7065,6 +7497,58 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -7610,33 +8094,33 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 "Outputs land in $GRAPHIFY_OUT by default.
 "
 ,
-    "mate-apply-change/SKILL.md": "f7d77753982d",
+    "mate-apply-change/SKILL.md": "340456564b7f",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "fa61cbd0bc83",
-    "mate-archive-change/SKILL.md": "675ef32ae065",
-    "mate-backfill-spec/SKILL.md": "d07cd4a60169",
-    "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
-    "mate-create-report/SKILL.md": "b4d92b44719a",
-    "mate-domain-modeling/SKILL.md": "92f3e1f5faa2",
+    "mate-archive-change/SKILL.md": "873bf06b5e57",
+    "mate-backfill-spec/SKILL.md": "c79288929dea",
+    "mate-clarify-intent/SKILL.md": "abaa8ee3b3b5",
+    "mate-create-report/SKILL.md": "0fb49a040d6c",
+    "mate-domain-modeling/SKILL.md": "5b9f27e88a6c",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-explore-change/SKILL.md": "564a76ff5424",
+    "mate-explore-change/SKILL.md": "f41800334a80",
     "mate-explore-change/references/openspec-explore.md": "3cf63d55e3d2",
-    "mate-grill-me/SKILL.md": "ab55b002ba24",
-    "mate-grill-with-docs/SKILL.md": "b542b610c484",
-    "mate-grilling/SKILL.md": "f37ff4dd9b6d",
-    "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "6611fd807099",
-    "mate-propose-change/references/mate-revise.md": "71c39ce2dacb",
+    "mate-grill-me/SKILL.md": "6d713f1240ca",
+    "mate-grill-with-docs/SKILL.md": "682f2d8123ac",
+    "mate-grilling/SKILL.md": "0e14a416f8a3",
+    "mate-interview-me/SKILL.md": "c35ec1f14f79",
+    "mate-propose-change/SKILL.md": "a94163171ac9",
+    "mate-propose-change/references/mate-revise.md": "1f90002ee95d",
     "mate-propose-change/references/openspec-propose.md": "dbd00207ffa4",
     "mate-propose-change/references/openspec-update-change.md": "0b0f6dee9f1e",
-    "mate-publish-artifact/SKILL.md": "3949b7486a14",
+    "mate-publish-artifact/SKILL.md": "54ba2f6a8959",
     "mate-publish-artifact/references/openspec.md": "83196c70960c",
-    "mate-react-doctor/SKILL.md": "2ecf137679df",
+    "mate-react-doctor/SKILL.md": "ec2ac7fb877c",
     "mate-react-doctor/references/explain.md": "86754a7e5436",
-    "mate-show-me/SKILL.md": "78de9f9ecadd",
-    "mate-simplify-code/SKILL.md": "d3c7287ce35e",
-    "mate-submit-change/SKILL.md": "78d379618f2b",
+    "mate-show-me/SKILL.md": "263dceace1b6",
+    "mate-simplify-code/SKILL.md": "ede560857729",
+    "mate-submit-change/SKILL.md": "bf2e8c54586e",
   },
   "opencodeConfig": {
     "$schema": "https://opencode.ai/config.json",
@@ -7695,33 +8179,33 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   },
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-apply-change/SKILL.md": "f7d77753982d",
+    "mate-apply-change/SKILL.md": "340456564b7f",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "c132265690b4",
-    "mate-archive-change/SKILL.md": "675ef32ae065",
-    "mate-backfill-spec/SKILL.md": "d07cd4a60169",
-    "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
-    "mate-create-report/SKILL.md": "b4d92b44719a",
-    "mate-domain-modeling/SKILL.md": "92f3e1f5faa2",
+    "mate-archive-change/SKILL.md": "873bf06b5e57",
+    "mate-backfill-spec/SKILL.md": "c79288929dea",
+    "mate-clarify-intent/SKILL.md": "abaa8ee3b3b5",
+    "mate-create-report/SKILL.md": "0fb49a040d6c",
+    "mate-domain-modeling/SKILL.md": "5b9f27e88a6c",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-explore-change/SKILL.md": "564a76ff5424",
+    "mate-explore-change/SKILL.md": "f41800334a80",
     "mate-explore-change/references/openspec-explore.md": "5bfcc2eefbd8",
-    "mate-grill-me/SKILL.md": "ab55b002ba24",
-    "mate-grill-with-docs/SKILL.md": "b542b610c484",
-    "mate-grilling/SKILL.md": "f37ff4dd9b6d",
-    "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "6611fd807099",
-    "mate-propose-change/references/mate-revise.md": "71c39ce2dacb",
+    "mate-grill-me/SKILL.md": "6d713f1240ca",
+    "mate-grill-with-docs/SKILL.md": "682f2d8123ac",
+    "mate-grilling/SKILL.md": "0e14a416f8a3",
+    "mate-interview-me/SKILL.md": "c35ec1f14f79",
+    "mate-propose-change/SKILL.md": "a94163171ac9",
+    "mate-propose-change/references/mate-revise.md": "1f90002ee95d",
     "mate-propose-change/references/openspec-propose.md": "c1f1d1291283",
     "mate-propose-change/references/openspec-update-change.md": "098ef729c37f",
-    "mate-publish-artifact/SKILL.md": "3949b7486a14",
+    "mate-publish-artifact/SKILL.md": "54ba2f6a8959",
     "mate-publish-artifact/references/openspec.md": "83196c70960c",
-    "mate-react-doctor/SKILL.md": "2ecf137679df",
+    "mate-react-doctor/SKILL.md": "ec2ac7fb877c",
     "mate-react-doctor/references/explain.md": "86754a7e5436",
-    "mate-show-me/SKILL.md": "78de9f9ecadd",
-    "mate-simplify-code/SKILL.md": "d3c7287ce35e",
-    "mate-submit-change/SKILL.md": "78d379618f2b",
+    "mate-show-me/SKILL.md": "263dceace1b6",
+    "mate-simplify-code/SKILL.md": "ede560857729",
+    "mate-submit-change/SKILL.md": "bf2e8c54586e",
   },
 }
 `;
@@ -7758,7 +8242,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
     <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>
     <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository; areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
-    <rule id="openspec-publish" severity="critical">Submit publishes nothing: it pushes an OpenSpec change folder (state: submitted) to the inbox mate/inbox to await its merge. A submitted change is not the truth: only publication lands it on the companion's default branch. openspec/specs/ is current; mate artifact project "<name>" shows the unpublished outcome. mate artifact pending --json lists them with author, touched requirements, ref and path; read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it; implement or revise one only when the user names it: mate artifact take "<name>" brings it into the checkout when it is missing there, then resubmit it with mate-submit-change. Publish only through mate-publish-artifact (mate artifact publish "<name>" --json), after the user selects and confirms the commit and push, for a Delivery Group whose delivery branch is merged. It creates no tag. Never hand-commit or hand-tag one. Publish archives submitted changes and never submits: submitting is a precondition (mate-submit-change, before the merge).</rule>
+    <rule id="openspec-publish" severity="critical">Submit publishes nothing: it pushes an OpenSpec change folder (state: submitted) to the inbox mate/inbox to await its merge. A submitted change is not the truth: only publication lands it on the companion's default branch. openspec/specs/ is current; mate artifact project "<name>" shows the unpublished outcome. mate artifact pending --json --no-merge-check lists them with author, touched requirements, ref and path; read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it; implement or revise one only when the user names it: mate artifact take "<name>" brings it into the checkout when it is missing there, then resubmit it with mate-submit-change. Publish only through mate-publish-artifact (mate artifact publish "<name>" --json), after the user selects and confirms the commit and push, for a Delivery Group whose delivery branch is merged. It creates no tag. Never hand-commit or hand-tag one. Publish archives submitted changes and never submits: submitting is a precondition (mate-submit-change, before the merge).</rule>
   </mandatory-rules>
 </companion-policy>
 
@@ -7829,7 +8313,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
     <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>
     <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository; areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
-    <rule id="openspec-publish" severity="critical">Submit publishes nothing: it pushes an OpenSpec change folder (state: submitted) to the inbox mate/inbox to await its merge. A submitted change is not the truth: only publication lands it on the companion's default branch. openspec/specs/ is current; mate artifact project "<name>" shows the unpublished outcome. mate artifact pending --json lists them with author, touched requirements, ref and path; read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it; implement or revise one only when the user names it: mate artifact take "<name>" brings it into the checkout when it is missing there, then resubmit it with mate-submit-change. Publish only through mate-publish-artifact (mate artifact publish "<name>" --json), after the user selects and confirms the commit and push, for a Delivery Group whose delivery branch is merged. It creates no tag. Never hand-commit or hand-tag one. Publish archives submitted changes and never submits: submitting is a precondition (mate-submit-change, before the merge).</rule>
+    <rule id="openspec-publish" severity="critical">Submit publishes nothing: it pushes an OpenSpec change folder (state: submitted) to the inbox mate/inbox to await its merge. A submitted change is not the truth: only publication lands it on the companion's default branch. openspec/specs/ is current; mate artifact project "<name>" shows the unpublished outcome. mate artifact pending --json --no-merge-check lists them with author, touched requirements, ref and path; read one (git show <ref>:<path>/<file>) only where it touches your work or the user names it; implement or revise one only when the user names it: mate artifact take "<name>" brings it into the checkout when it is missing there, then resubmit it with mate-submit-change. Publish only through mate-publish-artifact (mate artifact publish "<name>" --json), after the user selects and confirms the commit and push, for a Delivery Group whose delivery branch is merged. It creates no tag. Never hand-commit or hand-tag one. Publish archives submitted changes and never submits: submitting is a precondition (mate-submit-change, before the merge).</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -7989,6 +8473,14 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
           {
             "hooks": [
               {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
                 "args": [
                   "hook-prompt-submit",
                 ],
@@ -8002,10 +8494,36 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
       {
         "at": [
           "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+            "matcher": "Skill|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
           "Stop",
         ],
         "kind": "list",
         "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/workflow-turn.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
           {
             "hooks": [
               {

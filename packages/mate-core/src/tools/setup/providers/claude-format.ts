@@ -11,8 +11,37 @@ export interface McpEntryDescriptor {
   command?: string;
   args?: string[];
   url?: string;
+  transport?: "http" | "sse";
   env?: Record<string, string>;
+  envRefs?: string[];
+  headerRefs?: Record<string, { prefix: string; variable: string }>;
 }
+
+/** Literal `env` plus each reference rendered by `ref`; undefined when there is neither. */
+export function mcpEntryEnvironment(
+  descriptor: McpEntryDescriptor,
+  ref: (variable: string) => string,
+): Record<string, string> | undefined {
+  if (!descriptor.env && !descriptor.envRefs?.length) return undefined;
+  return {
+    ...descriptor.env,
+    ...Object.fromEntries((descriptor.envRefs ?? []).map((name) => [name, ref(name)])),
+  };
+}
+
+/** Header references rendered by `ref`; undefined when there are none. */
+export function mcpEntryHeaders(
+  descriptor: McpEntryDescriptor,
+  ref: (variable: string) => string,
+): Record<string, string> | undefined {
+  const entries = Object.entries(descriptor.headerRefs ?? {});
+  if (entries.length === 0) return undefined;
+  return Object.fromEntries(
+    entries.map(([header, { prefix, variable }]) => [header, `${prefix}${ref(variable)}`]),
+  );
+}
+
+const claudeRef = (variable: string) => `\${${variable}}`;
 
 // Claude runtime config format primitives: parse/merge/serialize for
 // `settings.local.json` (hook maps, permissions) and `.mcp.json`. Which hook
@@ -165,11 +194,19 @@ export async function writeClaudeMcpConfig(
 
 /** Map a provider-agnostic MCP descriptor to Claude's `.mcp.json` entry shape. */
 export function toClaudeMcpEntry(descriptor: McpEntryDescriptor): Record<string, unknown> {
-  if (descriptor.url) return { url: descriptor.url };
+  if (descriptor.url) {
+    const headers = mcpEntryHeaders(descriptor, claudeRef);
+    return {
+      ...(descriptor.transport ? { type: descriptor.transport } : {}),
+      url: descriptor.url,
+      ...(headers ? { headers } : {}),
+    };
+  }
+  const env = mcpEntryEnvironment(descriptor, claudeRef);
   return {
     command: descriptor.command,
     ...(descriptor.args ? { args: descriptor.args } : {}),
-    ...(descriptor.env ? { env: descriptor.env } : {}),
+    ...(env ? { env } : {}),
   };
 }
 

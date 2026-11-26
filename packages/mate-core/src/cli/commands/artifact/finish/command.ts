@@ -5,7 +5,11 @@ import {
   type DeliveryEdit,
   type RecordDeliveryDeps,
 } from "../../../../lib/delivery/record-delivery";
+import type { ArtifactType } from "../../../../lib/delivery/staging/artifact-type";
 import { isDeliveryGroup } from "../../../../lib/delivery/staging/naming";
+import { groupOfChange } from "../../../../lib/delivery/staging/submit";
+import { declaredSubmitType } from "../../../../lib/delivery/staging/registry";
+import { errorMessage } from "../../../../runtime/error-message";
 import { settleLinked } from "../../../../lib/delivery/staging/settle-linked";
 import {
   publicationQueue,
@@ -268,7 +272,8 @@ function refusalResult(type: string, name: string, message: string): FinishResul
  *   checkout, recorded in its `delivery.yaml` on the pending branch (published with the group,
  *   else pushed there alone).
  * - `--confirm-merged` / `--confirm-open` / `--confirm-dropped` — the user's answer for the
- *   group's Working Repository delivery, recorded the same way. One at a time; never with
+ *   group's Working Repository delivery, else for the repository the group is named after,
+ *   recorded the same way. One at a time; never with
  *   `--all`, `--specs` or `--no-push`.
  * - `--specs [<path>...]` — publish drifted canonical specs as their own publication. Bare, it
  *   publishes every drifted spec; with paths, only those. A bare name alongside it is a change
@@ -388,6 +393,17 @@ export async function runArtifactPublishCommand(
   const loadCapabilities = deps.loadCapabilities ?? defaultLoadCapabilities;
   const capabilities = await loadCapabilities(context);
 
+  // The declared type the companion's submit handles; an invalid declaration publishes nothing.
+  let declaredType: ArtifactType | undefined;
+  try {
+    declaredType = await declaredSubmitType(context.companionPath);
+  } catch (err) {
+    emitErr(`mate: ${errorMessage(err)}`);
+    process.exitCode = 1;
+    return;
+  }
+  const typeDeps = declaredType ? { artifactType: declaredType } : {};
+
   let git: GitOps;
   const finishContext: FinishContext = {
     companionPath: context.companionPath,
@@ -487,11 +503,12 @@ export async function runArtifactPublishCommand(
       const environment = await deliveryEnvironment();
       if ("error" in environment) return environment.error;
       const answer = refreshOnly ? undefined : confirm;
-      const record = (names: string[], edit: DeliveryEdit = {}) =>
+      const record = (names: string[], edit: DeliveryEdit = {}, repository?: string) =>
         recordDelivery(
           { ...environment, companionPath: dir },
           {
             changes: names,
+            repository,
             refresh: edit.confirm === undefined && refresh,
             refreshAll: true,
             edit,
@@ -508,16 +525,30 @@ export async function runArtifactPublishCommand(
         }
       }
       if (!answer) return null;
-      // The answer is for the Working Repository's delivery; changes without one keep theirs.
-      let confirmed = 0;
-      for (const change of changes) {
-        // oxlint-disable-next-line no-await-in-loop -- one record at a time, in group order
-        const outcome = await record([change], { confirm: answer });
-        if (!("refusal" in outcome)) confirmed += 1;
-        else if (outcome.refusal.reason !== "no-delivery-branch") {
-          return deliveryRefusal([change], outcome.refusal.reason);
+      // The answer is for the Working Repository's delivery, else, as in the companion or for a
+      // group of another repository, for the repository the group is named after; changes
+      // without that delivery keep theirs.
+      const groupRepository = async (change: string) =>
+        (await groupOfChange(dir, change, declaredType)).repository;
+      const confirmEach = async (
+        repositoryOf: (change: string) => Promise<string | undefined>,
+      ): Promise<number | string> => {
+        let confirmed = 0;
+        for (const change of changes) {
+          // oxlint-disable-next-line no-await-in-loop -- one record at a time, in group order
+          const outcome = await record([change], { confirm: answer }, await repositoryOf(change));
+          if (!("refusal" in outcome)) confirmed += 1;
+          else if (outcome.refusal.reason !== "no-delivery-branch") {
+            return deliveryRefusal([change], outcome.refusal.reason);
+          }
         }
-      }
+        return confirmed;
+      };
+      const working = environment.workingRepo;
+      const inWorking = Boolean(working?.slug || working?.umbrellaChildren);
+      let confirmed = await confirmEach(inWorking ? async () => undefined : groupRepository);
+      if (confirmed === 0 && inWorking) confirmed = await confirmEach(groupRepository);
+      if (typeof confirmed === "string") return confirmed;
       return confirmed > 0 ? null : deliveryRefusal(changes, "no-delivery-branch");
     };
 
@@ -546,6 +577,7 @@ export async function runArtifactPublishCommand(
         // `--all` publishes dependencies in queue order instead, and takes nobody's answer.
         ...(inQueue ? { withDependencies: false, ownAnswersOnly: true } : {}),
         scan: scanPublicationFn,
+        ...typeDeps,
       },
     );
     const result = withOutcomes(publicationResult(type, target, publication));
@@ -615,7 +647,12 @@ export async function runArtifactPublishCommand(
     const all = flattened(changeResults);
     const outcomes = await cleanUpCompletedWorksets(
       context.companionPath,
-      all.flatMap(publishedBy),
+      all.flatMap((result) =>
+        publishedBy(result).map((anchor) => ({
+          anchor,
+          ...(result.commit ? { commit: result.commit } : {}),
+        })),
+      ),
       deps.worktreeCleanup,
     );
     for (const result of all) {
@@ -662,7 +699,10 @@ export async function runArtifactPublishCommand(
     };
 
     if (hasRemote) {
-      const queue = await (deps.publicationQueue ?? publicationQueue)(context.companionPath);
+      const queue = await (deps.publicationQueue ?? publicationQueue)(
+        context.companionPath,
+        typeDeps,
+      );
       // A queue read from stale refs: the first publication fetches for itself.
       refsFresh = queue.fresh;
       for (const group of queue.groups) {

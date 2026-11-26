@@ -141,8 +141,9 @@ export async function stopOpenCode(id: string, cwd: string, run?: ShellRunner): 
   await runMateJson(["session", "stop", id, "--json"], cwd, run);
 }
 
+/** Skips the merge check: the sidebar polls and reads only `pending`, which the check never changes. */
 export function pendingArtifacts(cwd: string, run?: ShellRunner): Promise<PendingJson> {
-  return runMateJson<PendingJson>(["artifact", "pending", "--json"], cwd, run);
+  return runMateJson<PendingJson>(["artifact", "pending", "--json", "--no-merge-check"], cwd, run);
 }
 
 /** Runs any command line through the login shell; `mate` and `claude` may live on a version manager's PATH. */

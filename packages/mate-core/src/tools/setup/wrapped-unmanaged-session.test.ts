@@ -378,6 +378,21 @@ describe("a wrapped Working Repository with an empty Mate environment", () => {
     );
   }, 20000);
 
+  /** A bare session checks its turns too: the wrap carries the turn hook, marked `--projected`. */
+  test("carries the turn hook on its three events", async () => {
+    const { repoPath, companionPath } = await makeCompanionAndRepo("mate-turn-hook-", []);
+    await runWrapCommand(["--companion", companionPath], repoPath);
+
+    const settings = await readSettings(repoPath);
+    for (const event of ["UserPromptSubmit", "PostToolUse", "Stop"]) {
+      const turn = hookCommands(settings, event).filter((command) =>
+        command.includes("workflow-turn.mjs"),
+      );
+      expect(turn).toHaveLength(1);
+      expect(turn[0]).toEndWith(" --projected");
+    }
+  }, 20000);
+
   /**
    * The banner is the only sign a bare session gives that a wrap is in effect,
    * and the one surface where a drifted projection surfaces at all. It is

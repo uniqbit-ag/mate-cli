@@ -5,6 +5,7 @@ import { parse } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import { ConfigError, type PluginDeclaration } from "../../../lib/orchestrator/types";
+import { audienceOrigin, BASE_PLUGIN_ORIGIN, type PluginOrigin } from "./paths";
 
 export const AUDIENCE_ENV = "MATE_AUDIENCE";
 
@@ -15,7 +16,7 @@ export const AUDIENCE_ENV = "MATE_AUDIENCE";
 export const BASE_AUDIENCE = "base";
 
 /** The keys 0.18.4 moved under `audiences.base`; companion-wide keys stayed at the root. */
-export const BASE_AUDIENCE_KEYS = ["capabilities", "plugins", "studio"] as const;
+export const BASE_AUDIENCE_KEYS = ["capabilities", "plugins", "studio", "mcpManager"] as const;
 
 export type AudienceResolution =
   | { ok: true; active: string | null }
@@ -29,7 +30,8 @@ function pluginList(value: unknown): unknown[] {
   return isRecord(value) && Array.isArray(value.plugins) ? value.plugins : [];
 }
 
-function audienceEntry(raw: unknown, audience: string | null): unknown {
+/** The raw entry of a declared audience; undefined for none, `base` or an undeclared one. */
+export function audienceEntry(raw: unknown, audience: string | null): unknown {
   if (audience === null || audience === BASE_AUDIENCE) return undefined;
   if (!isRecord(raw) || !isRecord(raw.audiences)) return undefined;
   return Object.hasOwn(raw.audiences, audience) ? raw.audiences[audience] : undefined;
@@ -102,26 +104,29 @@ export function effectivePluginDeclarations(raw: unknown, audience: string | nul
   return [...pluginList(normalizeBaseAudience(raw)), ...pluginList(audienceEntry(raw, audience))];
 }
 
-/** The ordinary install that writes and installs `audience`'s workspace (`null`: the shared one). */
-export function audienceInstallCommand(audience: string | null): string {
+/** The ordinary install that writes and installs the workspace of `origin`. */
+export function pluginInstallCommand(origin: PluginOrigin): string {
   const install = `${FRAMEWORK_NAME} install`;
-  return audience === null ? install : `${AUDIENCE_ENV}=${audience} ${install}`;
+  return origin.kind === "audience" ? `${AUDIENCE_ENV}=${origin.name} ${install}` : install;
 }
 
 /** A raw `plugins` entry with the workspace it installs into and loads from. */
 export interface OriginPluginEntry {
   entry: unknown;
-  /** `null` for a base plugin, else the audience declaring it. */
-  audience: string | null;
+  origin: PluginOrigin;
 }
 
 /** `effectivePluginDeclarations`, each entry keeping its origin. */
 export function effectivePluginEntries(raw: unknown, audience: string | null): OriginPluginEntry[] {
   const active = resolveAudience(raw, audience);
   const name = active.ok ? active.active : null;
+  const origin = audienceOrigin(name);
   return [
-    ...pluginList(normalizeBaseAudience(raw)).map((entry) => ({ entry, audience: null })),
-    ...pluginList(audienceEntry(raw, name)).map((entry) => ({ entry, audience: name })),
+    ...pluginList(normalizeBaseAudience(raw)).map((entry) => ({
+      entry,
+      origin: BASE_PLUGIN_ORIGIN,
+    })),
+    ...pluginList(audienceEntry(raw, name)).map((entry) => ({ entry, origin })),
   ];
 }
 
@@ -159,13 +164,23 @@ export function pluginInstallTargets(
 
 /** Packages declared under any audience, the ones that never belong in the shared workspace. */
 export function audiencePluginPackages(raw: unknown): Set<string> {
-  const packages = new Set<string>();
-  for (const name of declaredAudiences(raw)) {
-    for (const entry of pluginList(audienceEntry(raw, name))) {
-      if (isRecord(entry) && typeof entry.package === "string") packages.add(entry.package);
-    }
-  }
-  return packages;
+  return new Set(
+    declaredAudiences(raw).flatMap((name) => packageNames(pluginList(audienceEntry(raw, name)))),
+  );
+}
+
+/** Packages `framework.yaml` declares in the base list or under any audience. */
+export function committedPluginPackages(raw: unknown): Set<string> {
+  return new Set([
+    ...audiencePluginPackages(raw),
+    ...packageNames(pluginList(normalizeBaseAudience(raw))),
+  ]);
+}
+
+function packageNames(entries: unknown[]): string[] {
+  return entries.flatMap((entry) =>
+    isRecord(entry) && typeof entry.package === "string" ? [entry.package] : [],
+  );
 }
 
 /** Operator-facing message for a `MATE_AUDIENCE` the companion does not declare. */

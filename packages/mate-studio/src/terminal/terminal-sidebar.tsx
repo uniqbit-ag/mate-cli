@@ -6,6 +6,7 @@ import {
 } from "@uniqbit/mate-core/studio";
 import { type RefObject, useEffect, useRef, useState } from "react";
 
+import { studioFetch } from "../lib/studio-fetch";
 import type { ShellTerminal } from "../server/shell";
 import { useTerminalUi } from "../stores/terminal-ui";
 import { storedSession, TerminalClient, type TerminalState } from "./terminal-client";
@@ -59,7 +60,7 @@ function useTerminalSessions() {
   const sessions = useQuery({
     queryKey: sessionsKey,
     queryFn: async (): Promise<TerminalSession[]> => {
-      const response = await fetch(TERMINAL_SESSIONS_ROUTE, { credentials: "same-origin" });
+      const response = await studioFetch(TERMINAL_SESSIONS_ROUTE);
       return response.ok
         ? ((await response.json()) as { sessions: TerminalSession[] }).sessions
         : [];
@@ -161,7 +162,14 @@ function useTerminalClient(mount: RefObject<HTMLDivElement | null>, companion: s
  * A direct grid child of `.shell`: sticky positioning breaks under an ancestor that sets
  * `overflow`. Lives in the root layout, so its session survives navigation between views.
  */
-export function TerminalSidebar({ terminal }: { terminal: ShellTerminal }) {
+export function TerminalSidebar({
+  terminal,
+  heldBy,
+}: {
+  terminal: ShellTerminal;
+  /** The workspace view (`<service>/<view>`) holding the sidebar collapsed, if any. */
+  heldBy?: string | null;
+}) {
   const target = terminal.target;
   const mount = useRef<HTMLDivElement>(null);
   const { client, state, status, reconnectable, choice, setChoice } = useTerminalClient(
@@ -170,6 +178,7 @@ export function TerminalSidebar({ terminal }: { terminal: ShellTerminal }) {
   );
   const { sessions, end } = useTerminalSessions();
   const ui = useTerminalUi();
+  const collapsed = ui.collapsed || Boolean(heldBy);
 
   // Escape closes the narrow-window drawer.
   useEffect(() => {
@@ -197,9 +206,9 @@ export function TerminalSidebar({ terminal }: { terminal: ShellTerminal }) {
           className={ICON_BUTTON}
           id="terminal-expand"
           aria-controls="terminal-body"
-          aria-expanded={!ui.collapsed}
+          aria-expanded={!collapsed}
           aria-label="Expand the terminal"
-          onClick={() => ui.setCollapsed(false)}
+          onClick={() => (heldBy ? ui.release(heldBy) : ui.setCollapsed(false))}
         >
           <Icon name="left" />
         </button>
@@ -215,7 +224,7 @@ export function TerminalSidebar({ terminal }: { terminal: ShellTerminal }) {
               className={ICON_BUTTON}
               id="terminal-collapse"
               aria-controls="terminal-body"
-              aria-expanded={!ui.collapsed}
+              aria-expanded={!collapsed}
               aria-label="Collapse the terminal"
               onClick={() => ui.setCollapsed(true)}
             >

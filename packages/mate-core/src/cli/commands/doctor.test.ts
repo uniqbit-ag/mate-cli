@@ -20,8 +20,12 @@ import type {
 } from "../../tools/setup/plugin";
 import { inspectClaudePluginDirectories } from "../../tools/setup";
 import { createClaudePlugin } from "../../tools/setup/providers/claude";
+import * as frictionLog from "../../runtime/friction-log";
+import { appendEvent, frictionLogFile } from "../../runtime/friction-log";
+import { writeFrictionSwitch } from "../../runtime/friction-switch";
+import { markFriction } from "../../lib/friction/mark";
 import { createStartupProgress } from "../../lib/components/startup-progress";
-import { runDoctorCommand, type DoctorReport } from "./doctor";
+import { collectDoctorReport, runDoctorCommand, type DoctorReport } from "./doctor";
 
 const tempRoots: string[] = [];
 let restoreEnvironment: () => void;
@@ -326,6 +330,37 @@ describe("runDoctorCommand", () => {
       expect(output).toContain("@acme/reader");
       expect(stderr.join("")).toContain(`${FRAMEWORK_NAME}: plugin @acme/reader: not installed`);
       expect(process.exitCode).toBe(1);
+    } finally {
+      stderrSpy.mockRestore();
+      process.exitCode = originalExitCode ?? 0;
+    }
+  });
+
+  test("--frozen-plugins leaves a missing local plugin out of the report", async () => {
+    const root = await makeTempDir("doctor-local-plugins-");
+    const configDir = path.join(root, `.${FRAMEWORK_NAME}`, "config");
+    await fs.mkdir(configDir, { recursive: true });
+    await fs.writeFile(path.join(configDir, "framework.yaml"), "allowedAgents:\n  - claude\n");
+    await fs.writeFile(
+      path.join(configDir, "framework.local.yaml"),
+      'plugins:\n  - package: "@acme/gated"\n    version: "1.0.0"\n',
+    );
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    const stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
+    const originalExitCode = process.exitCode;
+    const failedPackages = async (argv: string[]) => {
+      const output = await captureStdout(() =>
+        runDoctorCommand(argv, { cwd: root, globalConfigStore }),
+      );
+      const { pluginFailures } = JSON.parse(output) as {
+        pluginFailures: Array<{ package: string }>;
+      };
+      return pluginFailures.map((failure) => failure.package);
+    };
+
+    try {
+      expect(await failedPackages(["--json"])).toEqual(["@acme/gated"]);
+      expect(await failedPackages(["--json", "--frozen-plugins"])).toEqual([]);
     } finally {
       stderrSpy.mockRestore();
       process.exitCode = originalExitCode ?? 0;
@@ -734,6 +769,52 @@ describe("runDoctorCommand", () => {
 
     expect(output).not.toContain("Version Requirement");
     expect(output).not.toContain("engines.mate");
+  });
+});
+
+describe("doctor mcpManager variables", () => {
+  const config: FrameworkConfig = {
+    allowedAgents: ["claude"],
+    packageManagers: [],
+    capabilities: [],
+    mcpManager: {
+      servers: {
+        "acme-docs": { command: "acme-docs-mcp", env: ["ACME_TOKEN"] },
+        "acme-api": {
+          url: "https://mcp.acme.example",
+          headers: { Authorization: "Bearer ${ACME_KEY}" },
+        },
+      },
+      enabled: { servers: ["acme-docs"] },
+    },
+    audiences: { analyst: { mcpManager: { enable: { servers: ["acme-api"] } } } },
+  };
+
+  async function run(env: Record<string, string | undefined>, argv: string[] = ["--json"]) {
+    const root = await makeTempDir("doctor-mcp-");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(repoPath, { recursive: true });
+    const companionPath = await setupCompanion(root, repoPath, config);
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await globalConfigStore.register(companionPath);
+    return captureStdout(() => runDoctorCommand(argv, { cwd: repoPath, globalConfigStore, env }));
+  }
+
+  test("JSON names each missing variable of the active audience's servers", async () => {
+    const report = JSON.parse(await run({ MATE_AUDIENCE: "analyst", ACME_TOKEN: "" }));
+    expect(report.mcpMissingVariables).toEqual([
+      { server: "acme-api", variable: "ACME_KEY" },
+      { server: "acme-docs", variable: "ACME_TOKEN" },
+    ]);
+  });
+
+  test("a set variable is not reported and its value appears nowhere", async () => {
+    const json = await run({ ACME_TOKEN: "s3cr3t-value" });
+    const text = await run({ ACME_TOKEN: "s3cr3t-value", MATE_AUDIENCE: "analyst" }, []);
+    expect(JSON.parse(json).mcpMissingVariables).toBeUndefined();
+    expect(text).toContain("MCP Server Variables");
+    expect(text).toContain("ACME_KEY");
+    expect(json + text).not.toContain("s3cr3t");
   });
 });
 
@@ -1336,5 +1417,186 @@ describe("Claude plugins of a distribution's Capabilities", () => {
       ),
     );
     expect(json.exitCode).toBe(0);
+  });
+});
+
+describe("doctor friction", () => {
+  const now = new Date("2027-03-14T12:00:00Z");
+
+  async function companion(capabilities: FrameworkConfig["capabilities"] = [], recording = true) {
+    const root = await makeTempDir("doctor-friction-");
+    const home = path.join(root, "home");
+    if (recording) writeFrictionSwitch(true, home);
+    const configPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await new ConfigStore(configPath).save({ allowedAgents: ["claude"], capabilities });
+    return { root, home, globalConfigStore: new GlobalConfigStore(path.join(root, "config.yaml")) };
+  }
+
+  function record(root: string, home: string, fingerprint: string, at = now) {
+    appendEvent(
+      {
+        kind: "refusal",
+        fingerprint,
+        mateVersion: "1.0.0",
+        runtime: "claude",
+        sessionId: "s1",
+        companion: root,
+        repositoryPath: null,
+        detail: {},
+      },
+      { homeDir: home, now: at },
+    );
+  }
+
+  async function doctor(fixture: Awaited<ReturnType<typeof companion>>, argv: string[]) {
+    return captureStdout(() =>
+      runDoctorCommand(argv, {
+        cwd: fixture.root,
+        globalConfigStore: fixture.globalConfigStore,
+        inspectPlugins: async () => ({ failures: [], capabilities: [] }),
+        env: { HOME: fixture.home },
+        now,
+      }),
+    );
+  }
+
+  test("reports the week's events and the most frequent fingerprint", async () => {
+    const fixture = await companion();
+    record(fixture.root, fixture.home, "refusal:secret:read");
+    record(fixture.root, fixture.home, "refusal:artifact:write");
+    record(fixture.root, fixture.home, "refusal:artifact:write");
+    record(fixture.root, fixture.home, "refusal:artifact:write", new Date("2027-03-01T00:00:00Z"));
+
+    const report = JSON.parse(await doctor(fixture, ["--json"])) as DoctorReport;
+    expect(report.friction).toEqual({
+      days: 7,
+      events: 3,
+      top: { fingerprint: "refusal:artifact:write", events: 2 },
+    });
+    const text = await doctor(fixture, []);
+    expect(text).toContain("Friction");
+    expect(text).toContain("refusal:artifact:write (2)");
+    expect(text).toContain(`${FRAMEWORK_NAME} triage`);
+  });
+
+  test("counts only open fingerprints: a fix is left out until it is recorded again", async () => {
+    const fixture = await companion();
+    const fixedAt = new Date(now.getTime() - 60 * 60_000);
+    record(fixture.root, fixture.home, "refusal:secret:read");
+    record(fixture.root, fixture.home, "refusal:artifact:write", new Date(fixedAt.getTime() - 1));
+    record(fixture.root, fixture.home, "refusal:artifact:write", new Date(fixedAt.getTime() - 1));
+    for (const fingerprint of ["refusal:artifact:write", "refusal:secret:read"]) {
+      await markFriction(
+        fingerprint,
+        "fixed",
+        { by: "person" },
+        { homeDir: fixture.home, now: fixedAt },
+      );
+    }
+
+    expect(JSON.parse(await doctor(fixture, ["--json"])).friction).toEqual({
+      days: 7,
+      events: 1,
+      top: { fingerprint: "refusal:secret:read", events: 1 },
+    });
+
+    record(fixture.root, fixture.home, "refusal:artifact:write");
+    expect(JSON.parse(await doctor(fixture, ["--json"])).friction).toEqual({
+      days: 7,
+      events: 4,
+      top: { fingerprint: "refusal:artifact:write", events: 3 },
+    });
+  });
+
+  test("everything handled reports zero events and names no next action", async () => {
+    const fixture = await companion();
+    record(fixture.root, fixture.home, "refusal:secret:read", new Date(now.getTime() - 60_000));
+    await markFriction(
+      "refusal:secret:read",
+      "dismissed",
+      { by: "person" },
+      { homeDir: fixture.home, now },
+    );
+
+    expect(JSON.parse(await doctor(fixture, ["--json"])).friction).toEqual({
+      days: 7,
+      events: 0,
+      top: null,
+    });
+    expect(await doctor(fixture, [])).not.toContain("Next action");
+  });
+
+  test("reports zero events and a null top fingerprint without events", async () => {
+    const fixture = await companion();
+
+    const report = JSON.parse(await doctor(fixture, ["--json"])) as DoctorReport;
+    expect(report.friction).toEqual({ days: 7, events: 0, top: null });
+    expect(await doctor(fixture, [])).not.toContain(`${FRAMEWORK_NAME} triage`);
+  });
+
+  test("an unreadable log counts as zero events", async () => {
+    const fixture = await companion();
+    await fs.mkdir(frictionLogFile("2027-03", fixture.home), { recursive: true });
+
+    const report = JSON.parse(await doctor(fixture, ["--json"])) as DoctorReport;
+    expect(report.friction).toEqual({ days: 7, events: 0, top: null });
+  });
+
+  test("reports nothing and reads no log while recording is off", async () => {
+    const fixture = await companion([{ name: "openspec" }], false);
+    record(fixture.root, fixture.home, "refusal:secret:read");
+    const reads = spyOn(frictionLog, "readEvents");
+
+    try {
+      const report = JSON.parse(await doctor(fixture, ["--json"])) as DoctorReport;
+      expect(report.friction).toBeUndefined();
+      expect(await doctor(fixture, [])).not.toContain("Friction");
+      expect(reads).not.toHaveBeenCalled();
+    } finally {
+      reads.mockRestore();
+    }
+  });
+});
+
+describe("doctor without writes", () => {
+  test("leaves a stale repo-local companion pointer in place", async () => {
+    const root = await makeTempDir("doctor-read-only-");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(repoPath, { recursive: true });
+    const companionPath = await setupCompanion(root, repoPath);
+    const registry = path.join(repoPath, `.${FRAMEWORK_NAME}`, "config", "registry.yaml");
+    const before = await fs.readFile(registry, "utf8");
+    await fs.rm(companionPath, { recursive: true, force: true });
+
+    await collectDoctorReport({
+      cwd: repoPath,
+      globalConfigStore: new GlobalConfigStore(path.join(root, "config.yaml")),
+      write: false,
+    });
+
+    expect(await fs.readFile(registry, "utf8")).toBe(before);
+  });
+
+  test("reports a linked companion's missing config without creating it", async () => {
+    const root = await makeTempDir("doctor-read-only-");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(repoPath, { recursive: true });
+    const companionPath = await setupCompanion(root, repoPath);
+    const config = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+    await fs.rm(config);
+
+    const report = await collectDoctorReport({
+      cwd: repoPath,
+      globalConfigStore: new GlobalConfigStore(path.join(root, "config.yaml")),
+      write: false,
+    });
+
+    expect(report.companionPath).toBe(companionPath);
+    expect(report.resolutionFailures).toContainEqual({
+      companionPath,
+      message: `${config} is missing.`,
+    });
+    expect(await Bun.file(config).exists()).toBe(false);
   });
 });

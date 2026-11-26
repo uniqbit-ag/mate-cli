@@ -7,6 +7,12 @@ import path from "node:path";
 import { parse as parseJsonc } from "jsonc-parser";
 
 import { isDeclinedByMember, readMemberChoices } from "../../../lib/member-choices";
+import {
+  readToolManifest,
+  toolNotice,
+  toolVersion,
+  warnOnVersionDrift,
+} from "../../../lib/tool-manifest";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import { DEFAULT_SECRET_DENY_PATTERNS, type SecretPolicy } from "../../../runtime/secret-patterns";
 import type { InstallRequirement } from "../install-contract";
@@ -21,14 +27,15 @@ export const TOKENSAVE_STORE_DIR = ".tokensave";
 export const TOKENSAVE_STORE_CONFIG_FILE = "config.json";
 /** The index itself: `tokensave sync` refuses a store without it. */
 const TOKENSAVE_STORE_DATABASE_FILE = "tokensave.db";
-export const TOKENSAVE_MIN_RUST_VERSION = "1.91.0";
+export const TOKENSAVE_MIN_RUST_VERSION = tokensaveMinRustVersion();
 /** Single-graph posture Mate owns in the per-project store config; every other key is left as found. */
 const TOKENSAVE_OWNED_POSTURE = { auto_track: false, suppress_scope_warning: true } as const;
 const TOKENSAVE_BRANCH_META_FILE = "branch-meta.json";
 const TOKENSAVE_DISABLED_BRANCH_META_FILE = "branch-meta.json.mate-disabled";
 const TOKENSAVE_STORE_EXCLUDE_ENTRY = `${TOKENSAVE_STORE_DIR}/`;
 const TOKENSAVE_BREW_INSTALL_CMD = "brew install aovestdipaperino/tap/tokensave";
-const TOKENSAVE_CARGO_INSTALL_CMD = "cargo install --locked tokensave";
+const TOKENSAVE_VERSION = toolVersion("tokensave");
+const TOKENSAVE_CARGO_INSTALL_CMD = `cargo install --locked tokensave --version ${TOKENSAVE_VERSION}`;
 const TOKENSAVE_SCOOP_INSTALL_CMD =
   "scoop bucket add tokensave https://github.com/aovestdipaperino/scoop-bucket && scoop install tokensave";
 
@@ -69,6 +76,7 @@ export const tokensaveDeps = {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       env: process.env,
+      timeout: 5_000,
     });
     return {
       ok: result.status === 0 && !result.error,
@@ -119,24 +127,19 @@ async function cleanupRepoLocalTokensaveArtifacts(repoPath: string): Promise<voi
   }
 }
 
-async function tokensaveInstalled(repoPath: string): Promise<boolean> {
+/** What `tokensave --version` prints, or null when the binary cannot run. */
+function tokensaveVersionOutput(repoPath: string): string | null {
   const result = tokensaveDeps.run(["--version"], repoPath);
-  return result.ok;
+  return result.ok ? result.stdout : null;
 }
 
-/**
- * Upgrades the installed binary without making setup depend on network
- * availability. Never passes `--kill`: it stops every tokensave process on the
- * machine, including MCP servers of running agent sessions. Without a TTY,
- * tokensave upgrades and leaves them running.
- */
-async function upgradeTokensave(repoPath: string): Promise<void> {
-  const result = tokensaveDeps.run(["upgrade"], repoPath);
-  if (result.ok) return;
-
-  const detail = result.stderr.trim();
-  process.stderr.write(
-    `tokensave: automatic upgrade failed${detail ? `: ${detail}` : ""} - continuing with the installed version\n`,
+/** Homebrew and Scoop cannot install an older formula, so the warning always names Cargo. */
+function warnOnTokensaveDrift(versionOutput: string | null): void {
+  warnOnVersionDrift(
+    "tokensave",
+    versionOutput,
+    TOKENSAVE_CARGO_INSTALL_CMD,
+    resolveCommandOnPath("tokensave", tokensaveDeps.pathValue()),
   );
 }
 
@@ -233,6 +236,14 @@ export async function isTokensaveAgentIntegrated(agent: string): Promise<boolean
   return true;
 }
 
+/** `rust_version` of the pinned TokenSave entry in the tool manifest. */
+function tokensaveMinRustVersion(): string {
+  const value = readToolManifest().tools.tokensave?.rust_version;
+  if (typeof value !== "string")
+    throw new Error("tool manifest names no rust_version for tokensave");
+  return value;
+}
+
 function getCargoRustVersionError(): string | undefined {
   const result = tokensaveDeps.rustcVersion();
   const version = `${result.stdout}\n${result.stderr}`.match(/\brustc\s+(\d+)\.(\d+)\.(\d+)/);
@@ -252,50 +263,57 @@ function getCargoRustVersionError(): string | undefined {
 function getTokensaveInstallPlan(): { command: string; run: () => Promise<void> } | undefined {
   const pathValue = tokensaveDeps.pathValue();
   const platform = tokensaveDeps.platform();
-
+  // Homebrew and Scoop install the latest release, not the pinned one.
+  let latest: { command: string; run: () => Promise<void> } | undefined;
   if (platform === "darwin" && tokensaveDeps.isCommandOnPath("brew", pathValue)) {
-    return {
+    latest = {
       command: TOKENSAVE_BREW_INSTALL_CMD,
       run: () => tokensaveDeps.runCommand("brew", ["install", "aovestdipaperino/tap/tokensave"]),
     };
-  }
-
-  if (platform === "win32" && tokensaveDeps.isCommandOnPath("scoop", pathValue)) {
-    return {
+  } else if (platform === "win32" && tokensaveDeps.isCommandOnPath("scoop", pathValue)) {
+    latest = {
       command: TOKENSAVE_SCOOP_INSTALL_CMD,
       run: () => tokensaveDeps.runShellCommand(TOKENSAVE_SCOOP_INSTALL_CMD),
     };
   }
+  if (!tokensaveDeps.isCommandOnPath("cargo", pathValue)) return latest;
 
-  if (tokensaveDeps.isCommandOnPath("cargo", pathValue)) {
-    return {
-      command: TOKENSAVE_CARGO_INSTALL_CMD,
-      run: async () => {
-        const rustVersionError = getCargoRustVersionError();
-        if (rustVersionError) throw new Error(rustVersionError);
-        await tokensaveDeps.runCommand("cargo", ["install", "--locked", "tokensave"]);
-      },
-    };
-  }
-
-  return undefined;
+  return {
+    command: TOKENSAVE_CARGO_INSTALL_CMD,
+    run: async () => {
+      // Probed here, not while planning: launch preflight builds this plan on every launch,
+      // and its fingerprint must not change with the rustc version.
+      const rustVersionError = getCargoRustVersionError();
+      if (rustVersionError) {
+        if (!latest) throw new Error(rustVersionError);
+        toolNotice(
+          `tokensave: ${rustVersionError} Installing the latest release instead with: ${latest.command}\n`,
+        );
+        await latest.run();
+        return;
+      }
+      await tokensaveDeps.runCommand("cargo", [
+        "install",
+        "--locked",
+        "tokensave",
+        "--version",
+        TOKENSAVE_VERSION,
+      ]);
+    },
+  };
 }
 
-export async function ensureTokensaveInstalled(
-  repoPath: string,
-  options: { upgrade?: boolean } = {},
-): Promise<boolean> {
-  if (await tokensaveInstalled(repoPath)) {
-    if (options.upgrade) await upgradeTokensave(repoPath);
-    return true;
-  }
+/** Installs TokenSave when it is missing; returns its `--version` output, or null when unavailable. */
+async function installTokensaveIfMissing(repoPath: string): Promise<string | null> {
+  const present = tokensaveVersionOutput(repoPath);
+  if (present !== null) return present;
 
   const installPlan = getTokensaveInstallPlan();
   if (!installPlan) {
     process.stderr.write(
       "tokensave binary not found and no supported installer is available on PATH. Install it manually: https://github.com/aovestdipaperino/tokensave\n",
     );
-    return false;
+    return null;
   }
 
   process.stdout.write(`tokensave binary not found. Installing with:\n  ${installPlan.command}\n`);
@@ -306,17 +324,20 @@ export async function ensureTokensaveInstalled(
     process.stderr.write(
       `tokensave: install failed${detail} - install manually with \`${installPlan.command}\`\n`,
     );
-    return false;
+    return null;
   }
 
-  if (!(await tokensaveInstalled(repoPath))) {
+  const installed = tokensaveVersionOutput(repoPath);
+  if (installed === null) {
     process.stderr.write(
       "tokensave install completed but the binary is still not available on PATH\n",
     );
-    return false;
   }
+  return installed;
+}
 
-  return true;
+export async function ensureTokensaveInstalled(repoPath: string): Promise<boolean> {
+  return (await installTokensaveIfMissing(repoPath)) !== null;
 }
 
 export async function ensureTokensaveStoreExcluded(repoPath: string): Promise<void> {
@@ -478,7 +499,7 @@ export function createTokensavePlugin(): CapabilityPlugin {
           group: "companion",
           source: "TokenSave capability",
           recommendedBy: ["tokensave"],
-          command: plan?.command ?? "cargo install tokensave",
+          command: plan?.command ?? TOKENSAVE_CARGO_INSTALL_CMD,
           fingerprint: `tokensave:${plan?.command ?? "manual"}`,
           detect: () => tokensaveDeps.run(["--version"], process.cwd()).ok,
           install: async () => {
@@ -490,7 +511,7 @@ export function createTokensavePlugin(): CapabilityPlugin {
             await plan.run();
           },
           verify: () => tokensaveDeps.run(["--version"], process.cwd()).ok,
-          update: () => upgradeTokensave(process.cwd()),
+          update: async () => warnOnTokensaveDrift(tokensaveVersionOutput(process.cwd())),
         },
         ...(config.allowedAgents ?? [])
           .filter((agent) => TOKENSAVE_SUPPORTED_AGENTS.has(agent))
@@ -578,10 +599,11 @@ export function createTokensavePlugin(): CapabilityPlugin {
           ["tokensave"],
           tokensaveDeps.readMemberChoices,
         ));
-      const installed = mayInstall
-        ? await ensureTokensaveInstalled(targetPath, { upgrade: true })
-        : await tokensaveInstalled(targetPath);
-      if (!installed) return;
+      const versionOutput = mayInstall
+        ? await installTokensaveIfMissing(targetPath)
+        : tokensaveVersionOutput(targetPath);
+      if (versionOutput === null) return;
+      if (ctx.mode === "setup") warnOnTokensaveDrift(versionOutput);
       await ensureTokensaveBranchingPosture(targetPath, resolveSecretPolicy(ctx.companionPath));
       if (ctx.mode === "setup") {
         installTokensaveAgentIntegrations(ctx.activeProviders, targetPath);

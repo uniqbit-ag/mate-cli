@@ -119,6 +119,29 @@ describe("createGraphifyPlugin apply()", () => {
     }
   });
 
+  test.each([
+    ["0.9.70", true],
+    ["0.9.80", false],
+  ])("installs graphifyy==0.9.80 and warns for installed %s: %p", async (installed, warns) => {
+    const plugin = createGraphifyPlugin({
+      installedGraphifyVersion: async () => `graphify ${installed}`,
+    });
+    const [requirement] = plugin.getInstallRequirements!({ config: makeCtx("/tmp/acme").config });
+    const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await requirement!.update!();
+      const warnings = stderr.mock.calls
+        .map(([chunk]) => String(chunk))
+        .filter((line) => line.includes("pins 0.9.80"));
+
+      expect(requirement!.command).toBe("uv tool install graphifyy==0.9.80");
+      expect(warnings).toHaveLength(warns ? 1 : 0);
+      if (warns) expect(warnings[0]).toContain("uv tool install graphifyy==0.9.80");
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
   test("setup does not offer the installer to a member who declined Graphify", async () => {
     const confirmMock = mock(async (_: string) => true);
     const runCommandMock = mock(async (_: string) => {});

@@ -24,28 +24,35 @@ import {
   submitters,
 } from "../../../runtime/pending-records";
 import { blobsAt } from "../../../runtime/submitted-arrivals";
+import { errorMessage } from "../../../runtime/error-message";
+import type { DeliveryEnvironment } from "../environment";
 import { declaredDependencies } from "../overlap";
 import {
+  findDelivery,
   isPublishable,
   readDeliveryState,
   sameRepository,
+  settleDelivery,
+  upsertDelivery,
   type DeliveryBlock,
   type DeliveryRecord,
   type DeliveryState,
   type MergeSource,
 } from "../record";
 import type { ArtifactType, StalePart } from "./artifact-type";
+import { findLinkedMerges, settleable, type UncheckedDelivery } from "./linked-merges";
 import type { DeltaFailure } from "./replay";
 import { deliveryGroupFor } from "./naming";
 import {
-  anchorsAt,
   defaultRef,
   fetchPendingBranches,
   lastFetchedAt,
   mapLimited,
   pendingRef,
+  recordsAt,
   stagingRemote,
   type StagingRemote,
+  type TrailerRecord,
 } from "./refs";
 import { defaultArtifactType } from "./registry";
 
@@ -58,6 +65,8 @@ export interface SubmittedChange {
   path: string;
   /** Its Delivery Record, settled against its scopes. */
   delivery: DeliveryState;
+  /** The repositories it is scoped to. */
+  scoped: string[];
   blocked?: DeliveryBlock;
   specBase?: string;
   /** Change names it declares in `dependsOn`. */
@@ -212,6 +221,23 @@ async function materializeChanges(
   );
 }
 
+/** Compares change names as Git lists the folders one commit adds: `acme-a-b/` before `acme-a/`. */
+export function byFolderPath(a: string, b: string): number {
+  return `${a}/` < `${b}/` ? -1 : `${a}/` > `${b}/` ? 1 : 0;
+}
+
+/** Compares change names by their place in `order`, then by `tie`; names not in it go last. */
+export function bySubmitOrder(
+  order: readonly string[],
+  tie: (a: string, b: string) => number = (a, b) => a.localeCompare(b),
+): (a: string, b: string) => number {
+  const rank = (name: string): number => {
+    const at = order.indexOf(name);
+    return at === -1 ? order.length : at;
+  };
+  return (a, b) => rank(a) - rank(b) || tie(a, b);
+}
+
 /**
  * The changes of `type` submitted at `ref` (`state: submitted` in their Delivery Record), in
  * submit order, then by name; with `only`, just those of that name. Only each folder's Delivery
@@ -239,11 +265,13 @@ export async function submittedAt(
       const delivery = await readDeliveryState(dir);
       if (delivery.record?.state !== "submitted") return null;
       const { record } = delivery;
+      const scoped = await scopedRepositories(dir);
       return {
         name,
-        group: deliveryGroupFor(name, record, await scopedRepositories(dir)).group,
+        group: deliveryGroupFor(name, record, scoped).group,
         path: sourcePathOf(type, name),
         delivery,
+        scoped,
         ...(record.blocked ? { blocked: record.blocked } : {}),
         ...(record.specBase ? { specBase: record.specBase } : {}),
         dependsOn: await declaredDependencies(dir),
@@ -253,11 +281,8 @@ export async function submittedAt(
     const found = read.filter((entry): entry is SubmittedChange => entry !== null);
     // One change needs no order.
     const order = found.length > 1 ? await submitOrder(git, ref, type) : [];
-    const rank = (name: string): number => {
-      const at = order.indexOf(name);
-      return at === -1 ? order.length : at;
-    };
-    return found.toSorted((a, b) => rank(a.name) - rank(b.name) || a.name.localeCompare(b.name));
+    const compare = bySubmitOrder(order);
+    return found.toSorted((a, b) => compare(a.name, b.name));
   } finally {
     await fs.rm(scratch, { recursive: true, force: true });
   }
@@ -278,7 +303,8 @@ async function contentAt(
 /**
  * The record on `defaultRef` that change `name` at `pendingRef` was published as: an archive of
  * that name holding the same files, line endings and its Delivery Record aside (publication
- * settles it). Null while unpublished. `anchors` are the records on `defaultRef`, when the caller listed them.
+ * settles it). Null while unpublished. `records` are those on `defaultRef`, when the caller
+ * listed them with {@link recordsAt}.
  */
 export async function publishedAs(
   git: CompanionGit,
@@ -286,22 +312,68 @@ export async function publishedAs(
   pendingTip: string,
   type: ArtifactType,
   name: string,
-  anchors?: readonly string[],
+  records?: readonly TrailerRecord[],
 ): Promise<string | null> {
-  const records = (anchors ?? (await anchorsAt(git, defaultTip, type))).filter(
-    (id) => type.recordName(id) === name,
+  const named = (records ?? (await recordsAt(git, defaultTip, type))).filter(
+    (record) => type.recordName(record.id) === name,
   );
-  if (records.length === 0) return null;
+  if (named.length === 0) return null;
+  const { archiveRoot } = type;
+  if (archiveRoot === undefined) return publishedByTrailer(git, pendingTip, type, name, named);
   return matchingArchive(
-    records,
+    named.map((record) => record.id),
     await contentAt(git, pendingTip, sourcePathOf(type, name), type),
-    (record) => contentAt(git, defaultTip, `${type.archiveRoot}/${record}`, type),
+    (record) => contentAt(git, defaultTip, `${archiveRoot}/${record}`, type),
     async (source, archived) => {
       const texts = await git.readBlobs([source, archived]);
       const [mine, theirs] = [texts?.get(source), texts?.get(archived)];
       return mine !== undefined && theirs !== undefined && sameTextBesidesLineEndings(mine, theirs);
     },
   );
+}
+
+/** The commit on `ref` that last changed the folder `folder`, its Delivery Record aside. */
+async function folderWrittenBy(
+  git: CompanionGit,
+  ref: string,
+  folder: string,
+  type: Pick<ArtifactType, "deliveryFile">,
+): Promise<string | null> {
+  const written = await git.run([
+    "log",
+    "-1",
+    "--format=%H",
+    "--end-of-options",
+    ref,
+    "--",
+    `:(literal)${folder}/`,
+    `:(exclude,literal)${folder}/${type.deliveryFile}`,
+  ]);
+  return written.status === 0 ? (outputLines(written.stdout)[0] ?? null) : null;
+}
+
+/**
+ * {@link publishedAs} for a type that keeps no archive: the newest of `records`, those of that
+ * name, published from an inbox commit that already held the folder as `pendingTip` holds it.
+ * Ancestry, not commit dates: submitter and publisher clocks may disagree. A later change of
+ * the same name was written after that commit, so it does not count.
+ */
+async function publishedByTrailer(
+  git: CompanionGit,
+  pendingTip: string,
+  type: ArtifactType,
+  name: string,
+  records: readonly TrailerRecord[],
+): Promise<string | null> {
+  const written = await folderWrittenBy(git, pendingTip, sourcePathOf(type, name), type);
+  if (written === null) return null;
+  for (const record of records) {
+    if (record.inbox === null) continue;
+    // oxlint-disable-next-line no-await-in-loop -- newest first, usually the first
+    const held = await git.run(["merge-base", "--is-ancestor", written, record.inbox]);
+    if (held.status === 0) return record.id;
+  }
+  return null;
 }
 
 /** How far ahead of this clock an inbox commit's date may be and still date a delta. */
@@ -600,8 +672,10 @@ export interface SubmittedChangeView {
   origin: "yours" | "others";
   /** Who submitted it, by the pending branch's history; absent when Git cannot say. */
   author?: string;
-  /** Its final merge results and who recorded each; see {@link MergeClaim}. */
+  /** Its final merge results on the pending branch and who recorded each; see {@link MergeClaim}. */
   merges: MergeClaim[];
+  /** Deliveries whose merge this run's check found and nothing recorded yet; absent when none. */
+  found?: FoundDelivery[];
 }
 
 export interface SubmittedGroupView {
@@ -613,6 +687,27 @@ export interface SubmittedGroupView {
   publishable: boolean;
   /** Changes of other groups it depends on whose group cannot publish yet. */
   heldBy: string[];
+  /**
+   * Publishable only through a merge in `found`, of its own or of a dependency's group: publish
+   * it with `--refresh`, which records that merge.
+   */
+  needsRefresh?: true;
+}
+
+/** A branch delivery of one repository. */
+export interface FoundDelivery {
+  repository: string;
+  branch: string;
+}
+
+/** The local merge check of one discovery; see {@link DiscoverSubmittedOptions.checkMerges}. */
+export interface MergeCheck {
+  /** False when the check was not asked for or could not run. */
+  ran: boolean;
+  /** Linked deliveries not checked in time, or whose check failed; their stored state stands. */
+  unchecked: (FoundDelivery & { change: string })[];
+  /** Why the check, or some delivery's check, failed. */
+  warning?: string;
 }
 
 /** `stale`: the fetch failed or was not attempted; the refs are the last fetched ones. */
@@ -624,6 +719,8 @@ export interface SubmittedDiscovery {
   stale: boolean;
   error?: string;
   groups: SubmittedGroupView[];
+  /** Present when the caller asked for the merge check. */
+  mergeCheck?: MergeCheck;
 }
 
 /** `changes` at `ref` without those the default branch already archived. */
@@ -634,9 +731,9 @@ async function withoutPublished(
   type: ArtifactType,
   changes: SubmittedChange[],
 ): Promise<SubmittedChange[]> {
-  const anchors = await anchorsAt(git, defaultRef(remote), type);
+  const records = await recordsAt(git, defaultRef(remote), type);
   const published = await mapLimited(changes, READ_CONCURRENCY, (change) =>
-    publishedAs(git, defaultRef(remote), ref, type, change.name, anchors),
+    publishedAs(git, defaultRef(remote), ref, type, change.name, records),
   );
   return changes.filter((_, index) => published[index] === null);
 }
@@ -649,6 +746,12 @@ export interface DiscoverSubmittedOptions {
   type?: ArtifactType;
   /** Home of Mate's local companion state; `HOME` by default. */
   stateHome?: string;
+  /**
+   * Checks unsettled branch deliveries in the checkouts `environment` links, stopping every check
+   * after `budgetMs`, and counts the merges Git proves without recording them. `environment` is
+   * resolved only when such a delivery exists. Off when absent.
+   */
+  checkMerges?: { environment: () => Promise<DeliveryEnvironment>; budgetMs: number };
 }
 
 /** Bound on discovery's fetch and reads. */
@@ -669,7 +772,15 @@ export async function discoverSubmitted(
 ): Promise<SubmittedDiscovery> {
   const git = (options.git ?? discoveryGit)(companionPath);
   const remote = await stagingRemote(git);
-  if (!remote) return { pendingBranch: null, fetchedAt: null, stale: false, groups: [] };
+  if (!remote) {
+    return {
+      pendingBranch: null,
+      fetchedAt: null,
+      stale: false,
+      groups: [],
+      ...(options.checkMerges ? { mergeCheck: { ran: false, unchecked: [] } } : {}),
+    };
+  }
   let stale = !options.fetch;
   let error: string | undefined;
   if (options.fetch) {
@@ -681,13 +792,17 @@ export async function discoverSubmitted(
   }
   const type = options.type ?? defaultArtifactType();
   // Published, but the inbox was not emptied yet: no longer pending.
-  const submitted = await withoutPublished(
+  const stored = await withoutPublished(
     git,
     remote,
     pendingRef(remote),
     type,
     await submittedAt(git, pendingRef(remote), type, options.tmpRoot),
   );
+  const checked = options.checkMerges
+    ? await withFoundMerges(stored, options.checkMerges)
+    : { submitted: stored, found: new Map<string, FoundDelivery[]>(), mergeCheck: undefined };
+  const { submitted, found, mergeCheck } = checked;
   const who = await submitters(
     companionPath,
     pendingRef(remote),
@@ -696,16 +811,21 @@ export async function discoverSubmitted(
   );
   const groups = groupsOf(submitted);
   const publishable = publishableGroups(groups, submitted);
-  const claims = await mapLimited(submitted, READ_CONCURRENCY, (change) =>
+  // A group publishable only through a found merge, its own or a dependency's, needs a refresh.
+  const storedPublishable =
+    found.size > 0 ? publishableGroups(groupsOf(stored), stored) : publishable;
+  // Stored records only: a found merge is nobody's claim yet.
+  const claims = await mapLimited(stored, READ_CONCURRENCY, (change) =>
     mergeClaims(git, pendingRef(remote), change.path, change.delivery.record, type),
   );
-  const merges = new Map(submitted.map((change, index) => [change.name, claims[index]!]));
+  const merges = new Map(stored.map((change, index) => [change.name, claims[index]!]));
   return {
     pendingBranch: remote.pendingBranch,
     ref: pendingRef(remote),
     fetchedAt: await lastFetchedAt(git),
     stale,
     ...(error ? { error } : {}),
+    ...(mergeCheck ? { mergeCheck } : {}),
     groups: groups.map((group) => ({
       group: group.group,
       changes: group.changes.map((change) => {
@@ -720,6 +840,7 @@ export async function discoverSubmitted(
           origin: submitter?.mine ? ("yours" as const) : ("others" as const),
           ...(submitter?.author ? { author: submitter.author } : {}),
           merges: merges.get(change.name) ?? [],
+          ...(found.has(change.name) ? { found: found.get(change.name)! } : {}),
         };
       }),
       blocked: group.changes.some((change) => change.blocked !== undefined),
@@ -727,6 +848,75 @@ export async function discoverSubmitted(
       heldBy: unpublishedDependencies(group, submitted)
         .filter((change) => publishable.get(change.group) !== true)
         .map((change) => change.name),
+      ...(publishable.get(group.group) === true && storedPublishable.get(group.group) !== true
+        ? { needsRefresh: true as const }
+        : {}),
     })),
+  };
+}
+
+/**
+ * `submitted` with each change settled as if the merges the local check proves were recorded,
+ * and the deliveries found that way by change. Records nothing: `record` stays the stored one.
+ */
+async function withFoundMerges(
+  submitted: SubmittedChange[],
+  { environment, budgetMs }: NonNullable<DiscoverSubmittedOptions["checkMerges"]>,
+): Promise<{
+  submitted: SubmittedChange[];
+  found: Map<string, FoundDelivery[]>;
+  mergeCheck: MergeCheck;
+}> {
+  if (!submitted.some((change) => change.delivery.record?.deliveries.some(settleable))) {
+    return { submitted, found: new Map(), mergeCheck: { ran: true, unchecked: [] } };
+  }
+  const unchecked: UncheckedDelivery[] = [];
+  // Kills the checks' Git commands too, so the budget bounds the whole check.
+  const signal = budgetMs > 0 ? AbortSignal.timeout(budgetMs) : AbortSignal.abort();
+  let merges: Awaited<ReturnType<typeof findLinkedMerges>>;
+  try {
+    merges = await findLinkedMerges(await environment(), submitted, {
+      signal,
+      onUnchecked: (delivery) => unchecked.push(delivery),
+    });
+  } catch (error) {
+    const warning = `could not run: ${errorMessage(error)}`;
+    return { submitted, found: new Map(), mergeCheck: { ran: false, unchecked: [], warning } };
+  }
+  const found = new Map<string, FoundDelivery[]>();
+  const next = submitted.map((change) => {
+    let record = change.delivery.record;
+    const applied: FoundDelivery[] = [];
+    for (const { repository, branch, patch } of merges.get(change.name) ?? []) {
+      const delivery = record && findDelivery(record, repository);
+      if (!record || !delivery || delivery.branch !== branch || !settleable(delivery)) continue;
+      record = upsertDelivery(record, repository, patch);
+      applied.push({ repository: delivery.repository, branch });
+    }
+    if (applied.length === 0) return change;
+    found.set(change.name, applied);
+    return {
+      ...change,
+      delivery: { ...change.delivery, ...settleDelivery(record, change.scoped) },
+    };
+  });
+  const failures = unchecked
+    .filter((delivery) => delivery.error !== undefined)
+    .map(
+      (failure) =>
+        `checking ${failure.branch} in ${failure.repository} failed: ${errorMessage(failure.error)}`,
+    );
+  return {
+    submitted: next,
+    found,
+    mergeCheck: {
+      ran: true,
+      unchecked: unchecked.map(({ change, repository, branch }) => ({
+        change,
+        repository,
+        branch,
+      })),
+      ...(failures.length > 0 ? { warning: failures.join("; ") } : {}),
+    },
   };
 }

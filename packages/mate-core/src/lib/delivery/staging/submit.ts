@@ -29,6 +29,7 @@ import {
   readDeliveryRecord,
   readOrUnlinkedRecord,
   upsertDelivery,
+  withoutStage,
   writeDeliveryRecord,
   type DeliveryRecord,
   type SubmissionState,
@@ -103,6 +104,20 @@ export interface LocalMember {
   name: string;
   state: SubmissionState;
   group: string;
+}
+
+/** The active members of `group` not in `names`: submitting `names` waits for them. */
+export function waitingMembers(
+  members: readonly LocalMember[],
+  group: string,
+  names: readonly string[],
+): string[] {
+  return members
+    .filter(
+      (member) =>
+        member.group === group && member.state === "active" && !names.includes(member.name),
+    )
+    .map((member) => member.name);
 }
 
 /** Every local source folder of `type` with its state and Delivery Group, by name. */
@@ -225,8 +240,8 @@ export interface GroupPush extends PendingCommit {
 }
 
 /**
- * The Delivery Record change `name` is pushed with: `state: submitted`, an earlier block
- * cleared, and a delta base the default branch holds, so publication can tell a requirement
+ * The Delivery Record change `name` is pushed with: `state: submitted`, an earlier block and
+ * its recorded `submit` steps cleared, and a delta base the default branch holds, so publication can tell a requirement
  * changed since: the recorded one, or where it left the default branch when it is a local
  * commit, else `tip`, the fetched default tip. Written locally only once the push succeeded, so
  * a failed push leaves the record, its state included, as it was. Throws on a damaged record.
@@ -246,7 +261,8 @@ async function preparedRecord(
   }
   const next: DeliveryRecord = { ...record, state: "submitted", ...(specBase ? { specBase } : {}) };
   delete next.blocked;
-  return next;
+  // A resubmission runs the steps before `mate-submit-change` again.
+  return withoutStage(next, "submit");
 }
 
 /**
@@ -391,7 +407,7 @@ export interface PushOptions {
  * conflict, submitted it again, and what remains stale (a removal, a plain rename) replaces no
  * one's text. A part it would overwrite still needs `mate artifact resolve`.
  */
-async function acceptsBlock(
+export async function acceptsBlock(
   type: ArtifactType,
   work: CompanionGit,
   ref: string,
@@ -660,6 +676,120 @@ export async function hasUnsubmittedWork(
   return (await editedSinceSubmit(git, companionPath, relative, submitted)) === true;
 }
 
+/**
+ * The `submitted` members of `groups`, those in `named` left out, that {@link submitGroups} pushes
+ * as edited. Call it before refreshing them: a refresh rewrites `delivery.yaml`, which the
+ * comparison covers. A member Git cannot judge is left out, since {@link submitGroups} fails its
+ * group. `recordOnly`: only its Delivery Record differs from what this checkout last submitted or
+ * took, so its content already passed a check.
+ */
+export async function editedSubmittedMembers(
+  companionPath: string,
+  groups: ReadonlySet<string>,
+  named: readonly string[],
+  deps: Pick<SubmitDeps, "git" | "artifactType" | "stateHome"> = {},
+): Promise<(LocalMember & { recordOnly: boolean })[]> {
+  const type = deps.artifactType ?? defaultArtifactType();
+  const git = (deps.git ?? defaultGit)(companionPath);
+  const submitted = readSubmittedFolders(companionPath, deps.stateHome);
+  const edited: (LocalMember & { recordOnly: boolean })[] = [];
+  for (const member of await localMembers(companionPath, type)) {
+    if (member.state !== "submitted" || !groups.has(member.group)) continue;
+    if (named.includes(member.name)) continue;
+    const relative = sourcePathOf(type, member.name);
+    // oxlint-disable-next-line no-await-in-loop -- a few members per group
+    if ((await editedSinceSubmit(git, companionPath, relative, submitted)) !== true) continue;
+    const content = submitted[relative]?.content;
+    // oxlint-disable-next-line no-await-in-loop -- a few members per group
+    const files = content === undefined ? null : await ownFiles(git, companionPath, relative);
+    const recordOnly =
+      files !== null &&
+      // oxlint-disable-next-line no-await-in-loop -- a few members per group
+      (await folderDigest(
+        path.join(companionPath, ...relative.split("/")),
+        files.filter((file) => file !== DELIVERY_FILE),
+      )) === content;
+    edited.push({ ...member, recordOnly });
+  }
+  return edited;
+}
+
+/** What {@link submitGroups} hands {@link pushGroup} for one group. */
+interface PushPlan {
+  /** The local members it pushes. */
+  pushed: string[];
+  /** Those of {@link pushed} staged only when the pending branch lacks them. */
+  ifMissing: string[];
+  /** Members Git cannot judge: the group fails. */
+  unknown: string[];
+}
+
+async function planPush(
+  git: CompanionGit,
+  companionPath: string,
+  type: ArtifactType,
+  inGroup: readonly LocalMember[],
+  names: readonly string[],
+  submitted: Record<string, SubmittedFolder>,
+): Promise<PushPlan> {
+  const plan: PushPlan = { pushed: [], ifMissing: [], unknown: [] };
+  for (const member of inGroup) {
+    const named = names.includes(member.name);
+    if (member.state === "dropped" && !named) continue;
+    const edited =
+      (named && member.state !== "submitted") ||
+      // oxlint-disable-next-line no-await-in-loop -- a few members per group
+      (await editedSinceSubmit(git, companionPath, sourcePathOf(type, member.name), submitted));
+    if (edited === null) plan.unknown.push(member.name);
+    else if (edited || named) plan.pushed.push(member.name);
+    if (edited === false && named) plan.ifMissing.push(member.name);
+  }
+  return plan;
+}
+
+/**
+ * The members of `group` whose local folder submitting `names` puts on the pending branch, as
+ * {@link submitGroups} and {@link pushGroup} decide: pushed, and not kept as the pending branch
+ * has it (`onPending`), which a folder named unchanged is, and one whose content equals what this
+ * checkout last submitted. Null when Git cannot tell, as the push then fails.
+ */
+export async function localPushes(
+  companionPath: string,
+  group: string,
+  names: readonly string[],
+  onPending: ReadonlySet<string>,
+  deps: Pick<SubmitDeps, "git" | "artifactType" | "stateHome"> = {},
+): Promise<string[] | null> {
+  const type = deps.artifactType ?? defaultArtifactType();
+  const git = (deps.git ?? defaultGit)(companionPath);
+  const inGroup = (await localMembers(companionPath, type)).filter(
+    (member) => member.group === group,
+  );
+  const submitted = readSubmittedFolders(companionPath, deps.stateHome);
+  const plan = await planPush(git, companionPath, type, inGroup, names, submitted);
+  if (plan.unknown.length > 0) return null;
+  const carried: string[] = [];
+  for (const name of plan.pushed) {
+    const relative = sourcePathOf(type, name);
+    const mine = submitted[relative]?.content;
+    if (onPending.has(name)) {
+      if (plan.ifMissing.includes(name)) continue;
+      if (mine !== undefined) {
+        // oxlint-disable-next-line no-await-in-loop -- a few members per group
+        const files = await ownFiles(git, companionPath, relative);
+        if (files === null) return null;
+        const own = files.filter((file) => file !== DELIVERY_FILE);
+        // oxlint-disable-next-line no-await-in-loop -- same member
+        if ((await folderDigest(path.join(companionPath, ...relative.split("/")), own)) === mine) {
+          continue;
+        }
+      }
+    }
+    carried.push(name);
+  }
+  return carried;
+}
+
 export type GroupStatus = "pushed" | "unchanged" | "waiting" | "failed";
 
 export interface GroupSubmission {
@@ -696,28 +826,21 @@ export async function submitGroups(
   const submissions: GroupSubmission[] = [];
   for (const group of groups) {
     const inGroup = members.filter((member) => member.group === group);
-    const waitingFor = inGroup
-      .filter((member) => member.state === "active" && !names.includes(member.name))
-      .map((member) => member.name);
+    const waitingFor = waitingMembers(inGroup, group, names);
     if (waitingFor.length > 0) {
       submissions.push({ group, status: "waiting", waitingFor });
       continue;
     }
-    const pushed: string[] = [];
-    const ifMissing: string[] = [];
-    const unknown: string[] = [];
     const submitted = readSubmittedFolders(companionPath, options.stateHome);
-    for (const member of inGroup) {
-      const named = names.includes(member.name);
-      if (member.state === "dropped" && !named) continue;
-      const edited =
-        (named && member.state !== "submitted") ||
-        // oxlint-disable-next-line no-await-in-loop -- a few members per group
-        (await editedSinceSubmit(local, companionPath, sourcePathOf(type, member.name), submitted));
-      if (edited === null) unknown.push(member.name);
-      else if (edited || named) pushed.push(member.name);
-      if (edited === false && named) ifMissing.push(member.name);
-    }
+    // oxlint-disable-next-line no-await-in-loop -- one group at a time
+    const { pushed, ifMissing, unknown } = await planPush(
+      local,
+      companionPath,
+      type,
+      inGroup,
+      names,
+      submitted,
+    );
     if (unknown.length > 0) {
       const detail = `Git could not tell whether ${unknown.join(", ")} changed locally; nothing was pushed.`;
       const push: GroupPush = { ...failed("failed", detail, null), group, changes: [] };

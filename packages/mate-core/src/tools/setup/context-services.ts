@@ -199,6 +199,8 @@ export interface PluginContextServices {
   services: { mcp: McpService; instructions: InstructionsService; templates: TemplatesService };
   /** MCP server names and instruction block keys registered during this run. */
   registered: { mcpServers: Set<string>; instructionBlocks: Set<string> };
+  /** Set by `mcp.withhold`: finalize keeps this plugin's previous MCP servers and their record. */
+  mcpWithheld?: boolean;
 }
 
 export interface ContextServiceMediatorOptions {
@@ -207,6 +209,8 @@ export interface ContextServiceMediatorOptions {
   hostingProviders: HostingProvider[];
   assetOverrideRoots?: string[];
   warn(message: string): void;
+  /** MCP server names enabled Capabilities declare as contributions, by name to plugin id. */
+  declaredMcpOwners?(): Promise<ReadonlyMap<string, string>>;
 }
 
 /**
@@ -244,10 +248,24 @@ export class ContextServiceMediator {
           );
           return;
         }
+        if (entry?.mcpWithheld) return;
         for (const provider of hosts) {
           await provider.hosting.mcp?.register(ctx, descriptor);
         }
         registered.mcpServers.add(descriptor.name);
+      },
+      owners: async () => {
+        const owners = new Map(await this.options.declaredMcpOwners?.());
+        for (const [otherId, other] of this.byPlugin) {
+          if (otherId === pluginId) continue;
+          for (const name of other.registered.mcpServers) owners.set(name, otherId);
+        }
+        owners.forEach((owner, name) => owner === pluginId && owners.delete(name));
+        return owners;
+      },
+      withhold: (reason: string) => {
+        if (entry) entry.mcpWithheld = true;
+        warn(reason);
       },
     };
 
@@ -297,6 +315,13 @@ export class ContextServiceMediator {
     return entry;
   }
 
+  /** MCP server names any plugin registered in this pass. */
+  registeredMcpServers(): Set<string> {
+    return new Set(
+      [...this.byPlugin.values()].flatMap((entry) => [...entry.registered.mcpServers]),
+    );
+  }
+
   /**
    * Reconcile the bookkeeping manifest: remove provider entries that were
    * previously registered but not re-registered in this run, then persist the
@@ -307,11 +332,17 @@ export class ContextServiceMediator {
     const manifestPath = getContextServicesManifestPath(ctx.companionPath, frameworkName);
     const manifest = await loadManifest(manifestPath);
 
+    /** A name that moved to another plugin this pass is that plugin's now, never removed. */
+    const registeredThisPass = this.registeredMcpServers();
+
     for (const [pluginId, entry] of this.byPlugin) {
       const previous = manifest.plugins[pluginId] ?? {};
-      const staleMcpServers = (previous.mcpServers ?? []).filter(
-        (name) => !entry.registered.mcpServers.has(name),
-      );
+      const mcpServers = entry.mcpWithheld
+        ? (previous.mcpServers ?? [])
+        : [...entry.registered.mcpServers];
+      const staleMcpServers = entry.mcpWithheld
+        ? []
+        : (previous.mcpServers ?? []).filter((name) => !registeredThisPass.has(name));
       const staleBlocks = (previous.instructionBlocks ?? []).filter(
         (blockKey) => !entry.registered.instructionBlocks.has(blockKey),
       );
@@ -329,9 +360,7 @@ export class ContextServiceMediator {
       }
 
       const record: PluginServiceRecord = {};
-      if (entry.registered.mcpServers.size > 0) {
-        record.mcpServers = [...entry.registered.mcpServers];
-      }
+      if (mcpServers.length > 0) record.mcpServers = mcpServers;
       if (entry.registered.instructionBlocks.size > 0) {
         record.instructionBlocks = [...entry.registered.instructionBlocks];
       }

@@ -19,10 +19,12 @@ import {
   discardSubmittedArrivals,
   editedAfterSubmitWarning,
   planSubmittedArrivals,
+  type SubmittedArrivals,
   type SubmittedLayout,
 } from "../../runtime/submitted-arrivals";
 import { FRAMEWORK_NAME } from "../../framework";
-import { defaultArtifactType } from "../delivery/staging/registry";
+import { artifactTypes, defaultArtifactType } from "../delivery/staging/registry";
+import { loadWorkflow } from "../workflow/declaration";
 import { LaunchPreflightError } from "./types";
 
 type GitCommandResult = GitResult;
@@ -46,13 +48,30 @@ export interface CompanionGitSyncResult {
   warnings?: string[];
 }
 
-/** The default artifact type's folders, as the arrival check reads them. */
-function submittedLayout(): SubmittedLayout {
-  const type = defaultArtifactType();
-  return {
+/**
+ * The folders of the companion's artifact types, as the arrival check reads them: the built-in
+ * type's, then those its workflow declares. An invalid declaration leaves the built-in type.
+ */
+async function submittedLayouts(companionPath: string): Promise<SubmittedLayout[]> {
+  const verdict = await loadWorkflow(companionPath).catch(() => null);
+  const types = verdict?.ok ? artifactTypes(undefined, verdict.workflow) : [defaultArtifactType()];
+  return types.map((type) => ({
     source: type.source,
-    archiveRoot: type.archiveRoot,
+    ...(type.archiveRoot === undefined
+      ? { trailer: type.name }
+      : { archiveRoot: type.archiveRoot }),
     recordName: (id) => (type.isRecordId(id) ? type.recordName(id) : null),
+  }));
+}
+
+/** The arrivals of every layout as one plan; a folder belongs to one layout. */
+function mergeArrivals(plans: readonly SubmittedArrivals[]): SubmittedArrivals {
+  return {
+    discard: plans.flatMap((plan) => plan.discard),
+    discardFiles: Object.assign({}, ...plans.map((plan) => plan.discardFiles)),
+    committed: Object.assign({}, ...plans.map((plan) => plan.committed)),
+    edited: plans.flatMap((plan) => plan.edited),
+    forget: plans.flatMap((plan) => plan.forget),
   };
 }
 
@@ -146,13 +165,13 @@ export class CompanionGitSync {
     }
 
     const localGit = companionGit(companionPath, { prompt: "never", env: this.options.env });
-    const arrivals = await planSubmittedArrivals(
-      localGit,
-      companionPath,
-      target.ref,
-      submittedLayout(),
-      this.options.stateHome,
+    // Read-only plans, one per type: read together.
+    const plans = await Promise.all(
+      (await submittedLayouts(companionPath)).map((layout) =>
+        planSubmittedArrivals(localGit, companionPath, target.ref, layout, this.options.stateHome),
+      ),
     );
+    const arrivals = mergeArrivals(plans);
     const discarded = await discardSubmittedArrivals(
       localGit,
       companionPath,

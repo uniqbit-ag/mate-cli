@@ -18,6 +18,7 @@ import {
   writeOpenSpecStub,
   writeUvStub,
   removeScenarios,
+  type E2EScenario,
 } from "./cli-e2e-support";
 
 setDefaultTimeout(DEFAULT_TEST_TIMEOUT_MS);
@@ -68,6 +69,25 @@ describe("mate CLI e2e: setup, link and doctor", () => {
     expect(config).not.toContain("react-doctor");
   });
 
+  test("setup offers no friction capability: selecting it writes no friction guidance", async () => {
+    const scenario = await createScenario("mate-cli-e2e-setup-retired-capability-");
+
+    const result = await setupCompanion(scenario, [], {
+      allowedAgents: ["claude", "opencode"],
+      capabilities: ["openspec", "rtk", "friction"],
+    });
+    expect(result.exitCode).toBe(0);
+    expect((await installCompanion(scenario)).exitCode).toBe(0);
+
+    const read = (name: string) =>
+      fs.readFile(path.join(scenario.companion, name), "utf8").catch(() => "");
+    expect(await read(".claude/settings.local.json")).toContain("Bash(rtk:*)");
+    expect(await read(".claude/settings.local.json")).not.toContain("cap friction");
+    for (const name of ["CLAUDE.md", "AGENTS.md"]) {
+      expect(await read(name)).not.toContain("## Friction");
+    }
+  });
+
   test("flagged setup persists selected package managers", async () => {
     const scenario = await createScenario("mate-cli-e2e-setup-package-managers-");
     await writeUvStub(scenario);
@@ -89,8 +109,8 @@ describe("mate CLI e2e: setup, link and doctor", () => {
     expect(config).toContain("- uv");
   });
 
-  test("setup with the openspec capability activates mate-v1", async () => {
-    const scenario = await createScenario("mate-cli-e2e-openspec-mate-v1-");
+  test("setup with the openspec capability activates mate-full", async () => {
+    const scenario = await createScenario("mate-cli-e2e-openspec-mate-full-");
 
     const result = await setupCompanion(scenario, [], {
       allowedAgents: ["claude"],
@@ -108,8 +128,12 @@ describe("mate CLI e2e: setup, link and doctor", () => {
     const openspecConfig = parse(
       await fs.readFile(path.join(scenario.companion, "openspec", "config.yaml"), "utf8"),
     );
-    expect(openspecConfig.schema).toBe("mate-v1");
+    expect(openspecConfig.schema).toBe("mate-full");
     expect(openspecConfig.rules.specs).toEqual([expect.stringMatching(/^\[mate\] /)]);
+    await fs.access(
+      path.join(scenario.companion, "openspec", "schemas", "mate-full", "schema.yaml"),
+    );
+    // The legacy name keeps resolving in a new companion.
     await fs.access(path.join(scenario.companion, "openspec", "schemas", "mate-v1", "schema.yaml"));
   });
 
@@ -358,6 +382,23 @@ describe("mate CLI e2e: setup, link and doctor", () => {
     await expect(fs.access(path.join(scenario.home, ".mate", "config.yaml"))).rejects.toThrow();
   });
 
+  test("triage writes a session that names the Mate issue repository", async () => {
+    const scenario = await createScenario("mate-cli-e2e-triage-");
+
+    const result = await runMate(scenario, {
+      cwd: scenario.root,
+      args: ["triage", "--no-launch"],
+      env: { PATH: `${scenario.bin}:${path.dirname(process.execPath)}:/usr/bin:/bin` },
+    });
+
+    expect(result.exitCode).toBe(0);
+    const contextPath = result.stdout.match(/context: +(\S+)/)?.[1];
+    expect(contextPath?.startsWith(path.join(scenario.home, ".mate", "triage"))).toBe(true);
+    expect(await fs.readFile(contextPath!, "utf8")).toContain(
+      "Issue repository: uniqbit-ag/mate-cli",
+    );
+  });
+
   test("linking and doctor succeed in one isolated flow", async () => {
     const scenario = await createScenario("mate-cli-e2e-repo-flow-");
 
@@ -394,14 +435,14 @@ describe("mate CLI e2e: setup, link and doctor", () => {
     expect(report.policy.allowedAgents.length).toBeGreaterThan(0);
   });
 
-  test("companion list returns all linked repositories", async () => {
+  test("companion list in the companion returns all linked repositories", async () => {
     const scenario = await createScenario("mate-cli-e2e-repo-list-");
 
     expect((await setupCompanion(scenario)).exitCode).toBe(0);
     expect((await linkRepository(scenario)).exitCode).toBe(0);
 
     const result = await runMate(scenario, {
-      cwd: scenario.working,
+      cwd: scenario.companion,
       args: ["companion", "list"],
     });
 
@@ -412,6 +453,24 @@ describe("mate CLI e2e: setup, link and doctor", () => {
     expect(parsed.repositories).toHaveLength(1);
     expect(parsed.repositories[0].id).toBe("app");
     expect(parsed.repositories[0].path).toBe(scenario.working);
+  });
+
+  test("companion list in a working repository returns its connected companion", async () => {
+    const scenario = await createScenario("mate-cli-e2e-companion-list-");
+
+    expect((await setupCompanion(scenario)).exitCode).toBe(0);
+    expect((await linkRepository(scenario)).exitCode).toBe(0);
+
+    const result = await runMate(scenario, {
+      cwd: scenario.working,
+      args: ["companion", "list"],
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      workingRepository: { id: "app", path: scenario.working },
+      companions: [{ path: scenario.companion, repositoryId: "app", active: true }],
+    });
   });
 
   test("doctor reports companion state when no repos are linked", async () => {

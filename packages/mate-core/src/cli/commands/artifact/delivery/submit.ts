@@ -61,10 +61,12 @@ function renderHuman(result: SubmitResult): string[] {
  * warnings to stderr, and runs the artifact type's check (`openspec validate <change>
  * --strict`). The other active changes of its Delivery Group (`<repository>/<delivery-branch>`,
  * or `change/<change>` without a branch) in this checkout join when all their tasks are
- * checked. The group is then pushed whole, in one secret-scanned commit that sets
- * `state: submitted` in each `delivery.yaml` and carries a `Mate-Transaction` trailer, to the
- * pending branch, the inbox `mate/inbox`. While a member has open tasks or fails its check the
- * group answers `waiting`, naming it, and nothing is pushed or changed. The commit is built in a
+ * checked, and its `submitted` members edited since this checkout submitted or took them go
+ * through the same steps and get a result entry. The group is then pushed whole, in one
+ * secret-scanned commit that sets `state: submitted` in each `delivery.yaml` and carries a
+ * `Mate-Transaction` trailer, to the pending branch, the inbox `mate/inbox`. While a member has
+ * open tasks or fails its check the group answers `waiting`, naming it, and nothing is pushed or
+ * changed. The commit is built in a
  * temporary worktree, pushed without force and rebuilt up to three times; the checkout is not
  * touched.
  * Nothing is archived and no canonical spec is written; publication does that after the merge.
@@ -81,8 +83,13 @@ function renderHuman(result: SubmitResult): string[] {
  *   companion's Git mode is not `auto`.
  * - `--json` — emit an array of {@link SubmitResult} (with `--drop`, of drop results), one per
  *   change.
- * @remarks `needs-branch` and `waiting` are answers, not refusals (exit 0). A failed check or
- * push exits non-zero and changes no state; running submit again retries, and an unchanged
+ * @remarks `needs-branch` and `waiting` are answers, not refusals (exit 0). A change whose plan
+ * leaves a required stage before `submit` open (unchecked tasks, or no tasks) is submitted with a
+ * warning of kind `stage-open` naming the stage, what is open and the skill to run. Submitting
+ * counts every other step before `mate-submit-change` that was not reported with
+ * `mate workflow done`, named in a warning of kind `step-counted`. Like every warning neither
+ * blocks. A failed check
+ * or push exits non-zero and changes no state; running submit again retries, and an unchanged
  * resubmit adds no commit. A change is `submitted` only once it is on the pending branch.
  * Refused, with nothing recorded, when Git would settle a named change's delivery as merged
  * while a work tree that has its branch checked out holds modified tracked files.
@@ -106,7 +113,10 @@ export async function runArtifactSubmitCommand(
   if (flags.drop === true) {
     const environment = await resolveDeliveryEnvironment(deps);
     if ("error" in environment) return refuse(environment.error);
-    const dropped: DropResult[] = await dropChanges(environment.companionPath, changes, deps);
+    const dropped: DropResult[] = await dropChanges(environment.companionPath, changes, {
+      ...deps,
+      ...(environment.artifactType ? { artifactType: environment.artifactType } : {}),
+    });
     if (dropped.some((result) => result.status === "refused")) process.exitCode = 1;
     if (json) emitOut(JSON.stringify(dropped));
     else for (const result of dropped) emitOut(result.message);

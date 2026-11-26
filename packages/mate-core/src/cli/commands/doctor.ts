@@ -6,6 +6,9 @@ import { parse as parseYaml } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { gitEnvironment } from "../../runtime/companion-git";
+import { readFrictionView } from "../../lib/friction/view/read";
+import { selectFriction } from "../../lib/friction/view/select";
+import { readFrictionSwitch } from "../../runtime/friction-switch";
 import { checkoutCommonDir, checkoutAt, sameClone } from "../../runtime/git-layout";
 import { physicalPath } from "../../runtime/physical-path";
 import { otherServingClaudeWrapRoot } from "../../runtime/serving-claude-wrap";
@@ -22,6 +25,7 @@ import type { GlobalConfigStore } from "../../lib/orchestrator/global-config-sto
 import { pathIsDirectory } from "../../lib/fs-utils";
 import { resolveRootContext, type RootContext } from "../../lib/orchestrator/root-context";
 import type { CapabilityConfig, FrameworkConfig, HubMember } from "../../lib/orchestrator/types";
+import { missingMcpVariables, type MissingMcpVariable } from "../../lib/mcp-manager/resolve";
 import { locateOpenSpec, type OpenSpecLocation } from "../../lib/openspec-cli";
 import { MATE_CLAUDE_PLUGIN_NAME, withoutMateWrapperDirs } from "../../lib/package-paths";
 import {
@@ -57,11 +61,15 @@ import { printSection, renderKeyValueTable, renderTable } from "./status";
 
 interface DoctorDeps {
   globalConfigStore?: GlobalConfigStore;
+  /** `false` reports without repairing the repo-local registry, so the evidence stays as found. */
+  write?: boolean;
   cwd?: string;
   pathValue?: string;
   /** Returns a member checkout's HEAD commit, or null when unreadable. */
   gitHead?: (memberPath: string) => string | null;
   inspectPlugins?: (companionPath: string) => Promise<PluginInspection>;
+  /** Appliance startup: this machine's local plugins neither load nor count. */
+  committedPluginsOnly?: boolean;
   /** Loads the companion's declared plugins so their Capabilities contribute. */
   hydratePlugins?: (companionPath: string) => Promise<void>;
   inspectClaudePlugins?: (
@@ -71,6 +79,8 @@ interface DoctorDeps {
   /** Environment `MATE_AUDIENCE` is read from; defaults to the process environment. */
   env?: Record<string, string | undefined>;
   createProgress?: typeof createStartupProgress;
+  /** Time the friction window ends at; defaults to now. */
+  now?: Date;
 }
 
 export type DoctorKind = "core" | "working" | "companion" | "hub";
@@ -110,6 +120,8 @@ export interface DoctorReport {
   audiences?: { declared: string[]; active: string | null };
   /** Set when `MATE_AUDIENCE` names an audience the companion does not declare. */
   audienceError?: string;
+  /** Variables the active audience's `mcpManager` servers need but the environment does not set; names only. */
+  mcpMissingVariables?: MissingMcpVariable[];
   /** IDs of the capabilities the verified plugins provide. */
   pluginCapabilities?: string[];
   engineRequirement?: { range: string; ok: boolean; detail: string };
@@ -130,6 +142,36 @@ export interface DoctorReport {
   resolutionFailures: Array<{ companionPath: string; message: string }>;
   /** Present inside a Git Checkout of a linked clone, or a worktree Git no longer recognizes. */
   checkout?: DoctorCheckout;
+  /** Present while the Friction Switch is on. */
+  friction?: DoctorFriction;
+}
+
+export interface DoctorFriction {
+  days: number;
+  events: number;
+  top: { fingerprint: string; events: number } | null;
+}
+
+const DOCTOR_FRICTION_DAYS = 7;
+
+function collectFriction(
+  companionPath: string,
+  env: Record<string, string | undefined>,
+  now?: Date,
+): DoctorFriction {
+  const view = readFrictionView(
+    { companion: companionPath },
+    { days: DOCTOR_FRICTION_DAYS, homeDir: env.HOME, now },
+  );
+  const { groups } = selectFriction(view, { state: "open" });
+  let top: DoctorFriction["top"] = null;
+  for (const group of groups) {
+    if (!top || group.events > top.events) {
+      top = { fingerprint: group.fingerprint, events: group.events };
+    }
+  }
+  const events = groups.reduce((sum, group) => sum + group.events, 0);
+  return { days: DOCTOR_FRICTION_DAYS, events, top };
 }
 
 export interface DoctorCheckout {
@@ -525,6 +567,11 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
     if (warnings.length > 0) report.openspecRuleWarnings = warnings;
   }
 
+  if (root.config && (kind === "working" || kind === "companion")) {
+    const missing = missingMcpVariables(root.config, readAudienceSelection(env), env);
+    if (missing.length > 0) report.mcpMissingVariables = missing;
+  }
+
   if (root.rootPath && (kind === "working" || kind === "companion")) {
     const warnings = collectCompanionInstructionWarnings(root.rootPath);
     if (warnings.length > 0) report.companionInstructionWarnings = warnings;
@@ -534,7 +581,13 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
     /** Doctor reports plugin failures below; hydration supplies their contributions. */
     const hydrate =
       deps.hydratePlugins ??
-      ((companionPath) => hydrateDynamicPlugins({ companionPath, env, warn: () => {} }));
+      ((companionPath) =>
+        hydrateDynamicPlugins({
+          companionPath,
+          env,
+          warn: () => {},
+          includeLocal: !deps.committedPluginsOnly,
+        }));
     await hydrate(root.rootPath);
     const inspectClaudePlugins = deps.inspectClaudePlugins ?? inspectClaudePluginDirectories;
     const inspection = await inspectClaudePlugins(root.rootPath, root.config);
@@ -544,10 +597,16 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
 
   if (root.rootPath && root.config) {
     const inspect =
-      deps.inspectPlugins ?? ((companionPath) => inspectDeclaredPlugins(companionPath, { env }));
+      deps.inspectPlugins ??
+      ((companionPath) =>
+        inspectDeclaredPlugins(companionPath, { env, includeLocal: !deps.committedPluginsOnly }));
     const inspection = await inspect(root.rootPath);
     report.pluginFailures = inspection.failures;
     report.pluginCapabilities = inspection.capabilities;
+  }
+
+  if (root.rootPath && readFrictionSwitch(env.HOME)) {
+    report.friction = collectFriction(root.rootPath, env, deps.now);
   }
 
   return report;
@@ -728,6 +787,15 @@ function renderHumanReport(report: DoctorReport): void {
       ]),
     );
   }
+  if (report.mcpMissingVariables) {
+    printSection(
+      "MCP Server Variables",
+      renderTable(
+        ["Server", "Missing variable"],
+        report.mcpMissingVariables.map((entry) => [entry.server, entry.variable]),
+      ),
+    );
+  }
   if (report.hub) printSection("Hub Members", renderHubMembers(report.hub.members));
   // Companions with no drift produce no section at all: required plugins are
   // silent when healthy.
@@ -779,6 +847,16 @@ function renderHumanReport(report: DoctorReport): void {
 
   if (report.checkout) printSection("Checkout", renderCheckout(report.checkout));
 
+  if (report.friction) {
+    const { days, events, top } = report.friction;
+    const rows: Array<[string, string]> = [
+      [`Events, last ${days} days`, String(events)],
+      ["Most frequent", top ? `${top.fingerprint} (${top.events})` : "none"],
+    ];
+    if (top) rows.push(["Next action", `${FRAMEWORK_NAME} triage`]);
+    printSection("Friction", renderKeyValueTable(rows));
+  }
+
   printSection(
     "Resolution Failures",
     report.resolutionFailures.length > 0
@@ -800,7 +878,8 @@ function renderHumanReport(report: DoctorReport): void {
  * audience) are verified strictly (installed, loadable); any failure is named
  * on stderr and exits non-zero, as is an undeclared `MATE_AUDIENCE` or a
  * Capability whose runtime contributions fail to load.
- * `--json` emits the same report as one JSON document.
+ * `--json` emits the same report as one JSON document. `--frozen-plugins`
+ * ignores local plugins, for appliance startup verification.
  */
 /** One step: the checks run concurrently, so finer steps would finish in arbitrary order. */
 async function collectWithProgress(deps: DoctorDeps): Promise<DoctorReport> {
@@ -814,7 +893,8 @@ async function collectWithProgress(deps: DoctorDeps): Promise<DoctorReport> {
 
 export async function runDoctorCommand(argv: string[] = [], deps: DoctorDeps = {}): Promise<void> {
   const json = argv.includes("--json");
-  const report = json ? await collectDoctorReport(deps) : await collectWithProgress(deps);
+  const checkDeps = { ...deps, committedPluginsOnly: argv.includes("--frozen-plugins") };
+  const report = json ? await collectDoctorReport(checkDeps) : await collectWithProgress(checkDeps);
   if (json) await writeJsonStdout(report);
   else renderHumanReport(report);
 

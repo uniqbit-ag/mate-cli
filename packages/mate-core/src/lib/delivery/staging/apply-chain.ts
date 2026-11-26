@@ -127,9 +127,11 @@ export function describeFailure(failure: ChainFailure, defaultBranch: string): s
   if (failure.kind === "stale") {
     return `${change}: "${inboxText(failure.failure.requirement)}" in ${inboxText(failure.failure.capability)} changed on ${defaultBranch} since the delta was written`;
   }
-  return failure.failure
-    ? `${change}: its ${inboxText(failure.failure.capability)} delta for "${inboxText(failure.failure.requirement)}" no longer applies to ${defaultBranch}`
-    : `${change}: it no longer applies to ${defaultBranch} (${inboxText(failure.detail)})`;
+  if (!failure.failure) {
+    return `${change}: it no longer applies to ${defaultBranch} (${inboxText(failure.detail)})`;
+  }
+  const { capability, requirement, reason } = failure.failure;
+  return `${change}: its ${inboxText(capability)} delta for "${inboxText(requirement)}" no longer applies to ${defaultBranch}${reason ? ` (${inboxText(reason)})` : ""}`;
 }
 
 /** `value` as one POSIX shell word: names come from teammates' specs. */
@@ -137,8 +139,16 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-/** How to get past a failure. */
-export function failureRemedy(failure: ChainFailure): string {
+/** `mate artifact submit` for `names`, each quoted as one shell word. */
+function submitCommand(names: readonly string[]): string {
+  return `\`mate artifact submit${names.map((name) => ` ${shellQuote(name)}`).join("")}\``;
+}
+
+/**
+ * How to get past a failure. With `resubmit`, the changes a submit named, the remedy ends with
+ * submitting them again instead of publishing: submit's pre-flight found the failure.
+ */
+export function failureRemedy(failure: ChainFailure, resubmit?: readonly string[]): string {
   const versions = failure.kind === "stale" ? failure.failure.versions : undefined;
   // A name that does not print as it is cannot be passed on a command line.
   const printable =
@@ -153,12 +163,20 @@ export function failureRemedy(failure: ChainFailure): string {
     versions.ours !== null &&
     versions.theirs !== null
   ) {
-    return `Resolve it from any machine: write the requirement as it should read to a file, run \`mate artifact resolve ${shellQuote(failure.change)} --capability ${shellQuote(failure.failure.capability)} --requirement ${shellQuote(failure.failure.requirement)} --file <file>\` (one triple per requirement it reports unresolved), then publish again.`;
+    const next = resubmit ? `run ${submitCommand(resubmit)} again` : "publish again";
+    return `Resolve it from any machine: write the requirement's body as it should read (without its \`### Requirement:\` heading) to a file, run \`mate artifact resolve ${shellQuote(failure.change)} --capability ${shellQuote(failure.failure.capability)} --requirement ${shellQuote(failure.failure.requirement)} --file <file>\` (one triple per requirement it reports unresolved), then ${next}.`;
   }
   const change = failure.change === null ? "the change that changes it" : inboxText(failure.change);
   const keep =
     failure.kind === "stale" && failure.failure.overwrites === false && versions?.ours === null
       ? " To keep it as it is, submit it again unchanged: that accepts the conflict."
       : "";
-  return `Fix the delta spec of ${change}, submit it again with \`mate artifact submit\`, then publish again.${keep}`;
+  // Submitting the fixed change runs the pre-flight again; only other named changes need a rerun.
+  const others = resubmit?.filter((name) => name !== failure.change) ?? [];
+  const next = !resubmit
+    ? ", then publish again"
+    : others.length > 0
+      ? `, then run ${submitCommand(others)} again`
+      : "";
+  return `Fix the delta spec of ${change}, submit it again with \`mate artifact submit\`${next}.${keep}`;
 }

@@ -259,6 +259,11 @@ present:
   up as uncommitted changes. A restart with a matching installed tree
   reinstalls nothing.
 
+Restores and startup verification ignore
+[local plugins](/docs/reference/commands#local-plugins).
+`mate install --frozen-plugins` does not read `.mate/config/framework.local.yaml`,
+so a broken or unavailable local entry cannot stop an appliance.
+
 The registry token and `MATE_GIT_CLONE_TOKEN` exist only for startup. They are
 handed to the clone and restore processes alone, redacted from printed
 output, and removed from the environment before Studio starts, so agent
@@ -345,9 +350,32 @@ services:
   the base list plus the active audience's. Built-in capabilities such as
   `openspec` or `tokensave` stay in the base list, because they change what
   `mate install` writes.
+- **MCP servers follow the audience.** An audience selects from the companion's
+  [`mcpManager`](/docs/capabilities#mcp-manager) servers with `enable` and
+  `disable`, each holding `servers` and `groups` lists. It cannot declare
+  servers of its own:
+
+  ```yaml
+  audiences:
+    ba:
+      mcpManager:
+        enable:
+          groups: [acme-data]
+        disable:
+          servers: [acme-db]
+  ```
+
+  The effective servers are the base `enabled` ones; then the audience's
+  `enable.groups` are added and its `disable.groups` removed; then its
+  `enable.servers` are added and its `disable.servers` removed. A named server
+  therefore wins over a group. Naming one server or group in both `enable` and
+  `disable` is an error. Sync writes the servers of the audience `MATE_AUDIENCE`
+  selects into the committed `.mcp.json` and `.opencode/opencode.json`, as it
+  does for plugins, so give each audience its own checkout.
+
 - **Validation.** Audience names are lowercase letters, digits and hyphens (up
   to 64, starting with a letter). An audience may contain only `capabilities`,
-  `plugins` and `studio.terminal.agent`. A capability may not be built in, or
+  `plugins`, `studio.terminal.agent` and `mcpManager`. A capability may not be built in, or
   declared in both base and an audience, or twice in one audience. A package may not be declared in both base and an
   audience, or twice in one audience; two audiences may share a package only at
   the same version. A hub may not declare audiences.
@@ -487,8 +515,8 @@ fails, no exact-version image is published and the channel tag does not move.
 Studio has two modes, chosen with the **Mode** switch at the top of its sidebar.
 **Engineering** offers the Overview of active changes, Workflow and Skills;
 **Analysis** offers an Overview of published state: specs, recently shipped
-changes and hosted reports. Vault, Specs, Usage, Reports and Graph are offered in
-both. Graph draws the companion's specs with their Areas and repositories, linked
+changes and hosted reports. Vault, Specs, Usage, Friction, Reports and Graph are
+offered in both. Graph draws the companion's specs with their Areas and repositories, linked
 by mentions and by the archived changes they shipped in.
 
 - **The appliance offers Analysis only.** Its entrypoint starts Studio with

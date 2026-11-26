@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 
 import {
   DEFAULT_SECRET_DENY_PATTERNS,
@@ -90,7 +90,7 @@ describe("tokensavePlugin.apply", () => {
     runMock = mock(() => ({ ok: true, stderr: "", stdout: "" }));
     runCommandMock = mock(async () => {});
     runShellCommandMock = mock(async () => {});
-    rustcVersionMock = mock(() => ({ ok: true, stderr: "", stdout: "rustc 1.91.0" }));
+    rustcVersionMock = mock(() => ({ ok: true, stderr: "", stdout: "rustc 1.95.0" }));
     tokensaveDeps.run = runMock;
     tokensaveDeps.runCommand = runCommandMock;
     tokensaveDeps.runShellCommand = runShellCommandMock;
@@ -132,47 +132,49 @@ describe("tokensavePlugin.apply", () => {
     expect(runShellCommandMock).not.toHaveBeenCalled();
 
     // The graph build (init/sync) is the job of `mate cap index`, never plugin apply.
-    expect(calls.map((c) => c[0][0])).toEqual(["--version", "upgrade", "install", "install"]);
+    expect(calls.map((c) => c[0][0])).toEqual(["--version", "install", "install"]);
     expect(calls[0][1]).toBe(repoDir);
   });
 
-  test("continues setup when the automatic upgrade fails", async () => {
-    const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
-    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));
-    tempRoots.push(companionDir, repoDir);
+  test.each([
+    ["7.15.0", false],
+    ["7.14.0", true],
+    ["7.16.0", true],
+  ])(
+    "setup and the install plan never upgrade tokensave %s, warning: %p",
+    async (installed, warns) => {
+      const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
+      const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));
+      tempRoots.push(companionDir, repoDir);
+      runMock = mock(() => ({ ok: true, stderr: "", stdout: `tokensave ${installed}\n` }));
+      tokensaveDeps.run = runMock;
 
-    runMock = mock((args: string[]) => {
-      if (args[0] === "upgrade") {
-        return { ok: false, stderr: "network unavailable", stdout: "" };
+      const stderrWrites: string[] = [];
+      const originalStderrWrite = process.stderr.write.bind(process.stderr);
+      process.stderr.write = ((chunk: string | Uint8Array) => {
+        stderrWrites.push(String(chunk));
+        return true;
+      }) as typeof process.stderr.write;
+      try {
+        await tokensavePlugin.apply(
+          makeCtx(companionDir, { repoPath: repoDir, providers: ["claude"] }),
+        );
+        await tokensavePlugin
+          .getInstallRequirements?.({ config: makeCtx(companionDir).config })[0]
+          ?.update?.();
+      } finally {
+        process.stderr.write = originalStderrWrite;
       }
-      return { ok: true, stderr: "", stdout: "" };
-    });
-    tokensaveDeps.run = runMock;
 
-    const stderrWrites: string[] = [];
-    const originalStderrWrite = process.stderr.write.bind(process.stderr);
-    process.stderr.write = ((chunk: string | Uint8Array) => {
-      stderrWrites.push(String(chunk));
-      return true;
-    }) as typeof process.stderr.write;
-
-    try {
-      await tokensavePlugin.apply(
-        makeCtx(companionDir, { repoPath: repoDir, providers: ["claude"] }),
-      );
-    } finally {
-      process.stderr.write = originalStderrWrite;
-    }
-
-    expect(runMock.mock.calls.map((call) => call[0][0])).toEqual([
-      "--version",
-      "upgrade",
-      "install",
-    ]);
-    expect(runMock.mock.calls[1][0]).toEqual(["upgrade"]);
-    expect(stderrWrites.join("")).toContain("automatic upgrade failed");
-    expect(stderrWrites.join("")).toContain("network unavailable");
-  });
+      expect(runMock.mock.calls.map((call) => call[0][0])).not.toContain("upgrade");
+      const warnings = stderrWrites.filter((line) => line.includes("pins 7.15.0"));
+      expect(warnings).toHaveLength(warns ? 2 : 0);
+      for (const warning of warnings) {
+        expect(warning).toContain(`tokensave ${installed} is installed`);
+        expect(warning).toContain("cargo install --locked tokensave --version 7.15.0");
+      }
+    },
+  );
 
   test("runs the native agent installer per active provider in sorted order during setup", async () => {
     const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
@@ -329,7 +331,7 @@ describe("tokensavePlugin.apply", () => {
       "install",
       "aovestdipaperino/tap/tokensave",
     ]);
-    // Verifies install then re-checks the binary; no init/sync — that is `mate cap index`.
+    // Probes the binary, re-probes it after the install; no init/sync — that is `mate cap index`.
     expect(runMock.mock.calls.map((call) => call[0][0])).toEqual([
       "--version",
       "--version",
@@ -358,13 +360,56 @@ describe("tokensavePlugin.apply", () => {
       makeCtx(companionDir, { repoPath: repoDir, providers: ["claude"] }),
     );
 
-    expect(runCommandMock).toHaveBeenCalledWith("cargo", ["install", "--locked", "tokensave"]);
+    expect(runCommandMock).toHaveBeenCalledWith("cargo", [
+      "install",
+      "--locked",
+      "tokensave",
+      "--version",
+      "7.15.0",
+    ]);
     expect(
       tokensavePlugin.getInstallRequirements?.({
         companionPath: companionDir,
         config: makeCtx(companionDir).config,
       })[0]?.command,
-    ).toBe("cargo install --locked tokensave");
+    ).toBe("cargo install --locked tokensave --version 7.15.0");
+  });
+
+  test("plans the pinned cargo install over brew without probing rustc", async () => {
+    const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));
+    tempRoots.push(companionDir, repoDir);
+
+    tokensaveDeps.isCommandOnPath = (command) => command === "brew" || command === "cargo";
+    tokensaveDeps.pathValue = () => "/opt/homebrew/bin:/usr/bin";
+
+    expect(
+      tokensavePlugin.getInstallRequirements?.({
+        companionPath: companionDir,
+        config: makeCtx(companionDir).config,
+      })[0]?.command,
+    ).toBe("cargo install --locked tokensave --version 7.15.0");
+    expect(rustcVersionMock).not.toHaveBeenCalled();
+  });
+
+  test("installs with brew when Rust is below the pinned release's minimum", async () => {
+    tokensaveDeps.rustcVersion = () => ({ ok: true, stderr: "", stdout: "rustc 1.94.0" });
+    tokensaveDeps.isCommandOnPath = (command) => command === "brew" || command === "cargo";
+    tokensaveDeps.pathValue = () => "/opt/homebrew/bin:/usr/bin";
+    const [requirement] = tokensavePlugin.getInstallRequirements!({
+      config: makeCtx("/tmp/acme").config,
+    });
+
+    const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await requirement!.install();
+    } finally {
+      stderr.mockRestore();
+    }
+
+    expect(runCommandMock.mock.calls).toEqual([
+      ["brew", ["install", "aovestdipaperino/tap/tokensave"]],
+    ]);
   });
 
   test("rejects cargo installation when Rust is below the minimum", async () => {
@@ -380,7 +425,7 @@ describe("tokensavePlugin.apply", () => {
     tokensaveDeps.rustcVersion = () => ({
       ok: true,
       stderr: "",
-      stdout: "rustc 1.90.0 (abc 2026-01-01)",
+      stdout: "rustc 1.94.0 (abc 2026-01-01)",
     });
     tokensaveDeps.isCommandOnPath = (command) => command === "cargo";
     tokensaveDeps.pathValue = () => "/usr/bin";
@@ -703,29 +748,6 @@ describe("tokensave agent integration install requirements", () => {
     tokensavePlugin.getInstallRequirements?.({
       config: { allowedAgents, capabilities: [{ name: "tokensave" }] },
     }) ?? [];
-
-  test("CLI requirement update upgrades the installed binary without --kill", async () => {
-    const runMock = mock(() => ({ ok: true, stderr: "", stdout: "" }));
-    tokensaveDeps.run = runMock;
-    await requirementsFor([])[0]?.update?.();
-    expect(runMock.mock.calls.map((c) => c[0])).toEqual([["upgrade"]]);
-  });
-
-  test("CLI requirement update tolerates a failed upgrade", async () => {
-    tokensaveDeps.run = () => ({ ok: false, stderr: "offline", stdout: "" });
-    const stderrWrites: string[] = [];
-    const originalWrite = process.stderr.write;
-    process.stderr.write = ((chunk: string) => {
-      stderrWrites.push(chunk);
-      return true;
-    }) as typeof process.stderr.write;
-    try {
-      await requirementsFor([])[0]?.update?.();
-    } finally {
-      process.stderr.write = originalWrite;
-    }
-    expect(stderrWrites.join("")).toContain("automatic upgrade failed: offline");
-  });
 
   test("adds one integration requirement per enabled supported provider", () => {
     const ids = requirementsFor(["opencode", "codex", "claude"]).map((r) => r.id);

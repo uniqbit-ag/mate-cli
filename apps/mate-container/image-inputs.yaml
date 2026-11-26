@@ -47,7 +47,7 @@ os_packages:
   suite: trixie
   packages:
     git: 1:2.47.3-0+deb13u1
-    ca-certificates: "20250419"
+    ca-certificates: 20250419+deb13u1
     tar: 1.35+dfsg-3.1
     gzip: 1.13-1+deb13u1
     xz-utils: 5.8.1-1+deb13u2
@@ -67,7 +67,7 @@ os_packages:
 # minimum rather than equal to it.
 # ---------------------------------------------------------------------------
 mate:
-  version: 0.21.1
+  version: 1.0.0-canary.8
   minimum_compatible: 0.17.0-canary.5
   registry: https://registry.npmjs.org/
 
@@ -142,64 +142,10 @@ tools:
         file: uv-aarch64-unknown-linux-gnu.tar.gz
         sha256: 6524bd338177ed50d035d39354e12545e993bbeba2ecbddf0480c5b3a81d313f
 
-  # Capability tools.
-  openspec:
-    detect: openspec
-    package: "@fission-ai/openspec"
-    version: 1.15.0
-    source: npm_global
-    # Resolved through locks/global-tools.package-lock.json, not `@latest`.
-    # Mate now ships its own OpenSpec CLI, so the image no longer requires this
-    # global copy. It leaves the global-tools manifest and lock when they are
-    # regenerated after the first release that bundles OpenSpec.
-
-  context7:
-    detect: context7-mcp
-    package: "@upstash/context7-mcp"
-    # Matches CONTEXT7_MCP_VERSION in apps/mate-cli/src/plugins/context7.ts.
-    version: 4.2.0
-    source: npm_global
-
-  graphify:
-    detect: graphify
-    package: graphifyy
-    version: 0.9.80
-    source: uv_tool
-    # Installed from locks/graphify.requirements.txt, which pins the whole
-    # transitive graph with per-artifact hashes. The interpreter is pinned too:
-    # uv would otherwise fetch whatever CPython is current, which is a moving
-    # reference no different from an unpinned package.
-    python_version: 3.14.7
-    index: https://pypi.org/simple
-
-  rtk:
-    detect: rtk
-    version: 1.1.0
-    source: github_release
-    base_url: https://github.com/rtk-ai/rtk/releases/download
-    artifacts:
-      # The project publishes a musl build for x86_64 and a gnu build for
-      # aarch64; the musl binary is static and runs on the glibc base image.
-      amd64:
-        file: rtk-x86_64-unknown-linux-musl.tar.gz
-        sha256: 9454ad1b9489daa57ab0a9f4ebe2faaf4dc82b8a0f26c9e5135151abd7c9378d
-      arm64:
-        file: rtk-aarch64-unknown-linux-gnu.tar.gz
-        sha256: a5c00c3ab0129884bcb757d348afc1a650efa0f4f0769da97c341f28f89719ed
-
-  tokensave:
-    detect: tokensave
-    version: 7.15.0
-    source: github_release
-    base_url: https://github.com/aovestdipaperino/tokensave/releases/download
-    # Prebuilt release binaries, so the image needs no Rust toolchain.
-    artifacts:
-      amd64:
-        file: tokensave-v7.15.0-x86_64-linux.tar.gz
-        sha256: 3da8d0e52da38d2b477d92e2548a68795dbda355bb274d120ee6a77f391b57a4
-      arm64:
-        file: tokensave-v7.15.0-aarch64-linux.tar.gz
-        sha256: 0143e3e99c5b3a2a97790fbf50846cfb64a18a1035bf2fd63a60f511c4b7c5e2
+  # Capability tools (openspec, context7, graphify, rtk, tokensave) are not
+  # listed here: their versions and digests come from
+  # packages/mate-core/tool-manifest.yaml, which a member's computer uses too.
+  # `readImageInputs()` merges them and rejects a tool listed in both files.
 
 # ---------------------------------------------------------------------------
 # npm dependency graphs, direct and transitive, with per-package integrity.

@@ -8,7 +8,18 @@ import {
   SPECS_RELATIVE_DIR,
 } from "../../../lib/change-layout";
 import { companionTicketFormat, type TicketFormat } from "../../../lib/delivery/branches";
+import { submitsOpenSpec } from "../../../lib/delivery/staging/registry";
 import { hasUnsubmittedWork } from "../../../lib/delivery/staging/submit";
+import {
+  defaultWorkflow,
+  loadWorkflow,
+  WORKFLOW_FILE,
+  type Workflow,
+  type WorkflowProblem,
+  type WorkflowVerdict,
+} from "../../../lib/workflow/declaration";
+import { pathPosition, type PathPosition } from "../../../lib/workflow/position";
+import { openWork, type WorkInput } from "../../../lib/workflow/work";
 import {
   type LinkedRepositoryCatalog,
   linkedRepositoryCatalog,
@@ -44,6 +55,11 @@ import { readWorkflowTopology, type WorkflowTopology } from "./topology";
 export interface StudioChangeArtifact {
   id: string;
   status?: string;
+  /**
+   * Its companion-relative file, for a change OpenSpec does not describe: a review its type
+   * declares, listed whether written yet or not.
+   */
+  path?: string;
 }
 
 export interface StudioChange {
@@ -61,6 +77,21 @@ export interface StudioChange {
    * another change of that name, or edits made since it was submitted.
    */
   unsubmitted?: true;
+  /** The steps its Delivery Record holds, by stage id; where it is on the path is computed from them. */
+  steps?: Record<string, string[]>;
+  /** Its Delivery Record says it was withdrawn: it is at no stage. */
+  dropped?: true;
+  /**
+   * Its artifact type has no plan: it has no tasks, and only its recorded steps place it. Such a
+   * change is not described by OpenSpec, so it has no task counts, artifact status, validation
+   * or schema.
+   */
+  planned?: false;
+  /**
+   * Where it stands on the Delivery Path and what follows, as `mate workflow next` computes it,
+   * with its validation deciding whether its plan is valid.
+   */
+  position?: PathPosition;
 }
 
 /** One repository/Area pair a spec binds; at least one of the two is set. */
@@ -134,6 +165,14 @@ export interface StudioCompanionPayload {
   ticketFormat: TicketFormat;
   /** Records that could not be read, by path and reason. */
   worksetProblems: WorksetProblem[];
+  /**
+   * The companion's resolved Delivery Path: its declared stages, or the built-in default without
+   * a declaration. Null when the declaration is invalid; {@link workflowProblems} then says why.
+   * Absent from a payload built before stages could be declared: the built-in default.
+   */
+  workflow?: Workflow | null;
+  /** The problems of an invalid `.mate/config/workflow.yaml`, by key path. */
+  workflowProblems?: WorkflowProblem[];
   warnings: string[];
 }
 
@@ -170,6 +209,7 @@ export interface CompanionPayloadDeps {
   ) => StudioSubmittedChange[] | Promise<StudioSubmittedChange[]>;
   /** Whether a local change holds work its submitted namesake lacks. */
   hasUnsubmittedWork?: (companionPath: string, change: string) => Promise<boolean>;
+  loadWorkflow?: typeof loadWorkflow;
 }
 
 async function submittedChanges(companionPath: string): Promise<StudioSubmittedChange[]> {
@@ -404,40 +444,106 @@ export async function assembleCompanionPayload(
     warnings.push(`submitted changes: ${errorMessage(error)}`);
   }
 
-  const statusByChange = new Map(
-    (status.value.changes ?? []).map((entry) => [entry.changeName, entry]),
+  const verdict = await (deps.loadWorkflow ?? loadWorkflow)(companionPath).catch(
+    (error: unknown): WorkflowVerdict => ({
+      ok: false,
+      file: WORKFLOW_FILE,
+      problems: [{ path: "", message: errorMessage(error) }],
+    }),
   );
-
-  const awaiting = new Set(submitted.map((change) => change.name));
-  const unsubmitted = new Set<string>();
-  for (const { name } of changeList.value.changes ?? []) {
-    if (!awaiting.has(name)) continue;
-    const work = deps.hasUnsubmittedWork ?? hasUnsubmittedWork;
-    // oxlint-disable-next-line no-await-in-loop -- only local changes that are also submitted
-    if (await work(companionPath, name).catch(() => false)) unsubmitted.add(name);
+  if (verdict.ok) {
+    warnings.push(...verdict.workflow.warnings.map((warning) => `${WORKFLOW_FILE}: ${warning}`));
+  } else {
+    warnings.push(
+      `${WORKFLOW_FILE} is invalid, so the built-in Delivery Path is shown and no stage runs: ${verdict.problems
+        .map((problem) => `${problem.path ? `${problem.path}: ` : ""}${problem.message}`)
+        .join("; ")}`,
+    );
   }
-
-  const changes: StudioChange[] = (changeList.value.changes ?? []).map((change) => {
-    const changeStatus = statusByChange.get(change.name);
-    return {
-      name: change.name,
-      ...(change.completedTasks === undefined ? {} : { completedTasks: change.completedTasks }),
-      ...(change.totalTasks === undefined ? {} : { totalTasks: change.totalTasks }),
-      ...(change.status === undefined ? {} : { status: change.status }),
-      ...(change.lastModified === undefined ? {} : { lastModified: change.lastModified }),
-      ...(changeStatus?.schemaName ? { schemaName: changeStatus.schemaName } : {}),
-      artifacts: (changeStatus?.artifacts ?? []).map((artifact) => ({
-        id: artifact.id,
-        ...(artifact.status === undefined ? {} : { status: artifact.status }),
-      })),
-      ...validationOf(validationItems, change.name, "change"),
-      ...(unsubmitted.has(change.name) ? { unsubmitted: true as const } : {}),
-    };
-  });
 
   const planningRoot =
     (status.value.changes ?? []).find((entry) => entry.planningHome?.root)?.planningHome?.root ??
     companionPath;
+  // An invalid declaration shows the built-in path, so changes are placed on it.
+  const workflow = verdict.ok ? verdict.workflow : defaultWorkflow();
+  const work = openWork(companionPath, workflow, { root: planningRoot });
+  // OpenSpec describes only changes of the built-in type; another type's changes are its folders.
+  const described = submitsOpenSpec(workflow);
+  const listed = new Map(
+    described ? (changeList.value.changes ?? []).map((change) => [change.name, change]) : [],
+  );
+  const statusByChange = new Map(
+    described ? (status.value.changes ?? []).map((entry) => [entry.changeName, entry]) : [],
+  );
+  const names = described ? [...listed.keys()] : await work.names();
+
+  const awaiting = new Set(submitted.map((change) => change.name));
+  const unsubmitted = new Set<string>();
+  for (const name of names) {
+    if (!awaiting.has(name)) continue;
+    const check = deps.hasUnsubmittedWork ?? hasUnsubmittedWork;
+    // oxlint-disable-next-line no-await-in-loop -- only local changes that are also submitted
+    if (await check(companionPath, name).catch(() => false)) unsubmitted.add(name);
+  }
+
+  // Recorded progress; a record that cannot be read leaves the change to inference.
+  const inputs = new Map(
+    await Promise.all(
+      names.map(async (name): Promise<[string, WorkInput]> => {
+        const { valid } = described ? validationOf(validationItems, name, "change") : {};
+        const change = listed.get(name);
+        const inferred = (): WorkInput => ({
+          progress: {
+            steps: {},
+            ...(change
+              ? {
+                  plan: {
+                    valid: valid !== false,
+                    totalTasks: change.totalTasks ?? 0,
+                    completedTasks: change.completedTasks ?? 0,
+                  },
+                }
+              : {}),
+          },
+          subject: { name },
+        });
+        const found = await work.find(name);
+        const input =
+          "problem" in found
+            ? inferred()
+            : await found.input({ valid: valid !== false }).catch(inferred);
+        return [name, input];
+      }),
+    ),
+  );
+
+  const changes: StudioChange[] = names.map((name) => {
+    const change = listed.get(name);
+    const changeStatus = statusByChange.get(name);
+    const { progress, subject } = inputs.get(name)!;
+    const { steps } = progress;
+    return {
+      name,
+      ...(change?.completedTasks === undefined ? {} : { completedTasks: change.completedTasks }),
+      ...(change?.totalTasks === undefined ? {} : { totalTasks: change.totalTasks }),
+      ...(change?.status === undefined ? {} : { status: change.status }),
+      ...(change?.lastModified === undefined ? {} : { lastModified: change.lastModified }),
+      ...(changeStatus?.schemaName ? { schemaName: changeStatus.schemaName } : {}),
+      artifacts: described
+        ? (changeStatus?.artifacts ?? []).map((artifact) => ({
+            id: artifact.id,
+            ...(artifact.status === undefined ? {} : { status: artifact.status }),
+          }))
+        : (subject.artifacts ?? []).map((artifact) => ({ id: artifact.id, path: artifact.path })),
+      ...(described ? validationOf(validationItems, name, "change") : {}),
+      ...(unsubmitted.has(name) ? { unsubmitted: true as const } : {}),
+      ...(Object.keys(steps).length > 0 ? { steps: steps as Record<string, string[]> } : {}),
+      ...(progress.state === "dropped" ? { dropped: true as const } : {}),
+      ...(progress.plan ? {} : { planned: false as const }),
+      position: pathPosition(workflow, progress, subject),
+    };
+  });
+
   const specsRoot = path.join(planningRoot, "openspec", "specs");
 
   const linkedResult = await linked;
@@ -498,6 +604,8 @@ export async function assembleCompanionPayload(
     repositoryKeys: Object.fromEntries(catalog.keys),
     ticketFormat,
     worksetProblems: worksets.problems,
+    workflow: verdict.ok ? verdict.workflow : null,
+    ...(verdict.ok ? {} : { workflowProblems: verdict.problems }),
     warnings,
   };
 }
