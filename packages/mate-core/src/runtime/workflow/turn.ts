@@ -182,26 +182,19 @@ function pathSkill(workflow: Workflow, skill: string): boolean {
   );
 }
 
-/**
- * The hand-offs the verdict of a finished turn reads, one per change: after each reported
- * change's last report plus the change of a step reported without it, or, for a turn that only
- * started a companion's step, the change's.
- */
 function handoffQueries(turn: Turn, workflow: Workflow, again: boolean): HandoffQuery[] {
   if (turn.reports.length > 0) {
     const last = new Map<string, string>();
     for (const report of turn.reports) if (report.change) last.set(report.change, report.skill);
     const queries: HandoffQuery[] = [...last].map(([change, after]) => ({ change, after }));
     const unnamed = unnamedStep(turn);
-    // Its hand-off tells whether the noted word names an existing change.
-    if (!again && unnamed && !last.has(unnamed.change)) queries.push({ change: unnamed.change });
+    if (unnamed && !last.has(unnamed.change)) queries.push({ change: unnamed.change });
     return queries;
   }
   const step = turn.step;
   return !again && step && companionStep(workflow, step.skill) ? [{ change: step.change }] : [];
 }
 
-/** The turn's step when it reported only without its change, so nothing was recorded for it. */
 function unnamedStep(turn: Turn): Step | undefined {
   const step = turn.step;
   if (!step?.change) return undefined;
@@ -265,7 +258,6 @@ async function turnVerdict(
   { again, runtime, response }: FinishOptions,
 ): Promise<TurnVerdict> {
   if (turn.reports.length > 0) {
-    // A noted word without a hand-off names no change, such as a free-text question's first word.
     const step = unnamedStep(turn);
     if (step && next(step.change) !== null) {
       if (again) return PASS;
