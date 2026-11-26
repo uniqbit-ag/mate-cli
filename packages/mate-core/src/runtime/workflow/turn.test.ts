@@ -299,11 +299,28 @@ describe("finishTurn", () => {
     expect(result.kind === "sendBack" && result.reason).toStartWith(
       '`mate workflow done acme-security-review` named no change, so nothing was recorded for acme-fix. Run `mate workflow done acme-security-review "acme-fix"`',
     );
-    expect(queries).toEqual([]);
+    expect(queries).toEqual([{ change: "acme-fix" }]);
     expect(await finish(turn, "Prose.", { again: true }).verdict).toEqual({ kind: "pass" });
     const named = noteShell(turn, 'mate workflow done acme-security-review "acme-fix"');
     const fixed = finish(named, "## Next steps\n1. /mate-submit-change acme-fix");
     expect(await fixed.verdict).toEqual({ kind: "pass" });
+  });
+
+  test("a free-text question's first word reported without a change passes", async () => {
+    const report = "mate workflow done mate-explore-change";
+    const prompted = noteShell(
+      startTurn("/mate-explore-change What does the stop check do"),
+      report,
+    );
+    const loaded = noteShell(
+      noteSkill(startTurn("explain"), "mate-explore-change", "What"),
+      report,
+    );
+    for (const turn of [prompted, loaded]) {
+      const { verdict, queries } = finish(turn, "Prose.");
+      expect(await verdict).toEqual({ kind: "pass" });
+      expect(queries).toEqual([{ change: "What" }]);
+    }
   });
 
   test("a turn already sent back only gets a notice", async () => {
