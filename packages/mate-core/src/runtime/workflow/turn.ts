@@ -182,18 +182,25 @@ function pathSkill(workflow: Workflow, skill: string): boolean {
   );
 }
 
-/**
- * The hand-offs the verdict of a finished turn reads, one per change: after each reported
- * change's last report, or, for a turn that only started a companion's step, the change's.
- */
 function handoffQueries(turn: Turn, workflow: Workflow, again: boolean): HandoffQuery[] {
   if (turn.reports.length > 0) {
     const last = new Map<string, string>();
     for (const report of turn.reports) if (report.change) last.set(report.change, report.skill);
-    return [...last].map(([change, after]) => ({ change, after }));
+    const queries: HandoffQuery[] = [...last].map(([change, after]) => ({ change, after }));
+    const unnamed = unnamedStep(turn);
+    if (unnamed && !last.has(unnamed.change)) queries.push({ change: unnamed.change });
+    return queries;
   }
   const step = turn.step;
   return !again && step && companionStep(workflow, step.skill) ? [{ change: step.change }] : [];
+}
+
+function unnamedStep(turn: Turn): Step | undefined {
+  const step = turn.step;
+  if (!step?.change) return undefined;
+  const reported = (change: string) =>
+    turn.reports.some((report) => report.skill === step.skill && report.change === change);
+  return reported("") && !reported(step.change) ? step : undefined;
 }
 
 /** Every query's hand-off at once, by change. */
@@ -251,13 +258,8 @@ async function turnVerdict(
   { again, runtime, response }: FinishOptions,
 ): Promise<TurnVerdict> {
   if (turn.reports.length > 0) {
-    // The turn's step reported without its change: nothing was recorded for it.
-    const step = turn.step;
-    const unnamed =
-      step?.change &&
-      turn.reports.some((report) => report.skill === step.skill && !report.change) &&
-      !turn.reports.some((report) => report.skill === step.skill && report.change === step.change);
-    if (unnamed && step) {
+    const step = unnamedStep(turn);
+    if (step && next(step.change) !== null) {
       if (again) return PASS;
       return {
         kind: "sendBack",
