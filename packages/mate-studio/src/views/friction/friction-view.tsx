@@ -28,7 +28,6 @@ import {
   RecordingButton,
   RecordingReach,
   RecordingState,
-  useRetryFocus,
 } from "../../components/friction-recording";
 import { Icon } from "../../components/icon";
 import { Button } from "../../components/ui/button";
@@ -59,6 +58,7 @@ import {
 } from "../../lib/friction-query";
 import { type FrictionSort, oneOf } from "../../lib/search";
 import { useBrowser } from "../../lib/use-browser";
+import { useRetryFocus } from "../../lib/use-retry-focus";
 import { ItemState, MarkActions, type MarkItem, plural, StateWord } from "./mark-actions";
 import { type FrictionFilters, selectFriction } from "./select-friction";
 

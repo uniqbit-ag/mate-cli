@@ -7,7 +7,6 @@ import type {
 } from "@uniqbit/mate-core/studio";
 import { type ReactNode, type Ref, type RefObject, useRef, useState } from "react";
 
-import { useRetryFocus } from "../../components/friction-recording";
 import { Icon } from "../../components/icon";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/fields";
@@ -21,6 +20,7 @@ import {
 } from "../../components/view-parts";
 import { cn } from "../../lib/cn";
 import { mcpManagerQuery, mcpPreviewQuery } from "../../lib/mcp-query";
+import { useRetryFocus } from "../../lib/use-retry-focus";
 import { saveMcpManager } from "../../server/mcp-manager";
 import { type McpDialog, McpDialogs } from "./mcp-dialogs";
 import { type Cell, cellOf, cycleCell, type EntryKind, KIND_WORD, transportOf } from "./mcp-model";
