@@ -222,3 +222,20 @@ export {
   LIGHT_PALETTE,
   type ReportPalette,
 } from "./cli/commands/report/palette";
+
+export {
+  McpManagerConflictError,
+  readMcpManager,
+  writeMcpManager,
+  type McpManagerPatch,
+  type McpManagerSnapshot,
+} from "./lib/mcp-manager/store";
+export type {
+  McpManagerAudienceSelection,
+  McpManagerConfig,
+  McpManagerRemoteServer,
+  McpManagerSelection,
+  McpManagerServer,
+  McpManagerStdioServer,
+  McpManagerTransport,
+} from "./lib/mcp-manager/types";

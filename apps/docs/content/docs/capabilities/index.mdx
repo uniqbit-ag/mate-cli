@@ -315,6 +315,73 @@ a Claude plugin. To turn it off, deselect it in `mate companion setup`. If the
 rows do not appear, see
 [`@mate:` Rows Are Missing](/docs/troubleshooting#mate-rows-are-missing).
 
+### MCP Manager
+
+A companion can declare its own MCP servers under `mcpManager` in
+`.mate/config/framework.yaml`. Mate writes them into `.mcp.json` for Claude and
+`.opencode/opencode.json` for OpenCode on every setup and sync. You do not
+select this capability: the `mcpManager` key turns it on.
+
+```yaml
+mcpManager:
+  servers:
+    acme-docs:
+      command: npx
+      args: [-y, acme-docs-mcp]
+      env: [ACME_TOKEN]
+    acme-api:
+      url: https://mcp.acme.example
+      transport: http
+      headers:
+        Authorization: "Bearer ${ACME_KEY}"
+    acme-db:
+      command: acme-db-mcp
+      env: [ACME_DB_URL]
+  groups:
+    acme-data: [acme-api, acme-db]
+  enabled:
+    servers: [acme-docs]
+    groups: [acme-data]
+```
+
+- **Servers.** A server has exactly one transport: `command` with optional
+  `args`, or `url` with optional `transport` (`http` or `sse`). A remote server
+  may declare `headers`.
+- **Groups.** A group names servers declared under `servers`. Servers and groups
+  share one set of names, so a group and a server cannot have the same name.
+  Names are lowercase letters, digits and hyphens, up to 64, starting with a
+  letter.
+- **`enabled`.** The servers and groups every session gets. A declared server
+  that no selection names is not written anywhere.
+- **Names, never values.** `env` lists environment variable names. A header
+  value is an optional `Bearer `, `Basic ` or `Token ` prefix followed by exactly
+  one `${NAME}`. Mate writes references the runtime fills in when it starts the
+  server: `${ACME_TOKEN}` for Claude, `{env:ACME_TOKEN}` for OpenCode. No secret
+  value lands in a companion file. A value in `env` or a literal header is an
+  error, and the error does not repeat the value.
+- **Audiences.** An audience can turn servers and groups on or off with
+  `enable` and `disable`. See
+  [Serving one audience of a companion](/docs/reference/deployment#serving-one-audience-of-a-companion).
+- **Removal.** Delete a server, or the whole `mcpManager` key, and the next sync
+  removes what Mate wrote for it. Servers you added to those files yourself, and
+  the servers of other capabilities, stay.
+- **Name clashes.** A declared server may not share a name with a server
+  another enabled capability registers, such as `context7` or `tokensave`. On a
+  clash, sync reports an error naming both, writes no `mcpManager` server in that
+  pass, and leaves the files as the previous sync wrote them.
+- **Missing variables.** `mate doctor` lists each variable a server of the
+  active audience needs that the current environment does not set or sets
+  empty, by server and name only. `mate doctor --json` reports them as
+  `mcpMissingVariables`.
+- **Older Mate versions.** Saving `framework.yaml` with `mcpManager` raises
+  `engines.mate` to the release that introduced it. Mate before 1.0.0 reports
+  the requirement and refuses commands such as `mate artifact`. Canaries up to
+  `1.0.0-canary.8` write none of its servers, and reject a companion that sets
+  `mcpManager` under an audience, so update Mate before you use `mcpManager`.
+- **Working Repositories.** OpenCode sessions in a Working Repository get these
+  servers. Claude Code sessions there do not get them yet, as with Context7:
+  only a Claude Code session started in the companion loads them.
+
 ## Index Synchronization
 
 Launches automatically refresh enabled code-exploration capabilities. You can

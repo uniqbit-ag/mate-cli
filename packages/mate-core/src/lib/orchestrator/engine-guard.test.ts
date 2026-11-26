@@ -59,6 +59,15 @@ describe("checkEngineRequirement", () => {
     });
   }
 
+  test("blocks an older canary of the same release below a canary floor", () => {
+    const range = { mate: ">=1.0.0-canary.9" };
+    expect(checkEngineRequirement(config(range), "mate", "1.0.0-canary.8").ok).toBe(false);
+    expect(checkEngineRequirement(config(range), "mate", "1.0.0-canary.9")).toEqual({ ok: true });
+    expect(checkEngineRequirement(config({ mate: "^1.0.0" }), "mate", "1.0.0-canary.8")).toEqual({
+      ok: true,
+    });
+  });
+
   test("allows a canary current version ahead of the required range", () => {
     const result = checkEngineRequirement(config({ mate: ">=0.14.0" }), "mate", "0.15.0-canary.1");
     expect(result.ok).toBe(true);

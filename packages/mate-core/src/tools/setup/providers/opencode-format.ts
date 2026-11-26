@@ -1,7 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import type { McpEntryDescriptor } from "./claude-format";
+import { mcpEntryEnvironment, mcpEntryHeaders, type McpEntryDescriptor } from "./claude-format";
+
+const openCodeRef = (variable: string) => `{env:${variable}}`;
 
 // OpenCode V2 config format primitives, plus the one-time V1-to-V2 normalization
 // used while reconciling an existing companion config. This module owns file
@@ -299,12 +301,20 @@ export function mergeOpenCodeConfigContent(
 /** Map a provider-agnostic MCP descriptor to OpenCode V2's server entry shape. */
 export function toOpenCodeMcpEntry(descriptor: McpEntryDescriptor): Record<string, unknown> {
   if (descriptor.url) {
-    return { type: "remote", url: descriptor.url, disabled: false };
+    // OpenCode picks the remote transport itself, so `transport` is not rendered.
+    const headers = mcpEntryHeaders(descriptor, openCodeRef);
+    return {
+      type: "remote",
+      url: descriptor.url,
+      ...(headers ? { headers } : {}),
+      disabled: false,
+    };
   }
+  const environment = mcpEntryEnvironment(descriptor, openCodeRef);
   return {
     type: "local",
     command: [descriptor.command ?? "", ...(descriptor.args ?? [])].filter(Boolean),
-    ...(descriptor.env ? { environment: descriptor.env } : {}),
+    ...(environment ? { environment } : {}),
     disabled: false,
   };
 }

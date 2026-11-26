@@ -549,6 +549,54 @@ describe("audiences parsing", () => {
       ]),
     ).rejects.toThrow(/only companions may declare audiences/i);
   });
+
+  test("an audience selects from the mcpManager catalog", async () => {
+    const config = await loadYaml("config-store-audiences-mcp-", [
+      "mcpManager:",
+      "  servers:",
+      "    acme-db: { command: acme-db-mcp, env: [ACME_DB_URL] }",
+      "  enabled: { servers: [acme-db] }",
+      "audiences:",
+      "  ba:",
+      "    mcpManager:",
+      "      disable: { servers: [acme-db] }",
+    ]);
+
+    expect(config.audiences?.ba?.mcpManager).toEqual({ disable: { servers: ["acme-db"] } });
+  });
+
+  test("rejects an invalid mcpManager section on load", async () => {
+    await expect(
+      loadYaml("config-store-mcp-invalid-", [
+        "mcpManager:",
+        "  servers:",
+        "    acme-db: { command: acme-db-mcp, env: { ACME_DB_URL: secret } }",
+      ]),
+    ).rejects.toThrow(/acme-db: env lists variable names only/);
+  });
+
+  test("a save holding mcpManager raises engines.mate", async () => {
+    const root = await makeTempDir("config-store-mcp-floor-");
+    const configPath = path.join(root, "framework.yaml");
+    const store = new ConfigStore(configPath);
+
+    await store.save({ allowedAgents: [], engines: { mate: ">=0.21.0" }, mcpManager: {} });
+    expect(parse(await fs.readFile(configPath, "utf8")).engines.mate).toBe(">=1.0.0-canary.9");
+
+    await store.save({ allowedAgents: [], engines: { mate: ">=0.21.0" } });
+    expect(parse(await fs.readFile(configPath, "utf8")).engines.mate).toBe(">=0.21.0");
+  });
+
+  test("rejects mcpManager on a hub root", async () => {
+    await expect(
+      loadYaml("config-store-mcp-hub-", [
+        "type: hub",
+        "hub:",
+        "  companions: []",
+        "mcpManager: {}",
+      ]),
+    ).rejects.toThrow(/only companions may declare mcpManager/i);
+  });
 });
 
 describe("legacy profiles migration", () => {

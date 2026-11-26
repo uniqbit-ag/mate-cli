@@ -16,7 +16,7 @@ export const AUDIENCE_ENV = "MATE_AUDIENCE";
 export const BASE_AUDIENCE = "base";
 
 /** The keys 0.18.4 moved under `audiences.base`; companion-wide keys stayed at the root. */
-export const BASE_AUDIENCE_KEYS = ["capabilities", "plugins", "studio"] as const;
+export const BASE_AUDIENCE_KEYS = ["capabilities", "plugins", "studio", "mcpManager"] as const;
 
 export type AudienceResolution =
   | { ok: true; active: string | null }
@@ -30,7 +30,8 @@ function pluginList(value: unknown): unknown[] {
   return isRecord(value) && Array.isArray(value.plugins) ? value.plugins : [];
 }
 
-function audienceEntry(raw: unknown, audience: string | null): unknown {
+/** The raw entry of a declared audience; undefined for none, `base` or an undeclared one. */
+export function audienceEntry(raw: unknown, audience: string | null): unknown {
   if (audience === null || audience === BASE_AUDIENCE) return undefined;
   if (!isRecord(raw) || !isRecord(raw.audiences)) return undefined;
   return Object.hasOwn(raw.audiences, audience) ? raw.audiences[audience] : undefined;

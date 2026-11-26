@@ -350,9 +350,32 @@ services:
   the base list plus the active audience's. Built-in capabilities such as
   `openspec` or `tokensave` stay in the base list, because they change what
   `mate install` writes.
+- **MCP servers follow the audience.** An audience selects from the companion's
+  [`mcpManager`](/docs/capabilities#mcp-manager) servers with `enable` and
+  `disable`, each holding `servers` and `groups` lists. It cannot declare
+  servers of its own:
+
+  ```yaml
+  audiences:
+    ba:
+      mcpManager:
+        enable:
+          groups: [acme-data]
+        disable:
+          servers: [acme-db]
+  ```
+
+  The effective servers are the base `enabled` ones; then the audience's
+  `enable.groups` are added and its `disable.groups` removed; then its
+  `enable.servers` are added and its `disable.servers` removed. A named server
+  therefore wins over a group. Naming one server or group in both `enable` and
+  `disable` is an error. Sync writes the servers of the audience `MATE_AUDIENCE`
+  selects into the committed `.mcp.json` and `.opencode/opencode.json`, as it
+  does for plugins, so give each audience its own checkout.
+
 - **Validation.** Audience names are lowercase letters, digits and hyphens (up
   to 64, starting with a letter). An audience may contain only `capabilities`,
-  `plugins` and `studio.terminal.agent`. A capability may not be built in, or
+  `plugins`, `studio.terminal.agent` and `mcpManager`. A capability may not be built in, or
   declared in both base and an audience, or twice in one audience. A package may not be declared in both base and an
   audience, or twice in one audience; two audiences may share a package only at
   the same version. A hub may not declare audiences.

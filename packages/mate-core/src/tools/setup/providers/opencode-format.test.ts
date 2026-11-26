@@ -141,6 +141,39 @@ describe("toOpenCodeMcpEntry", () => {
       disabled: false,
     });
   });
+
+  test("a literal env descriptor renders byte-identically", () => {
+    expect(
+      JSON.stringify(toOpenCodeMcpEntry({ name: "s", command: "x", args: ["a"], env: { A: "1" } })),
+    ).toBe('{"type":"local","command":["x","a"],"environment":{"A":"1"},"disabled":false}');
+  });
+
+  test("env references render as {env:NAME}", () => {
+    expect(
+      toOpenCodeMcpEntry({ name: "s", command: "acme-docs-mcp", envRefs: ["ACME_TOKEN"] }),
+    ).toEqual({
+      type: "local",
+      command: ["acme-docs-mcp"],
+      environment: { ACME_TOKEN: "{env:ACME_TOKEN}" },
+      disabled: false,
+    });
+  });
+
+  test("a remote descriptor renders header references", () => {
+    expect(
+      toOpenCodeMcpEntry({
+        name: "s",
+        url: "https://mcp.acme.example",
+        transport: "http",
+        headerRefs: { Authorization: { prefix: "Bearer ", variable: "ACME_KEY" } },
+      }),
+    ).toEqual({
+      type: "remote",
+      url: "https://mcp.acme.example",
+      headers: { Authorization: "Bearer {env:ACME_KEY}" },
+      disabled: false,
+    });
+  });
 });
 
 describe("mergeOpenCodeConfigContent", () => {

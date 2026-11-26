@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### A companion declares its own MCP servers in `framework.yaml`
+
+- `mcpManager` holds a catalog of stdio and remote servers, optional groups, the base selection (`enabled`), and per-audience `enable` / `disable`. Setup writes the effective set for `MATE_AUDIENCE` to the companion's `.mcp.json` and `.opencode/opencode.json`, and removes servers that leave it.
+- Secrets stay out of the companion: `env` lists variable names and a header holds one `${NAME}` reference. Claude Code gets `${NAME}`, OpenCode `{env:NAME}`.
+- `mate doctor` lists each variable a selected server needs that is unset or empty, by name only (`mcpMissingVariables` in `--json`).
+- A server named like one another Capability registers stops the whole set for that sync, with an error naming both.
+- Saving `mcpManager` raises `engines.mate` to `1.0.0-canary.9`. A pre-release floor now refuses older canaries instead of accepting them.
+- OpenCode sessions in a Working Repository get these servers; Claude Code sessions there do not yet.
+
 ### `mate companion update` runs a pinned `skills` CLI
 
 - Mate pins one exact `skills` version for `skills-lock.json` refreshes instead of running `npx skills`. A new version arrives with a Mate release.

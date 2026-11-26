@@ -3,6 +3,7 @@ import path from "node:path";
 import { normalizeBaseAudience } from "../../tools/setup/dynamic-plugins/audiences";
 
 import { FRAMEWORK_NAME } from "../../framework";
+import { mcpManagerEngineRange, validateMcpManagerConfig } from "../mcp-manager/validate";
 import { declaredAllowedAgents } from "../../runtime/policy";
 import {
   getDefaultSetupSelections,
@@ -149,7 +150,7 @@ function validatePluginDeclarations(config: FrameworkConfig): void {
 
 export const AUDIENCE_NAME_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
 
-const AUDIENCE_KEYS = ["capabilities", "plugins", "studio"] as const;
+const AUDIENCE_KEYS = ["capabilities", "plugins", "studio", "mcpManager"] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -225,6 +226,14 @@ function validateAudienceCapabilities(
   }
 }
 
+/** Only companions declare MCP servers; audiences select from the root catalog. */
+function validateMcpManager(config: FrameworkConfig): void {
+  if (config.type === "hub" && config.mcpManager !== undefined) {
+    throw new ConfigError('Only companions may declare mcpManager; a "hub" framework may not.');
+  }
+  validateMcpManagerConfig(config);
+}
+
 /**
  * Validates the optional `audiences` mapping. Only companions may declare
  * audiences; names are safe identifiers and keys form a closed set so typos
@@ -294,6 +303,18 @@ function validateAudiences(config: FrameworkConfig): void {
   }
 }
 
+/** Parsed `framework.yaml` as loading sees it: normalized, migrated, defaulted and validated. */
+export function parseFrameworkConfig(raw: unknown): FrameworkConfig {
+  const merged = mergeWithDefaults(
+    migrateProfilesToAllowedAgents(normalizeBaseAudience(raw as FrameworkConfig)),
+  );
+  validateHubConfig(merged);
+  validatePluginDeclarations(merged);
+  validateAudiences(merged);
+  validateMcpManager(merged);
+  return merged;
+}
+
 export class ConfigStore extends YamlFileStore<FrameworkConfig> {
   constructor(configPath = process.env.MATE_CONFIG ?? defaultConfigPath()) {
     super(path.resolve(configPath));
@@ -301,13 +322,15 @@ export class ConfigStore extends YamlFileStore<FrameworkConfig> {
 
   /** Either file shape loads as the base set at the root; the next save writes the root shape. */
   override async load(): Promise<FrameworkConfig> {
-    const merged = mergeWithDefaults(
-      migrateProfilesToAllowedAgents(normalizeBaseAudience(await super.load())),
+    return parseFrameworkConfig(await super.load());
+  }
+
+  /** A save holding `mcpManager` raises `engines.mate`; canaries up to 1.0.0-canary.8 still pass it (pre-release fallback). */
+  override async save(data: FrameworkConfig): Promise<void> {
+    const raised = mcpManagerEngineRange(data);
+    await super.save(
+      raised === null ? data : { ...data, engines: { ...data.engines, [FRAMEWORK_NAME]: raised } },
     );
-    validateHubConfig(merged);
-    validatePluginDeclarations(merged);
-    validateAudiences(merged);
-    return merged;
   }
 
   protected async onMissing(): Promise<FrameworkConfig> {
