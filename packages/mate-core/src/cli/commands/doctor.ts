@@ -250,9 +250,6 @@ function getSelectedToolChecks(config: {
   if (selectedCapabilities.has("rtk")) {
     checks.push({ name: "rtk", command: "rtk", source: "capability" });
   }
-  if (selectedCapabilities.has("graphify")) {
-    checks.push({ name: "graphify", command: "graphify", source: "capability" });
-  }
 
   return checks;
 }

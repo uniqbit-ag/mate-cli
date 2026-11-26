@@ -47,7 +47,6 @@ export const SUPPORTED_PACKAGE_MANAGERS: Record<string, string | null> = {
 };
 
 export const SUPPORTED_CAPABILITIES: Record<string, string | null> = {
-  graphify: "graphify",
   rtk: "rtk",
   tokensave: "tokensave",
   context7: "context7-mcp",
@@ -182,6 +181,8 @@ export function assertRequirementsCarried(
    * or an unrelated declaration never stands in for it.
    */
   for (const name of selections.capabilities) {
+    // Retired from Mate; sync drops it from a companion that still lists it.
+    if (name === "graphify") continue;
     if (!(name in SUPPORTED_CAPABILITIES) && pluginCapabilities.includes(name)) continue;
     check("capability", name, SUPPORTED_CAPABILITIES);
   }

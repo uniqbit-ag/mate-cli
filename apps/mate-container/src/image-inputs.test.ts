@@ -151,14 +151,6 @@ describe("dependency locks", () => {
     expect(globalToolsLockDrift(inputs, CONTAINER_ROOT)).toEqual([]);
   });
 
-  test("the graphify lock and its input name the manifest's graphify version", () => {
-    const pin = `graphifyy==${inputs.tools.graphify!.version}`;
-    for (const file of ["graphify.in", "graphify.requirements.txt"]) {
-      const text = fs.readFileSync(path.join(CONTAINER_ROOT, "locks", file), "utf8");
-      expect(text.match(/^graphifyy==\S+/m)?.[0], file).toBe(pin);
-    }
-  });
-
   test("the local workspace lock declares exactly the distribution-owned packages", () => {
     const manifest = JSON.parse(
       fs.readFileSync(path.join(CONTAINER_ROOT, inputs.locks.local_workspace!.manifest), "utf8"),

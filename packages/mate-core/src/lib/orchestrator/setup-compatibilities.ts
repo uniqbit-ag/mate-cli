@@ -181,15 +181,6 @@ export const BUILTIN_SETUP_COMPATIBILITIES: SetupCompatibility[] = [
     description: "Patch supported agent providers with the RTK token-optimizing CLI proxy.",
     defaultSelected: false,
   },
-  {
-    id: "graphify",
-    kind: "capability",
-    capability: { name: "graphify" },
-    label: "Graphify",
-    description:
-      "Enable Graphify code graph analysis with companion-managed wrappers for supported agent sessions.",
-    defaultSelected: false,
-  },
 ];
 
 export function listSetupProviderCompatibilities(): SetupProviderCompatibility[] {

@@ -342,7 +342,7 @@ describe("createOpenspecPlugin", () => {
 
   test("moves Mate skills out of the legacy opencode root and keeps third-party skills", async () => {
     const root = await makeTempDir("mate-openspec-opencode-legacy-");
-    for (const skill of ["mate-grill-me", "graphify"]) {
+    for (const skill of ["mate-grill-me", "acme-skill"]) {
       const file = path.join(root, ".opencode", "skills", skill, "SKILL.md");
       await fs.mkdir(path.dirname(file), { recursive: true });
       await fs.writeFile(file, `${skill}\n`, "utf8");
@@ -355,8 +355,8 @@ describe("createOpenspecPlugin", () => {
       fs.access(path.join(root, ".opencode", "skills", "mate-grill-me")),
     ).rejects.toThrow();
     await expect(
-      fs.readFile(path.join(root, ".opencode", "skills", "graphify", "SKILL.md"), "utf8"),
-    ).resolves.toBe("graphify\n");
+      fs.readFile(path.join(root, ".opencode", "skills", "acme-skill", "SKILL.md"), "utf8"),
+    ).resolves.toBe("acme-skill\n");
     await expect(
       fs.access(path.join(root, ".agents", "skills", "mate-grill-me", "SKILL.md")),
     ).resolves.toBeNull();

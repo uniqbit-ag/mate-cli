@@ -158,7 +158,7 @@ function printPlanText(plan: Awaited<ReturnType<typeof inspectInstallPlan>>): vo
  * @description Installs and verifies the core runtime and dependencies selected by the current companion.
  * @flags
  * - `--yes` — skip confirmation; required for non-TTY execution. Tools the companion only recommends are not installed by `--yes` alone.
- * - `--with <capability>` — install a tool the companion recommends (RTK, TokenSave, Graphify, Context Mode) and remember the choice. Repeatable.
+ * - `--with <capability>` — install a tool the companion recommends (RTK, TokenSave, Context Mode) and remember the choice. Repeatable.
  * - `--without <capability>` — decline a recommended tool and remember the choice. Repeatable.
  * - `--frozen-plugins` — deployment restore: install the base plugins and the selected audience's exactly from their committed lockfiles, never rewrite a plugin manifest or lockfile. Local plugins are ignored. The checkout's plugin-generated files are written, not committed.
  */
@@ -316,8 +316,7 @@ export async function runInstallCommand(
   }
 
   try {
-    await reconcileInstalledCompanion(plan);
-    await saveCompleteInstallState(plan, execution.results);
+    await saveCompleteInstallState(await reconcileInstalledCompanion(plan), execution.results);
   } catch (error) {
     process.stderr.write(
       `${FRAMEWORK_NAME}: installation completed but companion reconciliation failed: ${error instanceof Error ? error.message : String(error)}\n`,

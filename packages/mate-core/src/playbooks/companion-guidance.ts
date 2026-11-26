@@ -16,13 +16,11 @@ import { getWrapperBinPath } from "../lib/package-paths";
  * passes the projected path instead, and so calls the runtime builders direct.
  */
 
-export { GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT } from "../runtime/companion-guidance";
-
 /**
  * Build the merged single-string guidance: the companion-policy XML plus
- * codebase-exploration guidance appended when graphify or tokensave is
- * enabled. Used by providers (e.g. Claude) that inject one combined prompt
- * fragment rather than delivering exploration guidance separately.
+ * codebase-exploration guidance appended when tokensave is enabled. Used by
+ * providers (e.g. Claude) that inject one combined prompt fragment rather than
+ * delivering exploration guidance separately.
  */
 export function buildCompanionGuidance(
   context: GuidanceContext,

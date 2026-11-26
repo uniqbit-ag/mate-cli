@@ -28,10 +28,6 @@ function installWrappers(root: string, packageDir = "."): string {
 /** A package install whose bundled OpenSpec CLI is the reporting stub; the tests' wrappers run from it. */
 const PACKAGE_ROOT = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mate-wrapper-pkg-")));
 const WRAPPER_BIN = installWrappers(PACKAGE_ROOT);
-// The graphify gate shim loads mate-core sources relative to wrappers/.
-for (const dir of ["src", "claude-plugin"]) {
-  fs.symlinkSync(path.resolve(import.meta.dirname, "..", dir), path.join(PACKAGE_ROOT, dir));
-}
 
 afterAll(() => fs.rmSync(PACKAGE_ROOT, { recursive: true, force: true }));
 
@@ -45,7 +41,6 @@ function writeStub(file: string, lines: string[] = REPORTING_STUB): void {
 const REPORTING_STUB = [
   'echo "cwd=$PWD"',
   'echo "args=$*"',
-  'echo "graphify_out=${GRAPHIFY_OUT-}"',
   'env | grep "^MATE_" | sort | sed "s/^/mate_env=/"',
   'env | grep "^OPENSPEC_" | sort | sed "s/^/openspec_env=/"',
   "exit 0",
@@ -68,7 +63,7 @@ function stubBinary(name: string): string {
 function wrapRepo(
   repoRoot: string,
   companionPath: string,
-  overrides: { wrapperBinPath?: string; graphifyOut?: string } = {},
+  overrides: { wrapperBinPath?: string } = {},
 ): void {
   const registryPath = repoLocalRegistryPath(repoRoot);
   fs.mkdirSync(path.dirname(registryPath), { recursive: true });
@@ -82,8 +77,6 @@ function wrapRepo(
       repositoryId: "acme",
       wrapperBinPath: overrides.wrapperBinPath ?? WRAPPER_BIN,
       reactDoctorBinPath: path.join(companionPath, "react-doctor"),
-      graphifyOut:
-        overrides.graphifyOut ?? path.join(companionPath, ".graphify", "acme", "graphify-out"),
     },
   });
   fs.mkdirSync(repoLocalDirPath(repoRoot), { recursive: true });
@@ -104,7 +97,7 @@ function runWrapper(
   /** The harness may itself run under a launch; only what the test sets may reach the wrapper. */
   const env: Record<string, string | undefined> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (!key.startsWith("MATE_") && key !== "GRAPHIFY_OUT") env[key] = value;
+    if (!key.startsWith("MATE_")) env[key] = value;
   }
   for (const [key, value] of Object.entries(options.env ?? {})) env[key] = value;
   const wrapperBin = options.wrapperBin ?? WRAPPER_BIN;
@@ -483,243 +476,5 @@ describe("openspec wrapper with a Mate store pointer", () => {
     });
 
     expect(result.stdout).not.toContain("mate_env=");
-  });
-});
-
-describe("graphify wrapper", () => {
-  test("takes the output path from the projection rather than recomputing it", () => {
-    const repo = makeTempDir("mate-graphify-repo-");
-    const companion = path.join(repo, "companion");
-    fs.mkdirSync(companion, { recursive: true });
-    const graphifyOut = path.join(companion, "elsewhere", "store", "graphify-out");
-    wrapRepo(repo, companion, { graphifyOut });
-
-    const result = runWrapper("graphify", ["query", "acme"], {
-      cwd: repo,
-      stubDir: stubBinary("graphify"),
-    });
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(`graphify_out=${graphifyOut}`);
-    expect(result.stdout).toContain(`--graph ${path.join(graphifyOut, "graph.json")}`);
-  });
-
-  test("takes the launch environment's output path and rebuilds no store layout", () => {
-    const repo = makeTempDir("mate-graphify-launch-");
-    const companion = path.join(repo, "companion");
-    fs.mkdirSync(companion, { recursive: true });
-    const graphifyOut = path.join(companion, ".graphify", "acme", "graphify-out");
-
-    const result = runWrapper("graphify", ["query", "acme"], {
-      cwd: repo,
-      stubDir: stubBinary("graphify"),
-      env: {
-        MATE_ARTIFACT_PATH: companion,
-        MATE_REPO_PATH: repo,
-        MATE_REPO_ID: "acme",
-        GRAPHIFY_OUT: graphifyOut,
-      },
-    });
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(`graphify_out=${graphifyOut}`);
-    expect(fs.readFileSync(path.join(WRAPPER_BIN, "graphify"), "utf8")).not.toContain(
-      "MATE_REPO_ID:-",
-    );
-  });
-
-  test("extracts the working repository the projection names", () => {
-    const repo = makeTempDir("mate-graphify-build-");
-    const companion = path.join(repo, "companion");
-    fs.mkdirSync(companion, { recursive: true });
-    wrapRepo(repo, companion);
-
-    const result = runWrapper("graphify", ["build"], {
-      cwd: repo,
-      stubDir: stubBinary("graphify"),
-    });
-
-    expect(result.stdout).toContain(`args=extract ${repo} --out`);
-  });
-
-  test("exports no MATE_ variable into the delegated binary", () => {
-    const repo = makeTempDir("mate-graphify-noexport-");
-    const companion = path.join(repo, "companion");
-    fs.mkdirSync(companion, { recursive: true });
-    wrapRepo(repo, companion);
-
-    expect(
-      runWrapper("graphify", ["query", "acme"], { cwd: repo, stubDir: stubBinary("graphify") })
-        .stdout,
-    ).not.toContain("mate_env=");
-  });
-
-  test("refuses when nothing resolves, naming mate wrap", () => {
-    const bare = makeTempDir("mate-graphify-unwrapped-");
-
-    const result = runWrapper("graphify", ["query", "acme"], {
-      cwd: bare,
-      stubDir: stubBinary("graphify"),
-    });
-
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("mate wrap");
-    expect(result.stderr).not.toContain("mate opencode");
-  });
-
-  test("refuses when the projected wrapper directory names a different install", () => {
-    const repo = makeTempDir("mate-graphify-foreign-");
-    const companion = path.join(repo, "companion");
-    fs.mkdirSync(companion, { recursive: true });
-    wrapRepo(repo, companion, { wrapperBinPath: "/some/other/install/wrappers/bin" });
-
-    const result = runWrapper("graphify", ["query", "acme"], {
-      cwd: repo,
-      stubDir: stubBinary("graphify"),
-    });
-
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("mate wrap");
-  });
-
-  test("the launch environment outranks the projection and keeps its own output path", () => {
-    const repo = makeTempDir("mate-graphify-outranks-");
-    const launched = path.join(repo, "launched");
-    const projected = path.join(repo, "projected");
-    fs.mkdirSync(launched, { recursive: true });
-    fs.mkdirSync(projected, { recursive: true });
-    wrapRepo(repo, projected, { wrapperBinPath: "/some/other/install/wrappers/bin" });
-
-    const result = runWrapper("graphify", ["query", "acme"], {
-      cwd: repo,
-      env: {
-        MATE_ARTIFACT_PATH: launched,
-        MATE_REPO_PATH: repo,
-        GRAPHIFY_OUT: path.join(launched, "store", "graphify-out"),
-      },
-      stubDir: stubBinary("graphify"),
-    });
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(`graphify_out=${path.join(launched, "store", "graphify-out")}`);
-  });
-});
-
-describe("graphify wrapper secret gate", () => {
-  /** The gate shim runs on node; the harness itself runs on bun. */
-  const nodeBinary = spawnSync("bash", ["-lc", "command -v node"], {
-    encoding: "utf8",
-  }).stdout.trim();
-  const nodeDir = nodeBinary ? path.dirname(nodeBinary) : undefined;
-  const gated = nodeDir ? test : test.skip;
-
-  /** A graphify stand-in that echoes its args and writes a graph with one secret file. */
-  function leakyGraphify(): string {
-    const dir = makeTempDir("mate-wrapper-stub-leaky-");
-    const file = path.join(dir, "graphify");
-    const graph = JSON.stringify({
-      nodes: [
-        { id: "app", source_file: "src/app.ts" },
-        { id: "leak", source_file: ".env.local" },
-      ],
-      links: [{ source: "app", target: "leak" }],
-    });
-    fs.writeFileSync(
-      file,
-      [
-        "#!/usr/bin/env bash",
-        'echo "args=$*"',
-        'mkdir -p "$GRAPHIFY_OUT"',
-        `printf '%s' '${graph}' > "$GRAPHIFY_OUT/graph.json"`,
-        "exit 3",
-      ].join("\n") + "\n",
-    );
-    fs.chmodSync(file, 0o755);
-    return dir;
-  }
-
-  function wrapped() {
-    const repo = makeTempDir("mate-wrapper-gate-");
-    const companion = path.join(repo, "companion");
-    fs.mkdirSync(companion, { recursive: true });
-    spawnSync("git", ["init", "-q"], { cwd: repo, stdio: "ignore" });
-    wrapRepo(repo, companion);
-    return {
-      repo,
-      companion,
-      graphifyOut: path.join(companion, ".graphify", "acme", "graphify-out"),
-    };
-  }
-
-  gated("passes the secret patterns as --exclude and writes the ignore region", () => {
-    const { repo } = wrapped();
-
-    const result = runWrapper("graphify", ["update"], {
-      cwd: repo,
-      stubDir: stubBinary("graphify"),
-      nodeDir,
-    });
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(`args=${repo} --update --exclude .env --exclude .env.*`);
-    expect(fs.readFileSync(path.join(repo, ".graphifyignore"), "utf8")).toContain(
-      "# mate:secrets begin",
-    );
-  });
-
-  gated("prunes secrets from the output, never stops, and keeps graphify's exit status", () => {
-    const { repo, graphifyOut } = wrapped();
-
-    const result = runWrapper("graphify", ["build"], {
-      cwd: repo,
-      stubDir: leakyGraphify(),
-      nodeDir,
-    });
-
-    expect(result.status).toBe(3);
-    expect(result.stdout).toContain("--exclude .env");
-    expect(result.stderr).toContain("left out secret file .env.local");
-    const graph = JSON.parse(fs.readFileSync(path.join(graphifyOut, "graph.json"), "utf8"));
-    expect(graph.nodes.map((node: { id: string }) => node.id)).toEqual(["app"]);
-    expect(graph.links).toEqual([]);
-  });
-
-  gated("treats a direct `<path> --update` as an extraction", () => {
-    const { repo } = wrapped();
-
-    const result = runWrapper("graphify", [".", "--update"], {
-      cwd: repo,
-      stubDir: stubBinary("graphify"),
-      nodeDir,
-    });
-
-    expect(result.stdout).toContain("args=. --update --exclude .env");
-  });
-
-  test("warns and still runs graphify when the gate can't run", () => {
-    const { repo } = wrapped();
-
-    const result = runWrapper("graphify", ["update"], {
-      cwd: repo,
-      stubDir: stubBinary("graphify"),
-    });
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(`args=${repo} --update`);
-    expect(result.stdout).not.toContain("--exclude");
-    expect(result.stderr).toContain("the secret gate did not run");
-  });
-
-  test("leaves queries alone", () => {
-    const { repo } = wrapped();
-
-    const result = runWrapper("graphify", ["query", "Mate"], {
-      cwd: repo,
-      stubDir: stubBinary("graphify"),
-      nodeDir,
-    });
-
-    expect(result.stdout).not.toContain("--exclude");
-    expect(fs.existsSync(path.join(repo, ".graphifyignore"))).toBe(false);
   });
 });

@@ -36,7 +36,7 @@ describe("the base image's input digest", () => {
     );
     write("image-inputs.yaml", "mate:\n  version: 1.0.0\n");
     write("locks/global-tools.package-lock.json", "{}");
-    write("locks/nested/graphify.requirements.txt", "a==1");
+    write("locks/nested/acme.requirements.txt", "a==1");
     write("scripts/fetch-verified.sh", "#!/bin/sh");
     write("src/config.ts", "export {};");
     write("src/startup.ts", "export {};");
@@ -56,7 +56,7 @@ describe("the base image's input digest", () => {
     "Dockerfile",
     "image-inputs.yaml",
     "locks/global-tools.package-lock.json",
-    "locks/nested/graphify.requirements.txt",
+    "locks/nested/acme.requirements.txt",
     "scripts/fetch-verified.sh",
     "src/config.ts",
     "src/startup.ts",

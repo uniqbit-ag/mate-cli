@@ -87,7 +87,6 @@ export function mateSessionEnvironment(
     if (value !== undefined) env[name] = value;
   Object.assign(env, {
     MATE_NAME: FRAMEWORK_NAME,
-    MATE_GRAPHIFY_ENABLED: context.capabilities.some((c) => c.name === "graphify") ? "1" : "0",
     MATE_OPENSPEC_ENABLED: context.capabilities.some((c) => c.name === "openspec") ? "1" : "0",
     MATE_REACT_DOCTOR_ENABLED: reactDoctorEnabled ? "1" : "0",
     MATE_GIT_AUTO_MODE: context.git === "auto" && !context.skipGit ? "1" : "0",

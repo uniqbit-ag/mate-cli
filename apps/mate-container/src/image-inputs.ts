@@ -119,14 +119,7 @@ export function globalToolsLockDrift(inputs: ImageInputs, root: string): string[
  * image is *asserted* against, so it has to fail when the CLI grows a
  * requirement the image was not told about.
  */
-export const REQUIRED_TOOL_COMMANDS = [
-  "bun",
-  "uv",
-  "graphify",
-  "rtk",
-  "tokensave",
-  "context7-mcp",
-] as const;
+export const REQUIRED_TOOL_COMMANDS = ["bun", "uv", "rtk", "tokensave", "context7-mcp"] as const;
 
 /** A version that could resolve to something other than itself on a rebuild. */
 const MOVING_REFERENCE = /(\^|~|\*|\bx\b|latest|canary|main|master|HEAD|>=|<=|>|<)/i;

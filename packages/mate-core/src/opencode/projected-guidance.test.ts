@@ -43,7 +43,6 @@ function wrapRepo(capabilities: string[] = []): { repoRoot: string; companionPat
       repositoryId: "acme",
       wrapperBinPath: path.join(companionPath, ".mate", "wrappers", "bin"),
       reactDoctorBinPath: path.join(companionPath, "react-doctor"),
-      graphifyOut: path.join(companionPath, ".graphify", "acme", "graphify-out"),
     },
   });
 

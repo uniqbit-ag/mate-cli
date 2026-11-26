@@ -215,8 +215,6 @@ ARG TARGETARCH
 ARG MATE_VERSION
 ARG OPENCODE_VERSION
 ARG CLAUDE_VERSION
-ARG GRAPHIFY_VERSION
-ARG GRAPHIFY_PYTHON_VERSION
 ARG GIT_VERSION
 ARG CA_CERTIFICATES_VERSION
 ARG TAR_VERSION
@@ -264,23 +262,6 @@ RUN ln -sf /opt/mate/tools/node_modules/.bin/mate /usr/local/bin/mate \
 COPY scripts/write-bundle-manifest.ts /opt/mate/tools/startup/write-bundle-manifest.ts
 RUN bun /opt/mate/tools/startup/write-bundle-manifest.ts /opt/mate/prebuilt "${MATE_VERSION}" \
  && test -f /opt/mate/prebuilt-manifest.json
-
-# --- graphify, from a hash-locked requirements file ------------------------
-# `uv pip install --require-hashes` fails on any archive whose hash differs
-# from the lock; `--no-deps` resolves nothing the lock does not list and
-# `--no-build` refuses sdists. (`uv tool install --with-requirements` checks no
-# hashes.) The version assertion ties the build argument to the lock.
-ENV UV_PYTHON_INSTALL_DIR=/opt/mate/uv/python \
-    UV_NO_MODIFY_PATH=1
-COPY locks/graphify.requirements.txt /opt/mate/locks/graphify.requirements.txt
-RUN uv python install "${GRAPHIFY_PYTHON_VERSION}" \
- && uv venv --no-cache /opt/mate/graphify --python "${GRAPHIFY_PYTHON_VERSION}" \
- && uv pip install --no-cache --python /opt/mate/graphify \
-      --require-hashes --no-deps --no-build \
-      -r /opt/mate/locks/graphify.requirements.txt \
- && test "$(/opt/mate/graphify/bin/python -c 'import importlib.metadata as m; print(m.version("graphifyy"))')" = "${GRAPHIFY_VERSION}" \
- && ln -sf /opt/mate/graphify/bin/graphify /usr/local/bin/graphify \
- && graphify --version
 
 # --- the unprivileged identity the container runs as -----------------------
 # Documented in the deployment page and in image-inputs.yaml, because the
@@ -334,7 +315,6 @@ RUN set -e \
  && command -v git \
  && command -v ssh \
  && command -v uv \
- && command -v graphify \
  && command -v rtk \
  && command -v tokensave \
  && command -v context7-mcp \

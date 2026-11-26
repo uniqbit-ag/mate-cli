@@ -11,6 +11,15 @@
 - Saving `mcpManager` raises `engines.mate` to `1.0.0-canary.9`. A pre-release floor now refuses older canaries instead of accepting them.
 - OpenCode sessions in a Working Repository get these servers; Claude Code sessions there do not yet.
 
+### Graphify is no longer a Mate capability (breaking)
+
+- Mate no longer installs, configures or runs Graphify. `mate cap graphify` is gone, and `mate cap index --graphify` fails with `mate: unknown sync option: --graphify`. `mate cap index` and launches refresh TokenSave only.
+- The next `mate setup`, `mate install` or launch in a companion that used Graphify removes what Mate wrote for it: the `graphify` entry in `framework.yaml`, the `graphify` skill folders, the `## graphify` section of `AGENTS.md`, its Claude permissions and hooks, its OpenCode plugin, and Mate's secret region in `.graphifyignore` with its line in `.git/info/exclude`. Mate prints `The graphify capability was removed from Mate. Mate removed its local files from this companion.` once.
+- The published graph store under `.graphify/` stays, and companion Git sync keeps tracking it. Lines you wrote in `.graphifyignore` stay too.
+- Launches no longer set `GRAPHIFY_OUT` or `MATE_GRAPHIFY_ENABLED`, and the exploration guidance names TokenSave only.
+- `mate install` no longer installs uv: no capability needs it now. The container image no longer carries Graphify or its Python runtime.
+- A launch whose installation-state repair rewrites `framework.yaml` now starts. Before, the repair saved the state from before the rewrite, so the launch stopped with "The active companion installation context has changed."
+
 ### `mate companion update` runs a pinned `skills` CLI
 
 - Mate pins one exact `skills` version for `skills-lock.json` refreshes instead of running `npx skills`. A new version arrives with a Mate release.
@@ -18,10 +27,9 @@
 
 ### One tool manifest pins the shared tool versions
 
-- `packages/mate-core/tool-manifest.yaml` names the exact version of OpenSpec, `skills`, React Doctor, Context7, Graphify, RTK and TokenSave. Setup, the Context7 launch and the container image read it, so one bump reaches all of them.
-- TokenSave, RTK and Graphify install at the manifest's version: `cargo install --locked tokensave --version <version>`, RTK's installer from the release tag with `RTK_VERSION` set, and `uv tool install graphifyy==<version>`. TokenSave uses Cargo when it is on `PATH`. Without Cargo, or when `rustc` is older than the pinned release needs, it installs through Homebrew or Scoop, which install their formula's current version.
-- `mate install` and setup no longer upgrade TokenSave or RTK. When an installed TokenSave, RTK or Graphify reports another version, older or newer, `mate install` warns, names the installed binary and the pinned install command, and continues with the installed version. Setup warns for TokenSave only.
-- The container image installs Graphify and its dependencies only after checking each archive against the hash in `graphify.requirements.txt`.
+- `packages/mate-core/tool-manifest.yaml` names the exact version of OpenSpec, `skills`, React Doctor, Context7, RTK and TokenSave. Setup, the Context7 launch and the container image read it, so one bump reaches all of them.
+- TokenSave and RTK install at the manifest's version: `cargo install --locked tokensave --version <version>`, and RTK's installer from the release tag with `RTK_VERSION` set. TokenSave uses Cargo when it is on `PATH`. Without Cargo, or when `rustc` is older than the pinned release needs, it installs through Homebrew or Scoop, which install their formula's current version.
+- `mate install` and setup no longer upgrade TokenSave or RTK. When an installed TokenSave or RTK reports another version, older or newer, `mate install` warns, names the installed binary and the pinned install command, and continues with the installed version. Setup warns for TokenSave only.
 
 ### The factory host lists a companion's installed plugins
 
@@ -107,7 +115,7 @@
 ### Worktrees share their clone's Repository Link (breaking)
 
 - A companion lists a clone once. The first time Mate runs in another checkout of a linked clone (a new `git worktree`, `claude --worktree`, a T3 Code thread), it adopts it: the checkout gets its own `.mate/` link with the clone's repository ID, its own projection, and the wraps of the clone's Registered Checkout. Managed launches, `mate wrap`, `mate session prepare` and the session-prepare hook of plain `claude` all adopt. A `.mate/` folder copied from another checkout is ignored.
-- **Merged entries:** the first registry write after upgrading merges the entries of worktrees you linked by hand into their clone's entry (the main worktree's, or for a bare clone the first listed). Those worktrees then see the kept ID in `MATE_REPO_ID`, and the Graphify graph stored under their old ID is no longer used; a notice names both.
+- **Merged entries:** the first registry write after upgrading merges the entries of worktrees you linked by hand into their clone's entry (the main worktree's, or for a bare clone the first listed). Those worktrees then see the kept ID in `MATE_REPO_ID`, and the published code graph store under their old ID is no longer used; a notice names both.
 - Plain `claude` in a new linked worktree borrows the main worktree's projection until the worktree is adopted, so its first session already has the artifact guard and the companion guidance. Plain `opencode` there does not; run `mate opencode` or `mate wrap` once.
 - The main worktree's Claude wrap serves its linked worktrees, since Claude Code reads its `.claude/settings.local.json` there too. `mate claude` and `mate wrap` in a worktree wrap the main worktree for Claude first, and the worktree's own settings leave out the hook groups the main worktree's carry, so each hook runs once. Worktrees of a bare clone and worktrees on Windows keep their own wrap only.
 - The upward search for a link stops at a linked worktree's root, so a nested worktree such as `.claude/worktrees/<name>` no longer resolves the main worktree's `.mate/`.
@@ -210,7 +218,7 @@
 - A content search now also counts as aimed at secret files when its glob names one (`server.key`, `.env.local`, `**/.env.local`, `certs/*.key`, each `{a,b}` alternative on its own, read as ripgrep reads it: `{.env}`, nested groups and a `[}]` set included), not only when it matches one by pattern (`*.key`). `**/*`, `*.ts` and a `!` exclusion still pass.
 - A content search whose glob's `{a,b}` groups expand to more than 64 alternatives is now refused, as too large to check. Before, such a glob was not limited. Split a larger glob into several searches.
 - A `\` in a path separates folders only on Windows. Elsewhere it is part of the file name, as the system reads it: `public\server.key` is no longer covered by an allow pattern for `public/**`, and `notes\.env` is no longer taken for `notes/.env`.
-- Pattern text that Mate writes into other tools is unchanged: the projected Claude and OpenCode deny rules, `.graphifyignore`, Graphify's `--exclude` and TokenSave's config. Those tools keep their own case rules, and Mate's own checks catch what they miss.
+- Pattern text that Mate writes into other tools is unchanged: the projected Claude and OpenCode deny rules and TokenSave's config. Those tools keep their own case rules, and Mate's own checks catch what they miss.
 - `@uniqbit/mate-core/runtime` exports the one rule compiler (`secretRule`, `secretRules`), `isSecretFile` and `policyDocument`, so code outside mate-core evaluates the same rules.
 
 ### Secret guardrails (breaking)
@@ -218,7 +226,7 @@
 - Agents in Mate-managed sessions can no longer read, write, or edit secret files (`.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa`, `id_ecdsa`, `id_ed25519`, `.netrc`, `.pgpass`, `.npmrc`), and shell commands that name one are blocked, as are Grep searches inside a secret file or with a glob aimed at secret files (such as `.env*`). `.env.example`, `.env.sample`, `.env.template`, and `.env.dist` stay readable. The Claude hook and the OpenCode middleware enforce this, and Mate's managed deny rules back it up.
 - Content an agent writes into the Companion Repository is scanned with secretlint's recommended preset and blocked when it contains a secret.
 - `mate artifact publish` scans the files it would commit and stops at a new `secret-scan` step when it finds a secret. `--json` results carry `secretFindings` (path, line, rule id; never the value).
-- TokenSave's exclude list keeps secret files out of its index. Every Graphify extraction, including ones agents run through the `graphify` wrapper, leaves secret files out through a Mate-managed `.graphifyignore` region and `--exclude` arguments; any secret that still reaches the output is removed from it, and the rest of the graph is kept. A secret never stops Graphify.
+- TokenSave's exclude list keeps secret files out of its index.
 - Agents get a new `secret-handling` rule in the companion guidance.
 - Configure it in the companion's `framework.yaml` under `secrets` (`guardrails`, `deny`, `allow`). `secrets: { guardrails: false }` turns it all off. See the Secret Guardrails page in the docs.
 

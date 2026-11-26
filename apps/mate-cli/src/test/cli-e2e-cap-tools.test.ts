@@ -1,18 +1,14 @@
 /** @test-requires sockets */
 
-import path from "node:path";
-
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 
 import {
   DEFAULT_TEST_TIMEOUT_MS,
-  GRAPHIFY_SECRET_EXCLUDE_ARGS,
   createScenario,
   linkRepository,
   readJson,
   runMate,
   setupCompanion,
-  writeGraphifyStub,
   writeOpenSpecStub,
   removeScenarios,
 } from "./cli-e2e-support";
@@ -99,99 +95,5 @@ describe("mate CLI e2e: capability passthrough", () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("Unknown command: openspec");
-  });
-
-  test("cap graphify build routes through extract with companion-managed output", async () => {
-    const scenario = await createScenario("mate-cli-e2e-cap-graphify-build-");
-    const capturePath = await writeGraphifyStub(scenario);
-
-    expect(
-      (
-        await setupCompanion(scenario, [], {
-          allowedAgents: ["claude"],
-          capabilities: ["graphify"],
-        })
-      ).exitCode,
-    ).toBe(0);
-    expect((await linkRepository(scenario)).exitCode).toBe(0);
-
-    const result = await runMate(scenario, {
-      cwd: scenario.working,
-      args: ["cap", "graphify", "build", "--mode", "deep"],
-      env: { MATE_E2E_GRAPHIFY_CAPTURE_PATH: capturePath },
-    });
-
-    expect(result.exitCode).toBe(0);
-    const invocation = await readJson<{
-      cwd: string;
-      argv: string[];
-      env: Record<string, string | null>;
-    }>(capturePath);
-    expect(invocation.cwd).toBe(scenario.working);
-    expect(invocation.argv[0]).toBe("extract");
-    expect(invocation.argv[1]).toBe(scenario.working);
-    expect(invocation.argv).toContain("--out");
-    expect(invocation.argv).toContain(path.join(scenario.companion, ".graphify", "app"));
-    expect(invocation.argv.slice(-26)).toEqual(["--mode", "deep", ...GRAPHIFY_SECRET_EXCLUDE_ARGS]);
-  });
-
-  test("cap graphify query appends the shared graph path when no graph is provided", async () => {
-    const scenario = await createScenario("mate-cli-e2e-cap-graphify-query-");
-    const capturePath = await writeGraphifyStub(scenario);
-
-    expect(
-      (
-        await setupCompanion(scenario, [], {
-          allowedAgents: ["claude"],
-          capabilities: ["graphify"],
-        })
-      ).exitCode,
-    ).toBe(0);
-    expect((await linkRepository(scenario)).exitCode).toBe(0);
-
-    const result = await runMate(scenario, {
-      cwd: scenario.working,
-      args: ["cap", "graphify", "query", "symbol:Mate"],
-      env: { MATE_E2E_GRAPHIFY_CAPTURE_PATH: capturePath },
-    });
-
-    expect(result.exitCode).toBe(0);
-    const invocation = await readJson<{ argv: string[] }>(capturePath);
-    expect(invocation.argv).toEqual([
-      "query",
-      "symbol:Mate",
-      "--graph",
-      path.join(scenario.companion, ".graphify", "app", "graphify-out", "graph.json"),
-    ]);
-  });
-
-  test("cap graphify passes through path-first --update form", async () => {
-    const scenario = await createScenario("mate-cli-e2e-cap-graphify-update-");
-    const capturePath = await writeGraphifyStub(scenario);
-
-    expect(
-      (
-        await setupCompanion(scenario, [], {
-          allowedAgents: ["claude"],
-          capabilities: ["graphify"],
-        })
-      ).exitCode,
-    ).toBe(0);
-    expect((await linkRepository(scenario)).exitCode).toBe(0);
-
-    const result = await runMate(scenario, {
-      cwd: scenario.working,
-      args: ["cap", "graphify", scenario.working, "--update", "--force"],
-      env: { MATE_E2E_GRAPHIFY_CAPTURE_PATH: capturePath },
-    });
-
-    expect(result.exitCode).toBe(0);
-    const invocation = await readJson<{ argv: string[] }>(capturePath);
-    expect(invocation.argv).toEqual([
-      scenario.working,
-      "--update",
-      "--force",
-      ...GRAPHIFY_SECRET_EXCLUDE_ARGS,
-    ]);
   });
 });

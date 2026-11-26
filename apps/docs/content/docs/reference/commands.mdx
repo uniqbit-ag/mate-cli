@@ -299,7 +299,7 @@ companion.
 `mate install --yes` skips interactive confirmation and is required when the
 process has no TTY. It can run before a companion is linked; in that context it
 installs only Mate's core requirements. It does not install the tools a
-companion only recommends (RTK, TokenSave, Graphify, Context Mode): add
+companion only recommends (RTK, TokenSave, Context Mode): add
 `--with <capability>` to install one, or `--without <capability>` to decline
 it. Both flags repeat, and Mate remembers the choice per companion.
 
@@ -402,10 +402,10 @@ silently. At a terminal, a command prints a `mate · <title>` header, one `✓` 
 | `mate companion update`   | Checking registry, Syncing companion files                       |
 | `mate companion sync`     | Syncing companion Git                                            |
 | `mate companion link`     | Cloning companion, when it clones                                |
-| `mate cap index`          | Syncing graphify, Syncing tokensave                              |
-| `mate claude`, `opencode` | Syncing mate, Indexing graphify, Indexing tokensave              |
+| `mate cap index`          | Syncing tokensave                                                |
+| `mate claude`, `opencode` | Syncing mate, Indexing tokensave                                 |
 
-Some steps run Git, npm, graphify or tokensave, which write to the terminal
+Some steps run Git, npm or tokensave, which write to the terminal
 themselves or may ask for credentials. These steps show no spinner: Mate prints
 the step name before the tool runs and a `✓` or `✗` line after it. The same
 happens when a capability asks a question or runs an installer during
@@ -928,27 +928,14 @@ repository.
 
 ## Capabilities
 
-| Command                                    | Purpose                                         |
-| ------------------------------------------ | ----------------------------------------------- |
-| `mate cap openspec <subcommand> [args...]` | Run OpenSpec through the active context.        |
-| `mate cap graphify <subcommand> [args...]` | Run Graphify through the active context.        |
-| `mate cap index`                           | Refresh enabled Graphify and TokenSave indexes. |
-| `mate cap index --graphify`                | Refresh only Graphify.                          |
-| `mate cap index --tokensave`               | Refresh only TokenSave.                         |
+| Command                                    | Purpose                                  |
+| ------------------------------------------ | ---------------------------------------- |
+| `mate cap openspec <subcommand> [args...]` | Run OpenSpec through the active context. |
+| `mate cap index`                           | Refresh the enabled TokenSave index.     |
+| `mate cap index --tokensave`               | Refresh only TokenSave.                  |
 
 `mate cap <namespace> --help`, or `-h`, lists the commands of a namespace a
 plugin provides and exits 0.
-
-The two index flags cannot be combined. When both Graphify and TokenSave are
-enabled, the default index flow refreshes TokenSave and then refreshes Graphify
-against the resulting state.
-
-Every Graphify extraction Mate runs, and every one an agent runs through the
-`graphify` wrapper, leaves secret files out: Mate rewrites the secret region of
-the repository's `.graphifyignore` and passes the secret patterns as
-`--exclude`. Afterwards it removes any secret that still reached the output and
-keeps the rest of the graph. A secret never stops the run. See
-[Secret Guardrails](/docs/concepts/secret-guardrails).
 
 ## Friction
 

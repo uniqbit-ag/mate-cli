@@ -10,6 +10,18 @@ export interface RemoveHeadingSectionOptions {
   isHeading(line: string): boolean;
   /** Exact lines (e.g. HTML comment markers) stripped wherever they appear. */
   markerLines?: string[];
+  /** Start and end lines of blocks removed with their content; an unmatched start stays. */
+  blockMarkers?: [string, string];
+}
+
+function withoutBlocks(lines: string[], [start, end]: [string, string]): string[] {
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const close = lines[i] === start ? lines.indexOf(end, i + 1) : -1;
+    if (close === -1) kept.push(lines[i]);
+    else i = close;
+  }
+  return kept;
 }
 
 /**
@@ -22,10 +34,19 @@ export function removeHeadingSection(
   options: RemoveHeadingSectionOptions,
 ): string {
   const markerLines = new Set(options.markerLines ?? []);
-  const normalizedLines = content.split("\n").filter((line) => !markerLines.has(line));
+  const lines = content.split("\n");
+  const unblocked = options.blockMarkers ? withoutBlocks(lines, options.blockMarkers) : lines;
+  const normalizedLines = unblocked.filter((line) => !markerLines.has(line));
 
   const start = normalizedLines.findIndex(options.isHeading);
   if (start === -1) {
+    if (unblocked.length !== lines.length) {
+      const collapsed = normalizedLines
+        .join("\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+      return collapsed ? collapsed + "\n" : "";
+    }
     const strippedMarkersOnly = normalizedLines.join("\n");
     return strippedMarkersOnly === content ? content : strippedMarkersOnly;
   }

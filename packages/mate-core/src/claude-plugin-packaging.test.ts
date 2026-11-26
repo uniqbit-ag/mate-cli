@@ -113,7 +113,6 @@ async function wrapRepo(repoRoot: string, companionPath: string): Promise<void> 
       repositoryId: "acme",
       wrapperBinPath: path.join(companionPath, "wrappers", "bin"),
       reactDoctorBinPath: path.join(companionPath, "react-doctor"),
-      graphifyOut: path.join(companionPath, ".graphify", "acme", "graphify-out"),
     },
   });
 }

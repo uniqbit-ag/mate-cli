@@ -54,7 +54,6 @@ function linkedRepo() {
       repositoryId: "acme-app",
       wrapperBinPath: "/w",
       reactDoctorBinPath: "/r",
-      graphifyOut: "/g",
     },
   });
 

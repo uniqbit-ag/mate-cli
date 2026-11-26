@@ -27,7 +27,7 @@ describe("setup compatibilities", () => {
     ]);
   });
 
-  test("package manager compatibilities offer locked bun only: uv follows Graphify", () => {
+  test("package manager compatibilities offer locked bun only: uv follows the capabilities that need it", () => {
     expect(listSetupPackageManagerCompatibilities()).toEqual([
       expect.objectContaining({ packageManager: "bun", language: "node", locked: true }),
     ]);
@@ -164,7 +164,7 @@ describe("setup compatibilities", () => {
     expect(
       keepCapabilitySettings(
         [{ name: "openspec" }, { name: "rtk" }],
-        [{ name: "openspec", protectedBranches: ["release/*"] }, { name: "graphify" }],
+        [{ name: "openspec", protectedBranches: ["release/*"] }, { name: "rtk" }],
       ),
     ).toEqual([{ name: "openspec", protectedBranches: ["release/*"] }, { name: "rtk" }]);
   });

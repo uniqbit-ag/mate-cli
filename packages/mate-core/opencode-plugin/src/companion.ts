@@ -120,7 +120,6 @@ function applyCompanionShellEnv(
     delete env.MATE_REPO_ID;
   }
   env.MATE_POLICY_JSON = context.policyJson;
-  env.MATE_GRAPHIFY_ENABLED = context.graphifyEnabled ? "1" : "0";
   env.MATE_GIT_AUTO_MODE = context.gitAutoModeEnabled ? "1" : "0";
   // `mate workflow` hand-offs name steps as `@skill` here.
   env[AGENT_RUNTIME_ENV] = "opencode";

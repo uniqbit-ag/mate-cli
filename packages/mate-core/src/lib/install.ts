@@ -163,8 +163,7 @@ export function buildInstallPlan(
 ): InstallPlan {
   const requirements: InstallRequirement[] = [];
   const bunPlugin = createBunPlugin();
-  // Package managers install first: capability installers run through them
-  // (Graphify's `uv tool install`).
+  // Package managers install first: capability installers run through them.
   const rest = plugins.filter((plugin) => plugin.id !== bunPlugin.id);
   const allPlugins = [
     bunPlugin,
@@ -386,22 +385,29 @@ export async function inspectInstallPreflight(
   return { ok: true, plan };
 }
 
-export async function reconcileInstalledCompanion(plan: InstallPlan): Promise<void> {
+/**
+ * Returns the plan for the config the sync left: a sync may rewrite `framework.yaml`
+ * (a retired capability drops out), which changes the context fingerprint.
+ */
+export async function reconcileInstalledCompanion(plan: InstallPlan): Promise<InstallPlan> {
   if (plan.context.kind !== "companion" || !plan.context.companionPath) {
-    return;
+    return plan;
   }
 
   const { syncCompanionFiles } = await import("../tools/setup");
   await syncCompanionFiles(plan.context.companionPath, plan.context.config);
+  const context = await resolveInstallContext(plan.context.companionPath);
+  if (context.fingerprint === plan.context.fingerprint) return plan;
+  return inspectInstallPlan(buildInstallPlan(context));
 }
 
-export async function repairInstallState(plan: InstallPlan): Promise<void> {
+export async function repairInstallState(stalePlan: InstallPlan): Promise<void> {
+  const plan = await reconcileInstalledCompanion(stalePlan);
   const results = plan.requirements.map((requirement) => ({
     id: requirement.id,
     status: "skipped" as const,
     verified: true,
   }));
-  await reconcileInstalledCompanion(plan);
 
   const store = installStateStoreForContext(plan.context);
   const state = await readInstallState(store);

@@ -3,7 +3,7 @@ import { DiagramFrame, Flow } from "./frame";
 const stages = [
   { title: "Resolve", detail: "Find the companion linked to this working repository." },
   { title: "Sync", detail: "Copy companion instructions, skills, and capabilities into place." },
-  { title: "Index", detail: "Refresh enabled code indexes such as TokenSave and Graphify." },
+  { title: "Index", detail: "Refresh enabled code indexes such as TokenSave." },
   { title: "Launch", detail: "Start Claude Code or OpenCode in the working repository." },
 ];
 

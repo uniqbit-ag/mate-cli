@@ -19,7 +19,6 @@ export type CompanionRuntimeContext = {
   repositoryPath: string;
   repositoryId: string;
   policyJson: string;
-  graphifyEnabled: boolean;
   gitAutoModeEnabled: boolean;
   reactDoctorEnabled: boolean;
 };
@@ -41,7 +40,6 @@ function fromEnvironment(env: Record<string, string | undefined>): CompanionRunt
     repositoryPath: env[MATE_ENV.repositoryPath] ?? "",
     repositoryId: env[MATE_ENV.repositoryId] ?? "",
     policyJson: env[MATE_ENV.policyJson] ?? "{}",
-    graphifyEnabled: env[MATE_ENV.graphifyEnabled] === "1",
     gitAutoModeEnabled: env[MATE_ENV.gitAutoMode] === "1",
     reactDoctorEnabled: env[MATE_ENV.reactDoctorEnabled] === "1",
   };
@@ -94,7 +92,6 @@ export function resolveCompanionRuntime(
       repositoryPath: projection.repositoryPath,
       repositoryId: projection.repositoryId,
       policyJson: policyDocument(policy),
-      graphifyEnabled: isCapabilityEnabled(policy, "graphify"),
       gitAutoModeEnabled: policy.gitAutoMode,
       reactDoctorEnabled: isCapabilityEnabled(policy, "react-doctor"),
     },

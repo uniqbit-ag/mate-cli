@@ -60,7 +60,6 @@ function fixture(
       repositoryId: "acme-app",
       wrapperBinPath: "/w",
       reactDoctorBinPath: "/r",
-      graphifyOut: "/g",
     },
   });
 
@@ -141,7 +140,6 @@ describe("querySessionContext", () => {
           repositoryId: "acme-app",
           wrapperBinPath: "/w",
           reactDoctorBinPath: "/r",
-          graphifyOut: "/g",
         },
       });
     }
@@ -273,7 +271,6 @@ describe("querySessionContext", () => {
         repositoryId: "acme-app",
         wrapperBinPath: "/w",
         reactDoctorBinPath: "/r",
-        graphifyOut: "/g",
       },
     });
 
@@ -294,7 +291,6 @@ describe("querySessionContext", () => {
         repositoryId: "acme-app",
         wrapperBinPath: "/w",
         reactDoctorBinPath: "/r",
-        graphifyOut: "/g",
       },
     });
 

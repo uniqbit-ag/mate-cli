@@ -12,7 +12,7 @@ afterEach(async () => {
   for (const dir of tempRoots.splice(0)) await fs.rm(dir, { recursive: true, force: true });
 });
 
-const isGraphifyHeading = (line: string) => /^#{1,6}\s+graphify\s*$/i.test(line);
+const isAcmeHeading = (line: string) => /^#{1,6}\s+acme\s*$/i.test(line);
 
 describe("removeHeadingSection", () => {
   test("removes the section up to the next heading and collapses blank runs", () => {
@@ -21,7 +21,7 @@ describe("removeHeadingSection", () => {
       "",
       "Keep this.",
       "",
-      "## graphify",
+      "## acme",
       "",
       "Managed body.",
       "",
@@ -31,7 +31,7 @@ describe("removeHeadingSection", () => {
       "",
     ].join("\n");
 
-    expect(removeHeadingSection(content, { isHeading: isGraphifyHeading })).toBe(
+    expect(removeHeadingSection(content, { isHeading: isAcmeHeading })).toBe(
       ["# Intro", "", "Keep this.", "", "## After", "", "Also kept.", ""].join("\n"),
     );
   });
@@ -41,7 +41,7 @@ describe("removeHeadingSection", () => {
 
     expect(
       removeHeadingSection(content, {
-        isHeading: isGraphifyHeading,
+        isHeading: isAcmeHeading,
         markerLines: ["<!-- START -->", "<!-- END -->"],
       }),
     ).toBe("# Intro\n");
@@ -49,12 +49,12 @@ describe("removeHeadingSection", () => {
 
   test("returns content unchanged when nothing matches", () => {
     const content = "# Intro\n\nBody.\n";
-    expect(removeHeadingSection(content, { isHeading: isGraphifyHeading })).toBe(content);
+    expect(removeHeadingSection(content, { isHeading: isAcmeHeading })).toBe(content);
   });
 
   test("returns empty string when the section is the whole document", () => {
-    const content = "## graphify\n\nOnly managed content.\n";
-    expect(removeHeadingSection(content, { isHeading: isGraphifyHeading })).toBe("");
+    const content = "## acme\n\nOnly managed content.\n";
+    expect(removeHeadingSection(content, { isHeading: isAcmeHeading })).toBe("");
   });
 });
 
@@ -84,20 +84,20 @@ describe("stripSectionFromFile", () => {
   }
 
   test("a strip that empties a symlinked file keeps the link and empties its target", async () => {
-    const { dir, file } = await fileOf("## graphify\n\nOnly managed content.\n");
+    const { dir, file } = await fileOf("## acme\n\nOnly managed content.\n");
     const link = path.join(dir, "LINKED.md");
     await fs.symlink(file, link);
 
-    await stripSectionFromFile(link, { isHeading: isGraphifyHeading });
+    await stripSectionFromFile(link, { isHeading: isAcmeHeading });
 
     expect((await fs.lstat(link)).isSymbolicLink()).toBe(true);
     expect(await fs.readFile(file, "utf8")).toBe("");
   });
 
   test("a strip that empties a plain file deletes it", async () => {
-    const { file } = await fileOf("## graphify\n\nOnly managed content.\n");
+    const { file } = await fileOf("## acme\n\nOnly managed content.\n");
 
-    await stripSectionFromFile(file, { isHeading: isGraphifyHeading });
+    await stripSectionFromFile(file, { isHeading: isAcmeHeading });
 
     expect(await fs.stat(file).catch(() => null)).toBeNull();
   });

@@ -121,10 +121,6 @@ function withFriction(policy: string, friction: boolean | undefined): string {
   return friction ? `${policy}\n\n${FRICTION_GUIDANCE}` : policy;
 }
 
-export function hasGraphifyCapability(capabilities: GuidanceCapability[] = []): boolean {
-  return capabilities.some((capability) => capability.name === "graphify");
-}
-
 export function hasOpenspecCapability(capabilities: GuidanceCapability[] = []): boolean {
   return capabilities.some((capability) => capability.name === "openspec");
 }
@@ -140,54 +136,11 @@ export function hasRtkCapability(capabilities: GuidanceCapability[] = []): boole
 /** Claude only: no other runtime isolates a session it moved into a worktree. */
 const ENTERED_WORKTREE_GIT_RULE = `    <rule id="entered-worktree-git" severity="critical">After EnterWorktree moves this session into a linked worktree, run every git command as RTK_DISABLED=1 git ... (for example RTK_DISABLED=1 git status): Claude Code's worktree guard refuses git run through RTK there. Run other commands as usual.</rule>`;
 
-export const GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT =
-  "$MATE_ARTIFACT_PATH/.graphify/$MATE_REPO_ID/graphify-out/";
-export const GRAPHIFY_COMPANION_PATH_CONTRACT =
-  "$MATE_ARTIFACT_PATH/.graphify/__companion__/graphify-out/";
-
+/** Present exactly when tokensave is enabled. */
 export function buildCodebaseExplorationGuidanceSection(
-  options: {
-    useGraphify?: boolean;
-    useTokensave?: boolean;
-    graphifyOutContract?: string;
-  } = {},
+  options: { useTokensave?: boolean } = {},
 ): string {
-  const {
-    useGraphify = false,
-    useTokensave = false,
-    graphifyOutContract = GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT,
-  } = options;
-
-  if (!useGraphify && !useTokensave) {
-    return "";
-  }
-
-  if (useGraphify && useTokensave) {
-    return `<codebase-exploration-rules priority="mandatory">
-<path role="graphify-out">${graphifyOutContract}</path>
-<trigger>Codebase-understanding: architecture, tracing, integrations, impact, "how does X work?"</trigger>
-<order>tokensave -> graphify -> grep/glob/read. MUST NOT skip steps.
-1. tokensave_context first.
-2. If tokensave is empty/file-only/irrelevant, run graphify query "<question>"; use graphify path/explain to deepen.
-3. Use grep/glob/read only after tokensave and graphify were tried.</order>
-<notes>Dirty graph files are expected. Use wiki/index.md for broad navigation; GRAPH_REPORT.md only if query/path/explain fall short.</notes>
-<post-edit>After code changes, run ${FRAMEWORK_NAME} cap index.</post-edit>
-</codebase-exploration-rules>`;
-  }
-
-  if (useGraphify) {
-    return `<codebase-exploration-rules priority="mandatory">
-<path role="graphify-out">${graphifyOutContract}</path>
-<trigger>Codebase-understanding: architecture, tracing, integrations, impact, "how does X work?"</trigger>
-<order>graphify -> grep/glob/read. MUST try graphify before raw source.
-1. graphify query "<question>" first.
-2. Use graphify path "<A>" "<B>" or graphify explain "<concept>" to deepen.
-3. Use grep/glob/read only after graphify was tried.</order>
-<notes>Dirty graph files are expected. Use wiki/index.md for broad navigation; GRAPH_REPORT.md only if query/path/explain fall short.</notes>
-<post-edit>After code changes, run ${FRAMEWORK_NAME} cap index --graphify.</post-edit>
-</codebase-exploration-rules>`;
-  }
-
+  if (!options.useTokensave) return "";
   return `<codebase-exploration-rules priority="mandatory">
 <trigger>Codebase-understanding: architecture, tracing, integrations, impact, "how does X work?"</trigger>
 <order>tokensave -> grep/glob/read. MUST try tokensave before raw source.
@@ -223,12 +176,11 @@ export function buildCompanionPolicyXml(
     "    </paths>",
     "    <cli-tools>",
     `      <cli name="openspec" type="wrapper" invokeAs="${path.join(wrapperBinPath, "openspec")}" />`,
-    `      <cli name="graphify" type="wrapper" invokeAs="${path.join(wrapperBinPath, "graphify")}" />`,
     `      <cli name="${FRAMEWORK_NAME}" type="global" invokeAs="${FRAMEWORK_NAME}" />`,
     "    </cli-tools>",
     "  </context>",
     "  <mandatory-rules>",
-    `    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: ${path.join(wrapperBinPath, "openspec")} status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>`,
+    `    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: ${path.join(wrapperBinPath, "openspec")} status ... . Incorrect: openspec status ... . Do not run bare openspec commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>`,
   ];
 
   if (context.repository) {
@@ -295,7 +247,7 @@ export function buildCompanionPolicyXml(
 /**
  * Build the merged single-string guidance: the companion-policy XML, the
  * friction section while the Friction Switch is on, and codebase-exploration
- * guidance appended when graphify or tokensave is enabled. Used by providers (e.g. Claude) that inject one combined prompt
+ * guidance appended when tokensave is enabled. Used by providers (e.g. Claude) that inject one combined prompt
  * fragment rather than delivering exploration guidance separately; only that
  * form carries the Claude-only `entered-worktree-git` rule.
  */
@@ -309,20 +261,8 @@ export function buildCompanionGuidance(
   });
   const lines = [withFriction(policy, options.friction)];
 
-  const graphifyEnabled = hasGraphifyCapability(context.capabilities);
-  const tokensaveEnabled = hasTokensaveCapability(context.capabilities);
-
-  if (graphifyEnabled || tokensaveEnabled) {
-    lines.push(
-      "",
-      buildCodebaseExplorationGuidanceSection({
-        useGraphify: graphifyEnabled,
-        useTokensave: tokensaveEnabled,
-        graphifyOutContract: context.repository
-          ? GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT
-          : GRAPHIFY_COMPANION_PATH_CONTRACT,
-      }),
-    );
+  if (hasTokensaveCapability(context.capabilities)) {
+    lines.push("", buildCodebaseExplorationGuidanceSection({ useTokensave: true }));
   }
 
   return lines.join("\n");
@@ -335,7 +275,7 @@ export function buildCompanionGuidance(
  * placeholders the plugin materializes from its own resolved context, so the
  * same payload shape serves every companion and no path is resolved here.
  *
- * Real capabilities are passed through (not just the graphify/tokensave flags)
+ * Real capabilities are passed through (not just the tokensave flag)
  * so capability-gated companion-policy rules — e.g. openspec-publish — render
  * exactly as they do for the Claude provider.
  */
@@ -366,24 +306,16 @@ export function buildOpenCodeGuidance(
     ),
     options.friction,
   );
-  const graphifyEnabled = hasGraphifyCapability(capabilities);
   const tokensaveEnabled = hasTokensaveCapability(capabilities);
   const codebaseExplorationGuidance = buildCodebaseExplorationGuidanceSection({
-    useGraphify: graphifyEnabled,
     useTokensave: tokensaveEnabled,
-    graphifyOutContract: options.companionScoped
-      ? GRAPHIFY_COMPANION_PATH_CONTRACT
-      : GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT,
   });
   const errors: string[] = [];
 
   if (!companionGuidance.includes("<companion-policy ")) {
     errors.push("companion guidance was not injected");
   }
-  if (
-    (graphifyEnabled || tokensaveEnabled) &&
-    !codebaseExplorationGuidance.includes("<codebase-exploration-rules ")
-  ) {
+  if (tokensaveEnabled && !codebaseExplorationGuidance.includes("<codebase-exploration-rules ")) {
     errors.push("codebase exploration guidance was not injected");
   }
 

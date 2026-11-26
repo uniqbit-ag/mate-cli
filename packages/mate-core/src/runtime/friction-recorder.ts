@@ -133,7 +133,7 @@ const WITH_SUBCOMMAND = new Set([
   "workflow",
   "working",
 ]);
-const CAP_WITHOUT_COMMAND = new Set(["graphify", "index", "sync"]);
+const CAP_WITHOUT_COMMAND = new Set(["index", "sync"]);
 const REDACTED_VALUE_MIN = 3;
 
 function commandWords(args: string[]): { command: string | null; subcommand: string | null } {

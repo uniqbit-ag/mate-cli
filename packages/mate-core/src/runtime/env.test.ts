@@ -30,7 +30,7 @@ function makeTempDir(prefix: string): string {
  */
 function makeProjectedRepo(
   overrides: Partial<MateProjection> = {},
-  companionConfig = "allowedAgents:\n  - claude\ncapabilities:\n  - name: graphify\ngit: auto\n",
+  companionConfig = "allowedAgents:\n  - claude\ncapabilities:\n  - name: rtk\ngit: auto\n",
 ): { repoRoot: string; companionPath: string } {
   const root = makeTempDir("env-projected-");
   const repoRoot = path.join(root, "working");
@@ -53,7 +53,6 @@ function makeProjectedRepo(
       repositoryId: "acme",
       wrapperBinPath: "/install/mate/wrappers/bin",
       reactDoctorBinPath: "/install/mate/node_modules/.bin/react-doctor",
-      graphifyOut: path.join(companionPath, ".graphify", "acme", "graphify-out"),
       ...overrides,
     },
   });
@@ -74,7 +73,6 @@ describe("MATE_ENV", () => {
     expect(MATE_ENV.repositoryPath).toBe("MATE_REPO_PATH");
     expect(MATE_ENV.repositoryId).toBe("MATE_REPO_ID");
     expect(MATE_ENV.policyJson).toBe("MATE_POLICY_JSON");
-    expect(MATE_ENV.graphifyEnabled).toBe("MATE_GRAPHIFY_ENABLED");
     expect(MATE_ENV.gitAutoMode).toBe("MATE_GIT_AUTO_MODE");
     expect(MATE_ENV.reactDoctorEnabled).toBe("MATE_REACT_DOCTOR_ENABLED");
     expect(MATE_ENV.reactDoctorBinPath).toBe("MATE_REACT_DOCTOR_BIN_PATH");
@@ -90,7 +88,6 @@ describe("readCompanionRuntimeContext", () => {
       MATE_REPO_PATH: "/repos/acme",
       MATE_REPO_ID: "acme",
       MATE_POLICY_JSON: '{"allowedAgents":["opencode"]}',
-      MATE_GRAPHIFY_ENABLED: "1",
       MATE_GIT_AUTO_MODE: "0",
       MATE_REACT_DOCTOR_ENABLED: "1",
     });
@@ -101,7 +98,6 @@ describe("readCompanionRuntimeContext", () => {
       repositoryPath: "/repos/acme",
       repositoryId: "acme",
       policyJson: '{"allowedAgents":["opencode"]}',
-      graphifyEnabled: true,
       gitAutoModeEnabled: false,
       reactDoctorEnabled: true,
     });
@@ -114,7 +110,6 @@ describe("readCompanionRuntimeContext", () => {
     expect(context.companionPath).toBe("");
     expect(context.repositoryPath).toBe("");
     expect(context.policyJson).toBe("{}");
-    expect(context.graphifyEnabled).toBe(false);
     expect(context.gitAutoModeEnabled).toBe(false);
     expect(context.reactDoctorEnabled).toBe(false);
   });
@@ -122,12 +117,10 @@ describe("readCompanionRuntimeContext", () => {
   test("treats non-'1' flag values as disabled", () => {
     const context = readCompanionRuntimeContext({
       MATE_ARTIFACT_PATH: "/companions/acme",
-      MATE_GRAPHIFY_ENABLED: "true",
       MATE_GIT_AUTO_MODE: "yes",
       MATE_REACT_DOCTOR_ENABLED: "0",
     });
 
-    expect(context.graphifyEnabled).toBe(false);
     expect(context.gitAutoModeEnabled).toBe(false);
     expect(context.reactDoctorEnabled).toBe(false);
   });
@@ -145,7 +138,6 @@ describe("readCompanionRuntimeContext file-backed composition", () => {
       repositoryPath: repoRoot,
       repositoryId: "acme",
       policyJson: policyDocument({ allowedAgents: ["claude"], secrets: defaultSecretPolicy() }),
-      graphifyEnabled: true,
       gitAutoModeEnabled: true,
       reactDoctorEnabled: false,
     });
@@ -184,7 +176,6 @@ describe("readCompanionRuntimeContext file-backed composition", () => {
 
     const context = readCompanionRuntimeContext({}, repoRoot);
 
-    expect(context.graphifyEnabled).toBe(false);
     expect(context.reactDoctorEnabled).toBe(true);
     expect(context.gitAutoModeEnabled).toBe(false);
     expect(context.policyJson).toBe(
@@ -307,7 +298,6 @@ describe("a managed session in a linked worktree", () => {
         repositoryId: "web",
         wrapperBinPath: "/install/mate/wrappers/bin",
         reactDoctorBinPath: "/install/mate/node_modules/.bin/react-doctor",
-        graphifyOut: "/acme/graphify-out",
         ...projection,
       },
     });

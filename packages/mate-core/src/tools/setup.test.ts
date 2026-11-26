@@ -103,7 +103,7 @@ async function installOpenSpecStub(root: string): Promise<void> {
   await fs.writeFile(stubPath, source, "utf8");
   await fs.chmod(stubPath, 0o755);
   openSpecCliDeps.locate = () => ({ bin: stubPath });
-  // Sibling stubs (graphify, rtk) placed in the same directory are found on PATH.
+  // Sibling stubs (rtk) placed in the same directory are found on PATH.
   process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
 }
 
@@ -1059,7 +1059,7 @@ describe("executeSetup", () => {
     expect(persisted.git).toBeUndefined();
   });
 
-  test("setup writes no uv ignore block for a legacy uv entry without graphify", async () => {
+  test("setup writes no uv ignore block for a legacy uv entry", async () => {
     const root = await makeTempDir("mate-setup-uv-gitignore-");
     const globalConfigStore = new GlobalConfigStore(
       path.join(root, "home", ".mate", "config.yaml"),
@@ -1271,136 +1271,7 @@ describe("uv plugin (createUvPluginForTest)", () => {
   });
 });
 
-async function installGraphifyStub(root: string): Promise<void> {
-  const binDir = path.join(root, "bin");
-  await fs.mkdir(binDir, { recursive: true });
-  await fs.writeFile(path.join(binDir, "graphify"), "#!/bin/sh\nexit 0\n", "utf8");
-  await fs.chmod(path.join(binDir, "graphify"), 0o755);
-}
-
-describe("applySetupCompatibilities — graphify", () => {
-  test("graphify capability does not write graphify guidance to CLAUDE.md or AGENTS.md", async () => {
-    const root = await makeTempDir("mate-setup-graphify-guidance-");
-    await installOpenSpecStub(root);
-    await installGraphifyStub(root);
-
-    await applySetupCompatibilities(
-      root,
-      {
-        allowedAgents: ["claude", "opencode"],
-        packageManagers: ["bun"],
-        capabilities: [{ name: "graphify" }],
-      },
-      "setup",
-    );
-
-    const claudeContent = await fs.readFile(path.join(root, "CLAUDE.md"), "utf8");
-    const agentsContent = await fs.readFile(path.join(root, "AGENTS.md"), "utf8");
-    expect(claudeContent).not.toContain("## graphify");
-    expect(agentsContent).not.toContain("## graphify");
-  });
-
-  test("graphify capability does not create companion-owned wrappers", async () => {
-    const root = await makeTempDir("mate-setup-graphify-enabled-");
-    await installOpenSpecStub(root);
-    await installGraphifyStub(root);
-
-    await applySetupCompatibilities(
-      root,
-      {
-        allowedAgents: ["claude", "opencode"],
-        packageManagers: ["bun"],
-        capabilities: [{ name: "graphify" }],
-      },
-      "setup",
-    );
-
-    await expect(fs.access(path.join(root, ".mate", "bin", "graphify"))).rejects.toThrow();
-  });
-
-  test("graphify capability removes wrappers when capability is disabled", async () => {
-    const root = await makeTempDir("mate-setup-graphify-disabled-");
-    await installOpenSpecStub(root);
-    await installGraphifyStub(root);
-
-    // Enable graphify first
-    await applySetupCompatibilities(
-      root,
-      {
-        allowedAgents: ["claude"],
-        packageManagers: ["bun"],
-        capabilities: [{ name: "graphify" }],
-      },
-      "setup",
-    );
-    // Now disable graphify
-    await applySetupCompatibilities(
-      root,
-      {
-        allowedAgents: ["claude"],
-        packageManagers: ["bun"],
-        capabilities: [],
-      },
-      "setup",
-    );
-    await expect(fs.access(path.join(root, ".mate", "bin", "graphify"))).rejects.toThrow();
-  });
-
-  test("graphify capability leaves wrapper packaging unchanged during launch-time sync", async () => {
-    const root = await makeTempDir("mate-setup-graphify-sync-");
-    await installOpenSpecStub(root);
-    await installGraphifyStub(root);
-
-    // Initial setup
-    await applySetupCompatibilities(
-      root,
-      {
-        allowedAgents: ["claude"],
-        packageManagers: ["bun"],
-        capabilities: [{ name: "graphify" }],
-      },
-      "setup",
-    );
-
-    await applySetupCompatibilities(
-      root,
-      {
-        allowedAgents: ["claude"],
-        packageManagers: ["bun"],
-        capabilities: [{ name: "graphify" }],
-      },
-      "sync",
-    );
-    await expect(fs.access(path.join(root, ".mate", "bin", "graphify"))).rejects.toThrow();
-  });
-
-  test("graphify capability adds graphify cache entries to .gitignore", async () => {
-    const root = await makeTempDir("mate-setup-graphify-gitignore-");
-    await installOpenSpecStub(root);
-    await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\n", "utf8");
-
-    await applySetupCompatibilities(
-      root,
-      {
-        allowedAgents: [],
-        packageManagers: ["bun"],
-        capabilities: [{ name: "graphify" }],
-      },
-      "setup",
-    );
-
-    const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
-    expect(gitignore).toContain(".graphify/*/graphify-out/cache/");
-    expect(gitignore).toContain(".graphify/*/graphify-out/graph.html");
-    expect(gitignore).toContain(".graphify/*/graphify-out/.graphify_root");
-    expect(gitignore).toContain(".graphify/*/graphify-out/.graphify_python");
-    expect(gitignore).toContain(".graphify/*/graphify-out/obsidian/");
-    expect(gitignore).toContain(".graphify/*/graphify-out/cost.json");
-    expect(gitignore).toContain(".graphify/*/graphify-out/.graphify_labels.json");
-    expect(gitignore).toContain(".graphify/*/graphify-out/manifest.json");
-    expect(gitignore).toContain(".obsidian/");
-  });
-
+describe("applySetupCompatibilities — gitignore", () => {
   test("setup ignores the deployed Mate skill copies by exact name", async () => {
     const root = await makeTempDir("mate-setup-skill-gitignore-");
     await installOpenSpecStub(root);
@@ -1481,8 +1352,8 @@ describe("applySetupCompatibilities — graphify", () => {
     await fs.access(path.join(root, copy));
   });
 
-  test("graphify gitignore entries remain managed even when graphify is disabled", async () => {
-    const root = await makeTempDir("mate-setup-graphify-gitignore-persist-");
+  test("graphify cache entries stay managed after graphify's removal", async () => {
+    const root = await makeTempDir("mate-setup-cache-gitignore-persist-");
     await installOpenSpecStub(root);
     await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\n", "utf8");
 
@@ -1804,23 +1675,6 @@ describe("applySetupCompatibilities", () => {
 });
 
 describe("updateProjectGitignore", () => {
-  test("writes a unified managed block for uv without removing user entries", async () => {
-    const root = await makeTempDir("mate-sync-uv-gitignore-");
-    await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\ncustom.log\n", "utf8");
-
-    await updateProjectGitignore(root, {
-      allowedAgents: [],
-      packageManagers: ["bun"],
-      capabilities: [{ name: "graphify" }],
-    });
-
-    const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
-    expect(gitignore).toContain("node_modules/");
-    expect(gitignore).toContain("custom.log");
-    expect(gitignore.match(new RegExp(`# ${FRAMEWORK_NAME} managed: start`, "g"))?.length).toBe(1);
-    expect(gitignore).toContain(".venv/");
-  });
-
   test("adds companion-local Claude settings to the managed gitignore block when claude is enabled", async () => {
     const root = await makeTempDir("mate-sync-claude-settings-gitignore-");
     await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\n", "utf8");
@@ -1901,13 +1755,11 @@ describe("updateProjectGitignore", () => {
     await updateProjectGitignore(root, {
       allowedAgents: [],
       packageManagers: ["bun"],
-      capabilities: [{ name: "graphify" }],
     });
 
     const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
     expect(gitignore).not.toContain("managed: uv start");
     expect(gitignore.match(new RegExp(`# ${FRAMEWORK_NAME} managed: start`, "g"))?.length).toBe(1);
-    expect(gitignore).toContain(".venv/");
   });
 
   test("sync lists Mate skill copies without an active runtime and drops them once disabled", async () => {
@@ -1934,13 +1786,13 @@ describe("updateProjectGitignore", () => {
     await updateProjectGitignore(root, {
       allowedAgents: [],
       packageManagers: ["bun"],
-      capabilities: [{ name: "graphify" }],
+      capabilities: [{ name: "openspec" }, { name: "react-doctor" }],
     });
 
     const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
     expect(gitignore).toContain("node_modules/");
     expect(gitignore.match(new RegExp(`# ${FRAMEWORK_NAME} managed: start`, "g"))?.length).toBe(1);
-    expect(gitignore).toContain(".graphify/*/graphify-out/cache/");
+    expect(gitignore).toContain(".claude/skills/mate-react-doctor/\n");
   });
 
   test("rebuilding the managed block drops stale entries but keeps sticky managed entries", async () => {
@@ -1968,24 +1820,6 @@ describe("updateProjectGitignore", () => {
     expect(gitignore).toContain("node_modules/");
     expect(gitignore).toContain(".graphify/*/graphify-out/cache/");
     expect(gitignore).not.toContain(".retired-capability/");
-  });
-
-  test("combines uv and capability entries in one managed block", async () => {
-    const root = await makeTempDir("mate-sync-uv-capability-gitignore-");
-    await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\n", "utf8");
-
-    await updateProjectGitignore(root, {
-      allowedAgents: [],
-      packageManagers: ["bun", "uv"],
-      capabilities: [{ name: "graphify" }],
-    });
-
-    const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
-    expect(gitignore.match(new RegExp(`# ${FRAMEWORK_NAME} managed: start`, "g"))?.length).toBe(1);
-    expect(gitignore.match(new RegExp(`# ${FRAMEWORK_NAME} managed: end`, "g"))?.length).toBe(1);
-    expect(gitignore).toContain(".venv/");
-    expect(gitignore).toContain(".graphify/*/graphify-out/cache/");
-    expect(gitignore).toContain("node_modules/");
   });
 });
 

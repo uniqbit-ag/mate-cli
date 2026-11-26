@@ -1,7 +1,4 @@
-import {
-  hasGraphifyCapability,
-  hasTokensaveCapability,
-} from "../../../lib/orchestrator/capabilities";
+import { hasTokensaveCapability } from "../../../lib/orchestrator/capabilities";
 import { resolveForCapability } from "../../../lib/orchestrator/framework-context";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import { tokensaveCheckout } from "../../../runtime/tokensave-route";
@@ -16,12 +13,11 @@ import {
   type StartupProgressController,
 } from "../../../lib/components/startup-progress";
 import { ensureUnambiguousCompanion } from "../shared/companion-selection";
-import { runGraphifyCapCommand } from "./graphify";
 import { runTokensaveCapCommand } from "./tokensave";
 
 type CapRunner = (args: string[]) => Promise<void>;
 
-export type SyncCapStep = "graphify" | "tokensave";
+export type SyncCapStep = "tokensave";
 
 export interface SyncCapDeps {
   ensureUnambiguousCompanion?: (cwd: string) => Promise<boolean>;
@@ -32,7 +28,6 @@ export interface SyncCapDeps {
   isTokensaveInitialized?: (repoPath: string) => Promise<boolean>;
   ensureTokensaveStoreExcluded?: (repoPath: string) => Promise<void>;
   ensureTokensaveBranchingPosture?: (repoPath: string) => Promise<void>;
-  runGraphify?: CapRunner;
   runTokensave?: CapRunner;
   /** Replace the default hand-over lines; launch passes its own progress screen. */
   onStepStart?: (step: SyncCapStep) => void;
@@ -41,7 +36,6 @@ export interface SyncCapDeps {
 }
 
 const STEP_LABELS: Record<SyncCapStep, string> = {
-  graphify: "Syncing graphify",
   tokensave: "Syncing tokensave",
 };
 
@@ -64,15 +58,15 @@ async function defaultResolveRepositoryPath(): Promise<string | undefined> {
   return repo?.path;
 }
 
-// The reused cap commands (runGraphifyCapCommand / runTokensaveCapCommand) signal
+// The reused cap command (runTokensaveCapCommand) signals
 // success/failure ONLY by mutating process.exitCode — they never return a value and
 // never throw on a non-zero child status (a successful child sets it to 0). Baseline
 // to 0 first so we read this step's result in isolation, then clear it back to 0 so a
 // prior failure can't leak into the next step's read or be mistaken for the aggregate
 // we set at the end. Note: `process.exitCode = undefined` does NOT reset it under Bun
 // (the runtime mate ships on) — it retains the previous value — so 0 is used, not
-// undefined. If either reused command's error-signaling convention ever changes, this
-// gating stops working — see sync.test.ts.
+// undefined. If the reused command's error-signaling convention ever changes, this
+// gating stops working — see index-cmd.test.ts.
 async function runCapStep(run: () => Promise<void>): Promise<boolean> {
   process.exitCode = 0;
   await run();
@@ -81,56 +75,27 @@ async function runCapStep(run: () => Promise<void>): Promise<boolean> {
   return code === 0;
 }
 
-function parseSyncOptions(
-  args: string[],
-): { includeGraphify: boolean; includeTokensave: boolean } | null {
-  let includeGraphify = false;
-  let includeTokensave = false;
-
+function parseSyncOptions(args: string[]): boolean {
   for (const arg of args) {
-    if (arg === "--graphify") {
-      includeGraphify = true;
-      continue;
-    }
-
-    if (arg === "--tokensave") {
-      includeTokensave = true;
-      continue;
-    }
-
+    if (arg === "--tokensave") continue;
     process.stderr.write(`mate: unknown sync option: ${arg}\n`);
     process.exitCode = 1;
-    return null;
+    return false;
   }
-
-  if (includeGraphify && includeTokensave) {
-    process.stderr.write("mate: --graphify and --tokensave cannot be used together\n");
-    process.exitCode = 1;
-    return null;
-  }
-
-  return { includeGraphify, includeTokensave };
+  return true;
 }
 
 /**
- * @command mate cap index [--graphify] [--tokensave]
- * @description Re-syncs code-exploration capability indexes after source
- * changes. When the `graphify` capability is enabled and either `--graphify`
- * was passed or `tokensave` is not also enabled, runs
- * `graphify . --update --code-only`. When `tokensave` is enabled (and neither
- * `--graphify` nor `--tokensave` was passed), initializes it on first run (`tokensave init`)
- * or otherwise runs `tokensave sync`; if both capabilities are enabled, graphify
- * is re-run once more afterward so its graph reflects the tokensave-synced state.
+ * @command mate cap index [--tokensave]
+ * @description Re-syncs the tokensave index after source changes. When
+ * `tokensave` is enabled, initializes it on first run (`tokensave init`) or
+ * otherwise runs `tokensave sync`.
  * @flags
- * - `--graphify` — only sync graphify, skipping the tokensave step entirely.
- * - `--tokensave` — only sync tokensave, skipping graphify even when enabled.
- * @remarks Exits non-zero if any invoked step (graphify or tokensave) fails.
+ * - `--tokensave` — accepted for compatibility; tokensave is the only step.
+ * @remarks Exits non-zero if the tokensave step fails.
  */
 export async function runIndexCapCommand(args: string[], deps: SyncCapDeps = {}): Promise<void> {
-  const options = parseSyncOptions(args);
-  if (!options) {
-    return;
-  }
+  if (!parseSyncOptions(args)) return;
 
   const loadCapabilities = deps.loadCapabilities ?? defaultLoadCapabilities;
   const ensureCompanion = deps.ensureUnambiguousCompanion ?? ensureUnambiguousCompanion;
@@ -142,7 +107,7 @@ export async function runIndexCapCommand(args: string[], deps: SyncCapDeps = {})
 
   const capabilities = await loadCapabilities();
 
-  // graphify and tokensave write straight to the terminal: labelled hand-overs, no spinner.
+  // tokensave writes straight to the terminal: a labelled hand-over, no spinner.
   let progress: StartupProgressController | undefined;
   const onStepStart =
     deps.onStepStart ??
@@ -158,14 +123,13 @@ export async function runIndexCapCommand(args: string[], deps: SyncCapDeps = {})
     });
 
   try {
-    await runSteps(options, capabilities, { onStepStart, onStepDone }, deps);
+    await runSteps(capabilities, { onStepStart, onStepDone }, deps);
   } finally {
     progress?.stop();
   }
 }
 
 async function runSteps(
-  options: { includeGraphify: boolean; includeTokensave: boolean },
   capabilities: CapabilityConfig[],
   { onStepStart, onStepDone }: Required<Pick<SyncCapDeps, "onStepStart" | "onStepDone">>,
   deps: SyncCapDeps,
@@ -176,25 +140,10 @@ async function runSteps(
   const ensureStoreExcluded = deps.ensureTokensaveStoreExcluded ?? ensureTokensaveStoreExcluded;
   const ensureBranchingPosture =
     deps.ensureTokensaveBranchingPosture ?? defaultEnsureBranchingPosture;
-  const runGraphify = deps.runGraphify ?? runGraphifyCapCommand;
   const runTokensave = deps.runTokensave ?? runTokensaveCapCommand;
   let failed = false;
 
-  if (hasGraphifyCapability(capabilities)) {
-    if (
-      options.includeGraphify ||
-      (!options.includeTokensave && !hasTokensaveCapability(capabilities))
-    ) {
-      onStepStart("graphify");
-      const updateOk = await runCapStep(() => runGraphify([".", "--update", "--code-only"]));
-      onStepDone("graphify", updateOk);
-      if (!updateOk) {
-        failed = true;
-      }
-    }
-  }
-
-  if (!options.includeGraphify && hasTokensaveCapability(capabilities)) {
+  if (hasTokensaveCapability(capabilities)) {
     onStepStart("tokensave");
     /** One checkout for check, init, posture and sync; `runTokensave` resolves the same one. */
     const resolved = await resolveRepositoryPath();
@@ -222,20 +171,6 @@ async function runSteps(
       const syncOk = await runCapStep(() => runTokensave(["sync"]));
       if (!syncOk) failed = true;
       onStepDone("tokensave", syncOk);
-    }
-  }
-
-  if (
-    !options.includeGraphify &&
-    !options.includeTokensave &&
-    hasGraphifyCapability(capabilities) &&
-    hasTokensaveCapability(capabilities)
-  ) {
-    onStepStart("graphify");
-    const updateOk = await runCapStep(() => runGraphify([".", "--update", "--code-only"]));
-    onStepDone("graphify", updateOk);
-    if (!updateOk) {
-      failed = true;
     }
   }
 

@@ -7,7 +7,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { CapabilityContributionInput, SetupContext } from "../plugin";
 import {
   mergeClaudeSettingsJsonHooks,
-  patchClaudeSkillTree,
   reconcileClaudeContributions,
   removeClaudeHookGroupsWhere,
   stripClaudeForeignSections,
@@ -214,30 +213,6 @@ describe("reconcileClaudeContributions", () => {
 });
 
 describe("claude escape hatch", () => {
-  test("patchClaudeSkillTree rewrites SKILL.md and references except excluded files", async () => {
-    const companionPath = await makeCompanion();
-    const skillDir = path.join(companionPath, ".claude", "skills", "acme");
-    await fs.mkdir(path.join(skillDir, "references"), { recursive: true });
-    await fs.writeFile(path.join(skillDir, "SKILL.md"), "write to out/\n", "utf8");
-    await fs.writeFile(path.join(skillDir, "references", "usage.md"), "out/ paths\n", "utf8");
-    await fs.writeFile(path.join(skillDir, "references", "keep.md"), "out/ stays\n", "utf8");
-
-    await patchClaudeSkillTree(
-      companionPath,
-      "acme",
-      (content) => content.replaceAll("out/", "$OUT"),
-      { excludeFiles: ["keep.md"] },
-    );
-
-    expect(await fs.readFile(path.join(skillDir, "SKILL.md"), "utf8")).toBe("write to $OUT\n");
-    expect(await fs.readFile(path.join(skillDir, "references", "usage.md"), "utf8")).toBe(
-      "$OUT paths\n",
-    );
-    expect(await fs.readFile(path.join(skillDir, "references", "keep.md"), "utf8")).toBe(
-      "out/ stays\n",
-    );
-  });
-
   test("stripClaudeForeignSections strips companion and repo CLAUDE.md sections", async () => {
     const companionPath = await makeCompanion();
     const repoPath = path.join(companionPath, "repo");

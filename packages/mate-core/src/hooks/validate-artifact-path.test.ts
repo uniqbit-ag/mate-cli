@@ -38,7 +38,6 @@ async function wrapRepo(
     repositoryId: "acme",
     wrapperBinPath: path.join(companionPath, "wrappers", "bin"),
     reactDoctorBinPath: path.join(companionPath, "react-doctor"),
-    graphifyOut: path.join(companionPath, ".graphify", "acme", "graphify-out"),
   };
   writeProjectionPair(repoRoot, { stamp, projection });
 }

@@ -28,18 +28,6 @@ tools:
     version: 4.2.0
     source: npm_global
 
-  graphify:
-    detect: graphify
-    package: graphifyy
-    version: 0.9.80
-    source: uv_tool
-    # The images install it from locks/graphify.requirements.txt, which pins the whole
-    # transitive graph with per-artifact hashes. The interpreter is pinned too:
-    # uv would otherwise fetch whatever CPython is current, which is a moving
-    # reference no different from an unpinned package.
-    python_version: 3.14.7
-    index: https://pypi.org/simple
-
   rtk:
     detect: rtk
     version: 1.1.0

@@ -37,7 +37,6 @@ export function project(clone: ProjectedClone, checkout: string, repositoryPath 
       repositoryId: "acme-app",
       wrapperBinPath: "/install/mate/wrappers/bin",
       reactDoctorBinPath: "/install/mate/node_modules/.bin/react-doctor",
-      graphifyOut: path.join(clone.companionPath, ".graphify", "acme-app"),
     },
   });
 }

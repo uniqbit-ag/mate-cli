@@ -44,10 +44,7 @@ const DUMMY_API_KEY = "sk-ant-dummy-test-key";
 // `-m provider/model` CLI selector vs. the bare id the API request body actually carries.
 const OPENCODE_MODEL = "anthropic/claude-sonnet-5-5";
 const OPENCODE_MODEL_ID = "claude-sonnet-5-5";
-const COMPANION_GUIDANCE_MARKERS = [
-  "\n<companion-policy ",
-  "\n<codebase-exploration-rules",
-] as const;
+const COMPANION_GUIDANCE_MARKERS = ["\n<companion-policy "] as const;
 const CONTEXT_MODE_GUIDANCE_MARKER = "\n## Context Mode\n";
 /**
  * Native memory strips HTML comments, so Claude's companion rules are found by
@@ -400,32 +397,6 @@ async function writeOpenSpecStub(scenario: E2EScenario): Promise<void> {
   await fs.chmod(stubPath, 0o755);
 }
 
-async function writeGraphifyStub(scenario: E2EScenario): Promise<void> {
-  const stubPath = path.join(scenario.bin, "graphify");
-  const source = [
-    "#!/usr/bin/env bun",
-    'import fs from "node:fs";',
-    'import path from "node:path";',
-    "const args = process.argv.slice(2);",
-    "if (args[0] === 'install' && args.includes('--project')) {",
-    "  const platIdx = args.indexOf('--platform');",
-    "  const platform = platIdx >= 0 ? args[platIdx + 1] : 'unknown';",
-    "  const cwd = process.cwd();",
-    "  const provDir = `.${platform}`;",
-    "  fs.mkdirSync(path.join(cwd, provDir, 'skills', 'graphify'), { recursive: true });",
-    "  fs.writeFileSync(path.join(cwd, provDir, 'skills', 'graphify', 'SKILL.md'), '# graphify\\n', 'utf8');",
-    "}",
-    "process.exit(0);",
-    "",
-  ].join("\n");
-  await fs.writeFile(stubPath, source, "utf8");
-  await fs.chmod(stubPath, 0o755);
-}
-
-// Enables both `openspec` and `graphify` capabilities: buildCompanionGuidance
-// only appends the `<codebase-exploration-rules>` block when at least one of
-// graphify/tokensave is active, so a graphify stub is required for that
-// marker to actually show up in the real system prompt.
 async function setupCompanion(
   scenario: E2EScenario,
   allowedAgents: string[],
@@ -434,7 +405,6 @@ async function setupCompanion(
   await writeUvStub(scenario);
   await writeRtkStub(scenario);
   await writeOpenSpecStub(scenario);
-  await writeGraphifyStub(scenario);
 
   return runMate(scenario, {
     cwd: scenario.companion,
@@ -444,8 +414,6 @@ async function setupCompanion(
       ...allowedAgents.flatMap((agent) => ["--allowed-agent", agent]),
       "--capability",
       "openspec",
-      "--capability",
-      "graphify",
       "--capability",
       "context-mode",
       ...extraArgs,
@@ -1473,6 +1441,13 @@ describe.skipIf(!runRealAgentTests || !hasOpenCode)(
       expect((await linkRepository(scenario)).exitCode).toBe(0);
       await writeGlobalOpenCodeConfig(scenario);
       await fs.mkdir(path.join(scenario.companion, ".opencode", "commands"), { recursive: true });
+      await fs.mkdir(path.join(scenario.companion, ".opencode", "skills", "acme-skill"), {
+        recursive: true,
+      });
+      await fs.writeFile(
+        path.join(scenario.companion, ".opencode", "skills", "acme-skill", "SKILL.md"),
+        "---\nname: acme-skill\ndescription: acme skill\n---\nacme\n",
+      );
       await fs.writeFile(
         path.join(scenario.companion, ".opencode", "commands", "acme-wrapped.md"),
         "---\ndescription: acme wrapped\n---\nwrapped\n",
@@ -1496,7 +1471,7 @@ describe.skipIf(!runRealAgentTests || !hasOpenCode)(
 
         const skills = names(await service.query("skill", scenario.working));
         /** A copied companion skill and one from the companion's `.agents/skills` path. */
-        expect(skills).toContain("graphify");
+        expect(skills).toContain("acme-skill");
         expect(skills).toContain("mate-grill-me");
 
         const sources = (await service.query("config", scenario.working)) as Array<{

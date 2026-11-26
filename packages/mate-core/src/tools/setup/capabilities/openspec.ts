@@ -16,7 +16,6 @@ import {
   LEGACY_SCHEMA_ALIASES,
   SHIPPED_SCHEMAS,
 } from "../../../lib/delivery/stages";
-import { FRAMEWORK_NAME } from "../../../framework";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
 import { removeRecorded } from "../managed-output";
 import type {
@@ -455,7 +454,6 @@ export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityP
               (skill) => `Skill(${skill})`,
             ),
             "Bash(openspec:*)",
-            `Bash(${FRAMEWORK_NAME} cap graphify:*)`,
             `Bash(${path.join(depsWithDefaults.wrapperBinPath(), "openspec")}:*)`,
           ],
         },

@@ -140,7 +140,6 @@ function wrappedRepo(config: string): { repoRoot: string; companionPath: string 
       repositoryId: "acme-app",
       wrapperBinPath: "/w",
       reactDoctorBinPath: "/r",
-      graphifyOut: "/g",
     },
   });
   return { repoRoot, companionPath };

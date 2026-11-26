@@ -36,15 +36,14 @@ describe("buildOpenCodeGuidance", () => {
     expect(guidance.codebaseExplorationGuidance).toContain("tokensave_context");
   });
 
-  test("prefers graphify ordering in the separate field when both capabilities are enabled", () => {
+  test("orders tokensave before raw source for a companion that still lists graphify", () => {
     const guidance = buildOpenCodeGuidance([{ name: "graphify" }, { name: "tokensave" }]);
 
-    expect(guidance.codebaseExplorationGuidance).toContain(
-      "tokensave -> graphify -> grep/glob/read",
-    );
+    expect(guidance.codebaseExplorationGuidance).toContain("tokensave -> grep/glob/read");
+    expect(guidance.codebaseExplorationGuidance).not.toContain("graphify");
   });
 
-  test("leaves codebase exploration guidance empty without graphify or tokensave", () => {
+  test("leaves codebase exploration guidance empty without tokensave", () => {
     const guidance = buildOpenCodeGuidance([{ name: "openspec" }]);
 
     expect(guidance.codebaseExplorationGuidance).toBe("");

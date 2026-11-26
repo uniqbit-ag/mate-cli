@@ -1,7 +1,6 @@
 import { version } from "../package.json";
 import { setFallbackDistribution } from "../src/distribution";
 import { createContextModePlugin } from "../src/tools/setup/capabilities/context-mode";
-import { createGraphifyPlugin } from "../src/tools/setup/capabilities/graphify";
 import { createRtkPlugin } from "../src/tools/setup/capabilities/rtk";
 import { createOpenspecPlugin } from "../src/tools/setup/capabilities/openspec";
 import { createReactDoctorPlugin } from "../src/tools/setup/capabilities/react-doctor";
@@ -13,6 +12,7 @@ import { createGitignorePlugin } from "../src/tools/setup/plugins/gitignore";
 import { createClaudePlugin } from "../src/tools/setup/providers/claude";
 import { createOpenCodePlugin } from "../src/tools/setup/providers/opencode";
 import { PluginRegistry } from "../src/tools/setup/registry";
+import { createGraphifyRetirementPlugin } from "../src/tools/setup/retire-graphify";
 
 // Test-harness default: a mate-shaped distribution (mirroring the
 // @uniqbit/mate bin's assembly) so framework code paths that read the active
@@ -27,7 +27,7 @@ function buildTestPluginEntries(): PluginRegistration[] {
     createReactDoctorPlugin(),
     createTokensavePlugin(),
     createRtkPlugin(),
-    createGraphifyPlugin(),
+    createGraphifyRetirementPlugin(),
     createContextModePlugin(),
   ];
   return [

@@ -25,14 +25,9 @@ export interface MateProjection {
   repositoryId: string;
   wrapperBinPath: string;
   reactDoctorBinPath: string;
-  graphifyOut: string;
 }
 
-/**
- * Env variable each projected field materializes as. `GRAPHIFY_OUT` is
- * graphify's own variable rather than part of the `MATE_*` contract, so it is
- * spelled here instead of in `MATE_ENV`.
- */
+/** Env variable each projected field materializes as. */
 export const PROJECTION_ENV_NAMES: Record<keyof MateProjection, string> = {
   version: MATE_ENV.version,
   companionPath: MATE_ENV.companionPath,
@@ -40,7 +35,6 @@ export const PROJECTION_ENV_NAMES: Record<keyof MateProjection, string> = {
   repositoryId: MATE_ENV.repositoryId,
   wrapperBinPath: MATE_ENV.wrapperBinPath,
   reactDoctorBinPath: MATE_ENV.reactDoctorBinPath,
-  graphifyOut: "GRAPHIFY_OUT",
 };
 
 /** Stable field order; both renderers iterate it so the forms cannot diverge. */
@@ -226,7 +220,7 @@ function projectionAt(root: string): ResolvedProjection | null {
 /**
  * The projection a linked worktree with none of its own borrows: the main
  * worktree's, else the first live linked worktree's by record name. The
- * lender's companion, ID and Graphify output stay; `repositoryPath` becomes
+ * lender's companion and ID stay; `repositoryPath` becomes
  * the worktree.
  */
 function borrowedProjection(cwd: string): ResolvedProjection | null {

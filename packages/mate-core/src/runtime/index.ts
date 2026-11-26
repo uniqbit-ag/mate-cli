@@ -4,13 +4,10 @@ export {
   type ArtifactRefusalInput,
 } from "./artifact-refusal";
 export {
-  GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT,
-  GRAPHIFY_COMPANION_PATH_CONTRACT,
   buildCodebaseExplorationGuidanceSection,
   buildCompanionGuidance,
   buildCompanionPolicyXml,
   buildOpenCodeGuidance,
-  hasGraphifyCapability,
   hasOpenspecCapability,
   hasTokensaveCapability,
   type GuidanceCapability,

@@ -142,7 +142,7 @@ tools:
         file: uv-aarch64-unknown-linux-gnu.tar.gz
         sha256: 6524bd338177ed50d035d39354e12545e993bbeba2ecbddf0480c5b3a81d313f
 
-  # Capability tools (openspec, context7, graphify, rtk, tokensave) are not
+  # Capability tools (openspec, context7, rtk, tokensave) are not
   # listed here: their versions and digests come from
   # packages/mate-core/tool-manifest.yaml, which a member's computer uses too.
   # `readImageInputs()` merges them and rejects a tool listed in both files.

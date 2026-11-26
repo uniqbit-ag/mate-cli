@@ -42,7 +42,6 @@ import {
   inspectClaudePluginFolders,
   type PublishedClaudePluginFolder,
 } from "./claude-plugin-folders";
-import { patchSkillTreeMarkdownFiles } from "./skill-tree";
 import {
   filterClaudeHookGroups,
   mergeClaudeHookGroups,
@@ -137,7 +136,6 @@ function getManagedAskEntries(companionPath: string): string[] {
 
 const LEGACY_MANAGED_PERMISSION_ENTRIES = [
   "Bash($MATE_COMPANION_BIN_PATH/openspec:*)",
-  "Bash($MATE_COMPANION_BIN_PATH/graphify:*)",
   // React Doctor's pre-seeds before it moved to the pinned mate-react-doctor skill.
   "Skill(react-doctor)",
   "Bash(npx react-doctor:*)",
@@ -811,24 +809,10 @@ async function teardownLegacyClaudeBin(companionPath: string): Promise<void> {
 
 // ---------------------------------------------------------------------------
 // Runtime Surface escape hatch (spec: runtime-surface). Imperative operations
-// for effects a declaration cannot express — patching skill trees an external
-// CLI wrote, absorbing/stripping foreign config another tool produced. Format
+// for effects a declaration cannot express — absorbing/stripping foreign
+// config another tool produced. Format
 // knowledge stays in this module; capabilities pass only predicates.
 // ---------------------------------------------------------------------------
-
-/** Patch markdown files of an externally written `.claude/skills/<name>` tree. */
-export async function patchClaudeSkillTree(
-  companionPath: string,
-  name: string,
-  transform: (content: string) => string,
-  options: { excludeFiles?: readonly string[] } = {},
-): Promise<void> {
-  await patchSkillTreeMarkdownFiles(
-    path.join(companionPath, ".claude", "skills", name),
-    transform,
-    new Set(options.excludeFiles ?? []),
-  );
-}
 
 /**
  * Strip a foreign heading section from the Claude guidance surfaces: the

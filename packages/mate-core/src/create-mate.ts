@@ -27,7 +27,7 @@ export interface MateCli {
  * Assemble a distribution from an identity config and plugin registration
  * entries. Distributions choose their plugin set; the framework always adds
  * bun as the required runtime substrate, uv for the capabilities that install
- * through it (enabled only by them, e.g. Graphify), the `mcp-manager`
+ * through it (enabled only by them), the `mcp-manager`
  * Capability (enabled by a `mcpManager` section), plus gitignore management
  * named after the framework identity (built last since it reads the full
  * plugin set). Returns the runnable CLI.

@@ -86,12 +86,12 @@ describe("createStartupProgress", () => {
     const progress = track(createStartupProgress("Starting claude", deps));
 
     progress.start("sync", "Syncing mate");
-    progress.start("graphify", "Indexing graphify");
+    progress.start("acme", "Indexing acme");
     progress.succeed("sync");
 
     expect(renders.at(-1)?.steps).toEqual([
       { id: "sync", label: "Syncing mate", status: "done" },
-      { id: "graphify", label: "Indexing graphify", status: "running" },
+      { id: "acme", label: "Indexing acme", status: "running" },
     ]);
   });
 
@@ -99,12 +99,12 @@ describe("createStartupProgress", () => {
     const { deps, renders } = fakeRender();
     const progress = track(createStartupProgress("Starting claude", deps));
 
-    progress.start("graphify", "Indexing graphify");
-    progress.succeed("graphify");
-    progress.start("graphify", "Indexing graphify again");
+    progress.start("acme", "Indexing acme");
+    progress.succeed("acme");
+    progress.start("acme", "Indexing acme again");
 
     expect(renders.at(-1)?.steps).toEqual([
-      { id: "graphify", label: "Indexing graphify again", status: "running" },
+      { id: "acme", label: "Indexing acme again", status: "running" },
     ]);
   });
 
@@ -126,12 +126,12 @@ describe("createStartupProgress", () => {
 
     progress.start("sync", "Syncing mate");
     progress.succeed("sync");
-    progress.start("graphify", "Indexing graphify");
+    progress.start("acme", "Indexing acme");
     progress.failCurrent();
 
     expect(renders.at(-1)?.steps).toEqual([
       { id: "sync", label: "Syncing mate", status: "done" },
-      { id: "graphify", label: "Indexing graphify", status: "error" },
+      { id: "acme", label: "Indexing acme", status: "error" },
     ]);
   });
 
@@ -175,8 +175,8 @@ describe("createStartupProgress", () => {
 
     progress.start("sync", "Syncing mate");
     progress.succeed("sync");
-    progress.start("graphify", "Indexing graphify");
-    progress.fail("graphify");
+    progress.start("acme", "Indexing acme");
+    progress.fail("acme");
     progress.start("tokensave", "Indexing tokensave");
 
     const rows = renderToString(element, { columns: 80 })
@@ -184,7 +184,7 @@ describe("createStartupProgress", () => {
       .filter((row) => row.trim() !== "");
     expect(rows[0]).toBe("mate · Starting claude");
     expect(rows[1]).toMatch(/✓ Syncing mate$/);
-    expect(rows[2]).toMatch(/✗ Indexing graphify failed$/);
+    expect(rows[2]).toMatch(/✗ Indexing acme failed$/);
     expect(rows[3]).toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Indexing tokensave$/);
     expect(rows.filter((row) => /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(row))).toHaveLength(1);
   });

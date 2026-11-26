@@ -62,12 +62,12 @@ describe("runSetupCommand", () => {
     setupCommandDeps.runSetupCommandWithDeps = wrapperMock;
 
     try {
-      await runSetupCommand(["--capability", "graphify"]);
+      await runSetupCommand(["--capability", "rtk"]);
     } finally {
       setupCommandDeps.runSetupCommandWithDeps = original;
     }
 
-    expect(wrapperMock).toHaveBeenCalledWith(["--capability", "graphify"]);
+    expect(wrapperMock).toHaveBeenCalledWith(["--capability", "rtk"]);
   });
 });
 
@@ -210,20 +210,20 @@ describe("runSetupCommandWithDeps", () => {
   });
 
   test("passes an explicit capability through to setup tool", async () => {
-    const cwd = await makeTempDir("mate-setup-cli-graphify-");
+    const cwd = await makeTempDir("mate-setup-cli-rtk-");
     const selectorMock = mock(async () => {
       throw new Error("selector should not run");
     });
     const executeMock = mock(async () => ({
       config: {
         allowedAgents: ["claude"],
-        capabilities: [{ name: "graphify" }],
+        capabilities: [{ name: "rtk" }],
         packageManagers: ["bun"],
       },
     }));
 
     await withCwd(cwd, () =>
-      runSetupCommandWithDeps(["--capability", "graphify"], {
+      runSetupCommandWithDeps(["--capability", "rtk"], {
         confirm: async () => true,
         inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
         selectSetupCompatibilities: selectorMock,
@@ -236,7 +236,7 @@ describe("runSetupCommandWithDeps", () => {
       {
         allowedAgents: ["claude"],
         packageManagers: ["bun"],
-        capabilities: [{ name: "graphify" }],
+        capabilities: [{ name: "rtk" }],
         git: "default",
       },
       expect.objectContaining({ cwd: expect.stringContaining(path.basename(cwd)) }),
@@ -461,13 +461,13 @@ describe("runSetupCommandWithDeps", () => {
       config: {
         allowedAgents: ["opencode"],
         packageManagers: ["bun", "uv"],
-        capabilities: [{ name: "graphify" }],
+        capabilities: [{ name: "rtk" }],
       },
     }));
 
     await withCwd(cwd, () =>
       runSetupCommandWithDeps(
-        ["--allowed-agent", "opencode", "--package-manager", "uv", "--capability", "graphify"],
+        ["--allowed-agent", "opencode", "--package-manager", "uv", "--capability", "rtk"],
         {
           inspectSetupPreflight: async () => ({
             kind: "linked-working-repo",
@@ -484,7 +484,7 @@ describe("runSetupCommandWithDeps", () => {
       expect.objectContaining({
         allowedAgents: ["opencode"],
         packageManagers: ["uv"],
-        capabilities: [{ name: "graphify" }],
+        capabilities: [{ name: "rtk" }],
       }),
       expect.objectContaining({ cwd: companionPath }),
     );
@@ -499,14 +499,14 @@ describe("runSetupCommandWithDeps", () => {
       type: "companion",
       allowedAgents: ["opencode"],
       packageManagers: ["bun"],
-      capabilities: [{ name: "graphify" }],
+      capabilities: [{ name: "rtk" }],
     });
     const selectorMock = mock(
       async () =>
         ({
           allowedAgents: ["opencode"],
           packageManagers: ["bun"],
-          capabilities: [{ name: "graphify" }],
+          capabilities: [{ name: "rtk" }],
           selectedGitMode: "default",
         }) satisfies SetupSelections,
     );
@@ -514,7 +514,7 @@ describe("runSetupCommandWithDeps", () => {
       config: {
         allowedAgents: ["opencode"],
         packageManagers: ["bun"],
-        capabilities: [{ name: "graphify" }],
+        capabilities: [{ name: "rtk" }],
       },
     }));
 
@@ -532,14 +532,14 @@ describe("runSetupCommandWithDeps", () => {
     expect(selectorMock).toHaveBeenCalledWith({
       initialSelections: expect.objectContaining({
         allowedAgents: ["opencode"],
-        capabilities: [{ name: "graphify" }],
+        capabilities: [{ name: "rtk" }],
       }),
     });
     expect(executeMock).toHaveBeenCalledWith(
       {
         allowedAgents: ["opencode"],
         packageManagers: ["bun"],
-        capabilities: [{ name: "graphify" }],
+        capabilities: [{ name: "rtk" }],
         git: "default",
       },
       expect.objectContaining({ cwd: companionPath }),

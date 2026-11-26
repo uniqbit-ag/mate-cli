@@ -372,7 +372,7 @@ export async function executeSetup(
   });
 
   // Setup no longer fans out to linked repos: capabilities that touch a working repo
-  // (companion files on launch, the tokensave/graphify graph via `mate cap index`)
+  // (companion files on launch, the tokensave graph via `mate cap index`)
   // are applied in that repo's own context, not eagerly from here.
   return { config };
 }
