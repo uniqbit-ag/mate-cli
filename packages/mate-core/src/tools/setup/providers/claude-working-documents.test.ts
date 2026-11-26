@@ -219,6 +219,14 @@ describe("folding the companion .mcp.json", () => {
     expect(servers).toEqual({ tokensave: { command: "tokensave", args: ["serve"] } });
   });
 
+  test("leaves out a disabled Capability's entry the companion file still holds", async () => {
+    const { servers } = await renderLocalMcp(
+      JSON.stringify({ mcpServers: { tokensave: { command: "tokensave", args: ["serve"] } } }),
+    );
+
+    expect(servers).toBeUndefined();
+  });
+
   test.each([
     ["no", undefined],
     ["an unparseable", "{"],
