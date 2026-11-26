@@ -602,7 +602,7 @@ describe("workspace gate wiring", () => {
       );
     });
 
-    test("Claude archives in the background with the slash command as first turn", async () => {
+    test("Claude submits in the background with the slash command as first turn", async () => {
       jest.useFakeTimers();
       const { repo, ready } = await withActionItems(["opencode", "claude"]);
       const { spyOn } = await import("bun:test");
@@ -612,12 +612,12 @@ describe("workspace gate wiring", () => {
         sessionId: "c25175db-b143",
       }));
       const add = spyOn(mate, "addSession").mockImplementation(async () => ({}) as never);
-      await handlers.get("mate.archiveChange.claude")!(ready);
+      await handlers.get("mate.submitChange.claude")!(ready);
       expect(start).toHaveBeenCalledWith(
         repo,
         undefined,
         undefined,
-        "/mate-archive-change acme-queue",
+        "/mate-submit-change acme-queue",
       );
       expect(add.mock.calls[0]![0]).toMatchObject({ id: "c25175db-b143", runtime: "claude" });
       expect(terminals.at(-1)!.sent).toEqual(["claude attach c25175db"]);
@@ -647,11 +647,11 @@ describe("workspace gate wiring", () => {
       const { window } = await import("vscode");
       const shown = window.showErrorMessage as unknown as ReturnType<typeof mock>;
       shown.mockClear();
-      await handlers.get("mate.archiveChange.claude")!(ready);
+      await handlers.get("mate.submitChange.claude")!(ready);
       await allowAgents(repo, ["codex"]);
-      await handlers.get("mate.archiveChange.opencode")!(ready);
+      await handlers.get("mate.submitChange.opencode")!(ready);
       await allowAgents(repo, ["opencode"]);
-      await handlers.get("mate.archiveChange.opencode")!({
+      await handlers.get("mate.submitChange.opencode")!({
         ...ready,
         data: { name: "acme;rm -rf" },
       });
@@ -671,8 +671,8 @@ describe("workspace gate wiring", () => {
       const { menus } = manifest.contributes;
       const menu = (submenu: string) =>
         menus["view/item/context"].find((entry: { submenu?: string }) => entry.submenu === submenu);
-      expect(menu("mate.archiveChange")).toEqual({
-        submenu: "mate.archiveChange",
+      expect(menu("mate.submitChange")).toEqual({
+        submenu: "mate.submitChange",
         when: "view == mate.readyToSubmit && viewItem == change.ready && mate.changeActionAgents",
         group: "mate@1",
       });
@@ -681,10 +681,10 @@ describe("workspace gate wiring", () => {
         when: "view == mate.readyToPublish && viewItem == pending && mate.changeActionAgents",
         group: "mate@1",
       });
-      const commands = ["mate.archiveChange", "mate.publishArtifact"].flatMap((submenu) =>
+      const commands = ["mate.submitChange", "mate.publishArtifact"].flatMap((submenu) =>
         ["claude", "opencode"].map((agent) => `${submenu}.${agent}`),
       );
-      for (const submenu of ["mate.archiveChange", "mate.publishArtifact"]) {
+      for (const submenu of ["mate.submitChange", "mate.publishArtifact"]) {
         expect(menus[submenu]).toEqual([
           { command: `${submenu}.claude`, when: "mate.changeAction.claude", group: "agents@1" },
           { command: `${submenu}.opencode`, when: "mate.changeAction.opencode", group: "agents@2" },

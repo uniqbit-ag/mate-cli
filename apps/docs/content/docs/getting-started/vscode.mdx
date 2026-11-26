@@ -66,13 +66,13 @@ Once the managed workspace is open, the sidebar offers:
 - **Ready to submit:** active changes whose tasks are all checked, with their Workset. They are no longer listed under Open changes.
 - **Ready to publish:** archived changes reported by Mate, including those still waiting for their delivery merge. Being listed does not mean a change has been published.
 
-### Archive or publish from the sidebar
+### Submit or publish from the sidebar
 
-Right-click a **Ready to submit** item and hover **Archive this**, or a
+Right-click a **Ready to submit** item and hover **Submit this**, or a
 **Ready to publish** item and hover **Publish this**, then pick an agent. Mate
 starts a new session of that agent in the repository root and opens its
 terminal. The session's
-first turn runs `mate-archive-change` or `mate-publish-artifact` on the item,
+first turn runs `mate-submit-change` or `mate-publish-artifact` on the item,
 and the session is listed under **Sessions** like any other.
 
 The agents offered are the `claude` and `opencode` entries of the Companion

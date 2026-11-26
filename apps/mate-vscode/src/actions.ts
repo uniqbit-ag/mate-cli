@@ -13,15 +13,15 @@ import type { Runtime } from "./sessions";
  */
 export const SUBJECT_PATTERN = /^(?:\d{4}-\d{2}-\d{2}-)?[a-z0-9][a-z0-9-]{0,63}$/;
 
-export type ChangeAction = "archive" | "publish";
+export type ChangeAction = "submit" | "publish";
 
 export const CHANGE_ACTIONS: Record<
   ChangeAction,
   { skill: string; opencode: (name: string) => string }
 > = {
-  archive: {
-    skill: "mate-archive-change",
-    opencode: (name) => `Use the mate-archive-change skill on change ${name}.`,
+  submit: {
+    skill: "mate-submit-change",
+    opencode: (name) => `Use the mate-submit-change skill on change ${name}.`,
   },
   publish: {
     skill: "mate-publish-artifact",

@@ -93,8 +93,8 @@ describe("Claude background sessions", () => {
         { stdout: agents([{ id: "c25175db", sessionId: "c25175db-b143", kind: "background" }]) },
       ],
     ]);
-    await startClaudeBackground("/w/acme", undefined, run, "/mate-archive-change acme-queue");
-    expect(calls).toContain(`${LAUNCH} '/mate-archive-change acme-queue'`);
+    await startClaudeBackground("/w/acme", undefined, run, "/mate-submit-change acme-queue");
+    expect(calls).toContain(`${LAUNCH} '/mate-submit-change acme-queue'`);
   });
 
   test("a failing launch reports its last error line", async () => {

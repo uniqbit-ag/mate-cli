@@ -174,12 +174,12 @@
         "icon": "$(debug-stop)"
       },
       {
-        "command": "mate.archiveChange.claude",
+        "command": "mate.submitChange.claude",
         "title": "Claude",
         "category": "Mate"
       },
       {
-        "command": "mate.archiveChange.opencode",
+        "command": "mate.submitChange.opencode",
         "title": "OpenCode",
         "category": "Mate"
       },
@@ -244,7 +244,7 @@
           "group": "inline@1"
         },
         {
-          "submenu": "mate.archiveChange",
+          "submenu": "mate.submitChange",
           "when": "view == mate.readyToSubmit && viewItem == change.ready && mate.changeActionAgents",
           "group": "mate@1"
         },
@@ -276,11 +276,11 @@
           "when": "false"
         },
         {
-          "command": "mate.archiveChange.claude",
+          "command": "mate.submitChange.claude",
           "when": "false"
         },
         {
-          "command": "mate.archiveChange.opencode",
+          "command": "mate.submitChange.opencode",
           "when": "false"
         },
         {
@@ -292,14 +292,14 @@
           "when": "false"
         }
       ],
-      "mate.archiveChange": [
+      "mate.submitChange": [
         {
-          "command": "mate.archiveChange.claude",
+          "command": "mate.submitChange.claude",
           "when": "mate.changeAction.claude",
           "group": "agents@1"
         },
         {
-          "command": "mate.archiveChange.opencode",
+          "command": "mate.submitChange.opencode",
           "when": "mate.changeAction.opencode",
           "group": "agents@2"
         }
@@ -319,8 +319,8 @@
     },
     "submenus": [
       {
-        "id": "mate.archiveChange",
-        "label": "Archive this"
+        "id": "mate.submitChange",
+        "label": "Submit this"
       },
       {
         "id": "mate.publishArtifact",

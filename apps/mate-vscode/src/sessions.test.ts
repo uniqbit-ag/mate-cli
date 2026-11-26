@@ -68,8 +68,8 @@ describe("command lines", () => {
   });
 
   test("launch with a first-turn prompt per runtime", () => {
-    expect(launchCommand(claude, "/mate-archive-change acme-queue")).toBe(
-      `mate claude -- --session-id ${claude.id} '/mate-archive-change acme-queue'`,
+    expect(launchCommand(claude, "/mate-submit-change acme-queue")).toBe(
+      `mate claude -- --session-id ${claude.id} '/mate-submit-change acme-queue'`,
     );
     expect(launchCommand(opencode, "Use the acme skill on change it's.")).toBe(
       `mate opencode -- --bg --session ${opencode.id} --prompt 'Use the acme skill on change it'\\''s.'`,

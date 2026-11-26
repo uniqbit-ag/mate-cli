@@ -749,8 +749,8 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
 
     ...CHANGE_ACTION_AGENTS.flatMap((runtime) => [
-      vscode.commands.registerCommand(`mate.archiveChange.${runtime}`, (item?: SectionItem) =>
-        startChangeAction("archive", runtime, item),
+      vscode.commands.registerCommand(`mate.submitChange.${runtime}`, (item?: SectionItem) =>
+        startChangeAction("submit", runtime, item),
       ),
       vscode.commands.registerCommand(`mate.publishArtifact.${runtime}`, (item?: SectionItem) =>
         startChangeAction("publish", runtime, item),
