@@ -234,6 +234,7 @@ export {
 export {
   MCP_MANAGER_HEADER_PREFIXES,
   MCP_MANAGER_TRANSPORTS,
+  parseHeaderRef,
   type McpManagerAudienceSelection,
   type McpManagerConfig,
   type McpManagerRemoteServer,

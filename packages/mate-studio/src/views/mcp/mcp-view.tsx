@@ -14,6 +14,7 @@ import {
   EmptyNote,
   ListCard,
   PAGE_PAD,
+  ROW,
   StatusWord,
   ViewLoading,
 } from "../../components/view-parts";
@@ -21,7 +22,7 @@ import { cn } from "../../lib/cn";
 import { mcpManagerQuery, mcpPreviewQuery } from "../../lib/mcp-query";
 import { saveMcpManager } from "../../server/mcp-manager";
 import { type McpDialog, McpDialogs } from "./mcp-dialogs";
-import { type Cell, cellOf, cycleCell, type EntryKind, transportOf } from "./mcp-model";
+import { type Cell, cellOf, cycleCell, type EntryKind, KIND_WORD, transportOf } from "./mcp-model";
 
 /** The companion's MCP servers, groups and per-audience selection, edited as one unsaved draft. */
 export function Mcp({ companion, writable }: { companion: string; writable: boolean }) {
@@ -73,8 +74,9 @@ function McpEditor({
     enabled: edit !== null,
     placeholderData: keepPreviousData,
   });
-  const derived: McpManagerDerived = (edit && preview.data?.ok ? preview.data : null) ?? base;
-  const invalid = edit && preview.data?.ok === false ? preview.data.reason : null;
+  const checked = edit ? preview.data : undefined;
+  const derived: McpManagerDerived = checked?.ok ? checked : base;
+  const invalid = checked?.ok === false ? checked.reason : null;
 
   const apply = (next: McpManagerState) => {
     setEdit({ base, draft: next });
@@ -102,7 +104,6 @@ function McpEditor({
 
   const servers = Object.entries(draft.catalog?.servers ?? {});
   const groups = Object.entries(draft.catalog?.groups ?? {});
-  const audiences = Object.keys(draft.audiences);
   const rowActions = (entry: EntryKind, name: string) => (
     <span className="ml-auto flex flex-none items-center gap-1">
       <Button
@@ -110,7 +111,7 @@ function McpEditor({
         size="sm"
         disabled={!writable}
         aria-label={`Edit ${name}`}
-        onClick={open({ kind: entry === "servers" ? "server" : "group", previous: name })}
+        onClick={open({ kind: "form", entry, previous: name })}
       >
         Edit
       </Button>
@@ -125,15 +126,20 @@ function McpEditor({
       </Button>
     </span>
   );
-  const addButton = (kind: "server" | "group", ref?: Ref<HTMLButtonElement>) => (
-    <Button ref={ref} size="sm" disabled={!writable} onClick={open({ kind, previous: null })}>
+  const addButton = (entry: EntryKind, ref?: Ref<HTMLButtonElement>) => (
+    <Button
+      ref={ref}
+      size="sm"
+      disabled={!writable}
+      onClick={open({ kind: "form", entry, previous: null })}
+    >
       <Icon name="plus" className="size-3.5" />
-      Add {kind}
+      Add {KIND_WORD[entry]}
     </Button>
   );
 
   return (
-    <div className={cn(PAGE_PAD, "grid gap-3 pb-8")} data-mcp-view="">
+    <div className={cn(PAGE_PAD, "grid gap-3 pb-8")}>
       <SaveBar
         writable={writable}
         dirty={edit !== null}
@@ -157,11 +163,11 @@ function McpEditor({
           <span>
             This companion declares no MCP servers. Add the first one to give its agents a tool.
           </span>
-          {addButton("server", addServer)}
+          {addButton("servers", addServer)}
         </EmptyNote>
       ) : (
         <>
-          <ListCard title="Servers" count={servers.length} hint={addButton("server", addServer)}>
+          <ListCard title="Servers" count={servers.length} hint={addButton("servers", addServer)}>
             <ul className="m-0 list-none p-0">
               {servers.map(([name, server]) => (
                 <li key={name} className={ROW_LINE} data-mcp-server={name}>
@@ -183,7 +189,7 @@ function McpEditor({
               never reach this page.
             </p>
           </ListCard>
-          <ListCard title="Groups" count={groups.length} hint={addButton("group")}>
+          <ListCard title="Groups" count={groups.length} hint={addButton("groups")}>
             {groups.length === 0 ? (
               <p className="m-0 px-4 py-3 text-sm text-muted">
                 No groups. A group lets a selection turn several servers on or off at once.
@@ -191,7 +197,7 @@ function McpEditor({
             ) : (
               <ul className="m-0 list-none p-0">
                 {groups.map(([name, members]) => (
-                  <li key={name} className={ROW_LINE} data-mcp-group={name}>
+                  <li key={name} className={ROW_LINE}>
                     <span className="w-40 flex-none truncate font-mono text-sm">{name}</span>
                     <span className="min-w-0 flex-1 truncate font-mono text-xs">
                       {members.length > 0 ? members.join(", ") : "no servers"}
@@ -204,7 +210,6 @@ function McpEditor({
           </ListCard>
           <SelectionGrid
             state={draft}
-            audiences={audiences}
             effective={derived.effective}
             stale={edit !== null && (preview.isPlaceholderData || preview.isPending)}
             writable={writable}
@@ -225,19 +230,14 @@ function McpEditor({
   );
 }
 
-const ROW_LINE =
-  "flex min-w-0 items-center gap-4 border-t border-rule-soft px-4 py-1.5 first:border-t-0";
+const ROW_LINE = cn(ROW, "py-1.5 hover:bg-transparent");
 
 function Variables({ statuses }: { statuses: McpVariableStatus[] }) {
   if (statuses.length === 0) return null;
   return (
     <span className="flex flex-none flex-wrap items-center gap-x-3 gap-y-1">
       {statuses.map(({ name, set }) => (
-        <span
-          key={name}
-          className="inline-flex items-center gap-2 font-mono text-xs"
-          data-mcp-variable={name}
-        >
+        <span key={name} className="inline-flex items-center gap-2 font-mono text-xs">
           {name}
           <StatusWord marker={set ? "done" : "warn"}>{set ? "set" : "missing"}</StatusWord>
         </span>
@@ -291,13 +291,7 @@ function SaveBar({
       <Button variant="ghost" size="sm" disabled={!dirty || pending} onClick={onDiscard}>
         Discard
       </Button>
-      <Button
-        variant="primary"
-        size="sm"
-        id="mcp-save"
-        disabled={!dirty || pending || blocked}
-        onClick={onSave}
-      >
+      <Button variant="primary" size="sm" disabled={!dirty || pending || blocked} onClick={onSave}>
         {pending ? "Saving…" : "Save"}
       </Button>
       {error ? (
@@ -362,26 +356,19 @@ function ConflictLine({ label, names }: { label: string; names: string[] }) {
   );
 }
 
-const CELL_WORDS: Record<Cell, string> = {
-  enabled: "Enabled",
-  off: "Off",
-  inherit: "Inherit",
-  enable: "Enable",
-  disable: "Disable",
-};
+const ON = "border-accent bg-accent-soft font-semibold text-text";
+const QUIET = "border-transparent text-muted";
 
-const CELL_LOOK: Record<Cell, string> = {
-  enabled: "border-accent bg-accent-soft font-semibold text-text",
-  enable: "border-accent bg-accent-soft font-semibold text-text",
-  disable: "border-rule bg-surface font-semibold text-text",
-  off: "border-transparent text-muted",
-  inherit: "border-transparent text-muted",
-};
-
-const CELL_ICON: Partial<Record<Cell, "check" | "close">> = {
-  enabled: "check",
-  enable: "check",
-  disable: "close",
+const CELL_VIEW: Record<Cell, { word: string; look: string; icon?: "check" | "close" }> = {
+  enabled: { word: "Enabled", look: ON, icon: "check" },
+  enable: { word: "Enable", look: ON, icon: "check" },
+  disable: {
+    word: "Disable",
+    look: "border-rule bg-surface font-semibold text-text",
+    icon: "close",
+  },
+  off: { word: "Off", look: QUIET },
+  inherit: { word: "Inherit", look: QUIET },
 };
 
 const HEAD_CELL =
@@ -396,14 +383,12 @@ const NAME_CELL =
  */
 function SelectionGrid({
   state,
-  audiences,
   effective,
   stale,
   writable,
   onChange,
 }: {
   state: McpManagerState;
-  audiences: string[];
   effective: McpManagerDerived["effective"];
   /** The effective row still shows an earlier state's answer. */
   stale: boolean;
@@ -417,45 +402,43 @@ function SelectionGrid({
       .filter((name) => name.toLowerCase().includes(needle))
       .map((name) => ({ kind, name })),
   );
-  const columns: (string | null)[] = [null, ...audiences];
+  const columns: (string | null)[] = [null, ...Object.keys(state.audiences)];
   const cell = (kind: EntryKind, name: string, audience: string | null): ReactNode => {
     const held = cellOf(state, audience, kind, name);
-    const icon = CELL_ICON[held];
+    const { word, look, icon } = CELL_VIEW[held];
     return (
       <td key={audience ?? ""} className="border-t border-rule-soft px-3 py-1">
         <button
           type="button"
           className={cn(
             "inline-flex h-7 min-w-24 items-center gap-1.5 rounded-control border px-2 text-xs transition-colors enabled:hover:border-accent disabled:cursor-not-allowed",
-            CELL_LOOK[held],
+            look,
           )}
           disabled={!writable}
-          aria-label={`${name} for ${audience ?? "base"}: ${CELL_WORDS[held]}`}
+          aria-label={`${name} for ${audience ?? "base"}: ${word}`}
           data-mcp-cell={`${audience ?? "base"}/${name}`}
           data-state={held}
           onClick={() => onChange(cycleCell(state, audience, kind, name))}
         >
           {icon ? <Icon name={icon} className="size-3.5" /> : null}
-          {CELL_WORDS[held]}
+          {word}
         </button>
       </td>
     );
   };
   return (
-    <section
-      className="list-card overflow-hidden rounded-card border border-rule"
-      aria-label="Selection"
-    >
-      <div className="flex flex-wrap items-center gap-2.5 border-b border-rule bg-surface px-4 py-2">
-        <h2 className="m-0 text-[0.9rem] font-semibold">Selection</h2>
+    <ListCard
+      title="Selection"
+      hint={
         <Input
-          className="ml-auto h-7 w-48"
+          className="h-7 w-48"
           value={filter}
           placeholder="Filter by name"
           aria-label="Filter servers and groups by name"
           onChange={(event) => setFilter(event.currentTarget.value)}
         />
-      </div>
+      }
+    >
       <div className="max-h-[60vh] overflow-auto">
         <table className="w-full border-separate border-spacing-0 text-sm">
           <thead>
@@ -491,7 +474,7 @@ function SelectionGrid({
             ) : null}
           </tbody>
           <tfoot>
-            <tr data-mcp-effective="" aria-busy={stale}>
+            <tr aria-busy={stale}>
               <th scope="row" className={cn(NAME_CELL, "border-rule align-top font-semibold")}>
                 Effective servers
               </th>
@@ -504,7 +487,6 @@ function SelectionGrid({
                       "border-t border-rule px-3 py-2 align-top font-mono text-xs",
                       stale && "opacity-60",
                     )}
-                    data-mcp-effective-column={audience ?? "base"}
                   >
                     {names && names.length > 0 ? (
                       <ul className="m-0 grid list-none gap-0.5 p-0">
@@ -527,6 +509,6 @@ function SelectionGrid({
         with <code className="font-mono">MATE_AUDIENCE</code> set to that audience. A sync writes
         the base servers plus the active audience's changes.
       </p>
-    </section>
+    </ListCard>
   );
 }

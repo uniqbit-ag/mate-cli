@@ -1,6 +1,17 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { MCP_MANAGER_HEADER_PREFIXES, type McpManagerState } from "@uniqbit/mate-core/studio";
-import { type FormEvent, type ReactNode, useId, useRef, useState } from "react";
+import {
+  MCP_MANAGER_HEADER_PREFIXES,
+  type McpManagerServer,
+  type McpManagerState,
+} from "@uniqbit/mate-core/studio";
+import {
+  type ComponentProps,
+  type FormEvent,
+  type ReactNode,
+  useId,
+  useRef,
+  useState,
+} from "react";
 
 import { Icon } from "../../components/icon";
 import { Button } from "../../components/ui/button";
@@ -20,10 +31,12 @@ import {
   SelectValue,
 } from "../../components/ui/select";
 import { Pills } from "../../components/view-parts";
+import { cn } from "../../lib/cn";
 import { mcpPreviewQuery } from "../../lib/mcp-query";
 import {
   type EntryKind,
   type HeaderRow,
+  KIND_WORD,
   nameTaken,
   referenceText,
   type ServerForm,
@@ -36,11 +49,8 @@ import {
 } from "./mcp-model";
 
 export type McpDialog =
-  | { kind: "server"; previous: string | null }
-  | { kind: "group"; previous: string | null }
+  | { kind: "form"; entry: EntryKind; previous: string | null }
   | { kind: "delete"; entry: EntryKind; name: string };
-
-const KIND_WORD: Record<EntryKind, string> = { servers: "server", groups: "group" };
 
 const NO_PREFIX = "none";
 const PREFIXES = [
@@ -81,8 +91,12 @@ export function McpDialogs({
         className="grid max-h-[80vh] w-[min(520px,calc(100vw-32px))] gap-4 overflow-y-auto p-5"
         finalFocus={finalFocus}
       >
-        {dialog?.kind === "server" ? <ServerBody previous={dialog.previous} {...body} /> : null}
-        {dialog?.kind === "group" ? <GroupBody previous={dialog.previous} {...body} /> : null}
+        {dialog?.kind === "form" && dialog.entry === "servers" ? (
+          <ServerBody previous={dialog.previous} {...body} />
+        ) : null}
+        {dialog?.kind === "form" && dialog.entry === "groups" ? (
+          <GroupBody previous={dialog.previous} {...body} />
+        ) : null}
         {dialog?.kind === "delete" ? (
           <DeleteBody entry={dialog.entry} name={dialog.name} {...body} />
         ) : null}
@@ -91,9 +105,17 @@ export function McpDialogs({
   );
 }
 
-/** Applies an edit only once core accepts the resulting state; its refusal is shown instead. */
-function useCheckedApply({ companion, onApply, onClose }: BodyProps) {
+/**
+ * Adds or replaces an entry only once core accepts the resulting state; a name another entry of
+ * the kind holds, or core's refusal, is shown instead.
+ */
+function useCheckedEntry<K extends EntryKind>(
+  { companion, state, onApply, onClose }: BodyProps,
+  entry: K,
+  previous: string | null,
+) {
   const queryClient = useQueryClient();
+  const [taken, setTaken] = useState<string | null>(null);
   const check = useMutation({
     mutationFn: (next: McpManagerState) => queryClient.fetchQuery(mcpPreviewQuery(companion, next)),
     onSuccess: (preview, next) => {
@@ -102,12 +124,50 @@ function useCheckedApply({ companion, onApply, onClose }: BodyProps) {
       onClose();
     },
   });
-  const refusal = check.isError
-    ? check.error.message || "The entry could not be checked."
-    : check.data?.ok === false
-      ? check.data.reason
-      : null;
-  return { apply: check.mutate, pending: check.isPending, refusal, reset: check.reset };
+  const submit = (name: string, value: K extends "servers" ? McpManagerServer : string[]) => {
+    if (nameTaken(state, entry, previous, name)) {
+      check.reset();
+      return setTaken(name);
+    }
+    setTaken(null);
+    check.mutate(withEntry(state, entry, previous, name, value));
+  };
+  const refusal = taken
+    ? `A ${KIND_WORD[entry]} named ${taken} already exists.`
+    : check.isError
+      ? check.error.message || "The entry could not be checked."
+      : check.data?.ok === false
+        ? check.data.reason
+        : null;
+  return { submit, pending: check.isPending, refusal };
+}
+
+function DialogHead({ title, children }: { title: ReactNode; children: ReactNode }) {
+  return (
+    <div className="grid gap-1.5">
+      <DialogTitle className="text-md">{title}</DialogTitle>
+      <DialogDescription>{children}</DialogDescription>
+    </div>
+  );
+}
+
+function CodeInput({ className, ...props }: ComponentProps<typeof Input>) {
+  return (
+    <Input
+      className={cn("font-mono", className)}
+      autoComplete="off"
+      spellCheck={false}
+      {...props}
+    />
+  );
+}
+
+function NameField(props: ComponentProps<typeof Input>) {
+  return (
+    <Field label="Name" hint="Lowercase letters, digits and hyphens.">
+      <CodeInput {...props} />
+    </Field>
+  );
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
@@ -144,40 +204,23 @@ function ServerBody({ previous, ...body }: BodyProps & { previous: string | null
   const [form, setForm] = useState(() =>
     serverForm(previous ?? "", previous ? state.catalog?.servers?.[previous] : undefined),
   );
-  const [taken, setTaken] = useState<string | null>(null);
-  const checked = useCheckedApply(body);
+  const checked = useCheckedEntry(body, "servers", previous);
   const set = <K extends keyof ServerForm>(key: K, value: ServerForm[K]) =>
     setForm((held) => ({ ...held, [key]: value }));
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const name = form.name.trim();
-    if (nameTaken(state, "servers", previous, name)) {
-      checked.reset();
-      return setTaken(name);
-    }
-    setTaken(null);
-    checked.apply(withEntry(state, "servers", previous, name, serverOf(form)));
+    checked.submit(form.name.trim(), serverOf(form));
   };
   return (
     <form className="grid gap-3.5" onSubmit={submit}>
-      <div className="grid gap-1.5">
-        <DialogTitle className="text-md">
-          {previous ? `Edit ${previous}` : "Add a server"}
-        </DialogTitle>
-        <DialogDescription>
-          Variables are given by name only. Mate never stores or shows a value.
-        </DialogDescription>
-      </div>
-      <Field label="Name" hint="Lowercase letters, digits and hyphens.">
-        <Input
-          className="font-mono"
-          value={form.name}
-          placeholder="acme-docs"
-          autoComplete="off"
-          spellCheck={false}
-          onChange={(event) => set("name", event.currentTarget.value)}
-        />
-      </Field>
+      <DialogHead title={previous ? `Edit ${previous}` : "Add a server"}>
+        Variables are given by name only. Mate never stores or shows a value.
+      </DialogHead>
+      <NameField
+        value={form.name}
+        placeholder="acme-docs"
+        onChange={(event) => set("name", event.currentTarget.value)}
+      />
       <div className="grid gap-1.5 text-sm">
         <span>Transport</span>
         <Pills
@@ -190,12 +233,9 @@ function ServerBody({ previous, ...body }: BodyProps & { previous: string | null
       {form.transport === "stdio" ? (
         <>
           <Field label="Command">
-            <Input
-              className="font-mono"
+            <CodeInput
               value={form.command}
               placeholder="acme-docs-mcp"
-              autoComplete="off"
-              spellCheck={false}
               onChange={(event) => set("command", event.currentTarget.value)}
             />
           </Field>
@@ -211,12 +251,9 @@ function ServerBody({ previous, ...body }: BodyProps & { previous: string | null
       ) : (
         <>
           <Field label="URL">
-            <Input
-              className="font-mono"
+            <CodeInput
               value={form.url}
               placeholder="https://acme.test/mcp"
-              autoComplete="off"
-              spellCheck={false}
               onChange={(event) => set("url", event.currentTarget.value)}
             />
           </Field>
@@ -234,7 +271,7 @@ function ServerBody({ previous, ...body }: BodyProps & { previous: string | null
           onChange={(event) => set("env", event.currentTarget.value)}
         />
       </Field>
-      <Refusal>{taken ? `A server named ${taken} already exists.` : checked.refusal}</Refusal>
+      <Refusal>{checked.refusal}</Refusal>
       <FormActions pending={checked.pending} action={previous ? "Apply" : "Add server"} />
     </form>
   );
@@ -259,13 +296,11 @@ function HeaderRows({
         // Rows have no identity of their own, and one is only ever removed with its own button.
         // oxlint-disable-next-line react/no-array-index-key
         <div key={`${id}-${index}`} className="flex items-center gap-1.5">
-          <Input
-            className="min-w-0 flex-1 font-mono"
+          <CodeInput
+            className="min-w-0 flex-1"
             value={row.header}
             placeholder="Authorization"
             aria-label={`Header ${index + 1} name`}
-            autoComplete="off"
-            spellCheck={false}
             onChange={(event) => change(index, { header: event.currentTarget.value })}
           />
           <Select
@@ -286,13 +321,11 @@ function HeaderRows({
               ))}
             </SelectContent>
           </Select>
-          <Input
-            className="min-w-0 flex-1 font-mono"
+          <CodeInput
+            className="min-w-0 flex-1"
             value={row.variable}
             placeholder="ACME_KEY"
             aria-label={`Header ${index + 1} variable name`}
-            autoComplete="off"
-            spellCheck={false}
             onChange={(event) => change(index, { variable: event.currentTarget.value })}
           />
           <Button
@@ -332,40 +365,25 @@ function GroupBody({ previous, ...body }: BodyProps & { previous: string | null 
   const [members, setMembers] = useState<readonly string[]>(
     () => (previous ? state.catalog?.groups?.[previous] : undefined) ?? [],
   );
-  const [taken, setTaken] = useState<string | null>(null);
-  const checked = useCheckedApply(body);
+  const checked = useCheckedEntry(body, "groups", previous);
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const next = name.trim();
-    if (nameTaken(state, "groups", previous, next)) {
-      checked.reset();
-      return setTaken(next);
-    }
-    setTaken(null);
     // Catalog order, whatever order the boxes were ticked in.
-    const ordered = servers.filter((server) => members.includes(server));
-    checked.apply(withEntry(state, "groups", previous, next, ordered));
+    checked.submit(
+      name.trim(),
+      servers.filter((server) => members.includes(server)),
+    );
   };
   return (
     <form className="grid gap-3.5" onSubmit={submit}>
-      <div className="grid gap-1.5">
-        <DialogTitle className="text-md">
-          {previous ? `Edit ${previous}` : "Add a group"}
-        </DialogTitle>
-        <DialogDescription>
-          A group lets a selection turn several servers on or off at once.
-        </DialogDescription>
-      </div>
-      <Field label="Name" hint="Lowercase letters, digits and hyphens.">
-        <Input
-          className="font-mono"
-          value={name}
-          placeholder="acme-data"
-          autoComplete="off"
-          spellCheck={false}
-          onChange={(event) => setName(event.currentTarget.value)}
-        />
-      </Field>
+      <DialogHead title={previous ? `Edit ${previous}` : "Add a group"}>
+        A group lets a selection turn several servers on or off at once.
+      </DialogHead>
+      <NameField
+        value={name}
+        placeholder="acme-data"
+        onChange={(event) => setName(event.currentTarget.value)}
+      />
       <fieldset className="m-0 grid gap-1 border-0 p-0 text-sm">
         <legend className="mb-1.5 p-0">Servers</legend>
         {servers.map((server) => (
@@ -385,7 +403,7 @@ function GroupBody({ previous, ...body }: BodyProps & { previous: string | null 
           </label>
         ))}
       </fieldset>
-      <Refusal>{taken ? `A group named ${taken} already exists.` : checked.refusal}</Refusal>
+      <Refusal>{checked.refusal}</Refusal>
       <FormActions pending={checked.pending} action={previous ? "Apply" : "Add group"} />
     </form>
   );
@@ -401,17 +419,18 @@ function DeleteBody({
   const references = referenceText(state, entry, name);
   return (
     <>
-      <div className="grid gap-1.5">
-        <DialogTitle className="text-md">
-          Delete {KIND_WORD[entry]} <span className="font-mono">{name}</span>?
-        </DialogTitle>
-        <DialogDescription>
-          {references
-            ? `It is used by ${references}. Deleting it removes it there too.`
-            : "No group or selection uses it."}{" "}
-          Nothing is written until you save.
-        </DialogDescription>
-      </div>
+      <DialogHead
+        title={
+          <>
+            Delete {KIND_WORD[entry]} <span className="font-mono">{name}</span>?
+          </>
+        }
+      >
+        {references
+          ? `It is used by ${references}. Deleting it removes it there too.`
+          : "No group or selection uses it."}{" "}
+        Nothing is written until you save.
+      </DialogHead>
       <div className="flex justify-end gap-2">
         <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
         <Button

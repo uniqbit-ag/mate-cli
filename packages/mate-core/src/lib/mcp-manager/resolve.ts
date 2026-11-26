@@ -1,11 +1,12 @@
 import { audienceEntry, normalizeBaseAudience } from "../../tools/setup/dynamic-plugins/audiences";
-import type {
-  McpManagerAudienceSelection,
-  McpManagerConfig,
-  McpManagerSelection,
-  ResolvedMcpServer,
+import {
+  type McpManagerAudienceSelection,
+  type McpManagerConfig,
+  type McpManagerSelection,
+  parseHeaderRef,
+  type ResolvedMcpServer,
 } from "./types";
-import { isRecord, parseHeaderRef } from "./validate";
+import { isRecord } from "./validate";
 
 function members(section: McpManagerConfig, groups: string[] | undefined): string[] {
   return (groups ?? []).flatMap((group) => section.groups?.[group] ?? []);
@@ -31,7 +32,11 @@ export function serverVariables(server: ResolvedMcpServer["server"]): string[] {
   return [...new Set([...(server.env ?? []), ...fromHeaders])];
 }
 
-/** Checks presence only; a value never leaves `env`. */
+/** Unset and empty both count as missing. Checks presence only; a value never leaves `env`. */
+export function isVariableSet(env: Record<string, string | undefined>, variable: string): boolean {
+  return Boolean(env[variable]);
+}
+
 export function missingMcpVariables(
   raw: unknown,
   audience: string | null,
@@ -39,7 +44,7 @@ export function missingMcpVariables(
 ): MissingMcpVariable[] {
   return resolveMcpServers(raw, audience).flatMap(({ name, server }) =>
     serverVariables(server)
-      .filter((variable) => !env[variable])
+      .filter((variable) => !isVariableSet(env, variable))
       .map((variable) => ({ server: name, variable })),
   );
 }
@@ -67,4 +72,17 @@ export function resolveMcpServers(raw: unknown, audience: string | null): Resolv
     .filter((name) => section.servers?.[name] !== undefined)
     .toSorted()
     .map((name) => ({ name, server: section.servers![name] }));
+}
+
+/** Effective server names for the base set and for each of `audiences`. */
+export function effectiveSets(
+  raw: unknown,
+  audiences: readonly string[],
+): { base: string[]; audiences: Record<string, string[]> } {
+  const names = (audience: string | null) =>
+    resolveMcpServers(raw, audience).map((server) => server.name);
+  return {
+    base: names(null),
+    audiences: Object.fromEntries(audiences.map((audience) => [audience, names(audience)])),
+  };
 }

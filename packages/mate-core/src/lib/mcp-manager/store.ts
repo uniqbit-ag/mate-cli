@@ -9,7 +9,7 @@ import { writeAtomic } from "../../runtime/write-atomic";
 import { BASE_AUDIENCE, declaredAudiences } from "../../tools/setup/dynamic-plugins/audiences";
 import { parseFrameworkConfig } from "../orchestrator/config-store";
 import { ConfigError, type FrameworkConfig } from "../orchestrator/types";
-import { resolveMcpServers } from "./resolve";
+import { effectiveSets } from "./resolve";
 import type { McpManagerAudienceSelection, McpManagerConfig } from "./types";
 import { mcpManagerEngineRange } from "./validate";
 
@@ -46,17 +46,12 @@ function tokenOf(text: string): string {
 
 function snapshotOf(config: FrameworkConfig, token: string): McpManagerSnapshot {
   const names = declaredAudiences(config);
-  const effective = (audience: string | null) =>
-    resolveMcpServers(config, audience).map((server) => server.name);
   return {
     catalog: config.mcpManager ?? null,
     audiences: Object.fromEntries(
       names.map((name) => [name, config.audiences?.[name]?.mcpManager ?? {}]),
     ),
-    effective: {
-      base: effective(null),
-      audiences: Object.fromEntries(names.map((name) => [name, effective(name)])),
-    },
+    effective: effectiveSets(config, names),
     token,
   };
 }

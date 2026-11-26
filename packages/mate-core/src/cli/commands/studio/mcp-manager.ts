@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 
-import { resolveMcpServers, serverVariables } from "../../../lib/mcp-manager/resolve";
+import { effectiveSets, isVariableSet, serverVariables } from "../../../lib/mcp-manager/resolve";
 import {
   McpManagerConflictError,
   readMcpManager,
@@ -66,8 +66,7 @@ function variablesOf(catalog: McpManagerConfig | null, env: Env): McpManagerDeri
   return Object.fromEntries(
     Object.entries(catalog?.servers ?? {}).map(([server, declared]) => [
       server,
-      // Unset and empty both count as missing, as `mate doctor` reports them.
-      serverVariables(declared).map((name) => ({ name, set: Boolean(env[name]) })),
+      serverVariables(declared).map((name) => ({ name, set: isVariableSet(env, name) })),
     ]),
   );
 }
@@ -84,16 +83,9 @@ export function previewMcpManager(state: McpManagerState, env: Env): McpManagerP
   try {
     const raw = rawOf(state);
     validateMcpManagerConfig(raw);
-    const effective = (audience: string | null) =>
-      resolveMcpServers(raw, audience).map((server) => server.name);
     return {
       ok: true,
-      effective: {
-        base: effective(null),
-        audiences: Object.fromEntries(
-          Object.keys(state.audiences).map((name) => [name, effective(name)]),
-        ),
-      },
+      effective: effectiveSets(raw, Object.keys(state.audiences)),
       variables: variablesOf(state.catalog, env),
     };
   } catch (error) {
@@ -140,7 +132,7 @@ function patchOf(next: McpManagerState, current: McpManagerSnapshot): McpManager
   const catalog = catalogOf(next.catalog);
   if (!isDeepStrictEqual(catalog, catalogOf(current.catalog))) patch.catalog = catalog;
   for (const [name, held] of Object.entries(current.audiences)) {
-    const selection = audienceOf(Object.hasOwn(next.audiences, name) ? next.audiences[name] : {});
+    const selection = audienceOf(next.audiences[name]);
     if (isDeepStrictEqual(selection, audienceOf(held))) continue;
     patch.audiences = { ...patch.audiences, [name]: selection };
   }

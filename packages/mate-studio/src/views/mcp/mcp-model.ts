@@ -1,13 +1,16 @@
 import {
-  MCP_MANAGER_HEADER_PREFIXES,
+  MCP_MANAGER_TRANSPORTS,
   type McpManagerSelection,
   type McpManagerServer,
   type McpManagerState,
   type McpManagerTransport,
+  parseHeaderRef,
 } from "@uniqbit/mate-core/studio";
 
 /** The catalog's two kinds of entry, named as selections list them. */
 export type EntryKind = "servers" | "groups";
+
+export const KIND_WORD: Record<EntryKind, string> = { servers: "server", groups: "group" };
 
 /** A grid cell: the base column has the first two states, an audience column the other three. */
 export type Cell = "enabled" | "off" | "inherit" | "enable" | "disable";
@@ -74,7 +77,7 @@ export function cycleCell(
   };
 }
 
-export interface References {
+interface References {
   /** Groups holding a server; always empty for a group. */
   groups: string[];
   base: boolean;
@@ -82,7 +85,7 @@ export interface References {
 }
 
 /** Where a server or group is named, so a delete can say what it also changes. */
-export function referencesOf(state: McpManagerState, kind: EntryKind, name: string): References {
+function referencesOf(state: McpManagerState, kind: EntryKind, name: string): References {
   const groups = kind === "servers" ? Object.entries(state.catalog?.groups ?? {}) : [];
   return {
     groups: groups.filter(([, members]) => members.includes(name)).map(([group]) => group),
@@ -130,21 +133,17 @@ function rewritten(
     entries.flatMap((entry) => (entry === name ? (to ?? []) : entry));
   const selection = (held: McpManagerSelection | undefined) =>
     held?.[kind] ? { ...held, [kind]: list(held[kind]) } : held;
-  const { groups, enabled, ...catalog } = state.catalog ?? {};
+  const groups = state.catalog?.groups;
   return {
     catalog: {
-      ...catalog,
-      ...(groups
-        ? {
-            groups:
-              kind === "servers"
-                ? Object.fromEntries(
-                    Object.entries(groups).map(([group, members]) => [group, list(members)]),
-                  )
-                : groups,
-          }
-        : {}),
-      ...(enabled ? { enabled: selection(enabled) } : {}),
+      ...state.catalog,
+      groups:
+        kind === "servers" && groups
+          ? Object.fromEntries(
+              Object.entries(groups).map(([group, members]) => [group, list(members)]),
+            )
+          : groups,
+      enabled: selection(state.catalog?.enabled),
     },
     audiences: Object.fromEntries(
       Object.entries(state.audiences).map(([audience, held]) => [
@@ -194,7 +193,7 @@ export function nameTaken(
 
 export type Transport = "stdio" | McpManagerTransport;
 
-export const TRANSPORTS: readonly Transport[] = ["stdio", "http", "sse"];
+export const TRANSPORTS: readonly Transport[] = ["stdio", ...MCP_MANAGER_TRANSPORTS];
 
 export function transportOf(server: McpManagerServer): Transport {
   return "command" in server ? "stdio" : (server.transport ?? "http");
@@ -219,10 +218,11 @@ export interface ServerForm {
 }
 
 function headerRows(headers: Record<string, string> | undefined): HeaderRow[] {
-  return Object.entries(headers ?? {}).map(([header, value]) => {
-    const prefix = MCP_MANAGER_HEADER_PREFIXES.find((known) => value.startsWith(known)) ?? "";
-    return { header, prefix, variable: value.slice(prefix.length).replace(/^\$\{|\}$/g, "") };
-  });
+  return Object.entries(headers ?? {}).map(([header, value]) => ({
+    header,
+    // The catalog was validated on read, so every value parses.
+    ...(parseHeaderRef(value) ?? { prefix: "", variable: "" }),
+  }));
 }
 
 export function serverForm(name = "", server?: McpManagerServer): ServerForm {
