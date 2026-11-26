@@ -37,6 +37,7 @@ const accepted: McpManagerPreview = {
   variables: view.variables,
 };
 const server = {
+  read: async (): Promise<McpManagerView> => view,
   saves: [] as SaveInput[],
   preview: (_next: McpManagerState): McpManagerPreview => accepted,
   save: (_input: SaveInput): McpManagerSaveResult => ({ kind: "saved", view }),
@@ -44,7 +45,7 @@ const server = {
 const real = await import("../../server/mcp-manager");
 mock.module("../../server/mcp-manager", () => ({
   ...real,
-  getMcpManager: async () => view,
+  getMcpManager: () => server.read(),
   previewMcpManager: async ({ data }: { data: { next: McpManagerState } }) =>
     server.preview(data.next),
   saveMcpManager: async ({ data }: { data: SaveInput }) => {
@@ -56,6 +57,7 @@ const { Mcp } = await import("./mcp-view");
 
 afterEach(() => {
   cleanup();
+  server.read = async () => view;
   server.saves = [];
   server.preview = () => accepted;
   server.save = () => ({ kind: "saved", view });
@@ -80,6 +82,16 @@ async function mount(writable = true) {
 }
 
 describe("Mcp", () => {
+  test("a successful Retry moves focus to Add server", async () => {
+    server.read = async () => {
+      throw new Error("framework.yaml is invalid");
+    };
+    const { page, press } = await mount();
+    server.read = async () => view;
+    await press(page.getByRole("button", { name: "Retry" }));
+    expect(document.activeElement).toBe(page.getByRole("button", { name: "Add server" }));
+  });
+
   test("an audience cell cycles inherit, enable, disable; a base cell toggles", async () => {
     const { cell, press } = await mount();
     const states: (string | undefined)[] = [];

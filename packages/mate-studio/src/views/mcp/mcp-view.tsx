@@ -5,8 +5,9 @@ import type {
   McpManagerView,
   McpVariableStatus,
 } from "@uniqbit/mate-core/studio";
-import { type ReactNode, type Ref, useRef, useState } from "react";
+import { type ReactNode, type Ref, type RefObject, useRef, useState } from "react";
 
+import { useRetryFocus } from "../../components/friction-recording";
 import { Icon } from "../../components/icon";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/fields";
@@ -27,14 +28,30 @@ import { type Cell, cellOf, cycleCell, type EntryKind, KIND_WORD, transportOf } 
 /** The companion's MCP servers, groups and per-audience selection, edited as one unsaved draft. */
 export function Mcp({ companion, writable }: { companion: string; writable: boolean }) {
   const query = useQuery(mcpManagerQuery(companion));
-  if (query.data)
-    return <McpEditor companion={companion} writable={writable} loaded={query.data} />;
+  const { button: addServer, retried } = useRetryFocus(query.isSuccess);
+  if (query.data) {
+    return (
+      <McpEditor
+        companion={companion}
+        writable={writable}
+        loaded={query.data}
+        addServer={addServer}
+      />
+    );
+  }
   if (!query.isError) return <ViewLoading title="Reading MCP servers…" />;
   return (
     <div className={cn(PAGE_PAD, "text-sm")} role="alert">
       <p className="m-0 text-bad">The MCP servers could not be read.</p>
       <p className="m-0 mt-1 text-muted">{query.error.message}</p>
-      <Button className="mt-3" onClick={() => void query.refetch()} disabled={query.isFetching}>
+      <Button
+        className="mt-3"
+        onClick={() => {
+          retried();
+          void query.refetch();
+        }}
+        disabled={query.isFetching}
+      >
         Retry
       </Button>
     </div>
@@ -50,10 +67,13 @@ function McpEditor({
   companion,
   writable,
   loaded,
+  addServer,
 }: {
   companion: string;
   writable: boolean;
   loaded: McpManagerView;
+  /** Where focus goes once the control that held it is gone. */
+  addServer: RefObject<HTMLButtonElement | null>;
 }) {
   const queryClient = useQueryClient();
   /** Unsaved edits and the read they started from; null while the view shows what was read. */
@@ -65,7 +85,6 @@ function McpEditor({
     open: false,
   });
   const opener = useRef<HTMLElement | null>(null);
-  const addServer = useRef<HTMLButtonElement>(null);
 
   const base = edit?.base ?? loaded;
   const draft = edit?.draft ?? stateOf(loaded);
