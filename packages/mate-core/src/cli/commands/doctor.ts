@@ -25,6 +25,7 @@ import type { GlobalConfigStore } from "../../lib/orchestrator/global-config-sto
 import { pathIsDirectory } from "../../lib/fs-utils";
 import { resolveRootContext, type RootContext } from "../../lib/orchestrator/root-context";
 import type { CapabilityConfig, FrameworkConfig, HubMember } from "../../lib/orchestrator/types";
+import { missingMcpVariables, type MissingMcpVariable } from "../../lib/mcp-manager/resolve";
 import { locateOpenSpec, type OpenSpecLocation } from "../../lib/openspec-cli";
 import { MATE_CLAUDE_PLUGIN_NAME, withoutMateWrapperDirs } from "../../lib/package-paths";
 import {
@@ -119,6 +120,8 @@ export interface DoctorReport {
   audiences?: { declared: string[]; active: string | null };
   /** Set when `MATE_AUDIENCE` names an audience the companion does not declare. */
   audienceError?: string;
+  /** Variables the active audience's `mcpManager` servers need but the environment does not set; names only. */
+  mcpMissingVariables?: MissingMcpVariable[];
   /** IDs of the capabilities the verified plugins provide. */
   pluginCapabilities?: string[];
   engineRequirement?: { range: string; ok: boolean; detail: string };
@@ -564,6 +567,11 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
     if (warnings.length > 0) report.openspecRuleWarnings = warnings;
   }
 
+  if (root.config && (kind === "working" || kind === "companion")) {
+    const missing = missingMcpVariables(root.config, readAudienceSelection(env), env);
+    if (missing.length > 0) report.mcpMissingVariables = missing;
+  }
+
   if (root.rootPath && (kind === "working" || kind === "companion")) {
     const warnings = collectCompanionInstructionWarnings(root.rootPath);
     if (warnings.length > 0) report.companionInstructionWarnings = warnings;
@@ -777,6 +785,15 @@ function renderHumanReport(report: DoctorReport): void {
         ["Declared", report.audiences.declared.join(", ") || "none"],
         ["Active", report.audiences.active ?? "none"],
       ]),
+    );
+  }
+  if (report.mcpMissingVariables) {
+    printSection(
+      "MCP Server Variables",
+      renderTable(
+        ["Server", "Missing variable"],
+        report.mcpMissingVariables.map((entry) => [entry.server, entry.variable]),
+      ),
     );
   }
   if (report.hub) printSection("Hub Members", renderHubMembers(report.hub.members));

@@ -304,6 +304,7 @@ describe("the reserved base audience", () => {
         capabilities: [{ name: "openspec" }],
         plugins: [base],
         studio: { terminal: { agent: "developer" } },
+        mcpManager: { enabled: { servers: ["acme-docs"] } },
       },
       ba: { plugins: [analyst] },
     },
@@ -315,6 +316,7 @@ describe("the reserved base audience", () => {
       capabilities: [{ name: "openspec" }],
       plugins: [base],
       studio: { terminal: { agent: "developer" } },
+      mcpManager: { enabled: { servers: ["acme-docs"] } },
       audiences: { ba: { plugins: [analyst] } },
     });
   });

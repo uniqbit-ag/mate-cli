@@ -119,6 +119,38 @@ describe("toClaudeMcpEntry", () => {
       command: "tokensave",
     });
   });
+
+  test("a literal env descriptor renders byte-identically", () => {
+    expect(
+      JSON.stringify(toClaudeMcpEntry({ name: "s", command: "x", args: ["a"], env: { A: "1" } })),
+    ).toBe('{"command":"x","args":["a"],"env":{"A":"1"}}');
+  });
+
+  test("env references render as ${NAME}, never as the value", () => {
+    process.env.ACME_TOKEN = "s3cr3t";
+    try {
+      expect(
+        toClaudeMcpEntry({ name: "s", command: "acme-docs-mcp", envRefs: ["ACME_TOKEN"] }),
+      ).toEqual({ command: "acme-docs-mcp", env: { ACME_TOKEN: "${ACME_TOKEN}" } });
+    } finally {
+      delete process.env.ACME_TOKEN;
+    }
+  });
+
+  test("a remote descriptor renders its transport and header references", () => {
+    expect(
+      toClaudeMcpEntry({
+        name: "s",
+        url: "https://mcp.acme.example",
+        transport: "sse",
+        headerRefs: { Authorization: { prefix: "Bearer ", variable: "ACME_KEY" } },
+      }),
+    ).toEqual({
+      type: "sse",
+      url: "https://mcp.acme.example",
+      headers: { Authorization: "Bearer ${ACME_KEY}" },
+    });
+  });
 });
 
 describe("updateClaudeMcpServer", () => {

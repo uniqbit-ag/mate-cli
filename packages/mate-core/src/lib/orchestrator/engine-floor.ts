@@ -38,11 +38,23 @@ export async function writeEngineFloor(companionPath: string, range: string): Pr
  */
 export async function raiseEngineFloor(companionPath: string, version: string): Promise<boolean> {
   const raw = (await rawStore(companionPath).load()) ?? {};
-  const current = ((raw.engines ?? {}) as Record<string, unknown>)[FRAMEWORK_NAME];
+  const raised = raisedEngineRange(raw.engines, version);
+  return raised === null ? false : writeEngineFloor(companionPath, raised);
+}
+
+/**
+ * The `engines.mate` range raised to `>=version`, or null when the current
+ * range already starts at or above it or does not parse.
+ */
+export function raisedEngineRange(engines: unknown, version: string): string | null {
+  const current =
+    typeof engines === "object" && engines !== null
+      ? (engines as Record<string, unknown>)[FRAMEWORK_NAME]
+      : undefined;
   if (typeof current === "string") {
-    if (semver.validRange(current) === null) return false;
+    if (semver.validRange(current) === null) return null;
     const lowest = semver.minVersion(current);
-    if (lowest && semver.gte(lowest, version)) return false;
+    if (lowest && semver.gte(lowest, version)) return null;
   }
-  return writeEngineFloor(companionPath, `>=${version}`);
+  return `>=${version}`;
 }

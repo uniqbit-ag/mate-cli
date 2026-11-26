@@ -28,8 +28,9 @@ export function checkEngineRequirement(
   }
 
   const current = semver.parse(currentVersion);
+  // A pre-release build counts as its release only against a release range; a pre-release floor must compare as-is.
   const currentReleaseVersion =
-    current && current.prerelease.length > 0
+    current && current.prerelease.length > 0 && !namesPrerelease(range)
       ? `${current.major}.${current.minor}.${current.patch}`
       : null;
   const satisfied =
@@ -43,4 +44,9 @@ export function checkEngineRequirement(
     };
   }
   return { ok: true };
+}
+
+// Reads the written text: parsed comparators carry generated tags (`^1.2.3` becomes `<2.0.0-0`).
+function namesPrerelease(range: string): boolean {
+  return /\d+\.\d+\.\d+-[0-9A-Za-z]/.test(range);
 }

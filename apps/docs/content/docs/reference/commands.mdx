@@ -422,6 +422,12 @@ the companion `AGENTS.md`, not that text, so the warning names the file and
 suggests moving shared rules into `AGENTS.md`. The warning appears in the JSON
 output too and does not change the exit status.
 
+When the companion declares [`mcpManager`](/docs/capabilities#mcp-manager)
+servers, `mate doctor` shows an MCP Server Variables section listing each
+environment variable a server of the active audience needs that is unset or
+empty. It names the server and the variable, never a value. The JSON field is
+`mcpMissingVariables`; the section does not change the exit status.
+
 Inside a Git checkout of a linked clone, `mate doctor` shows a Checkout section:
 the checkout, its role (the clone's Registered Checkout, or another checkout of
 it), the Registered Checkout, and the checkout whose Claude wrap serves it (the

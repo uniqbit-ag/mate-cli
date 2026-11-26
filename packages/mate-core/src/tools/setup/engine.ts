@@ -4,6 +4,7 @@ import { FRAMEWORK_NAME } from "../../framework";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
 import { getClaudePluginRoot } from "../../lib/package-paths";
 import type { RenderedRuntimeDocuments } from "../../runtime/runtime-document-manifest";
+import { MCP_MANAGER_PLUGIN_ID } from "./capabilities/mcp-manager";
 import { collectHostingProviders, ContextServiceMediator } from "./context-services";
 import type {
   CapabilityContributionInput,
@@ -55,6 +56,19 @@ export interface SetupInstallationOutcome {
   claudePluginFolders: ClaudePluginFolders;
 }
 
+/**
+ * A phase's entries in registration order, except that `mcp-manager` applies
+ * after every other Capability, including hydrated ones, so its clash check
+ * sees the servers they register.
+ */
+function phaseEntries(entries: NormalizedRegistration[], phase: Plugin["kind"]) {
+  const inPhase = entries.filter((candidate) => candidate.plugin.kind === phase);
+  return [
+    ...inPhase.filter((entry) => entry.plugin.id !== MCP_MANAGER_PLUGIN_ID),
+    ...inPhase.filter((entry) => entry.plugin.id === MCP_MANAGER_PLUGIN_ID),
+  ];
+}
+
 export function buildSetupInstallationPlan(
   config: FrameworkConfig,
   registrations: PluginRegistration[],
@@ -78,7 +92,7 @@ export function buildSetupInstallationPlan(
     "integration",
     "root",
   ] as const) {
-    for (const entry of entries.filter((candidate) => candidate.plugin.kind === phase)) {
+    for (const entry of phaseEntries(entries, phase)) {
       const plugin = entry.plugin;
       if (phase === "root") {
         actions.push({ phase, pluginId: plugin.id, action: "apply" });
@@ -145,6 +159,18 @@ export async function executeSetupInstallationPlan(
       warnings.push(message);
       emitWarning(message);
     },
+    declaredMcpOwners: async () => {
+      const owners = new Map<string, string>();
+      /** A rejecting Capability fails the reconcile below, which reports it. */
+      const inputs = await collectContributionInputs(ctx, plugins, plan, () => {});
+      for (const input of [...inputs.values()].flat()) {
+        if (!input.capabilityEnabled) continue;
+        for (const server of input.contributions.mcpServers ?? []) {
+          owners.set(server.name, input.pluginId);
+        }
+      }
+      return owners;
+    },
   });
 
   for (const action of plan.actions) {
@@ -196,7 +222,12 @@ export async function executeSetupInstallationPlan(
 
   await mediator.finalize();
 
-  const inputsByRuntime = await reconcileCapabilityContributions(ctx, plugins, plan);
+  const inputsByRuntime = await reconcileCapabilityContributions(
+    ctx,
+    plugins,
+    plan,
+    mediator.registeredMcpServers(),
+  );
   const claudeInputs = inputsByRuntime.get("claude") ?? [];
   const folderOptions = { bundledPluginRoot: getClaudePluginRoot() };
   const claudePluginFolders =
@@ -305,14 +336,35 @@ async function reconcileCapabilityContributions(
   ctx: SetupContext,
   plugins: Plugin[],
   plan: SetupInstallationPlan,
+  registeredMcpServers: ReadonlySet<string>,
 ): Promise<Map<string, CapabilityContributionInput[]>> {
   const inputsByRuntime = await collectContributionInputs(ctx, plugins, plan);
   for (const [runtimeId, inputs] of inputsByRuntime) {
     const reconcile = RUNTIME_SURFACE_RECONCILERS[runtimeId];
     if (!reconcile || inputs.length === 0) continue;
-    await reconcile(ctx, inputs);
+    /** The mediator registers through active runtimes only. */
+    const spared = plan.activeProviders.includes(runtimeId)
+      ? registeredMcpServers
+      : new Set<string>();
+    await reconcile(
+      ctx,
+      inputs.map((input) => sparingRegistered(input, spared)),
+    );
   }
   return inputsByRuntime;
+}
+
+/** A disabled Capability's teardown never removes a name another plugin registered this pass. */
+function sparingRegistered(
+  input: CapabilityContributionInput,
+  registered: ReadonlySet<string>,
+): CapabilityContributionInput {
+  const servers = input.contributions.mcpServers;
+  if (input.capabilityEnabled || !servers?.some((server) => registered.has(server.name))) {
+    return input;
+  }
+  const mcpServers = servers.filter((server) => !registered.has(server.name));
+  return { ...input, contributions: { ...input.contributions, mcpServers } };
 }
 
 /** Receives one Capability's rejected contributions; that Capability then contributes nothing. */

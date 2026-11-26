@@ -1,3 +1,5 @@
+import type { McpManagerAudienceSelection, McpManagerConfig } from "../mcp-manager/types";
+
 class MateError extends Error {}
 
 export class ConfigError extends MateError {}
@@ -147,6 +149,7 @@ export interface AudienceConfig {
   capabilities?: CapabilityConfig[];
   plugins?: PluginDeclaration[];
   studio?: { terminal?: StudioTerminalConfig };
+  mcpManager?: McpManagerAudienceSelection;
 }
 
 export interface FrameworkConfig {
@@ -162,6 +165,7 @@ export interface FrameworkConfig {
   engines?: EngineConstraints;
   studio?: { terminal?: StudioTerminalConfig };
   audiences?: Record<string, AudienceConfig>;
+  mcpManager?: McpManagerConfig;
 }
 
 export interface CompanionRegistryConfig {

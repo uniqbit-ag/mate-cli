@@ -772,6 +772,52 @@ describe("runDoctorCommand", () => {
   });
 });
 
+describe("doctor mcpManager variables", () => {
+  const config: FrameworkConfig = {
+    allowedAgents: ["claude"],
+    packageManagers: [],
+    capabilities: [],
+    mcpManager: {
+      servers: {
+        "acme-docs": { command: "acme-docs-mcp", env: ["ACME_TOKEN"] },
+        "acme-api": {
+          url: "https://mcp.acme.example",
+          headers: { Authorization: "Bearer ${ACME_KEY}" },
+        },
+      },
+      enabled: { servers: ["acme-docs"] },
+    },
+    audiences: { analyst: { mcpManager: { enable: { servers: ["acme-api"] } } } },
+  };
+
+  async function run(env: Record<string, string | undefined>, argv: string[] = ["--json"]) {
+    const root = await makeTempDir("doctor-mcp-");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(repoPath, { recursive: true });
+    const companionPath = await setupCompanion(root, repoPath, config);
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await globalConfigStore.register(companionPath);
+    return captureStdout(() => runDoctorCommand(argv, { cwd: repoPath, globalConfigStore, env }));
+  }
+
+  test("JSON names each missing variable of the active audience's servers", async () => {
+    const report = JSON.parse(await run({ MATE_AUDIENCE: "analyst", ACME_TOKEN: "" }));
+    expect(report.mcpMissingVariables).toEqual([
+      { server: "acme-api", variable: "ACME_KEY" },
+      { server: "acme-docs", variable: "ACME_TOKEN" },
+    ]);
+  });
+
+  test("a set variable is not reported and its value appears nowhere", async () => {
+    const json = await run({ ACME_TOKEN: "s3cr3t-value" });
+    const text = await run({ ACME_TOKEN: "s3cr3t-value", MATE_AUDIENCE: "analyst" }, []);
+    expect(JSON.parse(json).mcpMissingVariables).toBeUndefined();
+    expect(text).toContain("MCP Server Variables");
+    expect(text).toContain("ACME_KEY");
+    expect(json + text).not.toContain("s3cr3t");
+  });
+});
+
 describe("doctor audiences", () => {
   const config: FrameworkConfig = {
     allowedAgents: ["claude"],
