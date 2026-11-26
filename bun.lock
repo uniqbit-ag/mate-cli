@@ -83,6 +83,7 @@
         "@vscode/vsce": "^4.1.0",
         "tsdown": "0.23.0",
         "typescript": "latest",
+        "yaml": "^2.9.0",
       },
     },
     "packages/mate-core": {

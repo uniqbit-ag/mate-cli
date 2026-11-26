@@ -54,6 +54,23 @@ describe("parseAllowedAgents", () => {
     expect(parseAllowedAgents("allowedAgents: []\n")).toEqual([]);
   });
 
+  test("reads multi-line flow lists, quoted keys, and aliases", () => {
+    expect(parseAllowedAgents("allowedAgents: [\n  claude,\n  opencode,\n]\n")).toEqual([
+      "claude",
+      "opencode",
+    ]);
+    expect(parseAllowedAgents('"allowedAgents": [claude]\n')).toEqual(["claude"]);
+    expect(
+      parseAllowedAgents("defaults: &agents [claude, opencode]\nallowedAgents: *agents\n"),
+    ).toEqual(["claude", "opencode"]);
+  });
+
+  test("is undefined for invalid YAML or a non-list value", () => {
+    expect(parseAllowedAgents("allowedAgents: [claude\n")).toBeUndefined();
+    expect(parseAllowedAgents("allowedAgents: claude\n")).toBeUndefined();
+    expect(parseAllowedAgents("- claude\n")).toBeUndefined();
+  });
+
   test("falls back to profiles.default, and ignores nested or absent keys", () => {
     const legacy = "profiles:\n  default:\n    allowedAgents:\n      - opencode\n";
     expect(parseAllowedAgents(legacy)).toEqual(["opencode"]);
