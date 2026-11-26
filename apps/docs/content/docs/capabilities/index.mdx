@@ -376,8 +376,8 @@ mcpManager:
 - **Older Mate versions.** Saving `framework.yaml` with `mcpManager` raises
   `engines.mate` to the release that introduced it. Mate before 1.0.0 reports
   the requirement and refuses commands such as `mate artifact`. Canaries up to
-  `1.0.0-canary.8` accept the companion but write none of its servers, so
-  update Mate before you use `mcpManager`.
+  `1.0.0-canary.8` write none of its servers, and reject a companion that sets
+  `mcpManager` under an audience, so update Mate before you use `mcpManager`.
 - **Working Repositories.** OpenCode sessions in a Working Repository get these
   servers. Claude Code sessions there do not get them yet, as with Context7:
   only a Claude Code session started in the companion loads them.

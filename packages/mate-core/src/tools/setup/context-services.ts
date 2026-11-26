@@ -315,11 +315,6 @@ export class ContextServiceMediator {
     return entry;
   }
 
-  /**
-   * Reconcile the bookkeeping manifest: remove provider entries that were
-   * previously registered but not re-registered in this run, then persist the
-   * new registration state.
-   */
   /** MCP server names any plugin registered in this pass. */
   registeredMcpServers(): Set<string> {
     return new Set(
@@ -327,6 +322,11 @@ export class ContextServiceMediator {
     );
   }
 
+  /**
+   * Reconcile the bookkeeping manifest: remove provider entries that were
+   * previously registered but not re-registered in this run, then persist the
+   * new registration state.
+   */
   async finalize(): Promise<void> {
     const { ctx, frameworkName, hostingProviders } = this.options;
     const manifestPath = getContextServicesManifestPath(ctx.companionPath, frameworkName);
