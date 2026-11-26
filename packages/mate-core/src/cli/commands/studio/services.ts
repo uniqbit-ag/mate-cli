@@ -3,6 +3,12 @@ import type { FrictionState, MarkState } from "../../../runtime/friction-vocabul
 import type { UsageRequest } from "../../../lib/usage/cache";
 import type { UsageResponse } from "../../../lib/usage/types";
 import type { StudioSpecGraph } from "./graph";
+import type {
+  McpManagerPreview,
+  McpManagerSaveResult,
+  McpManagerState,
+  McpManagerView,
+} from "./mcp-manager";
 import type { StoredReport } from "./reports";
 import type { StudioServiceSummary } from "./service-host";
 import type { SkillAgent, SkillPreview } from "./skill-files";
@@ -59,6 +65,16 @@ export interface StudioServices {
     content: string,
     token?: string,
   ): Promise<VaultSaved | VaultConflict>;
+  /** The companion's MCP servers, groups and audience selections; variables by name and set state, never a value. */
+  mcpManager(companionDigest: string): Promise<McpManagerView>;
+  /** Effective sets and variable states for unsaved state, or core's validation error; reads and writes nothing. */
+  mcpManagerPreview(companionDigest: string, next: McpManagerState): Promise<McpManagerPreview>;
+  /** Saves the whole next state; needs `writable`. A stale token is a conflict, not an error. */
+  mcpManagerSave(
+    companionDigest: string,
+    next: McpManagerState,
+    token: string,
+  ): Promise<McpManagerSaveResult>;
   /** The spec graph of the companion's canonical specs and archives; read-only, rebuilt when they change. */
   graph(companionDigest: string): Promise<StudioSpecGraph>;
   /** A registered companion's published reports, newest first; no paths or content. */

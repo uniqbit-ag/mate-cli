@@ -19,6 +19,7 @@ import {
 import { collectStudioInventory, type StudioInventory } from "./inventory";
 import { assembleCompanionPayload, type StudioCompanionResponse } from "./payload";
 import { createReportStore, isReportId, REPORT_LIMITS, type ReportStore } from "./reports";
+import { ConfigError } from "../../../lib/orchestrator/types";
 import { WorksetError } from "../../../lib/workset/record";
 import type { PluginService, StudioSocketHandler } from "../../../tools/setup/service";
 import { registeredServices } from "../../../tools/setup/service-registry";
@@ -593,6 +594,20 @@ export function createStudioFetch(
     vaultSave: async (digest, filePath, content, token) => {
       if (!writable) throw new VaultPathError("start Studio with --writable to enable saving");
       return vault.save(await companionPathOf(digest), filePath, content, token);
+    },
+    mcpManager: async (digest) => {
+      const { readMcpManagerView } = await import("./mcp-manager");
+      return readMcpManagerView(await companionPathOf(digest), env);
+    },
+    mcpManagerPreview: async (digest, next) => {
+      await companionPathOf(digest);
+      const { previewMcpManager } = await import("./mcp-manager");
+      return previewMcpManager(next, env);
+    },
+    mcpManagerSave: async (digest, next, token) => {
+      if (!writable) throw new ConfigError("start Studio with --writable to enable saving");
+      const { saveMcpManagerView } = await import("./mcp-manager");
+      return saveMcpManagerView(await companionPathOf(digest), next, token, env);
     },
     graph: async (digest) => {
       const companionPath = await companionPathOf(digest);

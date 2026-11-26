@@ -513,7 +513,7 @@ fails, no exact-version image is published and the channel tag does not move.
 ## Studio modes
 
 Studio has two modes, chosen with the **Mode** switch at the top of its sidebar.
-**Engineering** offers the Overview of active changes, Workflow and Skills;
+**Engineering** offers the Overview of active changes, Workflow, Skills and MCP;
 **Analysis** offers an Overview of published state: specs, recently shipped
 changes and hosted reports. Vault, Specs, Usage, Friction, Reports and Graph are
 offered in both. Graph draws the companion's specs with their Areas and repositories, linked
@@ -563,6 +563,35 @@ content, and installs nothing. Shared Working Repository activity can appear in
 several companions; this is repository usage, not exclusive companion billing.
 Technical callers use [`mate report`](/docs/reference/commands#usage-and-reports),
 which returns JSON and never opens the browser.
+
+## Studio MCP
+
+Open **MCP** in the sidebar or command palette, in Engineering mode. It shows
+the selected companion's [`mcpManager`](/docs/capabilities#mcp-manager) section
+and edits it without a text editor.
+
+- **Servers and groups.** Add, edit or delete a server (`stdio`, `http` or
+  `sse`) and a group of servers. A server form takes variable names for `env`
+  and for headers, never a value. Deleting a server or group names the groups,
+  the base selection and the audiences that use it, and removes it there too.
+- **Selection.** A grid has one row per server and group, one column for the
+  base set and one per declared audience. A base cell is Enabled or Off. An
+  audience cell is Inherit, Enable or Disable. The last row lists the servers
+  each column resolves to. Audiences themselves are declared in
+  `framework.yaml`; the view does not create or rename them.
+- **Variables.** Each variable a server needs is marked set or missing, by
+  name only. The mark describes the environment of the Studio process, which
+  the sessions it starts inherit. A variable that is set only for a session
+  elsewhere shows as missing.
+- **Saving needs `--writable`.** Edits stay in the page until you press
+  **Save**. Read-only Studio shows the same data with editing disabled. A save
+  carries the token from when the view loaded. If `framework.yaml` changed in
+  the meantime, nothing is written: the view shows what the file now declares
+  and keeps your edits, and you choose to load the file or to overwrite it.
+- **Changes apply at the next sync or launch.** A save writes
+  `framework.yaml` only. The next sync or managed launch writes the servers
+  into `.mcp.json` and `.opencode/opencode.json`, for the base set plus the
+  audience `MATE_AUDIENCE` selects.
 
 ## Saving, and the conflict you will meet
 

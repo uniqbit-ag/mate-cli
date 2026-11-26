@@ -25,7 +25,7 @@ export interface MissingMcpVariable {
 }
 
 /** Variables a server reads: its `env` names and the one each header references. */
-function serverVariables(server: ResolvedMcpServer["server"]): string[] {
+export function serverVariables(server: ResolvedMcpServer["server"]): string[] {
   const headers = "headers" in server ? Object.values(server.headers ?? {}) : [];
   const fromHeaders = headers.flatMap((value) => parseHeaderRef(value)?.variable ?? []);
   return [...new Set([...(server.env ?? []), ...fromHeaders])];

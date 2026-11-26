@@ -10,6 +10,7 @@
 - A server named like one another Capability registers stops the whole set for that sync, with an error naming both.
 - Saving `mcpManager` raises `engines.mate` to `1.0.0-canary.9`. A pre-release floor now refuses older canaries instead of accepting them.
 - OpenCode sessions in a Working Repository get these servers; Claude Code sessions there do not yet.
+- Studio's new **MCP** view, in Engineering mode, edits the section: servers, groups and a selection grid per audience, with each variable marked set or missing by name. Saving needs `--writable` and applies at the next sync or launch.
 
 ### `mate companion update` runs a pinned `skills` CLI
 

@@ -539,7 +539,7 @@ describe("Studio modes", () => {
 
   it("falls back to the mode's landing view", () => {
     expect(parse(at(`?studioMode=${an}`)).view).toBe("dashboard");
-    for (const view of ["workflow", "skills", "factory", "unknown"]) {
+    for (const view of ["workflow", "skills", "mcp", "factory", "unknown"]) {
       expect(parse(at(`?studioMode=${an}&view=${view}`)).view).toBe("dashboard");
     }
     for (const view of ["dashboard", "vault", "specs", "reports", "graph"]) {

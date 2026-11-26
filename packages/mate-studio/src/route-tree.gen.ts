@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as FrictionRouteImport } from './routes/friction'
 import { Route as GettingStartedRouteImport } from './routes/getting-started'
 import { Route as GraphRouteImport } from './routes/graph'
+import { Route as McpRouteImport } from './routes/mcp'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as SpecsRouteImport } from './routes/specs'
@@ -41,6 +42,11 @@ const GettingStartedRoute = GettingStartedRouteImport.update({
 const GraphRoute = GraphRouteImport.update({
   id: '/graph',
   path: '/graph',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReportsRoute = ReportsRouteImport.update({
@@ -94,6 +100,7 @@ export interface FileRoutesByFullPath {
   '/friction': typeof FrictionRoute
   '/getting-started': typeof GettingStartedRouteWithChildren
   '/graph': typeof GraphRoute
+  '/mcp': typeof McpRoute
   '/reports': typeof ReportsRoute
   '/skills': typeof SkillsRoute
   '/specs': typeof SpecsRoute
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/friction': typeof FrictionRoute
   '/graph': typeof GraphRoute
+  '/mcp': typeof McpRoute
   '/reports': typeof ReportsRoute
   '/skills': typeof SkillsRoute
   '/specs': typeof SpecsRoute
@@ -124,6 +132,7 @@ export interface FileRoutesById {
   '/friction': typeof FrictionRoute
   '/getting-started': typeof GettingStartedRouteWithChildren
   '/graph': typeof GraphRoute
+  '/mcp': typeof McpRoute
   '/reports': typeof ReportsRoute
   '/skills': typeof SkillsRoute
   '/specs': typeof SpecsRoute
@@ -141,6 +150,7 @@ export interface FileRouteTypes {
     | '/friction'
     | '/getting-started'
     | '/graph'
+    | '/mcp'
     | '/reports'
     | '/skills'
     | '/specs'
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
     | '/'
     | '/friction'
     | '/graph'
+    | '/mcp'
     | '/reports'
     | '/skills'
     | '/specs'
@@ -170,6 +181,7 @@ export interface FileRouteTypes {
     | '/friction'
     | '/getting-started'
     | '/graph'
+    | '/mcp'
     | '/reports'
     | '/skills'
     | '/specs'
@@ -186,6 +198,7 @@ export interface RootRouteChildren {
   FrictionRoute: typeof FrictionRoute
   GettingStartedRoute: typeof GettingStartedRouteWithChildren
   GraphRoute: typeof GraphRoute
+  McpRoute: typeof McpRoute
   ReportsRoute: typeof ReportsRoute
   SkillsRoute: typeof SkillsRoute
   SpecsRoute: typeof SpecsRoute
@@ -223,6 +236,13 @@ declare module '@tanstack/react-router' {
       path: '/graph'
       fullPath: '/graph'
       preLoaderRoute: typeof GraphRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reports': {
@@ -310,6 +330,7 @@ const rootRouteChildren: RootRouteChildren = {
   FrictionRoute: FrictionRoute,
   GettingStartedRoute: GettingStartedRouteWithChildren,
   GraphRoute: GraphRoute,
+  McpRoute: McpRoute,
   ReportsRoute: ReportsRoute,
   SkillsRoute: SkillsRoute,
   SpecsRoute: SpecsRoute,
