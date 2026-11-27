@@ -105,6 +105,20 @@ describe("mergeGit", () => {
     expect(await mergeGit(clone, { env: ENV, spawn }).onFirstParent(empty, "main")).toBeNull();
   });
 
+  test("the reflog tells a branch that never moved from one that gained a commit", async () => {
+    const repo = mergeGit(clone, { env: ENV });
+    const base = git(clone, "rev-parse", "HEAD");
+    git(clone, "branch", "change/empty");
+    expect(await repo.neverAdvanced("change/empty", base)).toBe(true);
+
+    git(clone, "switch", "-q", "-c", "change/own");
+    const own = await commit(clone, "own.txt", "own\n");
+    expect(await repo.neverAdvanced("change/own", own)).toBe(false);
+
+    git(clone, "-c", "core.logAllRefUpdates=false", "branch", "change/unlogged", base);
+    expect(await repo.neverAdvanced("change/unlogged", base)).toBeNull();
+  });
+
   test("a squash merge matches the whole branch diff", async () => {
     const head = await branchWithTwoCommits();
     landFromOther("merge", "-q", "--squash", "origin/change/x");

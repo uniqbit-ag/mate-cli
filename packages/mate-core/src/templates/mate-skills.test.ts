@@ -1415,7 +1415,7 @@ describe("bundled Delivery Path stage skills", () => {
     // costs about 2.5% over main's 121440 bytes; the security manifests add about 7 KB more,
     // the guardrail exceptions (example env files, named identity files) about 0.5 KB, and the
     // read-only pending calls' `--no-merge-check` 34 bytes.
-    expect(bytes).toBeLessThan(133_550);
+    expect(bytes).toBeLessThan(133_900);
   });
 
   test("no Next steps example offers a mate command", async () => {
@@ -1653,6 +1653,7 @@ describe("bundled Mate publish skill merge hold-back", () => {
       const source = await readSkillFrom(root, "mate-publish-artifact");
       expect(source).toContain("`likely-merged`");
       expect(source).toContain("record it only after the user confirms");
+      expect(source).toContain("**not yet merged** preselected; never preselect merged");
       expect(source).toContain("only after the user agrees");
       expect(source).toContain("--refresh --fetch --json");
       expect(source).toContain("Mate starts only `git` and reads no credential");
@@ -1661,6 +1662,7 @@ describe("bundled Mate publish skill merge hold-back", () => {
       }
       const submit = await readSkillFrom(root, "mate-submit-change");
       expect(submit).toContain("(`git` or\n   `user`)");
+      expect(submit).toContain("`empty-delivery-branch`");
     }
   });
 

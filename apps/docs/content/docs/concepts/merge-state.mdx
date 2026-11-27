@@ -36,6 +36,7 @@ merge, and later unrelated commits.
 | Squash merge               | Recorded as merged, source `git`                                                        |
 | Rebase merge               | Recorded as merged, source `git`                                                        |
 | Fast-forward               | Suggested: the commit on the default branch is shown, and you confirm (`likely-merged`) |
+| No commits of its own      | Asked, never suggested as merged; submit refuses it (`empty-branch`)                    |
 | Not on the default branch  | Asked, with the time of your last fetch (`not-on-default`)                              |
 | Branch deleted, not merged | Asked whether to drop the change (`branch-deleted`)                                     |
 | Repository not linked here | Asked, unless another machine recorded the merge (`no-checkout`)                        |
@@ -46,9 +47,13 @@ later commit that rewrites the same lines does not hide the merge. It tests at
 most about 200 commits. A recorded Git merge is final and never checked again.
 
 Git cannot tell an open branch from a dropped one while the branch exists, so a
-PR closed without merging stays waiting until you drop it. Nor can it tell a
-fast-forward from a branch that has no commits of its own yet (its work still
-uncommitted): both point at a commit on the default branch, so Mate asks. It
+PR closed without merging stays waiting until you drop it. A fast-forward and a
+branch that has no commits of its own yet (its work still uncommitted) both
+point at a commit on the default branch. Mate tells them apart through the local
+branch's reflog: an unpushed branch that never moved from where it was created
+is `empty-branch`, with no suggestion, and `mate artifact submit` refuses it
+with `empty-delivery-branch`. Without a reflog (another machine, or an expired
+one), Mate cannot tell and suggests a fast-forward for you to confirm. It
 asks too when a merge commit brought a head that was never pushed as its
 branch: that head may be the tip the branch was started from, merged with
 another branch. A squash whose content differs from the head, such as a fix made only on the
@@ -74,7 +79,7 @@ request's head stands in for it: Mate asks until the commit arrives. The mark
 goes once a machine holding the head finds it on `origin`.
 
 Uncommitted work is on no commit, so Git cannot see it. `mate artifact submit`
-therefore refuses a change whose branch already counts as merged while the work
+therefore refuses a change whose branch counts or is suggested as merged while the work
 tree that has the branch checked out holds modified tracked files; commit or
 stash them first. Work that was never committed on another machine, or left in
 untracked files, stays invisible.

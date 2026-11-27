@@ -81,9 +81,11 @@ it with `mate workflow done <skill> "<change-name>"`; otherwise name it above th
      submit retries; an unchanged resubmit adds no commit.
 
    A non-zero exit without a result is a refusal; report its message. When it names
-   uncommitted changes, the branch already counts as merged while its work tree holds
-   modified tracked files: tell the user to commit or stash them and submit again.
-   Never commit, stash or discard them yourself.
+   uncommitted changes, the branch counts or is suggested as merged while its work tree
+   holds modified tracked files: tell the user to commit or stash them and submit again.
+   For `empty-delivery-branch` (no commits of its own), tell the user to commit the work
+   on it or record that repository with `--repository <org/repo> --not-applicable`. Never commit, stash or discard
+   them yourself.
 
 3. **Report.** Relay every entry of `warnings` first: another active change that
    modifies the same requirement, a declared dependency that is not submitted yet,

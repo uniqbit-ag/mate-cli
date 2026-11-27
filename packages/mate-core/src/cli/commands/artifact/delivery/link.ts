@@ -94,7 +94,7 @@ function renderHuman(result: LinkResult): string[] {
  *   `--not-applicable`; refused unless the openspec capability sets `ticket: jira`.
  * - `--refresh` — check each recorded branch in its checkout linked on this machine: a merge
  *   commit or a default-branch commit containing its head records it merged; anything else is
- *   an outcome needing an answer (`answerReason`: `likely-merged`, `not-on-default`,
+ *   an outcome needing an answer (`answerReason`: `likely-merged`, `empty-branch`, `not-on-default`,
  *   `branch-deleted`, `no-checkout`, `direct`).
  * - `--fetch` — with `--refresh`, fetch the default and delivery branches and list the
  *   remote's pull refs first even when the companion's Git mode is not `auto`.

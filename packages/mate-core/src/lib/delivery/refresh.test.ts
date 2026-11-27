@@ -18,6 +18,8 @@ interface LocalState {
   known?: string[];
   /** The local branch, when it differs from the remote tip. */
   localTip?: string;
+  remoteTip?: string | null;
+  reflog?: string[] | null;
   /** Commits ahead of the remote tip. */
   ahead?: string[];
   onDefault?: string[];
@@ -35,15 +37,16 @@ interface LocalState {
 
 /** A checkout whose answers are fixed; records which queries ran. */
 function local(state: LocalState, calls: string[] = []): () => Promise<LocalMergeAccess> {
+  const tip = state.tip === undefined ? HEAD : state.tip;
   const git: MergeGit = {
     isRepository: async () => true,
     originUrl: async () => state.origin ?? "git@github.com:acme/acme-app.git",
     tip: async () => {
       calls.push("tip");
-      return state.tip === undefined ? HEAD : state.tip;
+      return tip;
     },
     localTip: async () => state.localTip ?? null,
-    remoteTip: async () => (state.tip === undefined ? HEAD : state.tip),
+    remoteTip: async () => (state.remoteTip !== undefined ? state.remoteTip : tip),
     dirtyWorktree: async () => null,
     aheadOf: async (_base, candidate) => (state.ahead ?? []).includes(candidate),
     hasCommit: async (commit) => {
@@ -56,6 +59,8 @@ function local(state: LocalState, calls: string[] = []): () => Promise<LocalMerg
     },
     onFirstParent: async (commit) =>
       state.firstParentUnknown ? null : (state.firstParent ?? []).includes(commit),
+    neverAdvanced: async (_branch, head) =>
+      state.reflog ? state.reflog.every((entry) => entry === head) : null,
     patchMatch: async () => {
       calls.push("patchMatch");
       return state.match ?? null;
@@ -190,6 +195,71 @@ describe("refreshRecord", () => {
       suggestion: { commit: HEAD, style: "fast-forward" },
     });
     expect(record.deliveries[0].merge).toBeUndefined();
+  });
+
+  describe("an unpushed branch on the default branch's own line", () => {
+    const unpushed = {
+      tip: HEAD,
+      remoteTip: null,
+      localTip: HEAD,
+      onDefault: [HEAD],
+      firstParent: [HEAD],
+    };
+
+    test("that never moved has no commits of its own and no suggestion", async () => {
+      const { record, outcomes } = await refreshRecord(linked(), {
+        now,
+        localAccess: local({ ...unpushed, reflog: [HEAD] }),
+      });
+      expect(outcomes[0]).toMatchObject({
+        result: "unknown",
+        needsAnswer: true,
+        answerReason: "empty-branch",
+      });
+      expect(outcomes[0]).not.toHaveProperty("suggestion");
+      expect(record.deliveries[0].merge).toBeUndefined();
+    });
+
+    test("that never moved from a commit a merge brought is not settled as merged", async () => {
+      const { record, outcomes } = await refreshRecord(linked(), {
+        now,
+        localAccess: local({ ...unpushed, firstParent: [], reflog: [HEAD] }),
+      });
+      expect(outcomes[0]).toMatchObject({ result: "unknown", answerReason: "empty-branch" });
+      expect(record.deliveries[0].merge).toBeUndefined();
+    });
+
+    test.each([
+      ["whose own commit was fast-forwarded", [HEAD, OTHER]],
+      ["without a reflog", null],
+    ])("%s stays a fast-forward suggestion", async (_case, reflog) => {
+      const { outcomes } = await refreshRecord(linked(), {
+        now,
+        localAccess: local({ ...unpushed, reflog }),
+      });
+      expect(outcomes[0]).toMatchObject({
+        answerReason: "likely-merged",
+        suggestion: { commit: HEAD, style: "fast-forward" },
+      });
+    });
+  });
+
+  test("a branch missing on the remote whose head is unpushed was never pushed, not deleted", async () => {
+    const { outcomes } = await refreshRecord(linked(), {
+      now,
+      localAccess: local({
+        tip: HEAD,
+        remoteTip: null,
+        localTip: HEAD,
+        fetch: { ok: true, branchDeleted: true },
+      }),
+      fetch: true,
+    });
+    expect(outcomes[0]).toMatchObject({
+      answerReason: "not-on-default",
+      fetch: { ok: true, branchUnpushed: true },
+    });
+    expect(outcomes[0]?.fetch).not.toHaveProperty("branchDeleted");
   });
 
   test("a local branch ahead of the merged remote tip is the head and settles nothing", async () => {

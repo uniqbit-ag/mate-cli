@@ -21,7 +21,9 @@ export type AnswerReason =
   /** The repository has no checkout linked on this machine. */
   | "no-checkout"
   /** The branch is gone from the remote and its content is on no default-branch commit. */
-  | "branch-deleted";
+  | "branch-deleted"
+  /** The unpushed branch never moved from the default-branch commit it was created at. */
+  | "empty-branch";
 
 export interface BranchOutcome {
   repository: string;
@@ -172,6 +174,23 @@ async function unpushedHead(
   return (await git.localTip(branch)) === head ? true : undefined;
 }
 
+async function hasNoCommitsOfItsOwn(
+  git: MergeGit,
+  branch: string,
+  head: string,
+  local: { tip: string | null; unpushed: boolean },
+): Promise<boolean> {
+  if (local.tip !== head) return false;
+  if ((await git.neverAdvanced(branch, head)) !== true) return false;
+  return local.unpushed || (await unpushedHead(git, branch, head)) === true;
+}
+
+function answerReasonOf(evidence: LocalMergeEvidence, deleted: boolean): AnswerReason {
+  if (evidence.empty) return "empty-branch";
+  if (evidence.suggestion) return "likely-merged";
+  return deleted ? "branch-deleted" : "not-on-default";
+}
+
 async function lookup(
   repository: string,
   branch: string,
@@ -226,16 +245,18 @@ async function lookup(
       : {};
     return { ...base, ...withFetch, ...found, result: "merged", needsAnswer: false, provenance };
   }
-  const suggestion = evidence.suggestion;
+  const { suggestion } = evidence;
+  const neverPushed = fetch?.branchDeleted === true && (recorded.unpushed || unpushed === true);
+  const reportedFetch = neverPushed ? { fetch: { ok: true, branchUnpushed: true } } : withFetch;
   // Without a fetch a missing `origin/<branch>` is no evidence of deletion.
-  const deleted = fetch?.branchDeleted === true && evidence.uncontained;
+  const deleted = fetch?.branchDeleted === true && !neverPushed && evidence.uncontained;
   return {
     ...base,
-    ...withFetch,
+    ...reportedFetch,
     ...found,
     result: "unknown",
     needsAnswer: true,
-    answerReason: suggestion ? "likely-merged" : deleted ? "branch-deleted" : "not-on-default",
+    answerReason: answerReasonOf(evidence, deleted),
     ...(suggestion ? { suggestion } : {}),
     fetchedAt,
   };
@@ -297,6 +318,8 @@ export interface LocalMergeEvidence {
   suggestion: PatchMatch | null;
   /** Containment ran and found no default-branch commit holding the head. */
   uncontained: boolean;
+  /** The unpushed head is on the default branch and its branch never moved from it. */
+  empty?: boolean;
 }
 
 /**
@@ -320,9 +343,10 @@ export async function localMergeEvidence(
       ? recordedHead
       : null;
   let head = live ?? recorded ?? known.fallback ?? null;
+  const localTip = head ? await git.localTip(branch) : null;
   if (live) {
     // Unpushed work: the remote tip alone would settle a merge of the branch's earlier commits.
-    for (const candidate of [await git.localTip(branch), recorded]) {
+    for (const candidate of [localTip, recorded]) {
       // oxlint-disable-next-line no-await-in-loop -- the second candidate is compared to the first
       if (candidate && (await git.aheadOf(head!, candidate))) head = candidate;
     }
@@ -330,6 +354,10 @@ export async function localMergeEvidence(
   const unsettled = { live, head, merged: false, uncontained: false };
   if (!head) return { ...unsettled, suggestion: null };
   if (await git.isAncestor(head, defaultBranch)) {
+    const local = { tip: localTip, unpushed: known.unpushed === true };
+    if (await hasNoCommitsOfItsOwn(git, branch, head, local)) {
+      return { ...unsettled, empty: true, suggestion: null };
+    }
     // A fast-forward and a branch without commits of its own look the same: only a merge
     // commit settles by itself, and a check Git could not run settles nothing.
     if ((await git.onFirstParent(head, defaultBranch)) === false) {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { renderOutcome } from "./output";
+import { renderOutcome, sharedRefusalMessage } from "./output";
 
 const base = { repository: "acme/acme-app", branch: "change/x", result: "unknown" as const };
 
@@ -72,5 +72,18 @@ describe("renderOutcome", () => {
         fetch: { ok: false, message: "git fetch timed out" },
       }),
     ).toEqual(["  change/x: git fetch timed out; local refs used"]);
+  });
+});
+
+describe("sharedRefusalMessage", () => {
+  test("an empty delivery branch says to commit on it or record not applicable", () => {
+    const message = sharedRefusalMessage({
+      reason: "empty-delivery-branch",
+      change: "acme",
+      repository: "acme/acme-app",
+      branch: "workset/acme",
+    });
+    expect(message).toContain("Commit the work on workset/acme first");
+    expect(message).toContain("--not-applicable");
   });
 });

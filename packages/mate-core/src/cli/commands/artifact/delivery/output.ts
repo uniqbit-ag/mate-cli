@@ -53,6 +53,12 @@ export function renderOutcome(outcome: BranchOutcome): string[] {
     lines.push(
       `  ${outcome.branch}: likely merged (${style}, ${commit.slice(0, 12)}); needs your confirmation`,
     );
+  } else if (outcome.answerReason === "empty-branch") {
+    lines.push(
+      `  ${outcome.branch}: has no commits of its own, so nothing of it is merged; needs an answer`,
+    );
+  } else if (outcome.answerReason === "not-on-default" && outcome.fetch?.branchUnpushed) {
+    lines.push(`  ${outcome.branch}: never pushed and not on the default branch; needs an answer`);
   } else if (outcome.answerReason === "not-on-default" && outcome.fetch?.branchDeleted) {
     lines.push(
       `  ${outcome.branch}: deleted on the remote and its commits are not on this machine, so Git cannot check it; needs an answer`,
@@ -102,7 +108,10 @@ export function sharedRefusalMessage(
     return `mate: ${refusal.change} records ${refusal.delivery} for ${refusal.repository}; a ticket does not replace it, pass --branch to relink.`;
   }
   if (refusal.reason === "uncommitted-work") {
-    return `mate: ${refusal.change} is not submitted: ${refusal.branch} already counts as merged in ${refusal.repository}, but ${refusal.worktree} holds uncommitted changes to tracked files. Commit or stash them, then submit again.`;
+    return `mate: ${refusal.change} is not submitted: ${refusal.branch} counts or is suggested as merged in ${refusal.repository}, but ${refusal.worktree} holds uncommitted changes to tracked files. Commit or stash them, then submit again.`;
+  }
+  if (refusal.reason === "empty-delivery-branch") {
+    return `mate: ${refusal.change} is not submitted: ${refusal.branch} has no commits of its own in ${refusal.repository}, so it delivers nothing. Commit the work on ${refusal.branch} first, or record the repository as not applicable with --repository ${refusal.repository} --not-applicable "<reason>", then submit again.`;
   }
   if (refusal.reason === "protected-branch") {
     return `mate: ${refusal.branch} is a protected branch (${refusal.protection}); record it only as an explicit direct delivery with --direct.`;

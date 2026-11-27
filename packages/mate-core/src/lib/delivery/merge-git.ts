@@ -48,6 +48,8 @@ export interface FetchResult {
   message?: string;
   /** The delivery branch no longer exists on `origin`. */
   branchDeleted?: boolean;
+  /** The delivery branch is missing on `origin` because its head was never pushed. */
+  branchUnpushed?: boolean;
 }
 
 /** The first default-branch commit holding a delivery's content. */
@@ -102,6 +104,11 @@ export interface MergeGit {
    * False when a merge commit brought it in; null when Git could not tell.
    */
   onFirstParent(commit: string, defaultBranch: string): Promise<boolean | null>;
+  /**
+   * True when every entry of the local branch's reflog is `head`: the branch never moved since
+   * it was created there. False when one differs; null without a reflog or when Git fails.
+   */
+  neverAdvanced(branch: string, head: string): Promise<boolean | null>;
   /**
    * The commit on `origin/<defaultBranch>` that carries the delivery's changes by patch
    * identity: every branch commit (rebase), else the whole branch diff (squash). Null in a
@@ -380,6 +387,15 @@ export function mergeGit(repoPath: string, deps: MergeGitDeps = {}): MergeGit {
       if (!oldest) return true;
       const parent = await value("rev-parse", `${oldest}^1`);
       return parent ? parent === commit : null;
+    },
+    async neverAdvanced(branch, head) {
+      const reflog = await git(["reflog", "show", "--format=%H", `refs/heads/${branch}`, "--"]);
+      if (reflog.code !== 0) return null;
+      const entries = reflog.stdout
+        .split("\n")
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+      return entries.length > 0 ? entries.every((entry) => entry === head) : null;
     },
     async patchMatch(head, defaultBranch) {
       if (await isPartialClone()) return null;

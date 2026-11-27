@@ -1189,6 +1189,49 @@ describe("submitChanges", () => {
   );
 
   test(
+    "an edited member whose delivery branch has no commits of its own holds the group back",
+    async () => {
+      const fixture = await setup();
+      const login = await submittedLogin(fixture);
+      const [api] = login.dirs;
+      const webRoot = path.join(fixture.root, "web");
+      fs.mkdirSync(webRoot);
+      const web = makeProductRepo(webRoot);
+      git(web.clone, "branch", "workset/acme-login-web");
+      const record = await readDeliveryRecord(api!);
+      await writeDeliveryRecord(
+        api!,
+        upsertDelivery(record!, "acme/web", { branch: "workset/acme-login-web" }),
+      );
+      const before = inboxTip(fixture);
+      const environment = productEnvironment(login.companion, login.product);
+
+      const outcome = await submitChanges(
+        {
+          ...environment,
+          checkoutOf: async (repository) =>
+            sameRepository(repository, "acme/web") ? web.clone : environment.checkoutOf(repository),
+        },
+        { changes: ["acme-login-ui"] },
+        { ...deps(fixture), runOpenSpec: recordingOpenSpec() },
+      );
+
+      expect(outcome).toMatchObject({
+        results: [
+          {
+            change: "acme-login-ui",
+            status: "waiting",
+            waitingFor: ["acme-login-api"],
+            message: expect.stringContaining("refused: empty-delivery-branch"),
+          },
+        ],
+      });
+      expect(inboxTip(fixture)).toBe(before);
+    },
+    TIMEOUT,
+  );
+
+  test(
     "an edited member nobody named does not accept its block on the pending branch",
     async () => {
       const fixture = await setup();
@@ -1556,6 +1599,70 @@ describe("takeSubmitted", () => {
         state: "merged",
         source: "git",
       });
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "a suggested fast-forward with uncommitted work in its work tree is refused",
+    async () => {
+      const fixture = await setup();
+      const companion = fixture.clone("acme-companion");
+      const product = makeProductRepo(fixture.root);
+      git(product.clone, "switch", "-q", "-c", "workset/acme-login");
+      fs.writeFileSync(path.join(product.clone, "login.txt"), "login\n");
+      git(product.clone, "add", "login.txt");
+      git(product.clone, "commit", "-q", "-m", "login");
+      git(product.clone, "push", "-q", "origin", "HEAD:main");
+      git(product.clone, "fetch", "-q", "origin");
+      const change = changeLocally(companion, "acme-login", { branch: "workset/acme-login" });
+      fs.writeFileSync(path.join(change, "tasks.md"), "- [x] 1.1 acme\n");
+      fs.writeFileSync(path.join(product.clone, "login.txt"), "login, not committed\n");
+
+      const refused = await submitChanges(
+        productEnvironment(companion, product),
+        { changes: ["acme-login"] },
+        { ...deps(fixture), runOpenSpec: recordingOpenSpec(), preflightGroup: passedPreflight },
+      );
+
+      expect(refused).toMatchObject({
+        refusal: { reason: "uncommitted-work", branch: "workset/acme-login" },
+      });
+      expect(remoteBranches(fixture)).not.toContain(INBOX);
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "a delivery branch without commits of its own is refused, clean or not",
+    async () => {
+      const fixture = await setup();
+      const companion = fixture.clone("acme-companion");
+      const product = makeProductRepo(fixture.root);
+      git(product.clone, "switch", "-q", "-c", "workset/acme-login");
+      const change = changeLocally(companion, "acme-login", { branch: "workset/acme-login" });
+      fs.writeFileSync(path.join(change, "tasks.md"), "- [x] 1.1 acme\n");
+      const before = fs.readFileSync(path.join(change, "delivery.yaml"), "utf8");
+      const submit = () =>
+        submitChanges(
+          productEnvironment(companion, product),
+          { changes: ["acme-login"] },
+          { ...deps(fixture), runOpenSpec: recordingOpenSpec(), preflightGroup: passedPreflight },
+        );
+      const empty = {
+        refusal: {
+          reason: "empty-delivery-branch",
+          change: "acme-login",
+          repository: PRODUCT,
+          branch: "workset/acme-login",
+        },
+      };
+
+      expect(await submit()).toMatchObject(empty);
+      fs.writeFileSync(path.join(product.clone, "base.txt"), "base, not committed\n");
+      expect(await submit()).toMatchObject(empty);
+      expect(fs.readFileSync(path.join(change, "delivery.yaml"), "utf8")).toBe(before);
+      expect(remoteBranches(fixture)).not.toContain(INBOX);
     },
     TIMEOUT,
   );
