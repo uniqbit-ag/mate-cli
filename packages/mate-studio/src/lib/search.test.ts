@@ -1,6 +1,12 @@
 import { describe, expect, it } from "bun:test";
 
-import { canonicalHref, validateSpecsSearch, validateStudioSearch } from "./search";
+import {
+  canonicalHref,
+  parseStudioSearch,
+  stringifyStudioSearch,
+  validateSpecsSearch,
+  validateStudioSearch,
+} from "./search";
 
 describe("validateStudioSearch", () => {
   it("reads the canonical mode", () => {
@@ -125,12 +131,32 @@ describe("validateSpecsSearch", () => {
     });
   });
 
-  it("reads values the router parsed as numbers or booleans as typed", () => {
-    expect(validateSpecsSearch({ q: 2026 })).toEqual({ q: "2026" });
-    expect(validateSpecsSearch({ q: true })).toEqual({ q: "true" });
-  });
-
   it("drops blank and structured values", () => {
     expect(validateSpecsSearch({ q: "  ", repo: { a: 1 }, area: ["web"] })).toEqual({});
+  });
+});
+
+describe("parseStudioSearch", () => {
+  it("reads an address that quotes a value, as Studio wrote them before", () => {
+    expect(parseStudioSearch("?companion=%22647426e241%22&dir=%222026%22")).toEqual({
+      companion: "647426e241",
+      dir: "2026",
+    });
+  });
+
+  it("reads back what stringifyStudioSearch writes, unquoted", () => {
+    const text = stringifyStudioSearch({ companion: "647426e241", usageDays: 30, q: undefined });
+    expect(text).toBe("?companion=647426e241&usageDays=30");
+    expect(parseStudioSearch(text)).toEqual({ companion: "647426e241", usageDays: "30" });
+  });
+
+  it("keeps the quotes of a value that starts with one", () => {
+    const search = { q: '"exact phrase"', dir: '"\\u0041"' };
+    expect(parseStudioSearch(stringifyStudioSearch(search))).toEqual(search);
+  });
+
+  it("writes an object or array as JSON, not as [object Object]", () => {
+    const text = stringifyStudioSearch({ filter: { repo: "acme" }, ids: ["a", "b"] });
+    expect(parseStudioSearch(text)).toEqual({ filter: '{"repo":"acme"}', ids: '["a","b"]' });
   });
 });

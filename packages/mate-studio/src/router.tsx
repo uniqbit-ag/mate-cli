@@ -4,6 +4,7 @@ import { setupRouterSsrQueryIntegration } from "@tanstack/react-router-ssr-query
 import { routeTree } from "./route-tree.gen";
 import { ViewPlaceholder } from "./shell/navigation-progress";
 import { createStudioQueryClient } from "./lib/query-client";
+import { parseStudioSearch, stringifyStudioSearch } from "./lib/search";
 
 /** One router and query client per request on the server, one per page in the browser. */
 export function getRouter() {
@@ -15,6 +16,8 @@ export function getRouter() {
     defaultPreload: "intent",
     // A view waiting for its data shows this in its place; the layout around it stays.
     defaultPendingComponent: ViewPlaceholder,
+    parseSearch: parseStudioSearch,
+    stringifySearch: stringifyStudioSearch,
   });
   setupRouterSsrQueryIntegration({ router, queryClient });
   return router;
