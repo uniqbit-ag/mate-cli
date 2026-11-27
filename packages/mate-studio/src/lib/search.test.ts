@@ -149,4 +149,9 @@ describe("parseStudioSearch", () => {
     expect(text).toBe("?companion=647426e241&usageDays=30");
     expect(parseStudioSearch(text)).toEqual({ companion: "647426e241", usageDays: "30" });
   });
+
+  it("keeps the quotes of a value that starts with one", () => {
+    const search = { q: '"exact phrase"', dir: '"\\u0041"' };
+    expect(parseStudioSearch(stringifyStudioSearch(search))).toEqual(search);
+  });
 });

@@ -106,11 +106,18 @@ function unquoted(value: string): string {
   }
 }
 
-/** Writes each value as plain text, as {@link parseStudioSearch} reads it back. */
+/**
+ * Writes each value as plain text, as {@link parseStudioSearch} reads it back. A string
+ * starting with `"` is JSON-quoted so {@link unquoted} strips only the quotes added here.
+ */
 export function stringifyStudioSearch(search: Record<string, unknown>): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(search)) {
-    if (value !== undefined && value !== null) params.set(key, String(value));
+    if (value === undefined || value === null) continue;
+    params.set(
+      key,
+      typeof value === "string" && value.startsWith('"') ? JSON.stringify(value) : String(value),
+    );
   }
   const text = params.toString();
   return text ? `?${text}` : "";
