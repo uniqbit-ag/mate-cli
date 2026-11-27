@@ -125,13 +125,15 @@ function audienceOf(
 
 /**
  * Only what differs from `current`, so a save rewrites no untouched part and its comments
- * stay. Covers declared audiences only: a save never creates one.
+ * stay. Covers the declared audiences `next` names: a save never creates one.
  */
 function patchOf(next: McpManagerState, current: McpManagerSnapshot): McpManagerPatch {
   const patch: McpManagerPatch = {};
   const catalog = catalogOf(next.catalog);
   if (!isDeepStrictEqual(catalog, catalogOf(current.catalog))) patch.catalog = catalog;
   for (const [name, held] of Object.entries(current.audiences)) {
+    // Declared after the client's read, so it never saw it: an overwrite leaves it alone.
+    if (!Object.hasOwn(next.audiences, name)) continue;
     const selection = audienceOf(next.audiences[name]);
     if (isDeepStrictEqual(selection, audienceOf(held))) continue;
     patch.audiences = { ...patch.audiences, [name]: selection };

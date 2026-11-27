@@ -98,7 +98,12 @@ export function McpDialogs({
           <GroupBody previous={dialog.previous} {...body} />
         ) : null}
         {dialog?.kind === "delete" ? (
-          <DeleteBody entry={dialog.entry} name={dialog.name} {...body} />
+          <DeleteBody
+            key={`${dialog.entry}/${dialog.name}`}
+            entry={dialog.entry}
+            name={dialog.name}
+            {...body}
+          />
         ) : null}
       </DialogContent>
     </Dialog>
@@ -416,7 +421,8 @@ function DeleteBody({
   onApply,
   onClose,
 }: BodyProps & { entry: EntryKind; name: string }) {
-  const references = referenceText(state, entry, name);
+  // Held from the open: the delete empties it while the dialog is still closing.
+  const [references] = useState(() => referenceText(state, entry, name));
   return (
     <>
       <DialogHead

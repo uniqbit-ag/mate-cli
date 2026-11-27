@@ -1,11 +1,12 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useBlocker } from "@tanstack/react-router";
 import type {
   McpManagerDerived,
   McpManagerState,
   McpManagerView,
   McpVariableStatus,
 } from "@uniqbit/mate-core/studio";
-import { type ReactNode, type Ref, type RefObject, useRef, useState } from "react";
+import { type ReactNode, type Ref, type RefObject, useEffect, useRef, useState } from "react";
 
 import { Icon } from "../../components/icon";
 import { Button } from "../../components/ui/button";
@@ -28,7 +29,12 @@ import { type Cell, cellOf, cycleCell, type EntryKind, KIND_WORD, transportOf } 
 /** The companion's MCP servers, groups and per-audience selection, edited as one unsaved draft. */
 export function Mcp({ companion, writable }: { companion: string; writable: boolean }) {
   const query = useQuery(mcpManagerQuery(companion));
-  const { button: addServer, retried } = useRetryFocus(query.isSuccess);
+  const filter = useRef<HTMLInputElement>(null);
+  // Read-only disables Add server, so focus goes to the filter instead.
+  const { button: addServer, retried } = useRetryFocus(
+    query.isSuccess,
+    writable ? undefined : filter,
+  );
   if (query.data) {
     return (
       <McpEditor
@@ -36,6 +42,7 @@ export function Mcp({ companion, writable }: { companion: string; writable: bool
         writable={writable}
         loaded={query.data}
         addServer={addServer}
+        filter={filter}
       />
     );
   }
@@ -68,12 +75,14 @@ function McpEditor({
   writable,
   loaded,
   addServer,
+  filter,
 }: {
   companion: string;
   writable: boolean;
   loaded: McpManagerView;
   /** Where focus goes once the control that held it is gone. */
   addServer: RefObject<HTMLButtonElement | null>;
+  filter: Ref<HTMLInputElement>;
 }) {
   const queryClient = useQueryClient();
   /** Unsaved edits and the read they started from; null while the view shows what was read. */
@@ -85,6 +94,10 @@ function McpEditor({
     open: false,
   });
   const opener = useRef<HTMLElement | null>(null);
+  useBlocker({
+    shouldBlockFn: () => !window.confirm("Discard unsaved changes?"),
+    disabled: edit === null,
+  });
 
   const base = edit?.base ?? loaded;
   const draft = edit?.draft ?? stateOf(loaded);
@@ -97,10 +110,6 @@ function McpEditor({
   const derived: McpManagerDerived = checked?.ok ? checked : base;
   const invalid = checked?.ok === false ? checked.reason : null;
 
-  const apply = (next: McpManagerState) => {
-    setEdit({ base, draft: next });
-    setSaved(false);
-  };
   const show = (view: McpManagerView) => {
     queryClient.setQueryData(mcpManagerQuery(companion).queryKey, view);
     setEdit(null);
@@ -116,6 +125,17 @@ function McpEditor({
       setSaved(true);
     },
   });
+  const apply = (next: McpManagerState) => {
+    if (save.isError) save.reset();
+    setEdit({ base, draft: next });
+    setSaved(false);
+  };
+  const discard = (view: McpManagerView) => {
+    save.reset();
+    show(view);
+  };
+  // A successful save replaces the draft, so an edit made while it runs would be lost.
+  const editable = writable && !save.isPending;
   const open = (shown: McpDialog) => (event: { currentTarget: HTMLElement }) => {
     opener.current = event.currentTarget;
     setDialog({ shown, open: true });
@@ -128,7 +148,7 @@ function McpEditor({
       <Button
         variant="ghost"
         size="sm"
-        disabled={!writable}
+        disabled={!editable}
         aria-label={`Edit ${name}`}
         onClick={open({ kind: "form", entry, previous: name })}
       >
@@ -137,7 +157,7 @@ function McpEditor({
       <Button
         variant="ghost"
         size="sm"
-        disabled={!writable}
+        disabled={!editable}
         aria-label={`Delete ${name}`}
         onClick={open({ kind: "delete", entry, name })}
       >
@@ -167,17 +187,17 @@ function McpEditor({
         blocked={invalid !== null || conflict !== null}
         error={invalid ?? (save.isError ? save.error.message || "The save failed." : null)}
         onSave={() => save.mutate(base.token)}
-        onDiscard={() => show(conflict ?? loaded)}
+        onDiscard={() => discard(conflict ?? loaded)}
       />
       {conflict ? (
         <Conflict
           current={conflict}
           pending={save.isPending}
-          onLoad={() => show(conflict)}
+          onLoad={() => discard(conflict)}
           onOverwrite={() => save.mutate(conflict.token)}
         />
       ) : null}
-      {servers.length === 0 ? (
+      {servers.length === 0 && groups.length === 0 ? (
         <EmptyNote className="grid justify-items-start gap-3">
           <span>
             This companion declares no MCP servers. Add the first one to give its agents a tool.
@@ -187,6 +207,11 @@ function McpEditor({
       ) : (
         <>
           <ListCard title="Servers" count={servers.length} hint={addButton("servers", addServer)}>
+            {servers.length === 0 ? (
+              <p className="m-0 px-4 py-3 text-sm text-muted">
+                No servers. The groups below have no server to turn on.
+              </p>
+            ) : null}
             <ul className="m-0 list-none p-0">
               {servers.map(([name, server]) => (
                 <li key={name} className={ROW_LINE} data-mcp-server={name}>
@@ -230,8 +255,9 @@ function McpEditor({
           <SelectionGrid
             state={draft}
             effective={derived.effective}
-            stale={edit !== null && (preview.isPlaceholderData || preview.isPending)}
-            writable={writable}
+            stale={edit !== null && (preview.isPlaceholderData || !checked?.ok)}
+            writable={editable}
+            filterRef={filter}
             onChange={apply}
           />
         </>
@@ -336,6 +362,11 @@ function Conflict({
 }) {
   const servers = Object.keys(current.catalog?.servers ?? {});
   const groups = Object.keys(current.catalog?.groups ?? {});
+  const load = useRef<HTMLButtonElement>(null);
+  // The pressed Save or Overwrite is disabled by now; the ways on are here.
+  useEffect(() => {
+    if (!pending) load.current?.focus();
+  }, [pending]);
   return (
     <section
       className="grid gap-2 rounded-card border border-[color-mix(in_srgb,var(--warn)_40%,var(--border))] bg-warn-soft px-4 py-3 text-sm"
@@ -353,7 +384,7 @@ function Conflict({
         <ConflictLine label="Base servers in the file" names={current.effective.base} />
       </dl>
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" disabled={pending} onClick={onLoad}>
+        <Button ref={load} size="sm" disabled={pending} onClick={onLoad}>
           Discard my edits and load the file
         </Button>
         <Button size="sm" variant="danger" disabled={pending} onClick={onOverwrite}>
@@ -405,6 +436,7 @@ function SelectionGrid({
   effective,
   stale,
   writable,
+  filterRef,
   onChange,
 }: {
   state: McpManagerState;
@@ -412,6 +444,7 @@ function SelectionGrid({
   /** The effective row still shows an earlier state's answer. */
   stale: boolean;
   writable: boolean;
+  filterRef: Ref<HTMLInputElement>;
   onChange: (next: McpManagerState) => void;
 }) {
   const [filter, setFilter] = useState("");
@@ -450,6 +483,7 @@ function SelectionGrid({
       title="Selection"
       hint={
         <Input
+          ref={filterRef}
           className="h-7 w-48"
           value={filter}
           placeholder="Filter by name"

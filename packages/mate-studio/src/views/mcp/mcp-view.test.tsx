@@ -9,6 +9,7 @@ import type {
 await import("../../../test/dom");
 const { act, cleanup, fireEvent, render, screen, within } = await import("@testing-library/react");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+const router = await import("@tanstack/react-router");
 
 const view: McpManagerView = {
   catalog: {
@@ -55,8 +56,11 @@ mock.module("../../server/mcp-manager", () => ({
 }));
 const { Mcp } = await import("./mcp-view");
 
+const confirm = window.confirm;
+
 afterEach(() => {
   cleanup();
+  window.confirm = confirm;
   server.read = async () => view;
   server.saves = [];
   server.preview = () => accepted;
@@ -66,9 +70,21 @@ afterEach(() => {
 const settle = () => act(async () => new Promise((done) => setTimeout(done, 20)));
 
 async function mount(writable = true) {
+  const root = router.createRootRoute();
+  const route = router.createRoute({
+    getParentRoute: () => root,
+    path: "/mcp",
+    component: () => <Mcp companion="0123456789" writable={writable} />,
+  });
+  const other = router.createRoute({ getParentRoute: () => root, path: "/skills" });
+  const app = router.createRouter({
+    routeTree: root.addChildren([route, other]),
+    history: router.createMemoryHistory({ initialEntries: ["/mcp"] }),
+  });
+  await app.load();
   const page = render(
     <QueryClientProvider client={new QueryClient()}>
-      <Mcp companion="0123456789" writable={writable} />
+      <router.RouterProvider router={app} />
     </QueryClientProvider>,
   );
   await settle();
@@ -78,7 +94,7 @@ async function mount(writable = true) {
     fireEvent.click(button);
     await settle();
   };
-  return { page, cell, press };
+  return { page, cell, press, app };
 }
 
 describe("Mcp", () => {
@@ -90,6 +106,33 @@ describe("Mcp", () => {
     server.read = async () => view;
     await press(page.getByRole("button", { name: "Retry" }));
     expect(document.activeElement).toBe(page.getByRole("button", { name: "Add server" }));
+  });
+
+  test("a successful Retry in a read-only Studio moves focus to the filter", async () => {
+    server.read = async () => {
+      throw new Error("framework.yaml is invalid");
+    };
+    const { page, press } = await mount(false);
+    server.read = async () => view;
+    await press(page.getByRole("button", { name: "Retry" }));
+    expect(document.activeElement).toBe(page.getByRole("textbox", { name: /^Filter/ }));
+  });
+
+  test("leaving with an unsaved draft asks first, and stays when declined", async () => {
+    const { cell, press, app } = await mount();
+    await press(cell("analyst/acme-db"));
+    const asked: string[] = [];
+    window.confirm = (message?: string) => {
+      asked.push(String(message));
+      return false;
+    };
+    // A blocked navigation never settles, so it is not awaited.
+    await act(async () => {
+      void app.navigate({ to: "/skills" });
+    });
+    await settle();
+    expect(asked).toEqual(["Discard unsaved changes?"]);
+    expect(app.state.location.pathname).toBe("/mcp");
   });
 
   test("an audience cell cycles inherit, enable, disable; a base cell toggles", async () => {
