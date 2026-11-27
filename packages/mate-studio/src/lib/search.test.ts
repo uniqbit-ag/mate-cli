@@ -154,4 +154,9 @@ describe("parseStudioSearch", () => {
     const search = { q: '"exact phrase"', dir: '"\\u0041"' };
     expect(parseStudioSearch(stringifyStudioSearch(search))).toEqual(search);
   });
+
+  it("writes an object or array as JSON, not as [object Object]", () => {
+    const text = stringifyStudioSearch({ filter: { repo: "acme" }, ids: ["a", "b"] });
+    expect(parseStudioSearch(text)).toEqual({ filter: '{"repo":"acme"}', ids: '["a","b"]' });
+  });
 });
