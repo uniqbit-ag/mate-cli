@@ -14,6 +14,7 @@ import {
 } from "@uniqbit/mate-core/studio";
 
 const SERVER = path.join(import.meta.dir, "../dist/server/server.js");
+const CLIENT_ASSETS = path.join(import.meta.dir, "../dist/client/assets");
 
 function newestSource() {
   let newest = 0;
@@ -512,5 +513,22 @@ describe("built server", () => {
       expect(html).toMatch(/<a[^>]*aria-current="page"[^>]*href="\/graph\?/);
     }
     expect(asked).toBe(0);
+  });
+});
+
+describe("built client", () => {
+  // A browser has no `process`: one unguarded read throws before hydration and leaves every view inert.
+  test("reads `process` only behind a `typeof process` guard", async () => {
+    await built();
+    const unguarded: string[] = [];
+    for (const file of await readdir(CLIENT_ASSETS)) {
+      if (!file.endsWith(".js")) continue;
+      const code = await readFile(path.join(CLIENT_ASSETS, file), "utf8");
+      for (const { index } of code.matchAll(/(?<![\w$.])process\.[\w$]+/g)) {
+        if (code.slice(Math.max(0, index - 80), index).includes("typeof process")) continue;
+        unguarded.push(`${file}: ${code.slice(Math.max(0, index - 40), index + 40)}`);
+      }
+    }
+    expect(unguarded).toEqual([]);
   });
 });

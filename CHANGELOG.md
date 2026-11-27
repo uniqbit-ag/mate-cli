@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Studio responds to clicks again
+
+- Every Studio page stopped in the browser with `process is not defined` before it became interactive, so no button, dialog or menu worked. Studio's browser code no longer reads `process`.
+
 ### A companion declares its own MCP servers in `framework.yaml`
 
 - `mcpManager` holds a catalog of stdio and remote servers, optional groups, the base selection (`enabled`), and per-audience `enable` / `disable`. Setup writes the effective set for `MATE_AUDIENCE` to the companion's `.mcp.json` and `.opencode/opencode.json`, and removes servers that leave it.
