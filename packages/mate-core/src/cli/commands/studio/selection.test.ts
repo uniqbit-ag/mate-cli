@@ -32,7 +32,7 @@ const inventory: StudioInventory = {
 
 it("offers Usage in both modes without changing the factory gate", () => {
   for (const mode of ["engineering", "analysis"] as const) {
-    expect(viewsFor(mode)).toContain("usage");
+    expect(viewsFor(mode, {})).toContain("usage");
     expect(
       parse(new URL(`http://studio.local/?view=usage&studioMode=${mode}`), modePolicy("standard"))
         .view,
@@ -86,7 +86,11 @@ describe("parse", () => {
     expect(parse(at(""))).toMatchObject({ view: "dashboard" });
   });
   it("reads every view the sidebar can name", () => {
-    for (const view of STUDIO_VIEWS) expect(parse(at(`?view=${view}`)).view).toBe(view);
+    const chat = modePolicy("standard", { chat: true });
+    for (const view of STUDIO_VIEWS) {
+      const mode = viewsFor("engineering", chat).includes(view) ? "engineering" : "analysis";
+      expect(parse(at(`?view=${view}&studioMode=${mode}`), chat).view).toBe(view);
+    }
   });
 
   it("reads the companion and the view", () => {
@@ -472,13 +476,46 @@ describe("Studio modes", () => {
       profile: "standard",
       enabled: [en, an],
       defaultMode: en,
+      chat: false,
     });
     expect(modePolicy("appliance")).toEqual({
       profile: "appliance",
       enabled: [an],
       defaultMode: an,
+      chat: true,
     });
     expect(Object.isFrozen(modePolicy("appliance").enabled)).toBe(true);
+  });
+
+  it("offers Chat after the Analysis Overview only when chat is enabled", () => {
+    const chat = modePolicy("standard", { chat: true });
+    expect(chat.chat).toBe(true);
+    expect(Object.isFrozen(chat)).toBe(true);
+    expect(viewsFor(an, {})).not.toContain("chat");
+    expect(viewsFor(an, chat).slice(0, 2)).toEqual(["dashboard", "chat"]);
+    expect(viewsFor(en, chat)).not.toContain("chat");
+    expect(parse(at(`?studioMode=${an}&view=chat`), chat)).toMatchObject({
+      studioMode: an,
+      view: "chat",
+    });
+  });
+
+  it("lands a Chat address on the Overview where chat is not offered", () => {
+    const chat = modePolicy("standard", { chat: true });
+    expect(parse(at(`?studioMode=${en}&view=chat`), chat)).toMatchObject({
+      studioMode: en,
+      view: "dashboard",
+    });
+    expect(parse(at(`?studioMode=${an}&view=chat`), modePolicy())).toMatchObject({
+      studioMode: an,
+      view: "dashboard",
+    });
+    // The appliance offers chat whatever its bind.
+    expect(modePolicy("appliance", { chat: false }).chat).toBe(true);
+    const onChat = parse(at(`?studioMode=${an}&view=chat`), chat);
+    expect(switchMode(onChat, en, chat).view).toBe("dashboard");
+    expect(switchMode(switchMode(onChat, en, chat), an, chat).view).toBe("dashboard");
+    expect(switchMode({ ...onChat, studioMode: en }, an, chat).view).toBe("chat");
   });
 
   it("resolves every appliance request to Analysis", () => {
@@ -555,17 +592,17 @@ describe("Studio modes", () => {
     );
     const reports = switchView(landing, "reports");
     expect(parse(new URL(toHref(reports), "http://localhost:1"))).toEqual(reports);
-    expect(toHref(switchMode(landing, en))).toBe(`/?companion=${acme}&studioMode=${en}`);
+    expect(toHref(switchMode(landing, en, {}))).toBe(`/?companion=${acme}&studioMode=${en}`);
   });
 
   it("switching mode keeps a shared view and the vault's target", () => {
-    expect(switchMode(vaultFile, an)).toEqual({ ...vaultFile, studioMode: an });
-    expect(switchMode(refresh(vaultFile), an).refresh).toBe(false);
+    expect(switchMode(vaultFile, an, {})).toEqual({ ...vaultFile, studioMode: an });
+    expect(switchMode(refresh(vaultFile), an, {}).refresh).toBe(false);
   });
 
   it("switching mode away from a mode view lands on the new mode's landing view", () => {
     const workflow = switchView(vaultFile, "workflow");
-    expect(switchMode(workflow, an)).toEqual({
+    expect(switchMode(workflow, an, {})).toEqual({
       companionDigest: acme,
       studioMode: an,
       view: "dashboard",

@@ -37,6 +37,7 @@ const servicesFor = (profile: StudioProfile) =>
     services: () => [{ id: "acme", label: "Acme", views: [] }],
     callService: async () => Response.json({}),
     keepsFolder: () => false,
+    physicalPath: (companionPath: string) => companionPath,
     addsCompanions: () => false,
     modePolicy: modePolicy(profile),
     page: async (url: URL) => ({

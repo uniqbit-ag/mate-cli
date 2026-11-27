@@ -114,6 +114,23 @@ describe("canonicalHref", () => {
       );
     }
   });
+
+  it("keeps Chat in Analysis with chat enabled, and sends it to the Overview otherwise", () => {
+    const query = "?companion=0123456789&studioMode=analysis";
+    expect(canonicalHref("/chat", query, "chat", "analysis", { chat: true })).toBeNull();
+    expect(canonicalHref("/chat", query, "chat", "analysis")).toBe(`/${query}`);
+    expect(
+      canonicalHref(
+        "/chat",
+        "?companion=0123456789&studioMode=engineering",
+        "chat",
+        "engineering",
+        {
+          chat: true,
+        },
+      ),
+    ).toBe("/?companion=0123456789&studioMode=engineering");
+  });
 });
 
 describe("validateSpecsSearch", () => {

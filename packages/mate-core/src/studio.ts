@@ -79,6 +79,7 @@ export {
   viewsFor,
   type StudioMode,
   type StudioModePolicy,
+  type StudioOffers,
   type StudioProfile,
   type StudioSelection,
   type StudioView,
@@ -92,6 +93,9 @@ export {
 } from "./cli/commands/studio/connection";
 export { BRAND_SVGS } from "./brand/svg.generated";
 export {
+  CHAT_CREDENTIAL_ROUTE,
+  CHAT_ROUTE,
+  CHAT_SESSION_ROUTE,
   REPORT_VIEW_PREFIX,
   SERVICE_ASSET_PREFIX,
   SERVICE_ROUTE_PREFIX,
@@ -103,6 +107,26 @@ export {
   TERMINAL_WASM,
   type StudioEvent,
 } from "./cli/commands/studio/routes";
+export {
+  CHAT_EFFORTS,
+  CHAT_HARNESS_NAMES,
+  CHAT_HARNESSES,
+  CHAT_CREDENTIAL_REJECTED,
+  CHAT_HISTORY_BUDGET,
+  CHAT_MODELS,
+  CHAT_NO_CREDENTIAL,
+  CHAT_NO_LOGIN,
+  type ChatEffort,
+  type ChatHarness,
+  type ChatModel,
+  type ChatModelChoice,
+  chatModel,
+  isCredentialFailure,
+  messageText,
+  replayedChars,
+} from "./lib/studio-chat/agent";
+export type { ChatSession } from "./lib/studio-chat/session";
+export type { CredentialKind, CredentialStatus } from "./lib/agent-credential";
 export type { TerminalAgent } from "./cli/commands/studio/terminal";
 export type {
   VaultEntry,

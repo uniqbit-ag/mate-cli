@@ -10,6 +10,8 @@ export default defineConfig({
   // Bundle every runtime dependency into the server output except Mate Core, which the
   // published package resolves by self-reference (design D2).
   ssr: { noExternal: true, external: ["@uniqbit/mate-core"] },
+  // Every bundled package's license and notice, written beside each build's output.
+  build: { license: { fileName: "THIRD-PARTY-LICENSES.md" } },
   environments: {
     ssr: {
       build: {

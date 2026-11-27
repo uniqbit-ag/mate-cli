@@ -84,7 +84,7 @@ function useCommands(shell: ShellData, search: StudioSearch, open: boolean): Com
     });
 
   const views: Command[] = [
-    ...modeViews(shell.studioMode),
+    ...modeViews(shell.studioMode, shell.chat),
     ...libraryViews(),
     ...insightViews(),
   ].map((view) => ({

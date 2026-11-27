@@ -52,6 +52,23 @@ console.log(STUDIO_APP_DIRS.at(-1));`;
     expect(manifest.files).toContain("studio-dist/");
     expect(manifest.scripts.prepack).toContain("studio-app/pack.ts");
   });
+
+  test("ships with the notices of the chat's third-party code", async () => {
+    const root = path.resolve(import.meta.dir, "../../../../../..");
+    const pack = await Bun.file(path.join(root, "scripts/studio-app/pack.ts")).text();
+    expect(pack).toContain('"THIRD-PARTY-NOTICES.md"');
+    const notices = await Bun.file(path.join(root, "THIRD-PARTY-NOTICES.md")).text();
+    for (const name of [
+      "`ai`",
+      "`@ai-sdk/react`",
+      "`streamdown`",
+      "`use-stick-to-bottom`",
+      "AI Elements",
+    ]) {
+      expect(notices).toContain(name);
+    }
+    expect(notices).toContain("Apache License\n                           Version 2.0");
+  });
 });
 
 describe("the CLI's other commands", () => {

@@ -21,7 +21,7 @@ const acme = {
   pairings: [],
 };
 
-const shell = (studioMode: StudioMode): ShellData => ({
+const shell = (studioMode: StudioMode, chat = false): ShellData => ({
   companions: [acme],
   selected: acme,
   studioMode,
@@ -30,6 +30,7 @@ const shell = (studioMode: StudioMode): ShellData => ({
   collectedAt: null,
   metrics: null,
   writable: false,
+  chat,
   addsCompanions: false,
   pluginViews: [
     {
@@ -44,7 +45,7 @@ const shell = (studioMode: StudioMode): ShellData => ({
 
 afterEach(() => usePalette.setState({ open: false }));
 
-async function mount(studioMode: StudioMode = "engineering") {
+async function mount(studioMode: StudioMode = "engineering", chat = false) {
   const search = { companion: acme.digest, studioMode };
   const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
   queryClient.setQueryData(companionViewQuery("dashboard", search).queryKey, {
@@ -62,7 +63,7 @@ async function mount(studioMode: StudioMode = "engineering") {
     warnings: [],
   } satisfies CompanionViewData);
   const root = router.createRootRoute({
-    component: () => <CommandPalette shell={shell(studioMode)} search={search} />,
+    component: () => <CommandPalette shell={shell(studioMode, chat)} search={search} />,
   });
   const routes = ["/", "/workflow", "/specs"].map((path) =>
     router.createRoute({
@@ -179,7 +180,21 @@ describe("the command palette", () => {
     const listed = options(doc);
     expect(listed.some((entry) => /^(Workflow|Skills)View$/.test(entry ?? ""))).toBe(false);
     expect(listed.some((entry) => entry?.startsWith("Overview"))).toBe(true);
+    expect(listed.some((entry) => entry?.startsWith("Chat"))).toBe(false);
     expect(listed).toContain("FrictionView");
     page.unmount();
+  });
+
+  it("offers Chat only in Analysis with chat enabled", async () => {
+    const analysis = await mount("analysis", true);
+    await open(analysis.doc);
+    expect(options(analysis.doc).some((entry) => entry?.startsWith("Chat"))).toBe(true);
+    analysis.page.unmount();
+    usePalette.setState({ open: false });
+
+    const engineering = await mount("engineering", true);
+    await open(engineering.doc);
+    expect(options(engineering.doc).some((entry) => entry?.startsWith("Chat"))).toBe(false);
+    engineering.page.unmount();
   });
 });

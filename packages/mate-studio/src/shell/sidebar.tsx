@@ -59,7 +59,7 @@ export function Sidebar({ shell, search, view }: SidebarProps) {
         <>
           <NavGroup
             label={MODE_TITLES[mode]}
-            views={modeViews(mode)}
+            views={modeViews(mode, shell.chat)}
             search={search}
             current={view}
             counts={counts}
@@ -329,7 +329,7 @@ function ModeSwitch({
           holdShellForMode(queryClient, search, shell, mode);
           // A view the other mode is not offered lands on its Overview.
           void navigate({
-            to: viewsFor(mode).includes(view) ? VIEW_PATHS[view] : "/",
+            to: viewsFor(mode, { chat: shell.chat }).includes(view) ? VIEW_PATHS[view] : "/",
             search: (previous: Record<string, unknown>) => ({ ...previous, studioMode: mode }),
           });
         }}

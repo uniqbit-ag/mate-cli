@@ -1,9 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  MODE_VIEWS,
   SHARED_VIEWS,
   type StudioMode,
   type StudioView,
+  viewsFor,
 } from "@uniqbit/mate-core/studio";
 
 import type { IconName } from "../components/icon";
@@ -16,12 +16,19 @@ import { useTerminalUi } from "../stores/terminal-ui";
 /** What the frame's parts share: view order and icons, companion names, refresh and terminal. */
 
 /** Navigation order; core decides which views a mode offers. */
-const MODE_ORDER: readonly StudioView[] = ["dashboard", "workflow", "skills", "getting-started"];
+const MODE_ORDER: readonly StudioView[] = [
+  "dashboard",
+  "chat",
+  "workflow",
+  "skills",
+  "getting-started",
+];
 const LIBRARY_ORDER: readonly StudioView[] = ["specs", "vault", "graph"];
 const INSIGHTS_ORDER: readonly StudioView[] = ["usage", "friction", "reports"];
 
 export const VIEW_ICONS: Record<StudioView, IconName> = {
   dashboard: "home",
+  chat: "chat",
   workflow: "flow",
   "getting-started": "doc",
   skills: "spark",
@@ -39,9 +46,14 @@ function inOrder(views: readonly StudioView[], order: readonly StudioView[]): St
   return views.toSorted((a, b) => rank(a) - rank(b));
 }
 
-/** The views a mode lists, in navigation order. */
-export function modeViews(mode: StudioMode): StudioView[] {
-  return inOrder(MODE_VIEWS[mode], MODE_ORDER);
+/**
+ * The views a mode lists, in navigation order; Chat only where core offers it (a
+ * localhost-only Studio, or the appliance).
+ */
+export function modeViews(mode: StudioMode, chat = false): StudioView[] {
+  // Core decides whether Chat is offered; the shared views are listed apart.
+  const offered = viewsFor(mode, { chat }).filter((view) => !SHARED_VIEWS.includes(view));
+  return inOrder(offered, MODE_ORDER);
 }
 
 export function libraryViews(): StudioView[] {

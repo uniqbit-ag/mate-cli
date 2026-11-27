@@ -5,7 +5,12 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
-import { type StudioMode, type StudioView, viewsFor } from "@uniqbit/mate-core/studio";
+import {
+  type StudioMode,
+  type StudioOffers,
+  type StudioView,
+  viewsFor,
+} from "@uniqbit/mate-core/studio";
 import { useEffect } from "react";
 
 import type { CompanionView } from "../server/views";
@@ -32,7 +37,8 @@ export async function prefetchViews(
   studioMode: StudioMode,
   { query = companionViewQuery, preload, cancelled = () => false }: PrefetchDeps = {},
 ): Promise<void> {
-  const offered = viewsFor(studioMode);
+  // AHEAD holds no Chat, so its offer does not matter here.
+  const offered = viewsFor(studioMode, {});
   for (const view of AHEAD) {
     if (cancelled()) return;
     if (!offered.includes(view)) continue;
@@ -81,19 +87,21 @@ const whenIdle = (run: () => void): (() => void) => {
 export function usePrefetchViews(
   search: StudioSearch,
   studioMode: StudioMode,
+  offers: StudioOffers,
   enabledModes: readonly StudioMode[] = [],
 ) {
   const queryClient = useQueryClient();
   const router = useRouter();
   const { companion } = search;
   const requestedMode = search.studioMode;
+  const chat = offers.chat === true;
   // A string, so a new array with the same modes does not restart the effect.
   const otherModes = enabledModes.filter((mode) => mode !== studioMode).join(",");
   useEffect(() => {
     if (!companion) return;
     let stopped = false;
     const viewSearch = { companion, studioMode: requestedMode };
-    const offered = viewsFor(studioMode);
+    const offered = viewsFor(studioMode, { chat });
     const load = async <T, TKey extends QueryKey>(
       options: QueryExecuteOptions<T, Error, T, T, TKey>,
     ) => {
@@ -121,5 +129,5 @@ export function usePrefetchViews(
       stopped = true;
       cancel();
     };
-  }, [companion, requestedMode, studioMode, otherModes, queryClient, router]);
+  }, [companion, requestedMode, studioMode, chat, otherModes, queryClient, router]);
 }

@@ -9,6 +9,7 @@ import { createStudioAccess } from "./access";
 import { companionDigest, parse } from "./selection";
 import {
   createStudioFetch,
+  localOnly,
   serveUntilInterrupted,
   startStudioServer,
   STUDIO_IDLE_TIMEOUT_SECONDS,
@@ -117,6 +118,20 @@ describe("createStudioFetch", () => {
       "analysis",
       "engineering",
     ]);
+
+    const chatFetch = createStudioFetch(deps(), { chat: true });
+    expect(chatFetch.services.modePolicy.chat).toBe(true);
+    expect(
+      (await chatFetch.services.page(new URL("http://localhost/?studioMode=analysis&view=chat")))
+        .selection.view,
+    ).toBe("chat");
+    await chatFetch.close();
+    const plain = createStudioFetch(deps());
+    expect(
+      (await plain.services.page(new URL("http://localhost/?studioMode=analysis&view=chat")))
+        .selection.view,
+    ).toBe("dashboard");
+    await plain.close();
 
     const fetch = createStudioFetch(deps(), { profile: "appliance" });
     expect(fetch.services.modePolicy).toMatchObject({
@@ -628,7 +643,49 @@ describe("createStudioFetch", () => {
   });
 });
 
+describe("localOnly", () => {
+  test("holds for a loopback bind with no proxy origin or other host names", () => {
+    for (const hostname of ["127.0.0.1", "localhost", "::1", "[::1]"]) {
+      expect(localOnly(hostname, {})).toBe(true);
+    }
+    for (const hostname of ["0.0.0.0", "::", "192.168.1.20", "studio.acme.test"]) {
+      expect(localOnly(hostname, {})).toBe(false);
+    }
+    expect(localOnly("127.0.0.1", { publicOrigin: "https://studio.acme.test" })).toBe(false);
+    expect(localOnly("127.0.0.1", { allowedHosts: ["studio.acme.test"] })).toBe(false);
+  });
+});
+
 describe("startStudioServer", () => {
+  test("offers the chat on a localhost-only standard Studio and in the appliance", () => {
+    const chatFor = (options: Parameters<typeof startStudioServer>[1]) => {
+      let chat: boolean | undefined;
+      startStudioServer(
+        deps({
+          serve: (serveOptions) => {
+            chat = (serveOptions.fetch as ReturnType<typeof createStudioFetch>).services.modePolicy
+              .chat;
+            return { port: 4180, stop: () => {} };
+          },
+        }),
+        { port: 4180, ...options },
+      );
+      return chat;
+    };
+    expect(chatFor({})).toBe(true);
+    expect(chatFor({ hostname: "0.0.0.0" })).toBe(false);
+    expect(chatFor({ publicOrigin: "https://studio.acme.test" })).toBe(false);
+    expect(chatFor({ hostname: "0.0.0.0", allowedHosts: ["studio.acme.test"] })).toBe(false);
+    expect(chatFor({ profile: "appliance" })).toBe(true);
+    expect(
+      chatFor({
+        profile: "appliance",
+        hostname: "0.0.0.0",
+        publicOrigin: "https://studio.acme.test",
+      }),
+    ).toBe(true);
+  });
+
   test("binds an operating-system-assigned loopback port and reports its URL", async () => {
     const server = startStudioServer(deps());
 

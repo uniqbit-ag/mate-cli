@@ -10,6 +10,11 @@
  *   bun scripts/build.ts --tag mate-appliance:local
  *   bun scripts/build.ts --platform linux/amd64 --mate-version 0.17.0
  *   bun scripts/build.ts --tag mate-appliance:local-base --label ai.mate.local-inputs=<digest>
+ *   bun scripts/build.ts --chat-bridges /opt/mate/chat-bridges
+ *
+ * `--chat-bridges` builds an image holding Studio Chat's bridge installed there, so a chat
+ * question installs and downloads nothing; without it, the first question installs it into
+ * the persisted home.
  */
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -98,6 +103,7 @@ function main(argv: string[]): number {
   const mateVersion = option(argv, "mate-version") ?? inputs.mate.version;
   const tag = option(argv, "tag") ?? `mate-appliance:${mateVersion}`;
   const platform = option(argv, "platform");
+  const chatBridges = option(argv, "chat-bridges");
 
   const args = [
     "build",
@@ -108,6 +114,7 @@ function main(argv: string[]): number {
     ...(platform ? ["--platform", platform] : []),
     ...buildArgs(inputs, mateVersion),
     ...labelArgs(argv),
+    ...(chatBridges ? ["--build-arg", `MATE_STUDIO_CHAT_BRIDGES=${chatBridges}`] : []),
     "--file",
     path.join(CONTAINER_ROOT, "Dockerfile"),
     "--tag",

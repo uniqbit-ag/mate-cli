@@ -18,6 +18,18 @@ export const SERVICE_ASSET_PREFIX = "/studio/plugins/";
 /** Answers 204 to any reader; the page probes its connection here. */
 export const STUDIO_PING_ROUTE = "/api/ping";
 
+/**
+ * The Analysis chat: `POST {companion, messages}` streams one read-only agent turn as an
+ * AI SDK UI message stream. Only on a localhost-only Studio, or in the appliance.
+ */
+export const CHAT_ROUTE = "/api/chat";
+
+/** `GET` with the selected companion: what a chat turn for it can use; starts no agent. */
+export const CHAT_SESSION_ROUTE = "/api/chat/session";
+
+/** `GET` which credential answers chat turns (never its value); `PUT {kind, value}` sets one in Studio; `DELETE` clears it. */
+export const CHAT_CREDENTIAL_ROUTE = "/api/chat/credential";
+
 /** One event stream per page: board, reports and markdown tree changes for a companion. */
 export const STUDIO_EVENTS_ROUTE = "/api/events";
 

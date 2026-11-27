@@ -537,6 +537,84 @@ by mentions and by the archived changes they shipped in.
   as Engineering and Analysis. Every address passes through the profile, so an
   Engineering bookmark opens Analysis in the appliance.
 
+## Studio Chat
+
+Studio that listens on localhost alone, and the appliance, add **Chat** to
+Analysis, after the Overview: `mate studio`, `mate studio serve` on a loopback
+`--host` without `--public-origin` or `--allowed-host`, or any appliance
+container. Ask about the selected companion; an agent
+answers from its files and shows each file it read or searched as a step under
+the answer. Steps of one tool in a row show as one row, such as **Read 5
+files** with the file names; open it to see each step.
+
+- **Read-only.** The agent can only read and search files inside the selected
+  companion; a read that leads outside it, through a symlink too, is refused,
+  and so is a search of a folder holding a symlink that leads outside.
+  It cannot write, edit, run commands or reach the web. Studio keeps nothing:
+  the conversation lives in the browser tab, and switching companion starts a
+  new one. Chat needs neither `--writable` nor `--terminal`.
+- **Sources.** Under each answer, **Read N files** lists the files it read,
+  each opening in the Vault. A file path in the answer links to the Vault only
+  when the answer read that file; other paths stay plain text. Web links show
+  their address as text and are not clickable.
+- **Model and effort.** Pick Sonnet (default), Opus or Haiku, and low, medium
+  (default) or high effort, under the question field. Haiku takes no effort.
+  The choice is kept in this browser and applies to the next question.
+- **Follow-ups and rewinding.** A question asked while an answer streams waits
+  in a queue and is sent when that answer ends; a failed or stopped answer
+  holds the queue. **Edit and ask again from here**, shown when you point at a
+  question, drops it and everything after, and puts it back in the field.
+- **Session panel.** On wide screens, a panel at the right edge shows which
+  credential answers, and the MCP servers and Claude Code plugins the agent
+  loads. A chat loads none, neither
+  from the companion's `.mcp.json` nor from your own Claude Code settings, so
+  both say so. Below them, an index of your questions marks the one you are
+  reading; click one to jump to it, or use its restore button to edit it and
+  ask again from there. Hide the panel with its toggle; the browser remembers
+  the choice.
+- **Credential.** **Credential** in the session panel sets the one Claude
+  credential Chat answers with: an Anthropic API key (`sk-ant-api…`), which
+  answers bill, or a Claude subscription token from `claude setup-token`
+  (`sk-ant-oat…`), whose answers count against that subscription. It is kept
+  in `~/.mate/studio-chat/credential.env`, readable only by you, survives a
+  restart, and wins over every other source; **Remove the credential set in
+  Studio** returns to them. Studio never shows or sends back the value. A
+  question that fails for want of a credential offers to open it.
+- **Your local Claude login.** Without a credential set in Studio, the agent
+  uses `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` from Studio's
+  environment, else the Claude Code login on this machine, so answers count
+  against the Claude subscription you are logged in with. If none exists, the
+  answer fails and says to run `claude` and log in, or to set a credential.
+  The first question installs the agent's runtime into `~/.mate/cache`, which
+  takes a few seconds.
+- **The appliance's credentials.** In the container the agent answers with an
+  Anthropic API key only: one set in Studio, where **Credential** offers no
+  subscription token, else `ANTHROPIC_API_KEY` from `credentials:` or the
+  container's environment. Anthropic's terms do not permit a Claude
+  subscription for an agent product like this, so it ignores
+  `CLAUDE_CODE_OAUTH_TOKEN` and never uses a Claude login persisted on the
+  `mate-home` volume; with no key, a question fails at once and names both
+  places to set one. The terminal and agent sessions keep
+  using that login as before. The published image carries no agent runtime for Chat: the first
+  question installs it from its lockfile into `/home/mate/.mate/cache`, which
+  needs access to `registry.npmjs.org` and takes a while. The `mate-home` volume
+  keeps it, so later questions and containers skip that. For a container
+  without that access, build the image yourself with
+  `bun scripts/build.ts --chat-bridges /opt/mate/chat-bridges` in
+  `apps/mate-container`: the runtime is then installed in the image, which
+  points Studio at it with `MATE_STUDIO_CHAT_BRIDGES`, and a question installs
+  and downloads nothing.
+- **Guarded like the terminal.** Chat requests need Studio's access token and
+  its own page as origin. Studio runs at most two answers at once, ends one
+  after 10 minutes, and ends all of them when it stops.
+- **Only on this machine, or in the appliance.** The agent reads files as the
+  person running Studio, so a local Studio reachable from elsewhere (another
+  `--host`, a `--public-origin` or an `--allowed-host`) offers no Chat. The
+  single-tenant appliance offers it on any address, and Studio's access token
+  is all that guards it: whoever holds the token can ask read-only questions
+  about the served companions, spending the appliance's credentials. No
+  setting turns it off.
+
 ## Studio Usage
 
 Open **Usage** in the sidebar or command palette. It works in both modes and in

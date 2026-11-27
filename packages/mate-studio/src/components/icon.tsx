@@ -31,6 +31,16 @@ const PATHS = {
   // Three round dots: zero-length segments drawn by the round line cap.
   more: "M5 10h.01M10 10h.01M15 10h.01",
   trash: "M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10M9 9v4m2-4v4",
+  chat: "M4 4h12v9H9l-4 3v-3H4z",
+  send: "M10 16V4m-5 5 5-5 5 5",
+  stop: "M6 6h8v8H6z",
+  down: "M10 4v12m-5-5 5 5 5-5",
+  // Back to an earlier point: an arrow turning left, then down.
+  undo: "M7 5 4 8l3 3M4 8h8a4 4 0 0 1 0 8H9",
+  // A round bow and a bit.
+  key: "M12.5 3.5a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM9.6 10.4 3.5 16.5m2-2 2 2m0-4 1.5 1.5",
+  // Lines waiting in order.
+  queue: "M4 6h12M4 10h12M4 14h7",
   alert: "M10 3.5 17 16H3zM10 8.5v3.5m0 2h.01",
 } as const;
 

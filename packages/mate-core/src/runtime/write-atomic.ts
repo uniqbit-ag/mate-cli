@@ -11,7 +11,7 @@ import path from "node:path";
  */
 export async function writeAtomic(
   target: string,
-  contents: string | Buffer,
+  contents: string | Uint8Array,
   mode?: number,
 ): Promise<void> {
   await replaceViaTemp(target, contents, mode, false);
@@ -20,7 +20,7 @@ export async function writeAtomic(
 /** `exactMode`: chmod past the umask, so a replaced file keeps the mode it had. */
 async function replaceViaTemp(
   target: string,
-  contents: string | Buffer,
+  contents: string | Uint8Array,
   mode: number | undefined,
   exactMode: boolean,
 ): Promise<void> {

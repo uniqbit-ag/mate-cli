@@ -30,6 +30,7 @@ const shell: ShellData = {
   collectedAt: null,
   metrics: null,
   writable: false,
+  chat: false,
   addsCompanions: false,
   pluginViews: [],
   terminal: null,

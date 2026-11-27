@@ -23,6 +23,12 @@ export interface ShellCompanion {
   pairings: string[];
   /** Removing it only unregisters it: a service's companion source deletes folders only in its own folder. */
   keepsFolder?: boolean;
+  /** Its path with links followed, when that differs; the chat's agent reports paths from it. */
+  realPath?: string;
+}
+
+function withRealPath(companion: ShellCompanion, realPath: string): ShellCompanion {
+  return realPath === companion.path ? companion : { ...companion, realPath };
 }
 
 /** What the sidebar and page header show, for every view. Digests only cross to the browser. */
@@ -37,6 +43,8 @@ export interface ShellData {
   collectedAt: number | null;
   metrics: { changes: number; done: number; specs: number } | null;
   writable: boolean;
+  /** The Analysis Chat view is offered: on a localhost-only Studio, or in the appliance. */
+  chat: boolean;
   /** A plugin service adds companions by Git URL: only then can the picker add one. */
   addsCompanions: boolean;
   /** Views plugin services ship as their own modules, in navigation order. */
@@ -89,11 +97,17 @@ export const getShell = createServerFn({ method: "GET" })
       ...(context.studio.keepsFolder(companion.path) ? { keepsFolder: true } : {}),
     }));
     const payload = page.payload;
+    const selected = page.companion
+      ? (companions.find((entry) => entry.path === page.companion!.path) ?? null)
+      : null;
+    const chat = context.studio.modePolicy.chat;
     return {
       companions,
-      selected: page.companion
-        ? (companions.find((entry) => entry.path === page.companion!.path) ?? null)
-        : null,
+      // Only the chat needs the followed path.
+      selected:
+        selected && chat
+          ? withRealPath(selected, context.studio.physicalPath(selected.path))
+          : selected,
       studioMode: page.selection.studioMode,
       enabledModes: [...context.studio.modePolicy.enabled],
       profile: context.studio.modePolicy.profile,
@@ -106,6 +120,7 @@ export const getShell = createServerFn({ method: "GET" })
           }
         : null,
       writable: page.writable,
+      chat,
       addsCompanions: context.studio.addsCompanions(),
       pluginViews: context.studio.services().flatMap((service) =>
         service.views.flatMap((view) =>

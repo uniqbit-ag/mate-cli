@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import path from "node:path";
 
+import { signalProcessGroup, within } from "../../../runtime/host-process";
 import type { LiveSessions, SessionCloseReason } from "./live-sessions";
 import { tokensEqual } from "./access";
 
@@ -113,14 +114,6 @@ export const bunTerminalSpawn: TerminalSpawn = (request) => {
     close: () => child.terminal?.close(),
   };
 };
-
-function signalGroup(pid: number, signal: NodeJS.Signals): void {
-  try {
-    process.kill(-pid, signal);
-  } catch {
-    /** The group is already gone. */
-  }
-}
 
 /** Keeps the newest `limit` bytes; the oldest are dropped, possibly mid-sequence. */
 export class RingBuffer {
@@ -303,7 +296,7 @@ export class TerminalRegistry {
   constructor(private readonly options: TerminalRegistryOptions) {
     this.limits = { ...TERMINAL_LIMITS, ...options.limits };
     this.spawn = options.spawn ?? bunTerminalSpawn;
-    this.signal = options.signalGroup ?? signalGroup;
+    this.signal = options.signalGroup ?? signalProcessGroup;
     this.now = options.now ?? Date.now;
     options.sessions?.closeWith((companionPath, worksetId, reason) =>
       this.endWorkset(companionPath, worksetId, reason),
@@ -735,11 +728,7 @@ export class TerminalRegistry {
       const connection = [...this.connections].find((c) => c.viewer === viewer);
       if (connection) connection.session = null;
     }
-    const wait = (ms: number) =>
-      Promise.race([
-        session.process.exited.then(() => true),
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms)),
-      ]);
+    const wait = (ms: number) => within(session.process.exited, ms);
     session.ending = (async () => {
       if (!session.exited) {
         this.signal(session.process.pid, "SIGTERM");

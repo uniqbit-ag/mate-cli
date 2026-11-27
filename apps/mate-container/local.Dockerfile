@@ -27,7 +27,10 @@ RUN test -n "${LOCAL_VERSION}" \
  && scratch="$(mktemp -d)" \
  && test "$(HOME="${scratch}" MATE_UPDATE_POLICY=pinned mate --version | tail -1)" = "${LOCAL_VERSION}" \
  && rm -rf "${scratch}" \
- && { test ! -e /root/.mate || { echo "unexpected /root/.mate" >&2; exit 1; }; }
+ && { test ! -e /root/.mate || { echo "unexpected /root/.mate" >&2; exit 1; }; } \
+ && if [ -n "${MATE_STUDIO_CHAT_BRIDGES:-}" ]; then \
+      mate-prepare-chat-bridges /opt/mate/tools "${MATE_STUDIO_CHAT_BRIDGES}"; \
+    fi
 
 LABEL ai.mate.version="${LOCAL_VERSION}" \
       ai.mate.local-build="working tree; local only, do not publish"

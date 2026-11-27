@@ -27,6 +27,8 @@ export interface StudioServices {
    * Studio deletes only folders inside that source's folder.
    */
   keepsFolder(companionPath: string): boolean;
+  /** The companion's path with links followed, as the chat's sandbox resolves it. */
+  physicalPath(companionPath: string): string;
   /** Whether a mounted service adds companions by Git URL (its `companions` source). */
   addsCompanions(): boolean;
   /** The startup profile's Studio modes; every page selection is resolved through it. */
