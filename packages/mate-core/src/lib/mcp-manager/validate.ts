@@ -1,16 +1,19 @@
 import { raisedEngineRange } from "../orchestrator/engine-floor";
 import { ConfigError } from "../orchestrator/types";
-import { MCP_MANAGER_TRANSPORTS, type McpManagerConfig, type McpManagerHeaderRef } from "./types";
+import {
+  MCP_MANAGER_HEADER_PREFIXES,
+  MCP_MANAGER_TRANSPORTS,
+  type McpManagerConfig,
+  parseHeaderRef,
+} from "./types";
 
 /** First Mate release that reads `mcpManager`; the `engines.mate` floor a save sets. */
 export const MCP_MANAGER_VERSION = "1.0.0-canary.9";
 
 export const MCP_MANAGER_NAME_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
 export const MCP_MANAGER_VARIABLE_PATTERN = /^[A-Z_][A-Z0-9_]*$/;
-export const MCP_MANAGER_HEADER_PREFIXES = ["Bearer ", "Basic ", "Token "] as const;
 
 const HEADER_NAME_PATTERN = /^[A-Za-z0-9-]+$/;
-const HEADER_VALUE_PATTERN = /^(Bearer |Basic |Token )?\$\{([A-Z_][A-Z0-9_]*)\}$/;
 
 const SECTION_KEYS = ["servers", "groups", "enabled"] as const;
 const STDIO_KEYS = ["command", "args", "env"] as const;
@@ -32,13 +35,6 @@ function checkKeys(where: string, value: Record<string, unknown>, allowed: reado
       fail(`${where}: unknown key "${key}" (allowed: ${allowed.join(", ")}).`);
     }
   }
-}
-
-/** `${NAME}` with an optional known scheme prefix, or null for anything else. */
-export function parseHeaderRef(value: unknown): McpManagerHeaderRef | null {
-  if (typeof value !== "string") return null;
-  const match = HEADER_VALUE_PATTERN.exec(value);
-  return match ? { prefix: match[1] ?? "", variable: match[2] } : null;
 }
 
 function validateEnv(where: string, env: unknown): void {

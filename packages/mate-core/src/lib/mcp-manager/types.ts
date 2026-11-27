@@ -2,6 +2,9 @@
 export const MCP_MANAGER_TRANSPORTS = ["http", "sse"] as const;
 export type McpManagerTransport = (typeof MCP_MANAGER_TRANSPORTS)[number];
 
+/** Scheme prefixes a header may put before its `${NAME}` reference. */
+export const MCP_MANAGER_HEADER_PREFIXES = ["Bearer ", "Basic ", "Token "] as const;
+
 /** Fields every declared server shares. Holds variable names, never values. */
 interface McpManagerServerBase {
   /** Environment variable names the server reads, rendered as runtime references. */
@@ -49,6 +52,17 @@ export interface McpManagerAudienceSelection {
 export interface McpManagerHeaderRef {
   prefix: string;
   variable: string;
+}
+
+const HEADER_VALUE_PATTERN = new RegExp(
+  `^(${MCP_MANAGER_HEADER_PREFIXES.join("|")})?\\$\\{([A-Z_][A-Z0-9_]*)\\}$`,
+);
+
+/** `${NAME}` with an optional known scheme prefix, or null for anything else. */
+export function parseHeaderRef(value: unknown): McpManagerHeaderRef | null {
+  if (typeof value !== "string") return null;
+  const match = HEADER_VALUE_PATTERN.exec(value);
+  return match ? { prefix: match[1] ?? "", variable: match[2]! } : null;
 }
 
 /** One server of an effective set, ready to become an MCP descriptor. */

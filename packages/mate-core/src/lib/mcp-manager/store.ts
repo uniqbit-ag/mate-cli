@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import { isDeepStrictEqual } from "node:util";
 
-import { parseDocument } from "yaml";
+import { type Document, isCollection, isMap, isNode, isScalar, parseDocument } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { companionFrameworkConfigPath } from "../../runtime/policy";
@@ -9,7 +10,7 @@ import { writeAtomic } from "../../runtime/write-atomic";
 import { BASE_AUDIENCE, declaredAudiences } from "../../tools/setup/dynamic-plugins/audiences";
 import { parseFrameworkConfig } from "../orchestrator/config-store";
 import { ConfigError, type FrameworkConfig } from "../orchestrator/types";
-import { resolveMcpServers } from "./resolve";
+import { effectiveSets } from "./resolve";
 import type { McpManagerAudienceSelection, McpManagerConfig } from "./types";
 import { mcpManagerEngineRange } from "./validate";
 
@@ -46,19 +47,41 @@ function tokenOf(text: string): string {
 
 function snapshotOf(config: FrameworkConfig, token: string): McpManagerSnapshot {
   const names = declaredAudiences(config);
-  const effective = (audience: string | null) =>
-    resolveMcpServers(config, audience).map((server) => server.name);
   return {
     catalog: config.mcpManager ?? null,
     audiences: Object.fromEntries(
       names.map((name) => [name, config.audiences?.[name]?.mcpManager ?? {}]),
     ),
-    effective: {
-      base: effective(null),
-      audiences: Object.fromEntries(names.map((name) => [name, effective(name)])),
-    },
+    effective: effectiveSets(config, names),
     token,
   };
+}
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * Sets `value` at `path`, rewriting only the entries that differ, so untouched
+ * entries keep their comments and flow or block style.
+ */
+function mergeIn(document: Document, path: readonly string[], value: unknown): void {
+  const held: unknown = document.getIn(path, true);
+  if (isNode(held) && isDeepStrictEqual(held.toJS(document), value)) return;
+  if (isMap(held) && isPlainObject(value)) {
+    const removed = held.items.filter(
+      ({ key }) => !Object.hasOwn(value, String(isScalar(key) ? key.value : key)),
+    );
+    for (const { key } of removed) held.delete(key);
+    for (const [key, child] of Object.entries(value)) mergeIn(document, [...path, key], child);
+    return;
+  }
+  const node = document.createNode(value);
+  if (isCollection(held) && isCollection(node)) node.flow = held.flow;
+  if (isNode(held)) {
+    node.commentBefore = held.commentBefore;
+    node.comment = held.comment;
+  }
+  document.setIn(path, node);
 }
 
 async function readText(companionPath: string): Promise<string> {
@@ -87,7 +110,7 @@ export async function writeMcpManager(
 
   const document = parseDocument(text);
   if (patch.catalog === null) document.delete("mcpManager");
-  else if (patch.catalog !== undefined) document.set("mcpManager", patch.catalog);
+  else if (patch.catalog !== undefined) mergeIn(document, ["mcpManager"], patch.catalog);
   for (const [audience, selection] of Object.entries(patch.audiences ?? {})) {
     if (audience === BASE_AUDIENCE) {
       throw new ConfigError(
@@ -95,7 +118,7 @@ export async function writeMcpManager(
       );
     }
     if (selection === null) document.deleteIn(["audiences", audience, "mcpManager"]);
-    else document.setIn(["audiences", audience, "mcpManager"], selection);
+    else mergeIn(document, ["audiences", audience, "mcpManager"], selection);
   }
 
   const raw = document.toJS() as Record<string, unknown>;
@@ -103,7 +126,8 @@ export async function writeMcpManager(
   const raised = mcpManagerEngineRange(raw);
   if (raised !== null) document.setIn(["engines", FRAMEWORK_NAME], raised);
 
-  const next = document.toString();
+  // No folding, so a long flow entry the save left alone stays on its line.
+  const next = document.toString({ lineWidth: 0 });
   await writeAtomic(companionFrameworkConfigPath(companionPath), next);
   return snapshotOf(config, tokenOf(next));
 }

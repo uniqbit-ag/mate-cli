@@ -1,15 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
-import {
-  RecordingButton,
-  RecordingReach,
-  RecordingState,
-  useRetryFocus,
-} from "../components/friction-recording";
+import { RecordingButton, RecordingReach, RecordingState } from "../components/friction-recording";
 import { Button } from "../components/ui/button";
 import { ListCard } from "../components/view-parts";
 import { frictionRecordingQuery, useSetFrictionRecording } from "../lib/friction-query";
+import { useRetryFocus } from "../lib/use-retry-focus";
 import { useBrowser } from "../lib/use-browser";
 
 function RecordingRow({

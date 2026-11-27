@@ -230,12 +230,24 @@ export {
   type McpManagerPatch,
   type McpManagerSnapshot,
 } from "./lib/mcp-manager/store";
-export type {
-  McpManagerAudienceSelection,
-  McpManagerConfig,
-  McpManagerRemoteServer,
-  McpManagerSelection,
-  McpManagerServer,
-  McpManagerStdioServer,
-  McpManagerTransport,
+// The types module imports nothing, so the browser bundle can take these lists.
+export {
+  MCP_MANAGER_HEADER_PREFIXES,
+  MCP_MANAGER_TRANSPORTS,
+  parseHeaderRef,
+  type McpManagerAudienceSelection,
+  type McpManagerConfig,
+  type McpManagerRemoteServer,
+  type McpManagerSelection,
+  type McpManagerServer,
+  type McpManagerStdioServer,
+  type McpManagerTransport,
 } from "./lib/mcp-manager/types";
+export type {
+  McpManagerDerived,
+  McpManagerPreview,
+  McpManagerSaveResult,
+  McpManagerState,
+  McpManagerView,
+  McpVariableStatus,
+} from "./cli/commands/studio/mcp-manager";

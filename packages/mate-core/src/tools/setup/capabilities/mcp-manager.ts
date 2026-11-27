@@ -1,7 +1,6 @@
 // oxlint-disable no-await-in-loop
 import { resolveMcpServers } from "../../../lib/mcp-manager/resolve";
-import type { ResolvedMcpServer } from "../../../lib/mcp-manager/types";
-import { parseHeaderRef } from "../../../lib/mcp-manager/validate";
+import { parseHeaderRef, type ResolvedMcpServer } from "../../../lib/mcp-manager/types";
 import { readAudienceSelection } from "../dynamic-plugins/audiences";
 import type { CapabilityPlugin, McpServerDescriptor } from "../plugin";
 
