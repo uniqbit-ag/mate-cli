@@ -520,12 +520,19 @@ describe("built client", () => {
   // A browser has no `process`: one unguarded read throws before hydration and leaves every view inert.
   test("reads `process` only behind a `typeof process` guard", async () => {
     await built();
+    expect(existsSync(CLIENT_ASSETS)).toBe(true);
     const unguarded: string[] = [];
     for (const file of await readdir(CLIENT_ASSETS)) {
       if (!file.endsWith(".js")) continue;
       const code = await readFile(path.join(CLIENT_ASSETS, file), "utf8");
-      for (const { index } of code.matchAll(/(?<![\w$.])process\.[\w$]+/g)) {
-        if (code.slice(Math.max(0, index - 80), index).includes("typeof process")) continue;
+      for (const { index } of code.matchAll(
+        /(?<![\w$`'".])(?:globalThis\.)?process(?![\w$`'"])/g,
+      )) {
+        const before = code.slice(Math.max(0, index - 80), index);
+        if (/typeof\s*$/.test(before)) continue;
+        // The guard must sit in the same statement as the read.
+        const guard = before.lastIndexOf("typeof process");
+        if (guard >= 0 && !/[;}]/.test(before.slice(guard))) continue;
         unguarded.push(`${file}: ${code.slice(Math.max(0, index - 40), index + 40)}`);
       }
     }
