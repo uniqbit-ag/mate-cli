@@ -68,6 +68,7 @@ import {
   mateTokensaveRouteHookGroups,
   mateTurnHookGroups,
 } from "./claude-plugin-hooks";
+import { relativePathWarnings } from "./relative-path-warnings";
 import { getSetupRootTemplates } from "./utils";
 
 async function configureClaudeGuidance(companionPath: string): Promise<void> {
@@ -213,7 +214,7 @@ export function getCompanionClaudeSettingsPath(companionPath: string): string {
   return path.join(companionPath, ".claude", "settings.local.json");
 }
 
-/** Companion-owned `.mcp.json`; loaded via `--mcp-config` only by a companion-scoped launch. */
+/** Companion-owned `.mcp.json`; loaded via `--mcp-config` by a companion-scoped launch, carried into Claude wraps. */
 export function getCompanionClaudeMcpConfigPath(companionPath: string): string {
   return path.join(companionPath, ".mcp.json");
 }
@@ -525,6 +526,25 @@ function claudePluginRegions(published: readonly PublishedClaudePluginFolder[]):
 }
 
 /**
+ * Companion `.mcp.json` servers a wrap carries. Servers a Capability registered
+ * during setup exist only there. Skips names Mate declares: an enabled one
+ * renders its own entry, a disabled one's entry is stale until the next sync.
+ */
+async function readCarriedCompanionMcpServers(
+  mcpConfigPath: string,
+  inputs: CapabilityContributionInput[],
+): Promise<Record<string, unknown>> {
+  const { mcpServers } = (await readClaudeMcpConfig(mcpConfigPath)).config;
+  if (typeof mcpServers !== "object" || mcpServers === null || Array.isArray(mcpServers)) {
+    return {};
+  }
+  const declared = new Set(
+    inputs.flatMap((input) => (input.contributions.mcpServers ?? []).map(({ name }) => name)),
+  );
+  return Object.fromEntries(Object.entries(mcpServers).filter(([name]) => !declared.has(name)));
+}
+
+/**
  * The working target's Claude documents, rendered as values. Each is a document
  * the runtime finds by walking up from the current directory, and every path
  * inside one still names the Companion Repository — only where the document is
@@ -539,6 +559,8 @@ export async function renderClaudeWorkingDocuments(
   const pluginFolders = (
     await inspectClaudePluginFolders(inputs, { bundledPluginRoot: getClaudePluginRoot() })
   ).published;
+  const companionMcpConfigPath = getCompanionClaudeMcpConfigPath(ctx.companionPath);
+  const companionMcpServers = await readCarriedCompanionMcpServers(companionMcpConfigPath, inputs);
   return {
     documents: [
       ...renderedDocument(
@@ -570,11 +592,14 @@ export async function renderClaudeWorkingDocuments(
         {
           at: ["projects", repoRoot, "mcpServers"],
           kind: "map",
-          entries: renderManagedClaudeMcpServers(inputs),
+          entries: { ...companionMcpServers, ...renderManagedClaudeMcpServers(inputs) },
         },
       ]),
     ],
-    warnings: [],
+    warnings: relativePathWarnings(companionMcpConfigPath, companionMcpServers, ["mcpServers"], {
+      document: CLAUDE_LOCAL_CONFIG_DOCUMENT,
+      resolvesAgainst: "the session's directory",
+    }),
   };
 }
 

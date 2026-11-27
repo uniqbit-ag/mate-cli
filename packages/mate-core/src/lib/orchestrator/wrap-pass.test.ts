@@ -202,6 +202,16 @@ describe("an attended Claude prepare", () => {
     Object.assign(sessionPrepareDeps, original);
   });
 
+  function stubCompanionSync(companionPath: string): void {
+    sessionPrepareDeps.syncCompanionGit = (async () => ({
+      skipped: true,
+      changed: false,
+      companionPath,
+    })) as never;
+    sessionPrepareDeps.syncCompanionFiles = async () => NO_PLUGIN_FOLDERS;
+    sessionPrepareDeps.runCapabilityPreflight = async () => {};
+  }
+
   test.each([
     ["never wrapped", async () => {}],
     [
@@ -214,13 +224,7 @@ describe("an attended Claude prepare", () => {
     const { companionPath, repository } = await linkedRepo();
     await addSkill(companionPath, "acme");
     await before(companionPath, repository);
-    sessionPrepareDeps.syncCompanionGit = (async () => ({
-      skipped: true,
-      changed: false,
-      companionPath,
-    })) as never;
-    sessionPrepareDeps.syncCompanionFiles = async () => NO_PLUGIN_FOLDERS;
-    sessionPrepareDeps.runCapabilityPreflight = async () => {};
+    stubCompanionSync(companionPath);
 
     const result = await prepareSession({
       runtime: "claude",
@@ -232,6 +236,30 @@ describe("an attended Claude prepare", () => {
     expect(result.ok).toBe(true);
     expect(await isWrappedFor(repository.path, "claude")).toBe(true);
     expect(await exists(path.join(repository.path, ".claude", "skills", "acme"))).toBe(true);
+  });
+
+  test("follows the companion's .mcp.json and rewrites ~/.claude.json only on a change", async () => {
+    const { companionPath, repository } = await linkedRepo();
+    const mcpConfig = path.join(companionPath, ".mcp.json");
+    await fs.writeFile(
+      mcpConfig,
+      JSON.stringify({ mcpServers: { "acme-docs": { command: "acme-docs" } } }),
+    );
+    stubCompanionSync(companionPath);
+    const prepare = () =>
+      prepareSession({ runtime: "claude", companionPath, repository, mode: "attended" });
+    const globalConfig = path.join(runtimeDocumentDeps.homeDir(), ".claude.json");
+
+    await prepare();
+    expect(await fs.readFile(globalConfig, "utf8")).toContain("acme-docs");
+    const before = await fs.stat(globalConfig);
+
+    await prepare();
+    expect((await fs.stat(globalConfig)).mtimeMs).toBe(before.mtimeMs);
+
+    await fs.writeFile(mcpConfig, JSON.stringify({ mcpServers: {} }));
+    await prepare();
+    expect(await fs.readFile(globalConfig, "utf8")).not.toContain("acme-docs");
   });
 });
 

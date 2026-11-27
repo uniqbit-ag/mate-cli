@@ -39,6 +39,7 @@ import {
   writeOpenCodeConfig,
   type OpenCodeConfig,
 } from "./opencode-format";
+import { relativePathWarnings } from "./relative-path-warnings";
 import { getSetupProvidersRoot, getSetupRootTemplates } from "./utils";
 
 const COMPANION_GITIGNORE_ENTRIES = [".opencode/service.json"];
@@ -602,19 +603,6 @@ export async function renderOpenCodeWorkingDocuments(
 /** Keys Mate renders its own regions for; the companion's values join those regions. */
 const MATE_OPENCODE_KEYS = new Set(["plugins", "permissions", "skills", "mcp", "references"]);
 
-function relativePathValues(value: unknown, at: string[]): string[] {
-  if (typeof value === "string") {
-    return value.startsWith("./") || value.startsWith("../") ? [at.join(".")] : [];
-  }
-  if (Array.isArray(value)) {
-    return value.flatMap((entry, index) => relativePathValues(entry, [...at, String(index)]));
-  }
-  if (isRecord(value)) {
-    return Object.entries(value).flatMap(([key, entry]) => relativePathValues(entry, [...at, key]));
-  }
-  return [];
-}
-
 /** Replaces the region at `at` with what `merge` builds from it, or appends one. */
 function upsertRegion(
   regions: ManagedRegion[],
@@ -689,11 +677,12 @@ async function mergeCompanionOpenCodeConfig(
       mergeMapRegion(regions, ["references"], resolveReferences(value, companionDir));
       continue;
     }
-    for (const at of relativePathValues(value, [key])) {
-      warnings.push(
-        `${companionConfigPath}: ${at} is a relative path, which resolves against the working repository once merged into ${OPENCODE_CONFIG_DOCUMENT}; use an absolute path.`,
-      );
-    }
+    warnings.push(
+      ...relativePathWarnings(companionConfigPath, value, [key], {
+        document: OPENCODE_CONFIG_DOCUMENT,
+        resolvesAgainst: "the working repository",
+      }),
+    );
     if (MATE_OPENCODE_KEYS.has(key)) {
       if (key === "mcp" && isRecord(value) && isRecord(value.servers)) {
         mergeMapRegion(regions, [...OPENCODE_MCP_SERVERS_AT], value.servers);
