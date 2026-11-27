@@ -111,6 +111,13 @@ async function follow(address: string, studio: StudioServices) {
 }
 
 describe("built server", () => {
+  test("keeps a companion digest that reads as a number through the mode redirect", async () => {
+    const digest = companionDigest("/acme-124");
+    expect(digest).toMatch(/^\d+e\d+$/);
+    const { location } = await follow(`/usage?companion=${digest}`, services);
+    expect(location.searchParams.get("companion")).toBe(digest);
+    expect(location.searchParams.get("studioMode")).toBe("engineering");
+  });
   test("serves lazy Usage in both plain-install modes without collecting on the server", async () => {
     let asked = 0;
     const studio = {

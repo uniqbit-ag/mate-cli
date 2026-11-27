@@ -83,6 +83,39 @@ export function validateStudioSearch(raw: {
   return search;
 }
 
+/**
+ * The router's search parser: each value stays the text of the address. The default
+ * JSON-parses values, so a digest such as `647426e241` became a number and was dropped.
+ */
+export function parseStudioSearch(searchStr: string): Record<string, string> {
+  const first = new Map<string, string>();
+  for (const [key, value] of new URLSearchParams(searchStr)) {
+    if (!first.has(key)) first.set(key, unquoted(value));
+  }
+  return Object.fromEntries(first);
+}
+
+/** Addresses written before {@link parseStudioSearch} quote a value that reads as JSON. */
+function unquoted(value: string): string {
+  if (!value.startsWith('"')) return value;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return typeof parsed === "string" ? parsed : value;
+  } catch {
+    return value;
+  }
+}
+
+/** Writes each value as plain text, as {@link parseStudioSearch} reads it back. */
+export function stringifyStudioSearch(search: Record<string, unknown>): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(search)) {
+    if (value !== undefined && value !== null) params.set(key, String(value));
+  }
+  const text = params.toString();
+  return text ? `?${text}` : "";
+}
+
 /** The Specs view's search and filters; absent means All. */
 export interface SpecsSearch {
   q?: string;
@@ -90,12 +123,8 @@ export interface SpecsSearch {
   area?: string;
 }
 
-/** The router JSON-parses search values, so `?q=2026` arrives as a number; read it as typed. */
 function searchText(value: unknown): string | undefined {
-  if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
-    return undefined;
-  }
-  return String(value).trim() || undefined;
+  return typeof value === "string" ? value.trim() || undefined : undefined;
 }
 
 /** Values naming nothing in the companion's specs are dropped by the view, not here. */
