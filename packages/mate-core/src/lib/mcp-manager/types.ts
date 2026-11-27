@@ -62,7 +62,7 @@ const HEADER_VALUE_PATTERN = new RegExp(
 export function parseHeaderRef(value: unknown): McpManagerHeaderRef | null {
   if (typeof value !== "string") return null;
   const match = HEADER_VALUE_PATTERN.exec(value);
-  return match ? { prefix: match[1] ?? "", variable: match[2] } : null;
+  return match ? { prefix: match[1] ?? "", variable: match[2]! } : null;
 }
 
 /** One server of an effective set, ready to become an MCP descriptor. */
