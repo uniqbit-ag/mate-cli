@@ -271,7 +271,7 @@ describe("runArtifactPublishCommand", () => {
 
   test("serializes a Git-root guard failure as JSON before any publish mutation", async () => {
     const record: string[] = [];
-    const { deps, stdout } = makeDeps(record, { gitError: "working repo target" });
+    const { deps, stdout, stderr } = makeDeps(record, { gitError: "working repo target" });
 
     await runArtifactPublishCommand(["my-change", "--json"], deps);
 
@@ -284,6 +284,7 @@ describe("runArtifactPublishCommand", () => {
     expect(result.status).toBe("error");
     expect(result.message).toContain("publish Git guard rejected");
     expect(result.message).toContain("working repo target");
+    expect(stderr).toEqual([result.message]);
     expect(record).toEqual([]);
     expect(process.exitCode).toBe(1);
   });

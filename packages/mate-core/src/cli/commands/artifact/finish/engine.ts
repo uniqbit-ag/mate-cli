@@ -103,7 +103,7 @@ export interface EngineDeps {
 
 /**
  * Prints a result: the message on stdout when it succeeded, stderr otherwise; with `json`, the
- * JSON document on stdout, plus the message on stderr when it failed.
+ * JSON document on stdout, plus the message on stderr otherwise.
  */
 export function printFinishResult(
   result: FinishResult,

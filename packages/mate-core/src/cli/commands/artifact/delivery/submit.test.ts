@@ -232,7 +232,7 @@ describe("mate artifact submit", () => {
                 pushed: false,
                 commit: null,
                 reason: "missing",
-                message: "",
+                message: "mate: acme-gone is not submitted.",
               };
         },
       }),
@@ -242,6 +242,7 @@ describe("mate artifact submit", () => {
       "dropped",
       "refused",
     ]);
+    expect(err).toEqual(["mate: acme-gone is not submitted."]);
     expect(process.exitCode).toBe(1);
   });
 });
