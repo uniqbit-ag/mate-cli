@@ -9,6 +9,7 @@ import {
 } from "../../../lib/orchestrator/companion-hub";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
 import { writeJsonStdout } from "../../write-json-stdout";
+import { commandOutput } from "../artifact/delivery/output";
 
 function positionalArgs(argv: string[]): string[] {
   const values: string[] = [];
@@ -71,16 +72,20 @@ async function runHubAdd(argv: string[]): Promise<void> {
 async function runHubSync(argv: string[]): Promise<void> {
   const results = await syncHub(process.cwd());
   const plugins = await updateHubPlugins(process.cwd());
-  if (argv.includes("--json")) {
-    await writeJsonStdout({ companions: results, plugins }, { space: 0 });
-    return;
+  const json = argv.includes("--json");
+  if (json) await writeJsonStdout({ companions: results, plugins }, { space: 0 });
+  const { emitOut, refuse } = commandOutput({});
+  const report = (failed: boolean, line: string): void => {
+    if (failed) refuse(line);
+    else if (!json) emitOut(line);
+  };
+  for (const result of results) {
+    report(result.status === "failed", `${result.id}: ${result.status} (${result.message})`);
   }
-  for (const result of results) console.log(`${result.id}: ${result.status} (${result.message})`);
   for (const plugin of plugins) {
     const detail = plugin.status === "failed" ? `: ${plugin.error ?? "failed"}` : "";
-    console.log(`hub plugin ${plugin.package}: ${plugin.status}${detail}`);
+    report(plugin.status === "failed", `hub plugin ${plugin.package}: ${plugin.status}${detail}`);
   }
-  if (plugins.some((plugin) => plugin.status === "failed")) process.exitCode = 1;
 }
 
 export async function runHubCommand(argv: string[]): Promise<void> {

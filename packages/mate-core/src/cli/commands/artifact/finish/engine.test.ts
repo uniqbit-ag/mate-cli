@@ -316,6 +316,15 @@ describe("runFinishEngine — publication pipeline", () => {
     expect(process.exitCode).toBe(1);
   });
 
+  test("a --json conflict names its reason on stderr and keeps stdout to the JSON document", async () => {
+    const h = harness({ rebase: { ok: false, conflictedPaths: ["openspec/specs/a/spec.md"] } });
+
+    const result = await runEngine(h);
+
+    expect(h.stdout).toEqual([JSON.stringify(result)]);
+    expect(h.stderr.at(-1)).toBe(result.message);
+  });
+
   test("a push failure retains the commit for retry", async () => {
     const h = harness({ pushOk: false, pushError: "rejected" });
 

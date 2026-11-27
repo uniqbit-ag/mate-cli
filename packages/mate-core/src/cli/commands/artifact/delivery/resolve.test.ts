@@ -153,7 +153,8 @@ describe("mate artifact resolve", () => {
       deps({ ...resolved, status: "refused", message: "mate: refused." }),
     );
 
-    expect(out).toEqual(["mate: refused."]);
+    expect(out).toEqual([]);
+    expect(err).toEqual(["mate: refused."]);
     expect(process.exitCode).toBe(1);
   });
 });

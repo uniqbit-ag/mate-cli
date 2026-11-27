@@ -55,8 +55,9 @@ ended more than 90 days ago. It never writes the log into a companion or a
 working repository and never sends it anywhere.
 
 An event holds the check or the command, the tool kind, the refusal message or
-the last error text (up to 1,000 characters) and up to five paths the call
-names. It never holds:
+the last text the failed command wrote to stderr (up to 1,000 characters) and
+up to five paths the call names. A failed `mate` command writes its reason to
+stderr also with `--json`, so the event carries it. An event never holds:
 
 - the shell command of a refused call, because a command can carry what it
   writes,

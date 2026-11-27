@@ -96,6 +96,7 @@ export async function runArtifactResolveCommand(
   const result: ResolveResult = await (artifactType
     ? resolve(companionPath, change, parts, { artifactType })
     : resolve(companionPath, change, parts));
-  if (result.status === "refused") process.exitCode = 1;
-  emitOut(flags.json === true ? JSON.stringify(result) : result.message);
+  if (result.status === "refused") refuse(result.message);
+  if (flags.json === true) emitOut(JSON.stringify(result));
+  else if (result.status !== "refused") emitOut(result.message);
 }
