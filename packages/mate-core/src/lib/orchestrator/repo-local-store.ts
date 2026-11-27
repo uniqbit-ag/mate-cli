@@ -94,3 +94,17 @@ export async function upsertRepoLocalCompanionPointer(
 
   await saveRepoLocalRegistry(repoPath, registry);
 }
+
+/** Drops the pointer to `companionPath` from `repoPath`'s own registry; writes nothing when none matches. */
+export async function removeRepoLocalCompanionPointer(
+  repoPath: string,
+  companionPath: string,
+): Promise<void> {
+  const resolvedCompanionPath = path.resolve(companionPath);
+  const registry = await loadRepoLocalRegistry(repoPath);
+  const companions = registry.companions.filter(
+    (pointer) => path.resolve(pointer.path) !== resolvedCompanionPath,
+  );
+  if (companions.length === registry.companions.length) return;
+  await saveRepoLocalRegistry(repoPath, { ...registry, companions });
+}

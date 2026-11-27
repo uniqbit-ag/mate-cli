@@ -35,10 +35,12 @@ cd /path/to/acme-app
 mate companion link
 ```
 
-Choose **git** and paste the repository URL. Mate clones it to
-`~/.mate/companions/acme-companion/`. Because the repository is not a companion
-yet, Mate runs [setup](#setup-choices) on it, then links the working repository
-and installs what the companion selected.
+Choose **Clone from a Git URL into ~/.mate/companions** and paste the
+repository URL. Mate clones it to `~/.mate/companions/acme-companion/`. Because
+the repository is not a companion yet, Mate runs [setup](#setup-choices) on it,
+then links the working repository and installs what the companion selected. When
+a clone of the same repository is already on this machine, Mate offers that
+clone first, see [Link Choices](#link-choices).
 
 </Step>
 <Step>
@@ -60,7 +62,8 @@ who links the same repository.
 
 ## Option B: Start From A Local Folder
 
-Use this to try Mate before you create a remote.
+Use this when you want the companion in a folder you choose, for example next to
+your working repositories. The folder can get a remote now or later.
 
 <Steps>
 <Step>
@@ -68,14 +71,12 @@ Use this to try Mate before you create a remote.
 ### Create the folder
 
 ```sh
-mkdir -p ~/.mate/companions/acme-companion
-cd ~/.mate/companions/acme-companion
+mkdir -p ~/work/acme-companion
+cd ~/work/acme-companion
 git init
 ```
 
-A companion under `~/.mate/companions/` shows up in the link wizard's
-**existing companion** list. A companion anywhere else is linked with **local**
-and its path.
+To use a clone of an existing companion instead, clone it here and skip setup.
 
 </Step>
 <Step>
@@ -99,11 +100,35 @@ cd /path/to/acme-app
 mate companion link
 ```
 
-Choose **existing companion** and select `acme-companion`. Commit the companion
-and add a remote whenever you are ready to share it.
+Choose **Use a companion already on this machine** and select
+`acme-companion`. Commit the companion and add a remote whenever you are ready
+to share it.
 
 </Step>
 </Steps>
+
+## Link Choices
+
+`mate companion link` asks where the companion comes from:
+
+| Choice                                           | What Mate does                                                                                                                                                                                   |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Use a companion already on this machine**      | Lists every registered companion, wherever it lives, and the companion folders next to the working repository or inside it. A folder marked `(not registered)` is registered when you choose it. |
+| **Clone from a Git URL into ~/.mate/companions** | Clones the URL. When a listed companion's `origin` is the same repository, in SSH or HTTPS form, Mate offers **Use the clone at &lt;path&gt;** first, so the machine keeps one copy.             |
+| **Enter the path of another folder**             | Links the folder you type.                                                                                                                                                                       |
+
+The first choice is the default whenever it lists a companion; otherwise the Git
+URL is. When `~/.mate/companions/<name>` already exists with an `origin` of
+another repository, the link stops with an error and writes nothing.
+
+When the working repository is already linked to another companion, Mate asks
+whether to **Replace** it (the default) or **Keep both**. Replace removes the old
+link from the working repository and removes the working repository from the old
+companion's registry, so the new companion is the only one Mate uses.
+
+For scripts, `mate working link --companion <path> --yes` links a local clone
+without asking. It writes only the working repository's own link, not the
+companion's registry, see [Command Reference](/docs/reference/commands).
 
 ## Setup Choices
 

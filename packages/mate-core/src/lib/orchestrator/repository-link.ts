@@ -85,33 +85,19 @@ export class CompanionStore {
       );
     }
 
-    const registryPath = this.companionRegistryStore.configPath;
-    const locked = await withPathLock(
-      REGISTRY_LOCK_NAMESPACE,
-      /** Its real path, missing segments as written: a first link has no file yet. */
-      physicalPath(registryPath),
-      {},
-      async () => {
-        // A companion's registry.yaml may not exist yet (its first-ever link):
-        // that is not a real error here, unlike a working repo reading its own
-        // missing config, so fall back to an empty registry instead of throwing.
-        const working = await this.companionRegistryStore.load().catch((error) => {
-          if (error instanceof ConfigError) return CompanionRegistryStore.defaultConfig();
-          throw error;
-        });
-        const reconciled = reconcileRegistry(working.repos, repository);
-        working.repos = reconciled.repos;
-        await this.companionRegistryStore.save(working);
-        return reconciled;
-      },
-    );
-    if (!locked.acquired) {
-      throw new ConfigError(
-        `another ${FRAMEWORK_NAME} process is still writing ${registryPath}; try again.`,
-      );
-    }
-
-    const { kept, merged } = locked.value;
+    const { kept, merged } = await this.withRegistryLock(async () => {
+      // A companion's registry.yaml may not exist yet (its first-ever link):
+      // that is not a real error here, unlike a working repo reading its own
+      // missing config, so fall back to an empty registry instead of throwing.
+      const working = await this.companionRegistryStore.load().catch((error) => {
+        if (error instanceof ConfigError) return CompanionRegistryStore.defaultConfig();
+        throw error;
+      });
+      const reconciled = reconcileRegistry(working.repos, repository);
+      working.repos = reconciled.repos;
+      await this.companionRegistryStore.save(working);
+      return reconciled;
+    });
     const companionPath = path.resolve(this.companionPath);
     const source = options.companionSource ?? "git";
     // Repo-local registry write is a cache, not the source of truth: the
@@ -136,6 +122,41 @@ export class CompanionStore {
     }
 
     return kept;
+  }
+
+  /** Drops every entry whose path resolves to `repositoryPath`, under the registry's lock; a missing registry is left alone. */
+  async removeRepository(repositoryPath: string): Promise<void> {
+    const resolvedRepositoryPath = path.resolve(repositoryPath);
+    await this.withRegistryLock(async () => {
+      const working = await this.companionRegistryStore.load().catch((error) => {
+        if (error instanceof ConfigError) return null;
+        throw error;
+      });
+      if (!working) return;
+      const repos = working.repos.filter(
+        (repo) => path.resolve(repo.path) !== resolvedRepositoryPath,
+      );
+      if (repos.length === working.repos.length) return;
+      working.repos = repos;
+      await this.companionRegistryStore.save(working);
+    });
+  }
+
+  private async withRegistryLock<T>(update: () => Promise<T>): Promise<T> {
+    const registryPath = this.companionRegistryStore.configPath;
+    const locked = await withPathLock(
+      REGISTRY_LOCK_NAMESPACE,
+      /** Its real path, missing segments as written: a first link has no file yet. */
+      physicalPath(registryPath),
+      {},
+      update,
+    );
+    if (!locked.acquired) {
+      throw new ConfigError(
+        `another ${FRAMEWORK_NAME} process is still writing ${registryPath}; try again.`,
+      );
+    }
+    return locked.value;
   }
 
   async getRepository(repositoryId: string): Promise<LinkedRepository | undefined> {
@@ -287,6 +308,23 @@ interface ResolveOptions {
   logFailures?: boolean;
   /** `false` looks up without the self-heal or the stale-pointer prune, so a caller can refuse first. */
   write?: boolean;
+  /** Only links recorded for `cwd` itself: none inherited from an ancestor folder or another Checkout of the clone. */
+  own?: boolean;
+}
+
+interface LinkRegistry {
+  companions: RepoLocalCompanionPointer[];
+  repository?: { path?: unknown };
+}
+
+/** A repo-local registry; null when unreadable or another shape, such as a companion's own `{ repos }`. */
+async function readLinkRegistry(registryPath: string): Promise<LinkRegistry | null> {
+  try {
+    const parsed = parse(await fs.readFile(registryPath, "utf8")) as Partial<LinkRegistry> | null;
+    return parsed && Array.isArray(parsed.companions) ? (parsed as LinkRegistry) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -356,9 +394,10 @@ export class CompanionResolver {
            * Another Checkout of the clone only: a subfolder of the entry's own
            * folder matches nothing, as before, so `mate working cleanup` there sticks.
            */
-          const byClone = clone
-            ? repos.find((r) => entryOfClone(r, clone) && physicalPath(r.path) !== checkoutRoot)
-            : undefined;
+          const byClone =
+            clone && !options.own
+              ? repos.find((r) => entryOfClone(r, clone) && physicalPath(r.path) !== checkoutRoot)
+              : undefined;
           return byClone && checkoutRoot
             ? { companionPath, repositoryId: byClone.id, folder: checkoutRoot }
             : null;
@@ -400,20 +439,14 @@ export class CompanionResolver {
     options: ResolveOptions,
   ): Promise<CompanionResolutionResult | null> {
     const found = await findRepoLocalRegistryFile(resolvedCwd);
-    if (!found) return null;
+    if (!found || (options.own && found.repoRoot !== resolvedCwd)) return null;
 
-    let pointers: RepoLocalCompanionPointer[];
-    try {
-      const raw = await fs.readFile(found.registryPath, "utf8");
-      const parsed = parse(raw) as { companions?: unknown; repository?: { path?: unknown } } | null;
-      if (!parsed || !Array.isArray(parsed.companions)) return null;
-      /** A cache copied from another Checkout of the clone is that Checkout's, not this one's. */
-      const named = parsed.repository?.path;
-      if (typeof named === "string" && namesOtherCheckout(found.repoRoot, named)) return null;
-      pointers = parsed.companions as RepoLocalCompanionPointer[];
-    } catch {
-      return null;
-    }
+    const registry = await readLinkRegistry(found.registryPath);
+    if (!registry) return null;
+    /** A cache copied from another Checkout of the clone is that Checkout's, not this one's. */
+    const named = registry.repository?.path;
+    if (typeof named === "string" && namesOtherCheckout(found.repoRoot, named)) return null;
+    const pointers = registry.companions;
 
     if (pointers.length === 0) return null;
 
@@ -617,16 +650,11 @@ export async function findDescendantRepoLocalRegistries(rootPath: string): Promi
     }
   }
 
+  // A missing or unreadable registry, or a companion's own, is not a shadowed link.
   const shadowedPaths = await Promise.all(
-    registryCandidates.map(async ({ registryPath, shadowedPath }) => {
-      try {
-        const stats = await fs.stat(registryPath);
-        return stats.isFile() ? shadowedPath : null;
-      } catch {
-        // A missing or unreadable registry is not a shadowed link.
-        return null;
-      }
-    }),
+    registryCandidates.map(async ({ registryPath, shadowedPath }) =>
+      (await readLinkRegistry(registryPath)) ? shadowedPath : null,
+    ),
   );
   return shadowedPaths.filter((candidate): candidate is string => candidate !== null).toSorted();
 }

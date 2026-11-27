@@ -50,7 +50,8 @@ async function link(
   try {
     await runCompanionLinkCommandWithDeps([], {
       selectCompanionLinkInputs: async () => ({ source: "local", localPath: companionPath }),
-      resolveCompanion: async () => null,
+      currentCompanions: async () => [],
+      detectCompanionFolders: async () => [],
       listCompanions: async () => [],
       inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
       installCompanion: async () => {},

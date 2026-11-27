@@ -3,12 +3,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { parse } from "yaml";
-
 import { FRAMEWORK_NAME } from "../../../framework";
 import { gitEnvironment } from "../../../runtime/companion-git";
 import { checkoutCommonDir } from "../../../runtime/git-layout";
-import type { RootKind } from "../../../lib/orchestrator/root-context";
+import { localRootKind, type RootKind } from "../../../lib/orchestrator/root-context";
 import {
   collectWorkspaceInventory,
   type WorkspaceInventoryPairingEntry,
@@ -58,21 +56,6 @@ async function resolveGitRoot(cwd: string): Promise<string | null> {
 export async function resolveUmbrella(cwd: string): Promise<string | null> {
   const folder = umbrellaFolderOf(await canonicalPath(cwd));
   return folder ? canonicalPath(folder) : null;
-}
-
-async function localRootKind(repoPath: string): Promise<RootKind | null> {
-  try {
-    const raw = await fs.readFile(
-      path.join(repoPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
-      "utf8",
-    );
-    const config = parse(raw) as { type?: string } | null;
-    if (config?.type === "working" || config?.type === "hub") return config.type;
-    return "companion";
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    return "companion";
-  }
 }
 
 const defaultDeps: WorkingCleanupCommandDeps = {

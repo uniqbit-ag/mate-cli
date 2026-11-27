@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { parse } from "yaml";
+
 import { FRAMEWORK_NAME } from "../../framework";
 import {
   CompanionResolver,
@@ -42,8 +44,22 @@ const emptyResolution = (): CompanionResolutionResult => ({
   failures: [],
 });
 
-function kindForConfig(config: FrameworkConfig): Exclude<RootKind, "core"> {
+function kindForConfig(config: Pick<FrameworkConfig, "type">): Exclude<RootKind, "core"> {
   return config.type === "hub" ? "hub" : config.type === "working" ? "working" : "companion";
+}
+
+/** The kind a folder's own `framework.yaml` names; null without one. A file that cannot be read or parsed counts as a companion's. */
+export async function localRootKind(folder: string): Promise<Exclude<RootKind, "core"> | null> {
+  try {
+    const raw = await fs.readFile(
+      path.join(folder, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
+      "utf8",
+    );
+    return kindForConfig((parse(raw) as Pick<FrameworkConfig, "type"> | null) ?? {});
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return code === "ENOENT" || code === "ENOTDIR" ? null : "companion";
+  }
 }
 
 async function loadRootConfig(
