@@ -369,11 +369,6 @@ describe("LaunchAdapter.prepareLaunch", () => {
     const tokensaveGuidance = JSON.parse(tokensaveEnv.MATE_GUIDANCE_JSON ?? "{}");
     expect(tokensaveGuidance.codebaseExplorationGuidance).toContain("<codebase-exploration-rules ");
     expect(tokensaveGuidance.codebaseExplorationGuidance).toContain("tokensave_context");
-
-    const graphifyEnv = adapter.extendEnvironment(makeContext([{ name: "graphify" }]));
-    const graphifyGuidance = JSON.parse(graphifyEnv.MATE_GUIDANCE_JSON ?? "{}");
-    expect(graphifyGuidance.codebaseExplorationGuidance).toContain("<codebase-exploration-rules ");
-    expect(graphifyGuidance.codebaseExplorationGuidance).toContain("graphify");
   });
 
   test("materializes a companion-scoped environment without repository values", async () => {
@@ -384,7 +379,7 @@ describe("LaunchAdapter.prepareLaunch", () => {
 
     try {
       const context = {
-        ...makeContext([{ name: "graphify" }, { name: "openspec" }]),
+        ...makeContext([{ name: "openspec" }]),
         repository: undefined,
         launchWorkingDirectory: "/tmp/companion",
       };
@@ -396,11 +391,7 @@ describe("LaunchAdapter.prepareLaunch", () => {
       expect(launch.env.MATE_POLICY_JSON).toBe(
         policyDocument({ allowedAgents: ["claude", "opencode"], secrets: defaultSecretPolicy() }),
       );
-      expect(launch.env.MATE_GRAPHIFY_ENABLED).toBe("1");
       expect(launch.env.MATE_OPENSPEC_ENABLED).toBe("1");
-      expect(launch.env.GRAPHIFY_OUT).toBe(
-        path.join("/tmp/companion", ".graphify", "__companion__", "graphify-out"),
-      );
       expect(launch.env.MATE_REPO_PATH).toBeUndefined();
       expect(launch.env.MATE_REPO_ID).toBeUndefined();
     } finally {
@@ -543,26 +534,14 @@ describe("launch policy document", () => {
   });
 });
 
-describe("graphify GRAPHIFY_OUT env injection", () => {
-  test("injects companion GRAPHIFY_OUT when graphify capability is enabled", async () => {
+describe("retired graphify launch variables", () => {
+  test("a companion that still lists graphify gets no graphify variable", async () => {
     const launch = await withEnv("GRAPHIFY_OUT", undefined, () =>
       prepareClaudeLaunch(makeContext([{ name: "graphify" }]), []),
     );
 
-    expect(launch.env.GRAPHIFY_OUT).toBe(
-      path.join("/tmp/companion", ".graphify", "app", "graphify-out"),
-    );
-    expect(launch.env.GRAPHIFY_OUT).toBe(projectionOf(makeContext()).graphifyOut);
-    expect(launch.env.MATE_GRAPHIFY_ENABLED).toBe("1");
-  });
-
-  test("sets GRAPHIFY_OUT when graphify capability is absent, matching the projection", async () => {
-    const launch = await withEnv("GRAPHIFY_OUT", undefined, () =>
-      prepareClaudeLaunch(makeContext(), []),
-    );
-
-    expect(launch.env.GRAPHIFY_OUT).toBe(projectionOf(makeContext()).graphifyOut);
-    expect(launch.env.MATE_GRAPHIFY_ENABLED).toBe("0");
+    expect(launch.env.GRAPHIFY_OUT).toBeUndefined();
+    expect(launch.env.MATE_GRAPHIFY_ENABLED).toBeUndefined();
   });
 });
 
@@ -639,20 +618,6 @@ describe("launch environment and the projection agree", () => {
     for (const field of PROJECTION_FIELDS) {
       expect(launch.env[PROJECTION_ENV_NAMES[field]]).toBe(projection[field]);
     }
-  });
-
-  test("resolves the same Graphify output path through a launch and through a projection", async () => {
-    const { repoRoot, repository, companionPath } =
-      await wrappedRepository("mate-launch-graphify-");
-
-    const enabled = await prepareClaudeLaunch(
-      { ...makeContext([{ name: "graphify" }]), repository, companionPath },
-      [],
-    );
-    const disabled = await prepareClaudeLaunch({ ...makeContext(), repository, companionPath }, []);
-
-    expect(enabled.env.GRAPHIFY_OUT).toBe(resolveProjection(repoRoot)?.graphifyOut);
-    expect(disabled.env.GRAPHIFY_OUT).toBe(resolveProjection(repoRoot)?.graphifyOut);
   });
 
   /** Migrated: the grants now reach every session through the wrapped document only. */

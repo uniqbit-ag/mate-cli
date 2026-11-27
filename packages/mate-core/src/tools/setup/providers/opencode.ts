@@ -18,7 +18,6 @@ import { projectableSecretDenyPatterns } from "../../../runtime/secret-patterns"
 import { refreshFromTemplate, stripGuidanceBlock } from "../plugins/guidance";
 import { stripSectionFromFile, type RemoveHeadingSectionOptions } from "./agent-file-sections";
 import { reconcileSharedSkillTree } from "./agents-skill-root";
-import { patchSkillTreeMarkdownFiles } from "./skill-tree";
 import {
   instructionBlockKey,
   removeManagedBlocksForPlugin,
@@ -346,20 +345,6 @@ function getCompanionOpenCodeConfigPath(companionPath: string): string {
 // for effects a declaration cannot express. Format knowledge stays here;
 // capabilities pass only predicates.
 // ---------------------------------------------------------------------------
-
-/** Patch markdown files of an externally written `.opencode/skills/<name>` tree. */
-export async function patchOpenCodeSkillTree(
-  companionPath: string,
-  name: string,
-  transform: (content: string) => string,
-  options: { excludeFiles?: readonly string[] } = {},
-): Promise<void> {
-  await patchSkillTreeMarkdownFiles(
-    path.join(companionPath, ".opencode", "skills", name),
-    transform,
-    new Set(options.excludeFiles ?? []),
-  );
-}
 
 /**
  * Strip a foreign heading section from the OpenCode guidance surfaces: the

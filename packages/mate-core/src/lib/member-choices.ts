@@ -6,7 +6,7 @@ import { YamlFileStore } from "./orchestrator/yaml-file-store";
 
 /**
  * A member's answer to a tool their companion recommends (RTK, TokenSave,
- * Graphify, Context Mode). The companion selects the capability for the team;
+ * Context Mode). The companion selects the capability for the team;
  * whether its tool is installed on this machine is the member's call, kept per
  * user and companion so `mate install` asks once.
  */

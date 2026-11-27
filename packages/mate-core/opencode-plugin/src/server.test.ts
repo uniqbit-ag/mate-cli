@@ -92,7 +92,6 @@ async function wrappedRepo(companionPath: string): Promise<string> {
       repositoryId: "acme",
       wrapperBinPath: path.join(companionPath, "wrappers", "bin"),
       reactDoctorBinPath: path.join(companionPath, "react-doctor"),
-      graphifyOut: path.join(companionPath, ".graphify", "acme", "graphify-out"),
     },
   };
   await fs.writeFile(path.join(mateDir, "projection.yaml"), renderProjectionYaml(file), "utf8");

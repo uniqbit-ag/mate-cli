@@ -92,7 +92,7 @@ for the same guide and an ordered developer setup walkthrough, available offline
 
 A clone can have several checkouts: its main worktree and each linked worktree
 made with `git worktree add`, `claude --worktree`, or a tool such as T3 Code. A
-companion lists a clone once, with one repository ID and one Graphify graph. The
+companion lists a clone once, with one repository ID. The
 folder that entry names is the clone's _Registered Checkout_, usually the one
 you ran `mate companion link` in.
 
@@ -147,11 +147,11 @@ worktree's link and projection take the kept ID, and Mate prints one notice per
 merged entry:
 
 ```text
-mate: merged app-fix (/work/app-fix) into app, the entry of its clone in /work/companion; /work/app-fix now uses app, and the Graphify graph stored under app-fix (…) is no longer used.
+mate: merged app-fix (/work/app-fix) into app, the entry of its clone in /work/companion; /work/app-fix now uses app, and the published code graph store /work/companion/.graphify/app-fix is no longer used.
 ```
 
 Sessions in that worktree then see the kept ID in `MATE_REPO_ID`, and the
-Graphify graph stored under the old ID is no longer used. Delete it once you no
+published code graph store under the old ID is no longer used. Delete it once you no
 longer need it.
 
 ## Umbrella Repository

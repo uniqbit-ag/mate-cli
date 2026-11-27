@@ -116,7 +116,6 @@ export const useCases: UseCase[] = [
 /** Names must match the docs Capabilities page. */
 export const capabilities: Capability[] = [
   { name: "OpenSpec", description: "Spec-driven change workflows" },
-  { name: "Graphify", description: "Repository knowledge graphs" },
   { name: "TokenSave", description: "Code-graph exploration through MCP" },
   { name: "React Doctor", description: "React diagnostics" },
 ];

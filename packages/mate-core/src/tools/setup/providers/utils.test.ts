@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { getWrapperBinPath } from "../../../lib/package-paths";
 
 describe("package-owned wrappers", () => {
-  test.each(["openspec", "graphify"])("ships an executable %s wrapper", async (name) => {
+  test.each(["openspec"])("ships an executable %s wrapper", async (name) => {
     const wrapperPath = path.join(getWrapperBinPath(), name);
     const stat = await fs.stat(wrapperPath);
     expect(stat.isFile()).toBe(true);

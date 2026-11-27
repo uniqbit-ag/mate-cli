@@ -35,7 +35,7 @@ describe("published core package", () => {
     });
     expect(unpack.status).toBe(0);
 
-    for (const name of ["openspec", "graphify"]) {
+    for (const name of ["openspec"]) {
       const wrapperPath = path.join(extracted, "package", "wrappers", "bin", name);
       const stat = await fs.stat(wrapperPath);
       expect(stat.isFile()).toBe(true);

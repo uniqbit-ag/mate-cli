@@ -37,7 +37,7 @@ import {
 } from "./registry-checkouts";
 import { project, projectWorkingRepository } from "./working-repo-projection";
 import { readProjectionFile } from "../../runtime/projection";
-import { GRAPHIFY_STORE_SEGMENT } from "../../tools/setup/capabilities/graphify";
+import { PUBLISHED_GRAPH_STORE_SEGMENT } from "./published-graph-store";
 import { type CompanionSource, ConfigError, type LinkedRepository } from "./types";
 
 /**
@@ -154,16 +154,16 @@ const REGISTRY_LOCK_NAMESPACE = "companion-registry";
 
 /**
  * Points a merged-away Checkout's link, and its projection when it has one, at
- * the kept ID, and says that the Graphify graph under the old ID is unused.
+ * the kept ID, and says that the Published Graph Store under the old ID is unused.
  */
 async function relinkMergedCheckout(
   companionPath: string,
   { removed, kept }: MergedEntry,
   source: CompanionSource,
 ): Promise<void> {
-  const graph = path.join(companionPath, GRAPHIFY_STORE_SEGMENT, removed.id);
+  const store = path.join(companionPath, PUBLISHED_GRAPH_STORE_SEGMENT, removed.id);
   console.error(
-    `${FRAMEWORK_NAME}: merged ${removed.id} (${removed.path}) into ${kept.id}, the entry of its clone in ${companionPath}; ${removed.path} now uses ${kept.id}, and the Graphify graph stored under ${removed.id} (${graph}) is no longer used.`,
+    `${FRAMEWORK_NAME}: merged ${removed.id} (${removed.path}) into ${kept.id}, the entry of its clone in ${companionPath}; ${removed.path} now uses ${kept.id}, and the published code graph store ${store} is no longer used.`,
   );
   const repository = { id: kept.id, path: removed.path };
   try {

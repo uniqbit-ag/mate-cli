@@ -150,7 +150,7 @@ export interface Plugin {
   defaultSelected: boolean;
   /**
    * `false` keeps the plugin out of setup selectors: it is enabled by other
-   * selections (uv by Graphify), never chosen directly. Defaults to true.
+   * selections, never chosen directly. Defaults to true.
    */
   selectable?: boolean;
   isEnabled(config: FrameworkConfig): boolean;

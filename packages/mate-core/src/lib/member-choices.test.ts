@@ -8,7 +8,7 @@ describe("isDeclinedByMember", () => {
   test("is true only when every listed capability was declined", async () => {
     expect(await isDeclinedByMember("/acme", ["rtk"], read)).toBe(true);
     expect(await isDeclinedByMember("/acme", ["rtk", "tokensave"], read)).toBe(false);
-    expect(await isDeclinedByMember("/acme", ["graphify"], read)).toBe(false);
+    expect(await isDeclinedByMember("/acme", ["context-mode"], read)).toBe(false);
   });
 
   test("is false for no capabilities", async () => {

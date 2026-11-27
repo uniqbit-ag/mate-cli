@@ -288,7 +288,7 @@ describe("openspecFinisher.resolve", () => {
     const finisher = openspecFinisher("/companion");
 
     expect(finisher.isEnabled([{ name: "openspec" }])).toBe(true);
-    expect(finisher.isEnabled([{ name: "graphify" }])).toBe(false);
+    expect(finisher.isEnabled([{ name: "rtk" }])).toBe(false);
   });
 
   test("capability sync has nothing to re-index without a linked Working Repository", async () => {

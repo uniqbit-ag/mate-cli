@@ -83,7 +83,6 @@ packageManagers:
   - uv
 capabilities:
   - name: openspec
-  - name: graphify
   - name: rtk
   - name: tokensave
   - name: react-doctor

@@ -305,7 +305,6 @@ describe("mate CLI e2e: launch repair and sync", () => {
     });
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).not.toContain("Indexing graphify");
     expect(result.stdout).not.toContain("Indexing tokensave");
 
     const invocation = await readJson<{
@@ -316,9 +315,7 @@ describe("mate CLI e2e: launch repair and sync", () => {
     expect(invocation.env.MATE_ARTIFACT_PATH).toBe(scenario.companion);
     expect(invocation.env.MATE_REPO_PATH).toBeNull();
     expect(invocation.env.MATE_REPO_ID).toBeNull();
-    expect(invocation.env.GRAPHIFY_OUT).toBe(
-      path.join(scenario.companion, ".graphify", "__companion__", "graphify-out"),
-    );
+    expect(invocation.env.GRAPHIFY_OUT).toBeNull();
   });
 
   test("claude setup writes companion guidance artifacts", async () => {

@@ -247,7 +247,7 @@ export class OpenCodeAdapter extends LaunchAdapter {
     const { guidance, errors } = validateGuidanceData(built);
 
     const needsCodebaseExplorationGuidance = context.capabilities.some(
-      (capability) => capability.name === "graphify" || capability.name === "tokensave",
+      (capability) => capability.name === "tokensave",
     );
     if (needsCodebaseExplorationGuidance && !guidance.codebaseExplorationGuidance.trim()) {
       errors.push("missing injected codebase exploration guidance");

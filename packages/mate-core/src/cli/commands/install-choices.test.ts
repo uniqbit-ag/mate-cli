@@ -180,14 +180,14 @@ describe("parseMemberChoiceFlags", () => {
         "--yes",
         "--with",
         "rtk",
-        "--with=tokensave,graphify",
+        "--with=tokensave,rtk",
         "--without",
         "context-mode",
       ]),
     ).toEqual({
       rtk: "accepted",
       tokensave: "accepted",
-      graphify: "accepted",
+      rtk: "accepted",
       "context-mode": "declined",
     });
   });

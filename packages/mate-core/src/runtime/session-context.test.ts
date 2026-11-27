@@ -43,7 +43,6 @@ function wrappedRepo(companionConfig: string | null = "allowedAgents:\n  - claud
       repositoryId: "acme-app",
       wrapperBinPath: "/install/mate/wrappers/bin",
       reactDoctorBinPath: "/install/mate/node_modules/.bin/react-doctor",
-      graphifyOut: path.join(companionPath, ".graphify", "acme-app", "graphify-out"),
     },
   });
   return { root, repoRoot, companionPath };
@@ -94,7 +93,6 @@ describe("resolveSessionContext", () => {
         repositoryId: "acme-app",
         wrapperBinPath: "/w",
         reactDoctorBinPath: "/r",
-        graphifyOut: "/g",
       },
     });
 

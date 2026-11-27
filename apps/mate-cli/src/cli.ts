@@ -4,7 +4,7 @@ import {
   createClaudePlugin,
   createCompanionMentionsPlugin,
   createContextModePlugin,
-  createGraphifyPlugin,
+  createGraphifyRetirementPlugin,
   createOpenCodePlugin,
   createOpenspecPlugin,
   createReactDoctorPlugin,
@@ -22,7 +22,8 @@ const openspec = createOpenspecPlugin();
 const reactDoctor = createReactDoctorPlugin();
 const tokensave = createTokensavePlugin();
 const rtk = createRtkPlugin();
-const graphify = createGraphifyPlugin();
+// Temporary: delete with retire-graphify.ts in the second minor release after graphify's removal.
+const graphifyRetirement = createGraphifyRetirementPlugin();
 const context7 = createContext7Plugin();
 const contextMode = createContextModePlugin();
 const companionMentions = createCompanionMentionsPlugin();
@@ -45,7 +46,7 @@ const cli = createMate({
     { plugin: reactDoctor, policy: "optional" },
     { plugin: tokensave, policy: "optional" },
     { plugin: rtk, policy: "optional" },
-    { plugin: graphify, policy: "optional" },
+    { plugin: graphifyRetirement, policy: "optional" },
     { plugin: context7, policy: "optional" },
     { plugin: contextMode, policy: "optional" },
     { plugin: companionMentions, policy: "optional" },

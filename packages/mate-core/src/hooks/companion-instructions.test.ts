@@ -56,7 +56,6 @@ function wrappedRepo(
       repositoryId: "acme",
       wrapperBinPath,
       reactDoctorBinPath: path.join(companionPath, "react-doctor"),
-      graphifyOut: path.join(companionPath, ".graphify", "acme", "graphify-out"),
     },
   });
 

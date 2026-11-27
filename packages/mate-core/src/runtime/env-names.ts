@@ -15,7 +15,6 @@ export const MATE_ENV = {
   repositoryPath: "MATE_REPO_PATH",
   repositoryId: "MATE_REPO_ID",
   policyJson: "MATE_POLICY_JSON",
-  graphifyEnabled: "MATE_GRAPHIFY_ENABLED",
   gitAutoMode: "MATE_GIT_AUTO_MODE",
   reactDoctorEnabled: "MATE_REACT_DOCTOR_ENABLED",
   reactDoctorBinPath: "MATE_REACT_DOCTOR_BIN_PATH",

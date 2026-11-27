@@ -32,7 +32,6 @@ async function wrappedRepo(): Promise<{ repo: string; companion: string }> {
       repositoryId: "acme",
       wrapperBinPath: path.join(companion, "wrappers", "bin"),
       reactDoctorBinPath: path.join(companion, "react-doctor"),
-      graphifyOut: path.join(companion, ".graphify", "acme", "graphify-out"),
     },
   });
   return { repo, companion };

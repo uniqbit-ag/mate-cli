@@ -122,32 +122,11 @@ describe("install context and planning", () => {
     const requirements = buildInstallPlan(context).requirements;
     const ids = requirements.map((requirement) => requirement.id);
     expect(ids).toContain("core:bun");
-    // A legacy uv entry carries no choice: uv follows Graphify only.
+    // A legacy uv entry carries no choice.
     expect(ids).not.toContain("core:uv");
     // OpenSpec ships with Mate, so the capability adds nothing to install.
     expect(ids).not.toContain("capability:openspec");
-    expect(ids).not.toContain("capability:graphify");
     expect(ids).not.toContain("capability:rtk");
-  });
-
-  test("plans uv before Graphify only when Graphify is selected", async () => {
-    const root = await tempRoot();
-    const context = {
-      kind: "companion" as const,
-      companionPath: root,
-      config: {
-        allowedAgents: ["claude"],
-        packageManagers: ["bun"],
-        capabilities: [{ name: "graphify" }],
-      },
-      fingerprint: "graphify-context",
-    };
-
-    const ids = buildInstallPlan(context).requirements.map((requirement) => requirement.id);
-
-    expect(ids).toContain("core:uv");
-    expect(ids).toContain("capability:graphify");
-    expect(ids.indexOf("core:uv")).toBeLessThan(ids.indexOf("capability:graphify"));
   });
 
   test("plans RTK only when the RTK capability is selected", async () => {
@@ -349,6 +328,26 @@ describe("install execution and state", () => {
 
     expect(installs).toHaveLength(plan.requirements.length);
     expect(requests).toBe(0);
+    expect((await inspectInstallPreflight(root)).ok).toBe(true);
+  });
+
+  test("repair records the companion config as its sync left it", async () => {
+    process.env.HOME = await tempRoot();
+    const root = await tempRoot();
+    await fs.mkdir(path.join(root, ".mate", "config"), { recursive: true });
+    await fs.writeFile(
+      path.join(root, ".mate", "config", "framework.yaml"),
+      ["type: companion", "allowedAgents: []", "capabilities:", "  - name: graphify", ""].join(
+        "\n",
+      ),
+    );
+    const plan = await inspectInstallPlan(buildInstallPlan(await resolveInstallContext(root)));
+
+    await repairInstallState(plan);
+
+    expect(
+      await fs.readFile(path.join(root, ".mate", "config", "framework.yaml"), "utf8"),
+    ).not.toContain("graphify");
     expect((await inspectInstallPreflight(root)).ok).toBe(true);
   });
 

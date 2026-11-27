@@ -1,20 +1,12 @@
-import path from "node:path";
-
 import { version } from "../../../package.json";
 import {
   PROJECTION_ENV_NAMES,
   PROJECTION_FIELDS,
   type MateProjection,
 } from "../../runtime/projection";
-import {
-  GRAPHIFY_OUTPUT_SUBDIR,
-  GRAPHIFY_STORE_SEGMENT,
-} from "../../tools/setup/capabilities/graphify";
 import { runtimeWrapperBinPath } from "../../runtime/runtime-directory";
 import { getReactDoctorBinPath, getWrapperBinPath } from "../package-paths";
 import type { LinkedRepository } from "./types";
-
-const COMPANION_GRAPHIFY_REPOSITORY_ID = "__companion__";
 
 /**
  * The one derivation of the projected paths. Both the Projection Root and a
@@ -23,7 +15,7 @@ const COMPANION_GRAPHIFY_REPOSITORY_ID = "__companion__";
  */
 
 /**
- * Both bin paths and `GRAPHIFY_OUT` are unconditional: a path exists whether or
+ * Both bin paths are unconditional: a path exists whether or
  * not its Capability is enabled, and enablement is a predicate, read live from
  * the companion rather than cached here.
  *
@@ -43,20 +35,10 @@ export function buildProjection(
     repositoryId: repository.id,
     wrapperBinPath,
     reactDoctorBinPath: getReactDoctorBinPath(),
-    graphifyOut: path.join(
-      companionPath,
-      GRAPHIFY_STORE_SEGMENT,
-      repository.id,
-      GRAPHIFY_OUTPUT_SUBDIR,
-    ),
   };
 }
 
-/**
- * The record spelled as environment variables. `graphifyy` resolves its output
- * directory from `GRAPHIFY_OUT` at import time, so a launch that omitted it
- * would leak `graphify-out/` into the Working Repository.
- */
+/** The record spelled as environment variables. */
 export function projectionEnvironment(projection: MateProjection): NodeJS.ProcessEnv {
   return Object.fromEntries(
     PROJECTION_FIELDS.map((field) => [PROJECTION_ENV_NAMES[field], projection[field]]),
@@ -72,12 +54,6 @@ export function companionEnvironment(companionPath: string): NodeJS.ProcessEnv {
     repositoryId: "",
     wrapperBinPath: getWrapperBinPath(),
     reactDoctorBinPath: getReactDoctorBinPath(),
-    graphifyOut: path.join(
-      companionPath,
-      GRAPHIFY_STORE_SEGMENT,
-      COMPANION_GRAPHIFY_REPOSITORY_ID,
-      GRAPHIFY_OUTPUT_SUBDIR,
-    ),
   };
 
   return Object.fromEntries(

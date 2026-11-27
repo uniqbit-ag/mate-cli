@@ -12,8 +12,7 @@
         "test/**/*.ts",
         "opencode-plugin/**/*.ts",
         "claude-capability-plugins/*/hooks/**/*.{ts,js,mjs}",
-        "src/hooks/*.ts",
-        "src/tools/setup/capabilities/graphify-gate.ts"
+        "src/hooks/*.ts"
       ],
       "project": ["src/**/*.{ts,tsx}", "test/**/*.ts"]
     },

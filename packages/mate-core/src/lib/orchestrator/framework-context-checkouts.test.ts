@@ -49,7 +49,6 @@ describe("Adoption in resolution", () => {
         const projection = readProjectionFile(worktree)?.projection;
         expect(projection?.repositoryPath).toBe(worktree);
         expect(projection?.repositoryId).toBe("acme");
-        expect(projection?.graphifyOut).toContain(path.join(".graphify", "acme"));
         expect(await fs.readFile(companionRegistryPath(clone.companionPath), "utf8")).toBe(
           clone.registry,
         );

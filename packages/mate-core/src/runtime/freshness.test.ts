@@ -43,7 +43,6 @@ function wrap(repoRoot: string, companionPath: string, stamp: string): void {
       repositoryId: "acme",
       wrapperBinPath: "/install/acme/wrappers/bin",
       reactDoctorBinPath: "/install/acme/node_modules/.bin/react-doctor",
-      graphifyOut: path.join(companionPath, ".graphify", "acme", "graphify-out"),
     },
   });
 }

@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 
@@ -8,20 +7,8 @@ import type { InstallRequirement } from "../install-contract";
 import { confirm } from "../../../cli/confirm";
 import { isCommandOnPath, runCommand, runShellCommand } from "../utils";
 
-export function isInstalledViaUvTool(pkgName: string): boolean {
-  try {
-    const output = execFileSync("uv", ["tool", "list"], {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    return output.includes(pkgName);
-  } catch {
-    return false;
-  }
-}
-
 /** Capabilities whose installers run through uv; uv is installed only for them. */
-export const UV_DEPENDENT_CAPABILITIES = ["graphify"];
+export const UV_DEPENDENT_CAPABILITIES: string[] = [];
 
 export function isUvNeeded(config: { capabilities?: { name: string }[] }): boolean {
   return (config.capabilities ?? []).some((capability) =>
@@ -82,7 +69,7 @@ export function createUvPlugin(deps: PackageManagerSetupDeps = {}): Plugin & { l
   /**
    * Find uv on PATH or in an install location. A uv found only in an install
    * location joins this process's PATH, so the installers that run through
-   * it later in the same run (`uv tool install graphifyy`) find uv and the
+   * it later in the same run find uv and the
    * tool binaries it puts next to itself.
    */
   function locateUv(): boolean {
@@ -134,7 +121,7 @@ export function createUvPlugin(deps: PackageManagerSetupDeps = {}): Plugin & { l
     id: "uv",
     kind: "packageManager",
     label: "uv",
-    description: "Python package manager, installed only for capabilities that need it (Graphify).",
+    description: "Python package manager, installed only for capabilities that need it.",
     defaultSelected: false,
     selectable: false,
     language: "python",
@@ -150,7 +137,7 @@ export function createUvPlugin(deps: PackageManagerSetupDeps = {}): Plugin & { l
           id: "core:uv",
           label: "uv package manager",
           group: "companion",
-          source: "Graphify capability",
+          source: "uv package manager",
           // Installed exactly when a capability that needs it is.
           recommendedBy: UV_DEPENDENT_CAPABILITIES.filter((id) =>
             (config.capabilities ?? []).some((capability) => capability.name === id),

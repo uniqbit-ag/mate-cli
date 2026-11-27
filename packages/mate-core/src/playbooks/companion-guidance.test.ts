@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  buildCompanionGuidance,
-  GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT,
-} from "./companion-guidance";
+import { buildCompanionGuidance } from "./companion-guidance";
 import { getWrapperBinPath } from "../lib/package-paths";
 import { FRICTION_GUIDANCE } from "../runtime/companion-guidance";
 
@@ -62,52 +59,40 @@ describe("buildCompanionGuidance", () => {
   test("renders companion-only guidance without working-repository fields", () => {
     const guidance = buildCompanionGuidance({
       companionPath: "/tmp/companion",
-      capabilities: [{ name: "graphify" }],
+      capabilities: [],
     });
 
     expect(guidance).toContain("Companion-scoped launch with no Working Repository");
     expect(guidance).toContain("Agent artifacts MUST go to /tmp/companion");
-    expect(guidance).toContain("__companion__");
     expect(guidance).not.toContain("MATE_REPO_PATH");
     expect(guidance).not.toContain("linked-repository");
   });
 
-  test("includes shared Graphify guidance when capability is enabled", () => {
-    const guidance = buildCompanionGuidance({
-      capabilities: [{ name: "graphify" }],
-      companionPath: "/tmp/companion",
-      policy: {},
-      repository: {
-        id: "app",
-        path: "/tmp/working",
-      },
-    } as never);
-
-    expect(guidance).toContain('<codebase-exploration-rules priority="mandatory">');
-    expect(guidance).toContain(GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT);
-    expect(guidance).toContain("graphify query");
-    expect(guidance).toContain("graphify -> grep/glob/read");
-    expect(guidance).toContain("MUST try graphify before raw source");
-    expect(guidance).not.toContain("This project has a knowledge graph at graphify-out/");
-  });
-
-  test("uses the tokensave-first graphify guidance only when tokensave capability is enabled", () => {
+  test("gives a companion that still lists graphify the tokensave order only", () => {
     const guidance = buildCompanionGuidance({
       capabilities: [{ name: "graphify" }, { name: "tokensave" }],
       companionPath: "/tmp/companion",
       policy: {},
-      repository: {
-        id: "app",
-        path: "/tmp/working",
-      },
+      repository: { id: "app", path: "/tmp/working" },
     } as never);
 
-    expect(guidance).toContain("tokensave_context");
-    expect(guidance).toContain("tokensave -> graphify -> grep/glob/read");
-    expect(guidance).toContain("MUST NOT skip steps");
+    expect(guidance).toContain("tokensave -> grep/glob/read");
+    expect(guidance).not.toContain("graphify query");
+    expect(guidance).not.toContain("graphify-out");
   });
 
-  test("includes tokensave-only exploration guidance when graphify capability is disabled", () => {
+  test("gives no exploration guidance without tokensave", () => {
+    const guidance = buildCompanionGuidance({
+      capabilities: [{ name: "graphify" }],
+      companionPath: "/tmp/companion",
+      policy: {},
+      repository: { id: "app", path: "/tmp/working" },
+    } as never);
+
+    expect(guidance).not.toContain("<codebase-exploration-rules");
+  });
+
+  test("includes tokensave exploration guidance when tokensave is enabled", () => {
     const guidance = buildCompanionGuidance({
       capabilities: [{ name: "tokensave" }],
       companionPath: "/tmp/companion",
@@ -123,8 +108,6 @@ describe("buildCompanionGuidance", () => {
     expect(guidance).toContain("tokensave -> grep/glob/read");
     expect(guidance).toContain("MUST try tokensave before raw source");
     expect(guidance).toContain("mate cap index --tokensave");
-    expect(guidance).not.toContain(GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT);
-    expect(guidance).not.toContain("tokensave -> graphify -> grep/glob/read");
     expect(guidance).not.toContain("GRAPH_REPORT.md");
   });
 
@@ -327,9 +310,8 @@ describe("buildCompanionGuidance", () => {
 
     expect(guidance).toContain("<cli-tools>");
     expect(guidance).toContain('name="openspec" type="wrapper"');
-    expect(guidance).toContain('name="graphify" type="wrapper"');
+    expect(guidance).not.toContain('name="graphify"');
     expect(guidance).toContain(`${getWrapperBinPath()}/openspec`);
-    expect(guidance).toContain(`${getWrapperBinPath()}/graphify`);
     expect(guidance).toContain('name="mate" type="global"');
   });
 
@@ -350,7 +332,6 @@ describe("buildCompanionGuidance", () => {
       '<path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>',
     );
     expect(guidance).toContain('invokeAs="$MATE_WRAPPER_BIN_PATH/openspec"');
-    expect(guidance).toContain('invokeAs="$MATE_WRAPPER_BIN_PATH/graphify"');
     expect(guidance).not.toContain(getWrapperBinPath());
   });
 
@@ -381,7 +362,7 @@ describe("buildCompanionGuidance", () => {
     expect(guidance).toContain("invoke the exact path in its invokeAs attribute");
     expect(guidance).toContain("Correct: ");
     expect(guidance).toContain("Incorrect: openspec status ...");
-    expect(guidance).toContain("Do not run bare openspec or graphify commands");
+    expect(guidance).toContain("Do not run bare openspec commands");
     expect(guidance).toContain("do not rely on PATH, aliases, or shell functions");
     expect(guidance).toContain("If the exact wrapper path is unavailable, stop and report it");
   });
@@ -405,7 +386,7 @@ describe("the friction section", () => {
   const context = {
     companionPath: "/Users/acme/code/companions/acme-companion",
     repository: { id: "acme", path: "/Users/acme/code/projects/acme.worktrees/acme-feature" },
-    capabilities: ["openspec", "rtk", "graphify", "tokensave"].map((name) => ({ name })),
+    capabilities: ["openspec", "rtk", "tokensave"].map((name) => ({ name })),
   };
 
   test("has at most 80 words and names the report command with the Invocation Name", () => {

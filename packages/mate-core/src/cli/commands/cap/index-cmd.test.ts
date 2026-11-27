@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { createTempDir } from "../../../../../../test/fixtures";
 import { addWorktree, initRepo } from "../../../../test/git-checkouts";
@@ -10,20 +10,19 @@ import type { CapabilityConfig } from "../../../lib/orchestrator/types";
 import { runIndexCapCommand, type SyncCapDeps } from "./index-cmd";
 
 interface Invocation {
-  runner: "graphify" | "tokensave";
+  runner: "tokensave";
   args: string[];
 }
 
 // Builds injected deps that record every reused-cap-command invocation and let each
 // test script the process.exitCode a given call produces (the only channel the real
-// runGraphifyCapCommand / runTokensaveCapCommand use to signal failure).
+// runTokensaveCapCommand uses to signal failure).
 function makeDeps(options: {
   capabilities: CapabilityConfig[];
   ensureUnambiguousCompanion?: (cwd: string) => Promise<boolean>;
   tokensaveInitialized?: boolean;
   onEnsureTokensaveStoreExcluded?: () => Promise<void> | void;
   onEnsureTokensaveBranchingPosture?: () => Promise<void> | void;
-  failGraphify?: (args: string[]) => boolean;
   failTokensave?: (args: string[]) => boolean;
   onTokensave?: (args: string[]) => void;
 }): { deps: SyncCapDeps; invocations: Invocation[]; lines: string[] } {
@@ -48,11 +47,6 @@ function makeDeps(options: {
     },
     ensureTokensaveBranchingPosture: async () => {
       await options.onEnsureTokensaveBranchingPosture?.();
-    },
-    runGraphify: async (args) => {
-      invocations.push({ runner: "graphify", args });
-      lines.push(`graphify ${args.join(" ")}`);
-      if (options.failGraphify?.(args)) process.exitCode = 1;
     },
     runTokensave: async (args) => {
       invocations.push({ runner: "tokensave", args });
@@ -92,15 +86,6 @@ describe("runIndexCapCommand progress", () => {
     ]);
   });
 
-  test("ends a failed graphify run with ✗", async () => {
-    const { deps, lines } = makeDeps({ capabilities: [cap("graphify")], failGraphify: () => true });
-
-    await runIndexCapCommand(["--graphify"], deps);
-
-    expect(lines.at(-1)).toBe("  ✗ Syncing graphify failed");
-    expect(process.exitCode).toBe(1);
-  });
-
   test("prints nothing when no step runs", async () => {
     const { deps, lines } = makeDeps({ capabilities: [] });
 
@@ -111,24 +96,6 @@ describe("runIndexCapCommand progress", () => {
 });
 
 describe("runIndexCapCommand", () => {
-  test("skips graphify entirely when the capability is disabled", async () => {
-    const { deps, invocations } = makeDeps({ capabilities: [cap("tokensave")] });
-
-    await runIndexCapCommand(["--graphify"], deps);
-
-    expect(invocations.some((i) => i.runner === "graphify")).toBe(false);
-    expect(process.exitCode).toBe(0);
-  });
-
-  test("runs graphify sync only when --graphify is passed", async () => {
-    const { deps, invocations } = makeDeps({ capabilities: [cap("graphify")] });
-
-    await runIndexCapCommand(["--graphify"], deps);
-
-    expect(invocations).toEqual([{ runner: "graphify", args: [".", "--update", "--code-only"] }]);
-    expect(process.exitCode).toBe(0);
-  });
-
   test("fails the tokensave step without a resolved working repository", async () => {
     const { deps, invocations } = makeDeps({
       capabilities: [cap("tokensave")],
@@ -147,7 +114,7 @@ describe("runIndexCapCommand", () => {
     expect(process.exitCode).toBe(1);
   });
 
-  test("runs tokensave sync only when --tokensave is passed", async () => {
+  test("runs only tokensave sync for a companion that still lists graphify", async () => {
     const { deps, invocations } = makeDeps({
       capabilities: [cap("graphify"), cap("tokensave")],
       tokensaveInitialized: true,
@@ -159,79 +126,7 @@ describe("runIndexCapCommand", () => {
     expect(process.exitCode).toBe(0);
   });
 
-  test("fails when graphify update fails with --graphify", async () => {
-    const { deps, invocations } = makeDeps({
-      capabilities: [cap("graphify")],
-      failGraphify: (args) => args[1] === "--update",
-    });
-
-    await runIndexCapCommand(["--graphify"], deps);
-
-    expect(invocations).toEqual([{ runner: "graphify", args: [".", "--update", "--code-only"] }]);
-    expect(process.exitCode).toBe(1);
-  });
-
-  test("skips tokensave entirely when the capability is disabled", async () => {
-    const { deps, invocations } = makeDeps({ capabilities: [cap("graphify")] });
-
-    await runIndexCapCommand([], deps);
-
-    expect(invocations.some((i) => i.runner === "tokensave")).toBe(false);
-  });
-
-  test("skips tokensave when --graphify is passed", async () => {
-    const { deps, invocations } = makeDeps({
-      capabilities: [cap("graphify"), cap("tokensave")],
-      tokensaveInitialized: true,
-    });
-
-    await runIndexCapCommand(["--graphify"], deps);
-
-    expect(invocations).toEqual([{ runner: "graphify", args: [".", "--update", "--code-only"] }]);
-    expect(process.exitCode).toBe(0);
-  });
-
-  test("skips graphify when --tokensave is passed", async () => {
-    const { deps, invocations } = makeDeps({
-      capabilities: [cap("graphify"), cap("tokensave")],
-      tokensaveInitialized: true,
-    });
-
-    await runIndexCapCommand(["--tokensave"], deps);
-
-    expect(invocations).toEqual([{ runner: "tokensave", args: ["sync"] }]);
-    expect(process.exitCode).toBe(0);
-  });
-
-  test("fails without running tokensave when the graphify branch fails", async () => {
-    const { deps, invocations } = makeDeps({
-      capabilities: [cap("graphify"), cap("tokensave")],
-      tokensaveInitialized: true,
-      failGraphify: (args) => args[1] === "--update",
-    });
-
-    await runIndexCapCommand(["--graphify"], deps);
-
-    expect(invocations).toEqual([{ runner: "graphify", args: [".", "--update", "--code-only"] }]);
-    expect(process.exitCode).toBe(1);
-  });
-
-  test("runs tokensave and graphify sync by default when both are enabled", async () => {
-    const { deps, invocations } = makeDeps({
-      capabilities: [cap("graphify"), cap("tokensave")],
-      tokensaveInitialized: true,
-    });
-
-    await runIndexCapCommand([], deps);
-
-    expect(invocations).toEqual([
-      { runner: "tokensave", args: ["sync"] },
-      { runner: "graphify", args: [".", "--update", "--code-only"] },
-    ]);
-    expect(process.exitCode).toBe(0);
-  });
-
-  test("runs tokensave sync when graphify is disabled", async () => {
+  test("runs tokensave sync by default", async () => {
     const { deps, invocations } = makeDeps({
       capabilities: [cap("tokensave")],
       tokensaveInitialized: true,
@@ -321,19 +216,7 @@ describe("runIndexCapCommand", () => {
     expect(process.exitCode).toBe(0);
   });
 
-  test("exits zero when the graphify branch succeeds", async () => {
-    const { deps, invocations } = makeDeps({
-      capabilities: [cap("graphify"), cap("tokensave")],
-      tokensaveInitialized: true,
-    });
-
-    await runIndexCapCommand(["--graphify"], deps);
-
-    expect(invocations).toEqual([{ runner: "graphify", args: [".", "--update", "--code-only"] }]);
-    expect(process.exitCode).toBe(0);
-  });
-
-  test("writes nothing and exits zero when neither capability is enabled", async () => {
+  test("writes nothing and exits zero when tokensave is not enabled", async () => {
     const { deps, invocations } = makeDeps({ capabilities: [] });
 
     await runIndexCapCommand([], deps);
@@ -342,35 +225,16 @@ describe("runIndexCapCommand", () => {
     expect(process.exitCode).toBe(0);
   });
 
-  test("fails when only the tokensave branch fails", async () => {
+  test("fails when the tokensave step fails", async () => {
     const { deps, invocations } = makeDeps({
-      capabilities: [cap("graphify"), cap("tokensave")],
+      capabilities: [cap("tokensave")],
       tokensaveInitialized: true,
       failTokensave: () => true,
     });
 
     await runIndexCapCommand([], deps);
 
-    expect(invocations).toEqual([
-      { runner: "tokensave", args: ["sync"] },
-      { runner: "graphify", args: [".", "--update", "--code-only"] },
-    ]);
-    expect(process.exitCode).toBe(1);
-  });
-
-  test("fails when graphify update fails after tokensave succeeds", async () => {
-    const { deps, invocations } = makeDeps({
-      capabilities: [cap("graphify"), cap("tokensave")],
-      tokensaveInitialized: true,
-      failGraphify: (args) => args[1] === "--update",
-    });
-
-    await runIndexCapCommand([], deps);
-
-    expect(invocations).toEqual([
-      { runner: "tokensave", args: ["sync"] },
-      { runner: "graphify", args: [".", "--update", "--code-only"] },
-    ]);
+    expect(invocations).toEqual([{ runner: "tokensave", args: ["sync"] }]);
     expect(process.exitCode).toBe(1);
   });
 
@@ -388,7 +252,7 @@ describe("runIndexCapCommand", () => {
   });
 
   test("fails fast on unknown sync options", async () => {
-    const { deps, invocations } = makeDeps({ capabilities: [cap("graphify"), cap("tokensave")] });
+    const { deps, invocations } = makeDeps({ capabilities: [cap("tokensave")] });
 
     await runIndexCapCommand(["--wat"], deps);
 
@@ -396,19 +260,24 @@ describe("runIndexCapCommand", () => {
     expect(process.exitCode).toBe(1);
   });
 
-  test("fails fast when known and unknown sync options are mixed", async () => {
+  test("rejects the removed --graphify option as an unknown sync option", async () => {
     const { deps, invocations } = makeDeps({ capabilities: [cap("graphify"), cap("tokensave")] });
-
-    await runIndexCapCommand(["--graphify", "--wat"], deps);
+    const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await runIndexCapCommand(["--graphify"], deps);
+      expect(stderr).toHaveBeenCalledWith("mate: unknown sync option: --graphify\n");
+    } finally {
+      stderr.mockRestore();
+    }
 
     expect(invocations).toEqual([]);
     expect(process.exitCode).toBe(1);
   });
 
-  test("fails fast when --graphify and --tokensave are mixed", async () => {
-    const { deps, invocations } = makeDeps({ capabilities: [cap("graphify"), cap("tokensave")] });
+  test("fails fast when known and unknown sync options are mixed", async () => {
+    const { deps, invocations } = makeDeps({ capabilities: [cap("tokensave")] });
 
-    await runIndexCapCommand(["--graphify", "--tokensave"], deps);
+    await runIndexCapCommand(["--tokensave", "--wat"], deps);
 
     expect(invocations).toEqual([]);
     expect(process.exitCode).toBe(1);
@@ -416,7 +285,7 @@ describe("runIndexCapCommand", () => {
 
   test("aborts before indexing when companion selection cannot be resolved", async () => {
     const { deps, invocations } = makeDeps({
-      capabilities: [cap("graphify"), cap("tokensave")],
+      capabilities: [cap("tokensave")],
       ensureUnambiguousCompanion: async () => false,
     });
 

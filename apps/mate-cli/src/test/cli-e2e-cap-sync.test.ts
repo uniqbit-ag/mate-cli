@@ -8,7 +8,6 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 
 import {
   DEFAULT_TEST_TIMEOUT_MS,
-  GRAPHIFY_SECRET_EXCLUDE_ARGS,
   createScenario,
   initWorkingRepoGit,
   installCompanion,
@@ -17,8 +16,6 @@ import {
   runMate,
   setupCompanion,
   writeAdapterStub,
-  writeGraphifyStub,
-  writeGraphifySyncStub,
   writeTokensaveSyncStub,
   removeScenarios,
 } from "./cli-e2e-support";
@@ -49,22 +46,21 @@ describe("mate CLI e2e: capability sync and guidance", () => {
     expect(result.stderr).toContain("mate: unknown capability command: tokensave");
   });
 
-  test("cap sync runs tokensave and graphify by default", async () => {
+  test("cap sync runs tokensave by default", async () => {
     const scenario = await createScenario("mate-cli-e2e-cap-sync-");
 
     expect(
       (
         await setupCompanion(scenario, [], {
           allowedAgents: ["claude"],
-          capabilities: ["graphify", "tokensave"],
+          capabilities: ["tokensave"],
         })
       ).exitCode,
     ).toBe(0);
     expect((await linkRepository(scenario)).exitCode).toBe(0);
 
-    // setupCompanion rewrites the capability stubs, so install the sync-aware stubs
-    // afterwards to overwrite them.
-    const graphifyLog = await writeGraphifySyncStub(scenario);
+    // setupCompanion rewrites the capability stubs, so install the sync-aware stub
+    // afterwards to overwrite it.
     const tokensaveCapture = await writeTokensaveSyncStub(scenario);
 
     const result = await runMate(scenario, {
@@ -74,89 +70,8 @@ describe("mate CLI e2e: capability sync and guidance", () => {
     });
 
     expect(result.exitCode).toBe(0);
-    const log = (await fs.readFile(graphifyLog, "utf8"))
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as { argv: string[]; graphifyOut: string | null });
-    expect(log).toEqual([
-      {
-        argv: [".", "--update", "--code-only", ...GRAPHIFY_SECRET_EXCLUDE_ARGS],
-        graphifyOut: path.join(scenario.companion, ".graphify", "app", "graphify-out"),
-      },
-    ]);
     const invocation = await readJson<{ argv: string[] }>(tokensaveCapture);
     expect(invocation.argv).toEqual(["sync"]);
-  });
-
-  test("cap sync --graphify runs only graphify sync", async () => {
-    const scenario = await createScenario("mate-cli-e2e-cap-sync-graphify-");
-
-    expect(
-      (
-        await setupCompanion(scenario, [], {
-          allowedAgents: ["claude"],
-          capabilities: ["graphify", "tokensave"],
-        })
-      ).exitCode,
-    ).toBe(0);
-    expect((await linkRepository(scenario)).exitCode).toBe(0);
-
-    const graphifyLog = await writeGraphifySyncStub(scenario);
-
-    const result = await runMate(scenario, {
-      cwd: scenario.working,
-      args: ["cap", "sync", "--graphify"],
-    });
-
-    expect(result.exitCode).toBe(0);
-    const log = (await fs.readFile(graphifyLog, "utf8"))
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as { argv: string[]; graphifyOut: string | null });
-    expect(log).toEqual([
-      {
-        argv: [".", "--update", "--code-only", ...GRAPHIFY_SECRET_EXCLUDE_ARGS],
-        graphifyOut: path.join(scenario.companion, ".graphify", "app", "graphify-out"),
-      },
-    ]);
-    expect(await fs.exists(path.join(scenario.root, "tokensave-sync-capture.json"))).toBe(false);
-  });
-
-  test("cap sync --graphify fails without running tokensave", async () => {
-    const scenario = await createScenario("mate-cli-e2e-cap-sync-fail-");
-
-    expect(
-      (
-        await setupCompanion(scenario, [], {
-          allowedAgents: ["claude"],
-          capabilities: ["graphify", "tokensave"],
-        })
-      ).exitCode,
-    ).toBe(0);
-    expect((await linkRepository(scenario)).exitCode).toBe(0);
-
-    const graphifyLog = await writeGraphifySyncStub(scenario);
-
-    const result = await runMate(scenario, {
-      cwd: scenario.working,
-      args: ["cap", "sync", "--graphify"],
-      env: {
-        MATE_E2E_GRAPHIFY_FAIL_UPDATE: "1",
-      },
-    });
-
-    expect(result.exitCode).toBe(1);
-    const log = (await fs.readFile(graphifyLog, "utf8"))
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as { argv: string[]; graphifyOut: string | null });
-    expect(log).toEqual([
-      {
-        argv: [".", "--update", "--code-only", ...GRAPHIFY_SECRET_EXCLUDE_ARGS],
-        graphifyOut: path.join(scenario.companion, ".graphify", "app", "graphify-out"),
-      },
-    ]);
-    expect(await fs.exists(path.join(scenario.root, "tokensave-sync-capture.json"))).toBe(false);
   });
 
   test("launch installs tokensave MCP wiring for claude in companion settings", async () => {
@@ -207,69 +122,22 @@ describe("mate CLI e2e: capability sync and guidance", () => {
     await expect(fs.access(path.join(scenario.working, ".mcp.json"))).rejects.toThrow();
   });
 
-  test("setup installs graphify companion assets for opencode provider", async () => {
-    const scenario = await createScenario("mate-cli-e2e-graphify-opencode-install-");
-    await writeGraphifyStub(scenario);
+  test("launch delivers exploration guidance to OpenCode through the launch environment", async () => {
+    const scenario = await createScenario("mate-cli-e2e-opencode-exploration-guidance-");
+    const capturePath = await writeAdapterStub(scenario, "opencode");
 
     const result = await setupCompanion(scenario, [], {
       allowedAgents: ["opencode"],
-      capabilities: ["graphify"],
-    });
-
-    expect(result.exitCode).toBe(0);
-    // Graphify skill file installed into companion .opencode directory
-    const skillStat = await fs.stat(
-      path.join(scenario.companion, ".opencode", "skills", "graphify", "SKILL.md"),
-    );
-    expect(skillStat.isFile()).toBe(true);
-  });
-
-  test("setup writes base guidance but not graphify guidance to AGENTS.md for opencode", async () => {
-    const scenario = await createScenario("mate-cli-e2e-graphify-opencode-assets-");
-    await writeGraphifyStub(scenario);
-
-    const result = await setupCompanion(scenario, [], {
-      allowedAgents: ["opencode"],
-      capabilities: ["graphify"],
-    });
-
-    expect(result.exitCode).toBe(0);
-    // Graphify skill should exist in companion
-    const skillPath = path.join(scenario.companion, ".opencode", "skills", "graphify", "SKILL.md");
-    const stat = await fs.stat(skillPath);
-    expect(stat.isFile()).toBe(true);
-
-    // Graphify wrappers are package-owned and are not copied into companions.
-    await expect(
-      fs.access(path.join(scenario.companion, ".mate", "bin", "graphify")),
-    ).rejects.toThrow();
-
-    const agentsPath = path.join(scenario.companion, "AGENTS.md");
-    const agentsContent = await fs.readFile(agentsPath, "utf8");
-    expect(agentsContent).toContain("MATE:COMPANION:START");
-    expect(agentsContent).not.toContain("## graphify");
-  });
-
-  test("launch delivers graphify guidance to OpenCode through the launch environment", async () => {
-    const enabledScenario = await createScenario("mate-cli-e2e-graphify-opencode-guidance-on-");
-    await writeGraphifyStub(enabledScenario);
-    const capturePath = await writeAdapterStub(enabledScenario, "opencode");
-
-    const result = await setupCompanion(enabledScenario, [], {
-      allowedAgents: ["opencode"],
-      capabilities: ["graphify"],
+      capabilities: ["tokensave"],
     });
     expect(result.exitCode).toBe(0);
-    expect((await linkRepository(enabledScenario)).exitCode).toBe(0);
+    expect((await linkRepository(scenario)).exitCode).toBe(0);
 
-    const launch = await runMate(enabledScenario, {
-      cwd: enabledScenario.working,
+    const launch = await runMate(scenario, {
+      cwd: scenario.working,
       args: ["opencode", "--mode", "chat"],
       input: "y\n",
-      env: {
-        MATE_E2E_CAPTURE_PATH: capturePath,
-        MATE_E2E_GRAPHIFY_CAPTURE_PATH: path.join(enabledScenario.root, "graphify-capture.json"),
-      },
+      env: { MATE_E2E_CAPTURE_PATH: capturePath },
     });
     expect(launch.exitCode).toBe(0);
 
@@ -278,9 +146,7 @@ describe("mate CLI e2e: capability sync and guidance", () => {
     expect(guidance.codebaseExplorationGuidance).toContain(
       '<codebase-exploration-rules priority="mandatory">',
     );
-    expect(guidance.codebaseExplorationGuidance).toContain(
-      "$MATE_ARTIFACT_PATH/.graphify/$MATE_REPO_ID/graphify-out/",
-    );
+    expect(guidance.codebaseExplorationGuidance).toContain("cap index --tokensave");
     expect(guidance.errors).toEqual([]);
   }, 30000);
 

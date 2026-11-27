@@ -59,7 +59,7 @@ describe("required plugins in the wizard", () => {
     }
   }
 
-  test("uv is not offered: it follows Graphify instead of being chosen", async () => {
+  test("uv is not offered: it follows the capabilities that need it", async () => {
     await withRequiredAcme(() => {
       expect(getSelectableItems().some((item) => item.id === "acme-mcp")).toBe(true);
       expect(getSelectableItems().some((item) => item.id === "uv")).toBe(false);

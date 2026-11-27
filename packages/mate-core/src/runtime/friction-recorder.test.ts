@@ -225,7 +225,7 @@ describe("command projection", () => {
     expect(fingerprint(["cap", "acme", "validate", "acme-change"])).toBe(
       "command:cap acme validate:1",
     );
-    expect(fingerprint(["cap", "graphify", "acme", "--update"])).toBe("command:cap graphify:1");
+    expect(fingerprint(["cap", "index", "acme"])).toBe("command:cap index:1");
   });
 
   test("replaces an echoed value only where it stands as a whole word", () => {

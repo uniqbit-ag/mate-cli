@@ -29,7 +29,7 @@ async function makeTempDir(prefix: string): Promise<string> {
 const GUIDANCE_JSON = JSON.stringify({
   version: 1,
   companionGuidance:
-    '<companion-policy framework="mate" priority="mandatory"><context><paths><path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path><path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path></paths><cli-tools><cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" /><cli name="graphify" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/graphify" /><cli name="mate" type="global" invokeAs="mate" /></cli-tools></context><mandatory-rules><rule id="artifact-location" severity="critical">test</rule></mandatory-rules></companion-policy>',
+    '<companion-policy framework="mate" priority="mandatory"><context><paths><path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path><path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path></paths><cli-tools><cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" /><cli name="mate" type="global" invokeAs="mate" /></cli-tools></context><mandatory-rules><rule id="artifact-location" severity="critical">test</rule></mandatory-rules></companion-policy>',
   codebaseExplorationGuidance: "",
   errors: [],
 });

@@ -45,7 +45,7 @@ describe("readCompanionPolicy", () => {
         "  - claude",
         "  - opencode",
         "capabilities:",
-        "  - name: graphify",
+        "  - name: rtk",
         "  - name: openspec",
         "",
       ].join("\n"),
@@ -53,7 +53,7 @@ describe("readCompanionPolicy", () => {
 
     expect(readCompanionPolicy(companionPath)).toEqual({
       allowedAgents: ["claude", "opencode"],
-      enabledCapabilities: ["graphify", "openspec"],
+      enabledCapabilities: ["rtk", "openspec"],
       gitAutoMode: true,
       secrets: defaultSecretPolicy(),
     });

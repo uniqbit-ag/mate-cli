@@ -4,7 +4,6 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { createGraphifyPlugin } from "../tools/setup/capabilities/graphify";
 import type { InstallRequirement } from "../tools/setup/install-contract";
 import { createUvPlugin } from "../tools/setup/package-managers/uv";
 import type { Plugin } from "../tools/setup/plugin";
@@ -98,24 +97,6 @@ describe("recommended install requirements", () => {
     const base = await plan([tool("mandatory", true)]);
     const withDeferred = await plan([tool("mandatory", true), tool("rtk", false, ["rtk"])]);
     expect(withDeferred.fingerprint).toBe(base.fingerprint);
-  });
-
-  test("uv follows the member's Graphify choice", async () => {
-    const config = { allowedAgents: [], capabilities: [{ name: "graphify" }] };
-    const uv = createUvPlugin({ isCommandOnPath: () => false, installDirs: [], platform: "linux" });
-    const graphify = createGraphifyPlugin();
-    for (const [choices, expected] of [
-      [{}, "undecided"],
-      [{ graphify: "declined" }, "declined"],
-      [{ graphify: "accepted" }, "accepted"],
-    ] as const) {
-      const requirements = buildInstallPlan({ ...context(choices), config }, [
-        graphify,
-        uv,
-      ]).requirements;
-      const uvRequirement = requirements.find((item) => item.id === "core:uv")!;
-      expect(recommendationChoice(uvRequirement, choices)).toBe(expected);
-    }
   });
 
   test("a launch preflight is not blocked by a recommendation the member has not installed", async () => {

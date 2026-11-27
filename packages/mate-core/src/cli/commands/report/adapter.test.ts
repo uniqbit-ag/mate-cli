@@ -27,7 +27,7 @@ describe("reportDataToDocument", () => {
         { name: "tokensave", enabled: false, status: "no data" },
         { name: "rtk", enabled: false, status: "no window data" },
         { name: "lsp", enabled: false, status: "not installed" },
-        { name: "graphify", enabled: false, status: "not enabled" },
+        { name: "acme", enabled: false, status: "not enabled" },
       ]),
     );
     const statuses = document.sections.find(

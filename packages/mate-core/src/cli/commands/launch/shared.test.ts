@@ -559,7 +559,6 @@ describe("ensureUnambiguousCompanion precedence", () => {
       repositoryId: "app",
       wrapperBinPath: "/bin",
       reactDoctorBinPath: "/bin",
-      graphifyOut: "/out",
     }));
 
   const neverPicks = mock(async () => {

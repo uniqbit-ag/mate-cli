@@ -332,13 +332,11 @@ mate install
 Run the indexer explicitly to isolate the failing capability:
 
 ```sh
-mate cap index --graphify
 mate cap index --tokensave
 ```
 
 Then run `mate doctor` and verify the relevant capability and command are
-selected and installed. TokenSave uses a repo-local `.tokensave` store; Graphify
-and TokenSave cannot be forced together in one command invocation.
+selected and installed. TokenSave uses a repo-local `.tokensave` store.
 
 ## `@mate:` Rows Are Missing
 

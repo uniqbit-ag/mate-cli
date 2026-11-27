@@ -147,7 +147,6 @@ describe("the recipe itself", () => {
       "git",
       "ssh",
       "uv",
-      "graphify",
       "rtk",
       "tokensave",
       "opencode",

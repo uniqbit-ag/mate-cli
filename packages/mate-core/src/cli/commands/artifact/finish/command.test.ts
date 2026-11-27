@@ -169,7 +169,7 @@ describe("runArtifactPublishCommand", () => {
 
   test("disabled finisher is a no-op with message", async () => {
     const record: string[] = [];
-    const { deps, stderr } = makeDeps(record, { capabilities: [{ name: "graphify" }] });
+    const { deps, stderr } = makeDeps(record, { capabilities: [{ name: "rtk" }] });
 
     await runArtifactPublishCommand(["my-change"], deps);
 

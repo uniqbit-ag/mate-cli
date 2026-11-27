@@ -46,7 +46,6 @@ function projection(overrides: Partial<MateProjection> = {}): MateProjection {
     repositoryId: "acme",
     wrapperBinPath: "/install/acme/wrappers/bin",
     reactDoctorBinPath: "/install/acme/node_modules/.bin/react-doctor",
-    graphifyOut: "/companions/acme/.graphify/acme/graphify-out",
     ...overrides,
   };
 }
@@ -69,7 +68,6 @@ describe("projection contract", () => {
       "repositoryId",
       "wrapperBinPath",
       "reactDoctorBinPath",
-      "graphifyOut",
     ]);
     expect(Object.keys(projection()).sort()).toEqual([...PROJECTION_FIELDS].sort());
   });
@@ -82,7 +80,6 @@ describe("projection contract", () => {
       repositoryId: "MATE_REPO_ID",
       wrapperBinPath: "MATE_WRAPPER_BIN_PATH",
       reactDoctorBinPath: "MATE_REACT_DOCTOR_BIN_PATH",
-      graphifyOut: "GRAPHIFY_OUT",
     });
   });
 });
@@ -249,7 +246,7 @@ describe("writeProjectionPair", () => {
       stamp: "next",
       projection: new Proxy(projection(), {
         get(target, key) {
-          if (key === "graphifyOut") throw new Error("render failed");
+          if (key === "reactDoctorBinPath") throw new Error("render failed");
           return target[key as keyof MateProjection];
         },
       }),

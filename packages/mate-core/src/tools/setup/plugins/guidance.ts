@@ -4,7 +4,6 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "../../../framework";
 import { companionBlockMarkers } from "../../../runtime/managed-block";
 import { writeAtomicThroughLink } from "../../../runtime/write-atomic";
-import { removeGraphifySection } from "../capabilities/graphify-shared";
 
 // Marker names derive from the framework identity, never the invocation name.
 const upperName = () => FRAMEWORK_NAME.toUpperCase();
@@ -14,7 +13,6 @@ function allMateStarts(): string[] {
     companionBlockMarkers(FRAMEWORK_NAME).start,
     "<!-- COMPANION:GUIDANCE:START -->",
     `<!-- ${upperName()}:COMPANION:GUIDANCE:START -->`,
-    `<!-- ${upperName()}:GRAPHIFY:START -->`,
   ];
 }
 
@@ -23,7 +21,6 @@ function allMateEnds(): string[] {
     companionBlockMarkers(FRAMEWORK_NAME).end,
     "<!-- COMPANION:GUIDANCE:END -->",
     `<!-- ${upperName()}:COMPANION:GUIDANCE:END -->`,
-    `<!-- ${upperName()}:GRAPHIFY:END -->`,
   ];
 }
 
@@ -57,14 +54,12 @@ export async function stripGuidanceBlock(filePath: string): Promise<void> {
     }
   }
 
-  content = removeGraphifySection(content);
-
   await writeAtomicThroughLink(filePath, content ? content + "\n" : "");
 }
 
 /**
  * Refreshes a file from a template, preserving any non-MATE content.
- * Strips all MATE-managed blocks (COMPANION, GRAPHIFY) from the existing file,
+ * Strips all MATE-managed blocks from the existing file,
  * then prepends the fresh template content.
  */
 export async function refreshFromTemplate(
@@ -104,7 +99,8 @@ export async function refreshFromTemplate(
     remaining = (before + after).replace(/\n{3,}/g, "\n\n").trimEnd();
   }
 
-  remaining = removeGraphifySection(remaining).trimEnd();
+  // Leading blanks too: sections are joined with one blank line, so kept ones would grow each refresh.
+  remaining = remaining.trim();
 
   const template = templateContent.trimEnd();
   /**

@@ -41,7 +41,6 @@ function fixture(recording: boolean) {
       repositoryId: "acme",
       wrapperBinPath: path.join(companion, "wrappers", "bin"),
       reactDoctorBinPath: path.join(companion, "react-doctor"),
-      graphifyOut: path.join(companion, ".graphify", "acme", "graphify-out"),
     },
   });
   const run = (tool_name: string, tool_input: Record<string, unknown>) =>

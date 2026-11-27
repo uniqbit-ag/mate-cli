@@ -14,7 +14,6 @@ import { writeJsonStdout } from "../../write-json-stdout";
 
 const STEP_LABELS = {
   sync: "Syncing mate",
-  graphify: "Indexing graphify",
   tokensave: "Indexing tokensave",
 } as const;
 
@@ -118,7 +117,7 @@ export async function runLaunchToolCommand(
       : undefined;
 
   try {
-    // Git may ask for credentials and graphify/tokensave write straight to the
+    // Git may ask for credentials and tokensave writes straight to the
     // terminal, so every launch step is a labelled hand-over, never a spinner.
     progress?.handOver("sync", STEP_LABELS.sync);
     const prepared = await launchCommandDeps.createLauncher().prepare({

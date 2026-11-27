@@ -521,7 +521,6 @@ describe("durable projection refresh", () => {
       repositoryId: "app",
       wrapperBinPath: runtimeWrapperBinPath(),
       reactDoctorBinPath: getReactDoctorBinPath(),
-      graphifyOut: path.join(companionPath, ".graphify", "app", "graphify-out"),
     });
     expect(parseProjectionEnv(await fs.readFile(envPath(repoPath), "utf8"))).toEqual(file);
   });
@@ -586,6 +585,32 @@ describe("durable projection refresh", () => {
     await resolveForCapability(repoPath, store);
 
     expect(await readProjection(repoPath)).toEqual(fresh);
+  });
+
+  test("a projection from an earlier Mate that carries GRAPHIFY_OUT is rewritten without it", async () => {
+    const { repoPath, store } = await makeLinkedRepo("projection-retired-field-");
+    await resolveForLaunch(repoPath, store);
+    const fresh = (await readProjection(repoPath))!;
+    const older = (content: string) => content.replace(fresh.stamp, "earlier-mate");
+    await fs.writeFile(
+      yamlPath(repoPath),
+      `${older(await fs.readFile(yamlPath(repoPath), "utf8"))}graphifyOut: /companions/acme/.graphify/app/graphify-out\n`,
+      "utf8",
+    );
+    await fs.writeFile(
+      envPath(repoPath),
+      `${older(await fs.readFile(envPath(repoPath), "utf8"))}GRAPHIFY_OUT='/companions/acme/.graphify/app/graphify-out'\n`,
+      "utf8",
+    );
+
+    await resolveForLaunch(repoPath, store);
+
+    expect(await readProjection(repoPath)).toEqual(fresh);
+    for (const generated of [yamlPath(repoPath), envPath(repoPath)]) {
+      const contents = await fs.readFile(generated, "utf8");
+      expect(contents).not.toContain("GRAPHIFY_OUT");
+      expect(contents).not.toContain("graphifyOut");
+    }
   });
 
   test("a nested managed invocation does not write a projection", async () => {

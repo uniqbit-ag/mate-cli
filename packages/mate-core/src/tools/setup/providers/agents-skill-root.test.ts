@@ -126,7 +126,7 @@ describe("reconcileSharedSkillTree", () => {
     const sourceDir = await seedSource(companionPath);
     const legacyDir = path.join(companionPath, ".opencode", "skills");
     await seedSkill(legacyDir, "acme");
-    await seedSkill(legacyDir, "graphify");
+    await seedSkill(legacyDir, "acme-skill");
 
     await reconcileSharedSkillTree(
       companionPath,
@@ -135,7 +135,7 @@ describe("reconcileSharedSkillTree", () => {
     );
 
     expect(await exists(path.join(legacyDir, "acme"))).toBe(false);
-    expect(await exists(path.join(legacyDir, "graphify"))).toBe(true);
+    expect(await exists(path.join(legacyDir, "acme-skill"))).toBe(true);
   });
 
   test("is idempotent", async () => {
@@ -184,14 +184,14 @@ describe("removeLegacyOpenCodeSkills", () => {
     const legacyDir = path.join(companionPath, ".opencode", "skills");
     await seedSkill(legacyDir, "openspec-explore");
     await seedSkill(legacyDir, "mate-grill-me");
-    await seedSkill(legacyDir, "graphify");
+    await seedSkill(legacyDir, "acme-skill");
     await seedSkill(legacyDir, "acme-local");
 
     await removeLegacyOpenCodeSkills(companionPath, ["openspec-explore", "mate-grill-me"]);
 
     expect(await exists(path.join(legacyDir, "openspec-explore"))).toBe(false);
     expect(await exists(path.join(legacyDir, "mate-grill-me"))).toBe(false);
-    expect(await exists(path.join(legacyDir, "graphify"))).toBe(true);
+    expect(await exists(path.join(legacyDir, "acme-skill"))).toBe(true);
     expect(await exists(path.join(legacyDir, "acme-local"))).toBe(true);
   });
 

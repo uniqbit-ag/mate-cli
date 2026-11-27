@@ -12,7 +12,6 @@ import {
 import { companionFrameworkConfigPath } from "../../../runtime/policy";
 import { getReactDoctorBinPath, getWrapperBinPath } from "../../../lib/package-paths";
 import { createContextModePlugin } from "../capabilities/context-mode";
-import { createGraphifyPlugin } from "../capabilities/graphify";
 import { createOpenspecPlugin } from "../capabilities/openspec";
 import { createReactDoctorPlugin } from "../capabilities/react-doctor";
 import { createRtkPlugin } from "../capabilities/rtk";
@@ -681,48 +680,21 @@ describe("syncCompanionClaudeSettings", () => {
     );
   });
 
-  test("pre-seeds package wrapper permission allowances", async () => {
-    const companionPath = await makeTempDir("mate-companion-bin-perm-");
-    await syncCompanionClaudeSettings(
-      companionPath,
-      {
-        allowedAgents: ["claude"],
-        capabilities: [{ name: "openspec" }, { name: "graphify" }],
-      },
-      [
-        ...openspecContributions(companionPath, true),
-        ...declaredContributions(createGraphifyPlugin(), companionPath, true),
-      ],
-    );
-
-    const settings = await readCompanionSettings(companionPath);
-    expect(settings.permissions?.allow).toContain(
-      `Bash(${path.join(getWrapperBinPath(), "openspec")}:*)`,
-    );
-    expect(settings.permissions?.allow).toContain(
-      `Bash(${path.join(getWrapperBinPath(), "graphify")}:*)`,
-    );
-  });
-
   test("removes obsolete companion wrapper permissions during reconciliation", async () => {
     const companionPath = await makeTempDir("mate-companion-legacy-bin-perm-");
     await seedSettings(companionPath, {
       permissions: {
-        allow: [
-          "Bash($MATE_COMPANION_BIN_PATH/openspec:*)",
-          "Bash($MATE_COMPANION_BIN_PATH/graphify:*)",
-        ],
+        allow: ["Bash($MATE_COMPANION_BIN_PATH/openspec:*)"],
       },
     });
 
     await syncCompanionClaudeSettings(companionPath, {
       allowedAgents: ["claude"],
-      capabilities: [{ name: "openspec" }, { name: "graphify" }],
+      capabilities: [{ name: "openspec" }],
     });
 
     const settings = await readCompanionSettings(companionPath);
     expect(settings.permissions?.allow).not.toContain("Bash($MATE_COMPANION_BIN_PATH/openspec:*)");
-    expect(settings.permissions?.allow).not.toContain("Bash($MATE_COMPANION_BIN_PATH/graphify:*)");
   });
 
   test("pre-seeds base mate permission allowance", async () => {

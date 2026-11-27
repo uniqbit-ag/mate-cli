@@ -124,7 +124,7 @@ describe("install lifecycle CLI", () => {
     expect(installed.stdout).toContain("Mate installation complete.");
   });
 
-  test("installs a current companion without enabling unselected capabilities", async () => {
+  test("installs a current companion with its selected capabilities", async () => {
     const entry = await scenario();
     await writeCompanionConfig(entry.companion, ["react-doctor"]);
     const result = await runMate(entry.root, entry.companion, ["install", "--yes"]);
@@ -135,9 +135,6 @@ describe("install lifecycle CLI", () => {
     expect(
       await fs.stat(path.join(entry.companion, ".mate", "config", "framework.yaml")),
     ).toBeDefined();
-    await expect(
-      fs.stat(path.join(entry.companion, ".claude", "skills", "graphify")),
-    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   test("does not install agent guidance files into a hub root", async () => {

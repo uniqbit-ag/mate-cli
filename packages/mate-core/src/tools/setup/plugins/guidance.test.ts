@@ -62,7 +62,7 @@ describe("refreshFromTemplate", () => {
     // Existing file with old MATE blocks + custom content
     await fs.writeFile(
       filePath,
-      `${GUIDANCE_START}\nOld guidance\n${GUIDANCE_END}\n\n<!-- MATE:GRAPHIFY:START -->\nOld graphify\n<!-- MATE:GRAPHIFY:END -->\n\n# Custom section\nCustom content here\n`,
+      `${GUIDANCE_START}\nOld guidance\n${GUIDANCE_END}\n\n# Custom section\nCustom content here\n`,
       "utf8",
     );
 
@@ -71,7 +71,6 @@ describe("refreshFromTemplate", () => {
     const content = await fs.readFile(filePath, "utf8");
     expect(content).toContain("Template guidance content");
     expect(content).not.toContain("Old guidance");
-    expect(content).not.toContain("Old graphify");
     expect(content).toContain("# Custom section");
     expect(content).toContain("Custom content here");
   });
@@ -88,24 +87,6 @@ describe("refreshFromTemplate", () => {
     expect(content.match(new RegExp(GUIDANCE_START.replace(/[[\]]/g, "\\$&"), "g"))?.length).toBe(
       1,
     );
-  });
-
-  test("strips legacy standalone graphify sections during refresh", async () => {
-    const root = await makeTempDir("mate-refresh-strip-legacy-graphify-");
-    const templatePath = await writeTemplate(root);
-    const filePath = path.join(root, "CLAUDE.md");
-    await fs.writeFile(
-      filePath,
-      "# Custom\n\n## graphify\n\ngraphify-out/graph.json\n\n## Notes\n\nKeep me\n",
-      "utf8",
-    );
-
-    await refreshFromTemplate(filePath, templatePath);
-
-    const content = await fs.readFile(filePath, "utf8");
-    expect(content).not.toContain("graphify-out/graph.json");
-    expect(content).toContain("## Notes");
-    expect(content).toContain("Keep me");
   });
 });
 
@@ -193,23 +174,5 @@ describe("stripGuidanceBlock", () => {
 
     const content = await fs.readFile(filePath, "utf8");
     expect(content).toBe("");
-  });
-
-  test("strips legacy standalone graphify sections", async () => {
-    const root = await makeTempDir("mate-strip-standalone-graphify-");
-    const filePath = path.join(root, "CLAUDE.md");
-    await fs.writeFile(
-      filePath,
-      "# Header\n\n## graphify\n\ngraphify-out/graph.json\n\n## Notes\n\nKeep me\n",
-      "utf8",
-    );
-
-    await stripGuidanceBlock(filePath);
-
-    const content = await fs.readFile(filePath, "utf8");
-    expect(content).toContain("# Header");
-    expect(content).toContain("## Notes");
-    expect(content).toContain("Keep me");
-    expect(content).not.toContain("graphify-out/graph.json");
   });
 });

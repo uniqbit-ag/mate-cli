@@ -26,6 +26,7 @@ import { FRAMEWORK_NAME } from "../../framework";
 import { artifactTypes, defaultArtifactType } from "../delivery/staging/registry";
 import { loadWorkflow } from "../workflow/declaration";
 import { LaunchPreflightError } from "./types";
+import { PUBLISHED_GRAPH_STORE_SEGMENT } from "./published-graph-store";
 
 type GitCommandResult = GitResult;
 
@@ -117,7 +118,7 @@ export class CompanionGitSyncError extends LaunchPreflightError {
   }
 }
 
-const MANAGED_ROOTS = [".mate", ".opencode", ".claude", ".agents", ".graphify"];
+const MANAGED_ROOTS = [".mate", ".opencode", ".claude", ".agents", PUBLISHED_GRAPH_STORE_SEGMENT];
 
 type SyncTarget = UpstreamTarget;
 

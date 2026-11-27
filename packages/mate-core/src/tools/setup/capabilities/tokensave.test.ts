@@ -721,7 +721,7 @@ describe("tokensavePlugin.isEnabled", () => {
   test("returns false when tokensave is not configured", () => {
     expect(
       tokensavePlugin.isEnabled({
-        capabilities: [{ name: "graphify" }],
+        capabilities: [{ name: "rtk" }],
       }),
     ).toBe(false);
   });

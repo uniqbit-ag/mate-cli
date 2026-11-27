@@ -69,9 +69,6 @@ export function buildArgs(
     TOKENSAVE_SHA256_AMD64: tools.tokensave!.artifacts!.amd64!.sha256,
     TOKENSAVE_SHA256_ARM64: tools.tokensave!.artifacts!.arm64!.sha256,
 
-    GRAPHIFY_VERSION: tools.graphify!.version,
-    GRAPHIFY_PYTHON_VERSION: String((tools.graphify as { python_version?: string }).python_version),
-
     GIT_VERSION: inputs.os_packages.packages.git!,
     CA_CERTIFICATES_VERSION: inputs.os_packages.packages["ca-certificates"]!,
     TAR_VERSION: inputs.os_packages.packages.tar!,

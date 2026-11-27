@@ -37,7 +37,7 @@ import { openSpecCliDeps } from "../../lib/openspec-cli";
 
 process.env.MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH = "1";
 
-const CAPABILITIES = ["graphify", "tokensave", "context-mode", "react-doctor", "openspec"] as const;
+const CAPABILITIES = ["tokensave", "context-mode", "react-doctor", "openspec"] as const;
 const AGENT_SETS: string[][] = [["claude"], ["opencode"], ["claude", "opencode"]];
 
 const tempRoots: string[] = [];
@@ -95,47 +95,6 @@ async function installStubs(root: string): Promise<string> {
       "}",
       "if (args[0] === 'update') process.exit(0);",
       "process.exit(1);",
-      "",
-    ].join("\n"),
-  );
-
-  await writeStub(
-    binDir,
-    "graphify",
-    [
-      "#!/usr/bin/env bun",
-      'import fs from "node:fs";',
-      'import path from "node:path";',
-      "const args = process.argv.slice(2);",
-      "if (args[0] === '--version') { console.log('graphify 0.0.0-test'); process.exit(0); }",
-      "if (args[0] !== 'install') process.exit(0);",
-      "const platform = args[args.indexOf('--platform') + 1];",
-      "const dirs = { claude: '.claude', opencode: '.opencode' };",
-      "const agentFiles = { claude: 'CLAUDE.md', opencode: 'AGENTS.md' };",
-      "const providerDir = dirs[platform];",
-      "if (!providerDir) process.exit(1);",
-      "const cwd = process.cwd();",
-      "const skillDir = path.join(cwd, providerDir, 'skills', 'graphify');",
-      "fs.mkdirSync(path.join(skillDir, 'references'), { recursive: true });",
-      "fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\\ndescription: builds graphify-out artifacts\\n---\\nWrite chunks to ${PROJECT_ROOT}/graphify-out and read graphify-out later.\\n');",
-      "fs.writeFileSync(path.join(skillDir, 'references', 'usage.md'), 'Outputs land in graphify-out by default.\\n');",
-      "fs.writeFileSync(path.join(skillDir, 'references', 'github-and-merge.md'), 'Merge graphs into graphify-out of each clone.\\n');",
-      "fs.appendFileSync(path.join(cwd, agentFiles[platform]), '\\n## graphify\\n\\nUse the graphify skill to explore the code graph.\\n');",
-      "if (platform === 'claude') {",
-      "  fs.mkdirSync(path.join(cwd, '.claude'), { recursive: true });",
-      "  const hooks = { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: cwd + '/.claude/hooks/graphify-guard.sh' }] }] };",
-      "  fs.writeFileSync(path.join(cwd, '.claude', 'settings.json'), JSON.stringify({ hooks }, null, 2) + '\\n');",
-      "}",
-      "if (platform === 'opencode') {",
-      "  fs.mkdirSync(path.join(cwd, '.opencode', 'plugins'), { recursive: true });",
-      "  fs.writeFileSync(path.join(cwd, '.opencode', 'plugins', 'graphify.js'), 'export default {}\\n');",
-      "  const cfgPath = path.join(cwd, '.opencode', 'opencode.json');",
-      "  let cfg = {};",
-      "  try { cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); } catch {}",
-      "  cfg.plugins = [...(Array.isArray(cfg.plugins) ? cfg.plugins : []), '.opencode/plugins/graphify.js'];",
-      "  fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\\n');",
-      "}",
-      "process.exit(0);",
       "",
     ].join("\n"),
   );
@@ -239,8 +198,7 @@ async function readText(filePath: string): Promise<string | null> {
   }
 }
 
-// Skill trees are captured as relative-path → digest, except graphify's tree,
-// whose content the output-path rewrite mutates and is captured verbatim.
+// Skill trees are captured as relative-path → digest.
 async function collectTree(dir: string): Promise<Record<string, string>> {
   const entries: Record<string, string> = {};
   let names: string[];
@@ -254,10 +212,11 @@ async function collectTree(dir: string): Promise<Record<string, string>> {
     const stat = await fs.stat(filePath);
     if (!stat.isFile()) continue;
     const content = await fs.readFile(filePath);
-    entries[name.split(path.sep).join("/")] =
-      name.split(path.sep)[1] === "graphify" || name.startsWith("graphify")
-        ? content.toString("utf8")
-        : crypto.createHash("sha256").update(content).digest("hex").slice(0, 12);
+    entries[name.split(path.sep).join("/")] = crypto
+      .createHash("sha256")
+      .update(content)
+      .digest("hex")
+      .slice(0, 12);
   }
   return entries;
 }
@@ -458,14 +417,14 @@ describe("runtime surface golden fixtures", () => {
     );
   }
 
-  // Shared-file guard: dropping one runtime while graphify stays enabled must
+  // Shared-file guard: dropping one runtime while context-mode stays enabled must
   // keep shared agent-file guidance intact for the still-active runtime.
   test(
-    "deselect opencode runtime with graphify enabled",
+    "deselect opencode runtime with context-mode enabled",
     async () => {
       const fixture = await makeFixture("mate-golden-drop-opencode-");
-      await runSetup(fixture, ["claude", "opencode"], ["graphify"]);
-      await runSetup(fixture, ["claude"], ["graphify"]);
+      await runSetup(fixture, ["claude", "opencode"], ["context-mode"]);
+      await runSetup(fixture, ["claude"], ["context-mode"]);
       expect(await collectEffectiveState(fixture)).toMatchSnapshot();
     },
     { timeout: 30000 },

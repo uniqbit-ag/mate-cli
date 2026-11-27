@@ -12,21 +12,6 @@ export const APP_ROOT = path.resolve(import.meta.dirname, "../..");
 /** Preloaded into every Bun process a test starts, so Mate runs the recording OpenSpec stub. */
 const OPENSPEC_STUB_PRELOAD = path.join(import.meta.dirname, "openspec-stub-preload.ts");
 
-/** The `--exclude` pairs Mate appends to every graphify extraction that accepts them. */
-export const GRAPHIFY_SECRET_EXCLUDE_ARGS = [
-  ".env",
-  ".env.*",
-  "*.pem",
-  "*.key",
-  "*.p12",
-  "*.pfx",
-  "id_rsa",
-  "id_ecdsa",
-  "id_ed25519",
-  ".netrc",
-  ".pgpass",
-  ".npmrc",
-].flatMap((pattern) => ["--exclude", pattern]);
 const E2E_TMP_ROOT = path.join(os.tmpdir(), "mate-cli-e2e");
 const tempRoots: string[] = [];
 
@@ -417,9 +402,6 @@ export async function setupCompanion(
   // Keep the external command deterministic for provider teardown. Capability
   // activation remains controlled solely by the persisted selection.
   await writeRtkStub(scenario);
-  if ((selections.capabilities ?? []).includes("graphify")) {
-    await writeGraphifyStub(scenario);
-  }
   if ((selections.capabilities ?? []).includes("tokensave")) {
     await writeTokensaveInstallStub(scenario);
   }
@@ -710,91 +692,6 @@ export async function writeOpenSpecStub(scenario: E2EScenario): Promise<string> 
   await fs.chmod(stubPath, 0o755);
 
   return capturePath;
-}
-
-export async function writeGraphifyStub(scenario: E2EScenario): Promise<string> {
-  const capturePath = path.join(scenario.root, "graphify-capture.json");
-  const stubPath = path.join(scenario.bin, "graphify");
-  const source = [
-    "#!/usr/bin/env bun",
-    'import fs from "node:fs";',
-    'import path from "node:path";',
-    "const args = process.argv.slice(2);",
-    "",
-    "// Handle install command (called by mate companion setup forProvider reconciliation)",
-    "if (args[0] === 'install' && args.includes('--project')) {",
-    "  const platIdx = args.indexOf('--platform');",
-    "  const platform = platIdx >= 0 ? args[platIdx + 1] : 'unknown';",
-    "  const cwd = process.cwd();",
-    "  const provDir = `.${platform}`;",
-    "  fs.mkdirSync(path.join(cwd, provDir, 'skills', 'graphify'), { recursive: true });",
-    "  const skill = '# graphify\\n\\ngraphify-out/graph.json\\ngraphify-out/GRAPH_REPORT.md\\n';",
-    "  fs.writeFileSync(path.join(cwd, provDir, 'skills', 'graphify', 'SKILL.md'), skill, 'utf8');",
-    "  const agentFiles = { claude: 'CLAUDE.md', opencode: 'AGENTS.md' };",
-    "  const agentFile = agentFiles[platform] || 'AGENTS.md';",
-    "  const agentPath = path.join(cwd, provDir, agentFile);",
-    "  const prev = (() => { try { return fs.readFileSync(agentPath, 'utf8'); } catch { return ''; } })();",
-    "  if (!prev.includes('## graphify')) {",
-    "    const section = '\\n## graphify\\n\\ngraphify-out/graph.json\\ngraphify-out/GRAPH_REPORT.md\\n';",
-    "    fs.writeFileSync(agentPath, prev.trimEnd() + section, 'utf8');",
-    "  }",
-    "  process.exit(0);",
-    "}",
-    "",
-    "// All other commands: capture call args to capture file",
-    "const capturePath = process.env.MATE_E2E_GRAPHIFY_CAPTURE_PATH;",
-    "if (!capturePath) process.exit(2);",
-    "const payload = {",
-    "  cwd: process.cwd(),",
-    "  argv: args,",
-    "  env: {",
-    "    MATE_ARTIFACT_PATH: process.env.MATE_ARTIFACT_PATH ?? null,",
-    "    MATE_REPO_ID: process.env.MATE_REPO_ID ?? null,",
-    "    MATE_REPO_PATH: process.env.MATE_REPO_PATH ?? null,",
-    "  },",
-    "};",
-    "fs.writeFileSync(capturePath, JSON.stringify(payload, null, 2));",
-    "",
-  ].join("\n");
-
-  await fs.writeFile(stubPath, source, "utf8");
-  await fs.chmod(stubPath, 0o755);
-  return capturePath;
-}
-
-// A graphify stub for `cap sync`, which invokes graphify once with --update. Unlike
-// writeGraphifyStub (single overwriting capture), this appends each subcommand to a
-// log file so the sync path is observable. Set MATE_E2E_GRAPHIFY_FAIL_UPDATE to make
-// `--update` exit non-zero.
-export async function writeGraphifySyncStub(scenario: E2EScenario): Promise<string> {
-  const logPath = path.join(scenario.root, "graphify-sync-log.txt");
-  const stubPath = path.join(scenario.bin, "graphify");
-  const source = [
-    "#!/usr/bin/env bun",
-    'import fs from "node:fs";',
-    'import path from "node:path";',
-    "const args = process.argv.slice(2);",
-    "",
-    "// Handle install command (called by mate companion setup forProvider reconciliation)",
-    "if (args[0] === 'install' && args.includes('--project')) {",
-    "  const platIdx = args.indexOf('--platform');",
-    "  const platform = platIdx >= 0 ? args[platIdx + 1] : 'unknown';",
-    "  const cwd = process.cwd();",
-    "  const provDir = `.${platform}`;",
-    "  fs.mkdirSync(path.join(cwd, provDir, 'skills', 'graphify'), { recursive: true });",
-    "  const skill = '# graphify\\n\\ngraphify-out/graph.json\\n';",
-    "  fs.writeFileSync(path.join(cwd, provDir, 'skills', 'graphify', 'SKILL.md'), skill, 'utf8');",
-    "  process.exit(0);",
-    "}",
-    "",
-    `fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ argv: args, graphifyOut: process.env.GRAPHIFY_OUT ?? null }) + "\\n");`,
-    "if (args.includes('--update') && process.env.MATE_E2E_GRAPHIFY_FAIL_UPDATE) process.exit(1);",
-    "process.exit(0);",
-  ].join("\n");
-
-  await fs.writeFile(stubPath, source, "utf8");
-  await fs.chmod(stubPath, 0o755);
-  return logPath;
 }
 
 // A tokensave stub for `cap sync`. `sync` writes a real (non-empty) sqlite db so the

@@ -303,13 +303,13 @@ describe("requirements the image carries", () => {
         "      - name: openspec",
         "  ba:",
         "    capabilities:",
-        "      - name: graphify",
+        "      - name: rtk",
         "",
       ].join("\n"),
     );
     expect(readCompanionSelections(companion, "ba")).toEqual({
       packageManagers: ["bun"],
-      capabilities: ["openspec", "graphify"],
+      capabilities: ["openspec", "rtk"],
     });
     expect(readCompanionAudiences(companion)).toEqual(["ba"]);
   });
@@ -321,7 +321,6 @@ describe("requirements the image carries", () => {
           packageManagers: ["bun", "uv"],
           capabilities: [
             "openspec",
-            "graphify",
             "rtk",
             "tokensave",
             "context-mode",
@@ -343,13 +342,22 @@ describe("requirements the image carries", () => {
     ).toThrow(/astrology/);
   });
 
-  test("a supported capability whose command is absent is named", () => {
+  test("a companion that still lists the retired graphify capability starts", () => {
     expect(() =>
       assertRequirementsCarried(
         { packageManagers: ["bun"], capabilities: ["graphify"] },
-        (command) => command !== "graphify",
+        () => true,
       ),
-    ).toThrow(/graphify/);
+    ).not.toThrow();
+  });
+
+  test("a supported capability whose command is absent is named", () => {
+    expect(() =>
+      assertRequirementsCarried(
+        { packageManagers: ["bun"], capabilities: ["rtk"] },
+        (command) => command !== "rtk",
+      ),
+    ).toThrow(/rtk/);
   });
 
   test("the refusal says nothing was installed to repair it", () => {

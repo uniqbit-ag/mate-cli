@@ -231,7 +231,6 @@ describe("cleanupWorkingRepository", () => {
         repositoryId: "app",
         wrapperBinPath: "/install/mate/wrappers/bin",
         reactDoctorBinPath: "/install/mate/node_modules/.bin/react-doctor",
-        graphifyOut: path.join(companionPath, ".graphify", "app", "graphify-out"),
       },
     });
     expect(await fileExists(projectionYamlPath(repoPath))).toBe(true);
