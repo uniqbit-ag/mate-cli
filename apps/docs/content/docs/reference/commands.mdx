@@ -1335,11 +1335,18 @@ deprecated alias of `submit` that only records the delivery and runs the check:
 it submits and pushes nothing; run `mate artifact submit` to submit. With `--json` and one change it prints that change's
 result as one object rather than an array.
 
-Submit refuses a change whose delivery branch Git already counts as merged
-while the work tree that has the branch checked out holds modified tracked
-files: that work is on no commit, so the merge would be recorded without it.
-Commit or stash it, then submit again; nothing is recorded or pushed before.
-Untracked files and edits on another branch do not count.
+Submit refuses a change whose delivery branch Git counts as merged, or suggests
+as merged (`likely-merged`), while the work tree that has the branch checked out
+holds modified tracked files: that work is on no commit, so the merge would be
+recorded without it (`uncommitted-work`). Commit or stash it, then submit again;
+nothing is recorded or pushed before. Untracked files and edits on another
+branch do not count.
+
+Submit also refuses a delivery branch that has no commits of its own
+(`empty-delivery-branch`), clean or not: it delivers nothing. Commit the work on
+the branch first, or record the repository with `--repository <org/repo> --not-applicable <reason>`. A
+member that joins the submit is checked the same way; a refused member holds its
+group.
 
 Submit records the delivery branch's final `head` in `delivery.yaml`, with
 `unpushed: true` while that commit is not on the branch on `origin`.
@@ -1571,8 +1578,11 @@ that file, for active and archived changes. Options:
   branch's head (squash or rebase), records it merged with source `git`, and the
   remote's pull refs give the PR link. Anything else needs your answer, with an
   `answerReason`: `likely-merged` (a fast-forward, a merge commit that brought a
-  head never pushed as its branch, or a patch-identity match on Git before 2.38), `not-on-default`, `branch-deleted` (gone on the remote and
-  never merged), `no-checkout` (not linked here) or `direct`; see
+  head never pushed as its branch, or a patch-identity match on Git before 2.38),
+  `empty-branch` (no commits of its own, so no suggestion), `not-on-default`,
+  `branch-deleted` (gone on the remote and never merged; a branch whose head was
+  never pushed carries `fetch.branchUnpushed` instead), `no-checkout` (not
+  linked here) or `direct`; see
   [Merge State](/docs/concepts/merge-state). A direct
   delivery is never settled automatically, because Git cannot tell its commits
   from your other pushes. The refresh reports it as needing your answer; check

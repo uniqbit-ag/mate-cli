@@ -90,8 +90,9 @@ export interface DeliveryRequest {
   /** Resolve and refuse as usual, but write nothing. */
   dryRun?: boolean;
   /**
-   * With `refresh`: refuse when Git settles a delivery as merged while a work tree that has its
-   * branch checked out holds modified tracked files, since that work is on no commit.
+   * With `refresh`: refuse a delivery branch without commits of its own, and one Git settles or
+   * suggests as merged while a work tree that has it checked out holds modified tracked files,
+   * since that work is on no commit.
    */
   refuseUncommitted?: boolean;
 }
@@ -116,6 +117,8 @@ export type DeliveryRefusal =
       branch: string;
       worktree: string;
     }
+  /** `refuseUncommitted`: the delivery branch has no commits of its own, so it delivers nothing. */
+  | { reason: "empty-delivery-branch"; change: string; repository: string; branch: string }
   | {
       reason: "no-delivery-branch";
       change: string;
@@ -424,11 +427,14 @@ export async function recordDelivery(
       record = refreshed.record;
       outcomes = refreshed.outcomes;
       for (const outcome of request.refuseUncommitted ? outcomes : []) {
-        if (outcome.result !== "merged") continue;
-        const local = await access(outcome.repository).local?.();
-        const worktree = await local?.git.dirtyWorktree(outcome.branch);
+        const { repository: repo, branch } = outcome;
+        if (outcome.answerReason === "empty-branch") {
+          return { refusal: { reason: "empty-delivery-branch", change, repository: repo, branch } };
+        }
+        if (outcome.result !== "merged" && outcome.answerReason !== "likely-merged") continue;
+        const local = await access(repo).local?.();
+        const worktree = await local?.git.dirtyWorktree(branch);
         if (worktree) {
-          const { repository: repo, branch } = outcome;
           return {
             refusal: { reason: "uncommitted-work", change, repository: repo, branch, worktree },
           };
