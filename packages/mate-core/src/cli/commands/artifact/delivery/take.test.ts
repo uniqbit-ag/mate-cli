@@ -71,7 +71,7 @@ describe("mate artifact take", () => {
     await runArtifactTakeCommand(["acme-alpha", "acme-beta"], deps(taken, calls));
 
     expect(calls).toEqual([]);
-    expect(err).toEqual(["mate: artifact take requires one submitted change name."]);
+    expect(err).toEqual(["mate: artifact take requires one change name."]);
     expect(process.exitCode).toBe(1);
   });
 });

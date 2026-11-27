@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -517,6 +518,30 @@ export async function writeDeliveryRecord(
   record: DeliveryRecord,
 ): Promise<void> {
   await fs.writeFile(path.join(changeDir, DELIVERY_FILE), stringify(orderedRecord(record)), "utf8");
+}
+
+/**
+ * Creates an unlinked record only when none exists: a hard link never replaces a file, so
+ * concurrent callers cannot overwrite each other or an existing record. An existing record
+ * is read back, so a malformed one throws instead of being replaced.
+ */
+export async function createDeliveryRecordIfAbsent(
+  changeDir: string,
+  change: string,
+): Promise<"created" | "existing"> {
+  const target = path.join(changeDir, DELIVERY_FILE);
+  const temp = path.join(changeDir, `.${DELIVERY_FILE}.${randomBytes(4).toString("hex")}.tmp`);
+  await fs.writeFile(temp, stringify(orderedRecord(unlinkedRecord(changeNameOf(change)))), "utf8");
+  try {
+    await fs.link(temp, target);
+    return "created";
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  } finally {
+    await fs.rm(temp, { force: true });
+  }
+  await readDeliveryRecord(changeDir);
+  return "existing";
 }
 
 /**

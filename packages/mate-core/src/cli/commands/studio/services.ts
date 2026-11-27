@@ -11,6 +11,7 @@ import type { VaultConflict, VaultSaved } from "./vault";
 import type { StudioPage } from "./views/model";
 import type { MdNode } from "./views/vault/markdown-tree";
 import type { VaultEntry, VaultView, VaultViewRequest } from "./views/vault/view";
+import type { StudioWorkPayload, WorkRequest, WorkResult } from "./work";
 
 /**
  * What Studio's application may ask of the server it runs in. Core creates one
@@ -38,6 +39,13 @@ export interface StudioServices {
    * caller's own guard stands for origin and token; the route's `writable` refusal applies.
    */
   callService(request: Request): Promise<Response>;
+  /** The Work view's model for a registered companion; reads local Git refs only. */
+  work(companionDigest: string): Promise<StudioWorkPayload>;
+  /**
+   * One Work action, rechecked on the server: write mode, Workset and ownership. A refusal
+   * is a typed result, never a partial write.
+   */
+  workAction(companionDigest: string, request: WorkRequest): Promise<WorkResult>;
   /** The vault page: the bounded tree and the open folder or file. */
   vault(companionDigest: string, request: VaultViewRequest): Promise<VaultView>;
   /** A folder's entries, when first expanded; `null` when the listed tree lacks it. */

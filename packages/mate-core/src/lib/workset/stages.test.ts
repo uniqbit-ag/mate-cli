@@ -1,7 +1,16 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import type { WorksetRecord } from "./record";
-import { type ActiveChangeState, readWorksetStages, type WorksetStageSources } from "./stages";
+import { changeStage } from "./stage";
+import {
+  type ActiveChangeState,
+  collectChangeFacts,
+  readWorksetStages,
+  type WorksetStageSources,
+} from "./stages";
 
 const workset = (
   id: string,
@@ -60,7 +69,7 @@ describe("reading Workset stages", () => {
     const read = await readWorksetStages("/companions/acme", {
       readWorksets: async () => ({
         worksets: [],
-        problems: [{ path: "worksets/x.yaml", reason: "bad" }],
+        problems: [{ path: ".mate/scratchpad/x.yaml", reason: "bad" }],
       }),
       activeChanges: counted,
       publishedAnchors: counted,
@@ -70,7 +79,10 @@ describe("reading Workset stages", () => {
         return true;
       },
     });
-    expect(read).toEqual({ worksets: [], problems: [{ path: "worksets/x.yaml", reason: "bad" }] });
+    expect(read).toEqual({
+      worksets: [],
+      problems: [{ path: ".mate/scratchpad/x.yaml", reason: "bad" }],
+    });
     expect(calls).toBe(0);
   });
 
@@ -184,5 +196,43 @@ describe("reading Workset stages", () => {
 
   test("a Workset with no change keeps its record's stage", async () => {
     expect(await stagesOf([workset("acme-a", [], "explore")])).toEqual([["acme-a", "explore", []]]);
+  });
+});
+
+describe("submitted changes", () => {
+  let companion: string;
+
+  beforeEach(async () => {
+    companion = await fs.mkdtemp(path.join(os.tmpdir(), "acme-stages-"));
+  });
+
+  afterEach(() => fs.rm(companion, { recursive: true, force: true }));
+
+  test("a change its record marks submitted waits for its merge", async () => {
+    const dir = path.join(companion, "openspec", "changes", "acme-applying");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, "delivery.yaml"),
+      "version: 1\nchange: acme-applying\nstate: submitted\ndeliveries: []\n",
+    );
+    const facts = await collectChangeFacts(
+      companion,
+      [{ name: "acme-applying", kind: "active" }],
+      [{ ...planned, name: "acme-applying", completedTasks: 2 }],
+      new Set(),
+    );
+    expect(changeStage(facts.get("acme-applying")!)).toBe("merge-wait");
+  });
+
+  test("a change only the pending branch holds waits for its merge", async () => {
+    const facts = await collectChangeFacts(
+      companion,
+      [{ name: "acme-teammate", kind: "active" }],
+      [],
+      new Set(),
+      undefined,
+      new Set(["acme-teammate"]),
+    );
+    expect(changeStage(facts.get("acme-teammate")!)).toBe("merge-wait");
   });
 });

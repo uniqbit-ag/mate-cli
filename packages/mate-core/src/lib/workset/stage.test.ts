@@ -45,6 +45,8 @@ describe("one change's stage", () => {
       "publish",
     ],
     ["published", facts({ archived: true, mergeSettled: true, published: true }), "done"],
+    ["submitted, not merged", facts({ checkedTasks: 3, submitted: true }), "merge-wait"],
+    ["submitted and merged", facts({ submitted: true, mergeSettled: true }), "publish"],
   ])("%s", (_name, input, stage) => {
     expect(changeStage(input)).toBe(stage);
   });

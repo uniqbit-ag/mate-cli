@@ -9,6 +9,7 @@ import { getReports } from "../server/reports";
 import { getShell, type ShellData } from "../server/shell";
 import { getSkillPreview } from "../server/skills";
 import { getVault, getVaultChildren, getVaultMatches } from "../server/vault";
+import { getWork } from "../server/work";
 import { type CompanionView, getCompanionView } from "../server/views";
 
 /**
@@ -20,6 +21,7 @@ const keys = {
   shell: (companion: string | null) => [companion, "shell"] as const,
   views: (companion: string | null) => [companion, "view"] as const,
   skills: (companion: string) => [companion, "skills"] as const,
+  work: (companion: string) => [companion, "work"] as const,
   vault: (companion: string) => [companion, "vault"] as const,
   vaultViews: (companion: string) => [companion, "vault", "view"] as const,
   reports: (companion: string) => [companion, "reports"] as const,
@@ -95,6 +97,14 @@ export const pluginAttentionQuery = (companion: string, url: string) =>
     refetchInterval: 30_000,
   });
 
+/** Work's buckets; board events make it stale. */
+export const workQuery = (companion: string) =>
+  queryOptions({
+    queryKey: keys.work(companion),
+    queryFn: () => getWork({ data: { companion } }),
+    refetchInterval: 30_000,
+  });
+
 export const vaultQuery = (companion: string, search: VaultSearch, wait = false) =>
   queryOptions({
     queryKey: [...keys.vaultViews(companion), search.path ?? null, search.dir ?? null, wait],
@@ -139,12 +149,27 @@ export async function afterEvent(
   type: StudioEvent["type"],
 ): Promise<void> {
   if (type === "board") {
-    await stale(queryClient, keys.shell(companion), keys.views(companion));
+    // A shown Work view's refetch collects afresh; the shell and views read what it collected,
+    // so they wait for it. Without one, another tab may have collected, so they refetch at once.
+    const shown =
+      queryClient
+        .getQueryCache()
+        .find({ queryKey: keys.work(companion) })
+        ?.isActive() === true;
+    if (shown) {
+      await stale(queryClient, keys.work(companion));
+      await stale(queryClient, keys.shell(companion), keys.views(companion));
+    } else {
+      await stale(queryClient, keys.work(companion), keys.shell(companion), keys.views(companion));
+    }
   } else if (type === "reports") {
     await stale(queryClient, keys.reports(companion));
   }
   // `vault-tree` only marks the tree stale; the viewer refreshes it (studio-vault).
 }
+
+export const afterWorkAction = (queryClient: QueryClient, companion: string) =>
+  stale(queryClient, keys.work(companion), keys.views(companion));
 
 /** The refresh answer is shown at once; the companion's other vault reads follow. */
 export function afterVaultRefresh(

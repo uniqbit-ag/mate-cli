@@ -22,6 +22,8 @@ const PATHS = {
   terminal: "M3 4h14v12H3zM6 8l2.5 2L6 12m4 0h4",
   check: "m5 10.5 3 3 7-7",
   play: "M7 5v10l8-5z",
+  // An inbox tray.
+  tray: "M3 11h4l1 2h4l1-2h4M3 11l2-6h10l2 6v5H3z",
   plus: "M10 4v12M4 10h12",
   external: "M11 4h5v5M16 4l-7 7M14 12v4H4V6h4",
   sidebar: "M3 4h14v12H3zM8 4v12",
@@ -30,6 +32,8 @@ const PATHS = {
   pencil: "m12.5 4.5 3 3L7 16H4v-3zM11 6l3 3",
   // Three round dots: zero-length segments drawn by the round line cap.
   more: "M5 10h.01M10 10h.01M15 10h.01",
+  // A drag handle: two columns of three dots.
+  grip: "M7.5 5h.01M12.5 5h.01M7.5 10h.01M12.5 10h.01M7.5 15h.01M12.5 15h.01",
   trash: "M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10M9 9v4m2-4v4",
   alert: "M10 3.5 17 16H3zM10 8.5v3.5m0 2h.01",
 } as const;

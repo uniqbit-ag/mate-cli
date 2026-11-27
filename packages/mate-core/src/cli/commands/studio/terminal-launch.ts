@@ -8,7 +8,13 @@ import {
   readAudienceSelection,
 } from "../../../tools/setup/dynamic-plugins/audiences";
 import type { StudioInventory, StudioInventoryCompanion } from "./inventory";
-import { findAction, promptArgs, skillInstalledFor, SUBJECT_PATTERN } from "./actions";
+import {
+  findAction,
+  promptArgs,
+  skillInstalledFor,
+  type StudioAction,
+  SUBJECT_PATTERN,
+} from "./actions";
 import { collectSkillInventory, type StudioSkillInventory } from "./mate-inventory";
 import { listSpecs } from "./openspec-cli";
 import { resolveCompanion } from "./selection";
@@ -94,6 +100,15 @@ export interface LaunchResolverOptions {
   skillInventory?: (companionPath: string) => Promise<StudioSkillInventory>;
   /** Whether the companion has a canonical spec for this capability, read at launch. */
   specExists?: (companionPath: string, capability: string) => Promise<boolean>;
+  /**
+   * The Work executor guard for a Workset or change subject: `null` once reserved, else why
+   * the launch is refused. Without it Work starts are refused.
+   */
+  reserveWork?: (
+    companionPath: string,
+    action: StudioAction,
+    subject: string,
+  ) => Promise<string | null>;
 }
 
 async function specInCompanion(companionPath: string, capability: string): Promise<boolean> {
@@ -151,15 +166,22 @@ export function createLaunchResolver(
     if (!action) return { reason: "the requested action is not registered" };
     const subject = request.subject;
     if (typeof subject !== "string" || !SUBJECT_PATTERN.test(subject)) {
-      return { reason: "the action subject is not a valid spec name" };
+      return { reason: `the action subject is not a valid ${action.subject} name` };
     }
     if (!skillInstalledFor(await skills(companion.path), action.skill, agent as TerminalAgent)) {
       return {
         reason: `the ${action.skill} skill is not installed for ${agent} in this companion`,
       };
     }
-    if (!(await specExists(companion.path, subject))) {
-      return { reason: `this companion has no spec named ${subject}` };
+    if (action.subject === "spec") {
+      if (!(await specExists(companion.path, subject))) {
+        return { reason: `this companion has no spec named ${subject}` };
+      }
+    } else {
+      // Reserved before the agent starts, so the terminal is a guarded Work start.
+      if (!options.reserveWork) return { reason: "Work starts are not available here" };
+      const refusal = await options.reserveWork(companion.path, action, subject);
+      if (refusal) return { reason: refusal };
     }
     return { ...launch, promptArgs: promptArgs(action, agent as TerminalAgent, subject) };
   };

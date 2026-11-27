@@ -713,7 +713,7 @@ describe("Worksets in the payload", () => {
             workset("acme-ship", ["acme-shipped"]),
             workset("acme-merge", ["acme-unmerged"]),
           ],
-          problems: [{ path: "worksets/acme-bad.yaml", reason: "is not a mapping" }],
+          problems: [{ path: ".mate/scratchpad/acme-bad.yaml", reason: "is not a mapping" }],
         }),
         readAllChangeStatus: async () => ({
           ok: true,
@@ -754,7 +754,7 @@ describe("Worksets in the payload", () => {
       ["acme-merge", "merge-wait", "Waiting for merge", "human"],
     ]);
     expect(payload.worksetProblems).toEqual([
-      { path: "worksets/acme-bad.yaml", reason: "is not a mapping" },
+      { path: ".mate/scratchpad/acme-bad.yaml", reason: "is not a mapping" },
     ]);
     expect(payload.linkedRepositories).toEqual(["acme/web"]);
     expect(payload.repositoryKeys).toEqual({ "acme/web": "git.acme.test/acme" });

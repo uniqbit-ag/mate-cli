@@ -47,11 +47,12 @@ describe("collectManagedGitignoreEntries with declared plugins", () => {
     expect(entries.some((entry) => entry.includes("package"))).toBe(false);
   });
 
-  test("always contributes the node_modules, local distribution-workspace, and companion registry baseline", () => {
+  test("always contributes the node_modules, local distribution-workspace, companion registry and Scratchpad baseline", () => {
     expect(collectManagedGitignoreEntries(makeContext({}), [])).toEqual([
       "node_modules/",
       ".mate/plugins/.local/",
       ".mate/config/registry.yaml",
+      ".mate/scratchpad/",
       ".mcp.json.bak",
       ".mate/config/framework.local.yaml",
       ".mate/local-plugins/",

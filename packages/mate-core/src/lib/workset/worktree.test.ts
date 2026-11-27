@@ -82,9 +82,9 @@ function workset(id: string, ...repositories: string[]): void {
 }
 
 function listing(id: string, repositories: string[], changes: string[]): void {
-  fs.mkdirSync(path.join(companion, "worksets"), { recursive: true });
+  fs.mkdirSync(path.join(companion, ".mate/scratchpad"), { recursive: true });
   fs.writeFileSync(
-    path.join(companion, "worksets", `${id}.yaml`),
+    path.join(companion, ".mate/scratchpad", `${id}.yaml`),
     `id: ${id}\ntitle: ${id}\nrepositories: [${repositories.join(", ")}]\nchanges: [${changes.join(", ")}]\n`,
   );
 }
@@ -204,12 +204,12 @@ describe("createWorksetWorktrees", () => {
 
   test("an unknown Workset names the id and every invalid record", async () => {
     link(checkout("web"));
-    fs.mkdirSync(path.join(companion, "worksets"), { recursive: true });
-    fs.writeFileSync(path.join(companion, "worksets", "broken.yaml"), "id: other\n");
+    fs.mkdirSync(path.join(companion, ".mate/scratchpad"), { recursive: true });
+    fs.writeFileSync(path.join(companion, ".mate/scratchpad", "broken.yaml"), "id: other\n");
     const result = await createWorksetWorktrees(companion, "acme-login", options);
     expect(result.ok).toBe(false);
     expect(result.diagnostics[0]).toBe("no valid Workset acme-login");
-    expect(result.diagnostics[1]).toStartWith(path.join("worksets", "broken.yaml"));
+    expect(result.diagnostics[1]).toStartWith(path.join(".mate/scratchpad", "broken.yaml"));
   });
 
   test("only a remote branch: the new local branch tracks it", async () => {
@@ -708,7 +708,7 @@ describe("createChangeWorktrees", () => {
         action: "created",
       },
     ]);
-    expect(fs.existsSync(path.join(companion, "worksets"))).toBe(false);
+    expect(fs.existsSync(path.join(companion, ".mate/scratchpad"))).toBe(false);
   });
 
   test("a change listed in a record uses the record's id and every record repository", async () => {

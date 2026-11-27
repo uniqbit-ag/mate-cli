@@ -3,6 +3,7 @@ import type { StudioMode, StudioView } from "@uniqbit/mate-core/studio";
 /** The path each view is served at. */
 export const VIEW_PATHS: Record<StudioView, string> = {
   dashboard: "/",
+  work: "/work",
   workflow: "/workflow",
   "getting-started": "/getting-started",
   skills: "/skills",
@@ -17,6 +18,7 @@ export const VIEW_PATHS: Record<StudioView, string> = {
 /** A view's page title is its navigation label. */
 export const VIEW_TITLES: Record<StudioView, string> = {
   dashboard: "Overview",
+  work: "Work",
   workflow: "Workflow",
   "getting-started": "Getting Started",
   skills: "Skills",
@@ -44,6 +46,7 @@ export function viewAt(pathname: string): StudioView | undefined {
 export const VIEW_DESCRIPTIONS: Record<StudioMode, Record<StudioView, string>> = {
   engineering: {
     dashboard: "Changes in flight, grouped by what they need next.",
+    work: "Your ideas and changes, and the team's shared work to pick up.",
     workflow: "The Delivery Path: every stage, its skill and where your changes are.",
     "getting-started": "Take your first change from an idea to delivery in your existing checkout.",
     skills: "The skills each agent can run in this companion.",
@@ -56,6 +59,7 @@ export const VIEW_DESCRIPTIONS: Record<StudioMode, Record<StudioView, string>> =
   },
   analysis: {
     dashboard: "What shipped lately, and the specs it changed.",
+    work: "Ideas, changes and shared work.",
     workflow: "The Delivery Path.",
     "getting-started": "Developer setup and isolated work.",
     skills: "Skills in this companion.",

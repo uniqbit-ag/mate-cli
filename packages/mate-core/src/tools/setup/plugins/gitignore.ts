@@ -107,6 +107,8 @@ export function collectManagedGitignoreEntries(ctx: SetupContext, plugins: Plugi
     // Holds absolute local paths of every linked working repo; never shared
     // across machines or committed to the companion repo.
     `.${FRAMEWORK_NAME}/config/registry.yaml`,
+    // Work's Scratchpad: ideas stay on this checkout.
+    `.${FRAMEWORK_NAME}/scratchpad/`,
     ".mcp.json.bak",
     // Listed before a member's first local plugin, so that one never shows in `git status`.
     LOCAL_PLUGINS_FILE_GITIGNORE_ENTRY,

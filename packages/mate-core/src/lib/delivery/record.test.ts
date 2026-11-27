@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 import {
+  createDeliveryRecordIfAbsent,
   DELIVERY_FILE,
   defaultDeliveryBranch,
   isJiraKey,
@@ -468,6 +469,49 @@ describe("tickets", () => {
     expect(ticketCandidateOf("ABC-123/abc-123-retry")).toBe("ABC-123");
     expect(ticketCandidateOf("ABC-1-ABC-2-merge")).toBeNull();
     expect(ticketCandidateOf("workset/ABC-123-acme-fix")).toBe("ABC-123");
+  });
+});
+
+describe("proposal-time initialization", () => {
+  test("an initialized record stays unlinked and never opens the publication gate", async () => {
+    const dir = path.join(companion, "acme-login");
+    await fs.mkdir(dir);
+    expect(await createDeliveryRecordIfAbsent(dir, "acme-login")).toBe("created");
+    const state = await readDeliveryState(dir);
+    expect(state.status).toBe("unlinked");
+    expect(isPublishable(state.status)).toBe(false);
+  });
+
+  test("existing branch, PR and merge evidence survive byte for byte", async () => {
+    const dir = path.join(companion, "acme-login");
+    await fs.mkdir(dir);
+    const existing = [
+      "version: 1",
+      "change: acme-login",
+      "deliveries:",
+      "  - repository: acme/web",
+      "    branch: workset/acme-login",
+      "    pr: https://github.com/acme/web/pull/7",
+      "",
+    ].join("\n");
+    await fs.writeFile(path.join(dir, DELIVERY_FILE), existing);
+    expect(await createDeliveryRecordIfAbsent(dir, "acme-login")).toBe("existing");
+    expect(await fs.readFile(path.join(dir, DELIVERY_FILE), "utf8")).toBe(existing);
+  });
+
+  test("a malformed record is reported, not replaced", async () => {
+    const dir = path.join(companion, "acme-login");
+    await fs.mkdir(dir);
+    await fs.writeFile(path.join(dir, DELIVERY_FILE), "deliveries: 3\n");
+    await expect(createDeliveryRecordIfAbsent(dir, "acme-login")).rejects.toThrow();
+    expect(await fs.readFile(path.join(dir, DELIVERY_FILE), "utf8")).toBe("deliveries: 3\n");
+  });
+
+  test("a legacy archive without a record stays legacy when only read", async () => {
+    const dir = path.join(companion, "2026-01-01-acme-old");
+    await fs.mkdir(dir);
+    expect((await readDeliveryState(dir)).status).toBe("legacy");
+    await expect(fs.access(path.join(dir, DELIVERY_FILE))).rejects.toThrow();
   });
 });
 

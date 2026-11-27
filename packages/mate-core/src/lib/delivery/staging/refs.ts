@@ -126,12 +126,18 @@ export function pushPending(git: CompanionGit, remote: StagingRemote): Promise<N
 }
 
 /**
- * A push the remote refused because the branch moved since the fetch, or because a concurrent
- * push created it first.
+ * A push the remote refused because the branch moved since the fetch, because a concurrent
+ * push created it first, or because a concurrent push held its ref lock. A lock failure counts
+ * only as the remote's rejection: locally it hits the tracking ref after an accepted push.
  */
 export function isRejectedPush(result: NetworkGitResult): boolean {
-  return /\[rejected\]|non-fast-forward|fetch first|stale info|reference already exists/i.test(
-    result.stderr,
+  return (
+    /\[rejected\]|non-fast-forward|fetch first|stale info|reference already exists/i.test(
+      result.stderr,
+    ) ||
+    /\[remote rejected\][^\n]*\((cannot lock ref|failed to update ref|incorrect old value)/i.test(
+      result.stderr,
+    )
   );
 }
 

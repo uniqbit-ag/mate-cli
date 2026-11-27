@@ -4,6 +4,7 @@ import { archiveAnchors, archiveDirOf, changesDirOf } from "../change-layout";
 import { type DeliveryStatus, isPublishable, readDeliveryState } from "../delivery/record";
 import { discoverSubmitted } from "../delivery/staging/pending";
 import {
+  type LinkedChange,
   readWorksets,
   resolveLinkedChanges,
   type WorksetProblem,
@@ -90,15 +91,47 @@ export async function readWorksetStages(
     changes.map((change) => change.name),
     anchors,
   );
+  const facts = await collectChangeFacts(
+    companionPath,
+    [...linked.values()].flat(),
+    changes,
+    published,
+    sources,
+  );
+
+  return {
+    worksets: listing.worksets.map((record) => ({
+      record,
+      derived: deriveWorksetStage(record, linked.get(record.id) ?? [], (name) => facts.get(name)),
+    })),
+    problems: listing.problems,
+  };
+}
+
+/**
+ * What each resolvable linked change's records say, keyed by name. Delivery Records are read
+ * for active changes and for archives in `linked`. `submitted` names changes awaiting
+ * publication on the pending branch, also ones this checkout does not have.
+ */
+export async function collectChangeFacts(
+  companionPath: string,
+  linked: readonly LinkedChange[],
+  changes: readonly ActiveChangeState[],
+  published: ReadonlySet<string>,
+  sources: Pick<
+    WorksetStageSources,
+    "archiveMergeSettled" | "activeDelivery" | "submittedChanges"
+  > = {},
+  submitted: ReadonlySet<string> = new Set(),
+): Promise<Map<string, ChangeFacts>> {
   const mergeSettled = sources.archiveMergeSettled ?? archiveMergeSettled;
   const activeByName = new Map(changes.map((change) => [change.name, change]));
-
-  const unique = new Map([...linked.values()].flat().map((change) => [change.name, change]));
+  const unique = new Map(linked.map((change) => [change.name, change]));
   const deliveryOf = sources.activeDelivery ?? activeDelivery;
   const local = new Map(
     await Promise.all(
       [...unique.values()]
-        .filter((change) => change.kind === "active")
+        .filter((change) => change.kind === "active" && activeByName.has(change.name))
         .map(
           async (change) =>
             [
@@ -124,14 +157,31 @@ export async function readWorksetStages(
   const entries = await Promise.all(
     [...unique.values()].map(async (change): Promise<[string, ChangeFacts] | null> => {
       if (change.kind === "active") {
-        const active = activeByName.get(change.name)!;
+        const active = activeByName.get(change.name);
+        if (!active) {
+          // Known only from the pending branch: it waits for its merge.
+          if (!submitted.has(change.name)) return null;
+          return [
+            change.name,
+            {
+              name: change.name,
+              archived: false,
+              submitted: true,
+              artifactsComplete: true,
+              reviewArtifacts: [],
+              checkedTasks: 0,
+              mergeSettled: false,
+              published: false,
+            },
+          ];
+        }
         const delivery = local.get(change.name)!;
         return [
           change.name,
           {
             name: change.name,
             archived: false,
-            submitted: delivery.submitted,
+            submitted: delivery.submitted || submitted.has(change.name),
             artifactsComplete:
               active.artifacts.length > 0 &&
               active.artifacts.every((artifact) => artifact.status === "done"),
@@ -161,13 +211,5 @@ export async function readWorksetStages(
       return null;
     }),
   );
-  const facts = new Map(entries.filter((entry) => entry !== null));
-
-  return {
-    worksets: listing.worksets.map((record) => ({
-      record,
-      derived: deriveWorksetStage(record, linked.get(record.id) ?? [], (name) => facts.get(name)),
-    })),
-    problems: listing.problems,
-  };
+  return new Map(entries.filter((entry) => entry !== null));
 }

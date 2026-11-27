@@ -34,6 +34,29 @@ export type {
   StudioSubmittedChange,
   StudioWorkset,
 } from "./cli/commands/studio/payload";
+export { WORK_REQUEST_ACTIONS } from "./cli/commands/studio/work-requests";
+// Types only: the module itself is server code.
+export type {
+  StudioWorkCard,
+  StudioWorkPayload,
+  StudioWorkTeam,
+  WorkLaunchOffer,
+  WorkRefusalKind,
+  WorkRequest,
+  WorkResult,
+} from "./cli/commands/studio/work";
+export {
+  WORK_ACTIONS as WORK_CARD_ACTIONS,
+  WORK_BUCKETS,
+  type Claim,
+  type Progress,
+  type SharingFacts,
+  type SyncState,
+  type WorkActionId,
+  type WorkBucket,
+  type WorkMemberStatus,
+} from "./lib/workset/projection";
+export type { SharePreview } from "./lib/workset/sharing";
 export {
   archivedArtifactPath,
   canonicalSpecPath,

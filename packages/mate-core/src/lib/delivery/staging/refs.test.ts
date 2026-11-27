@@ -35,8 +35,19 @@ describe("isRejectedPush", () => {
   test.each([
     " ! [rejected]        HEAD -> main (fetch first)",
     " ! [remote rejected] HEAD -> mate/inbox (reference already exists)",
+    " ! [remote rejected] HEAD -> mate/inbox (cannot lock ref 'refs/heads/mate/inbox')",
   ])("a moved or concurrently created branch: %s", (stderr) => {
     expect(isRejectedPush(refused(stderr))).toBe(true);
+  });
+
+  test("a local tracking-ref lock failure after an accepted push is not one", () => {
+    expect(
+      isRejectedPush(
+        refused(
+          "To ../origin.git\n   1a2b3c4..5d6e7f8  HEAD -> mate/inbox\nerror: update_ref failed for ref 'refs/remotes/origin/mate/inbox': cannot lock ref 'refs/remotes/origin/mate/inbox'",
+        ),
+      ),
+    ).toBe(false);
   });
 
   test("a hook refusal is not one", () => {

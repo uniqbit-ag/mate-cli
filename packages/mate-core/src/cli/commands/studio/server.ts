@@ -71,6 +71,8 @@ import {
 } from "./terminal";
 import type { StudioServices } from "./services";
 import type { UsageCache } from "../../../lib/usage/cache";
+import { reserveManualLaunch } from "../../../lib/workset/execution";
+import { createWorkServices } from "./work";
 import { studioAppAsset, type StudioApp } from "./studio-app";
 import { terminalAsset } from "./terminal-assets";
 import {
@@ -412,6 +414,16 @@ export function createStudioFetch(
           collectInventory: inventory,
           launchCompanion,
           launchableAgents: (companionPath) => agentsFor(companionPath),
+          // Work starts from the terminal pass the same start guard; read-only Studio has none.
+          ...(writable
+            ? {
+                reserveWork: (companionPath, action, subject) =>
+                  reserveManualLaunch(companionPath, {
+                    kind: action.subject === "change" ? "change" : "workset",
+                    name: subject,
+                  }),
+              }
+            : {}),
         }),
         mateCommand: process.argv.slice(0, 2),
         sessions,
@@ -562,6 +574,27 @@ export function createStudioFetch(
   };
 
   let usage: Promise<UsageCache> | undefined = deps.usage && Promise.resolve(deps.usage);
+  const work = createWorkServices({
+    writable,
+    inputFor: async (companionPath, refresh = false) => {
+      const url = new URL("http://studio.local/");
+      url.searchParams.set(COMPANION_PARAM, companionDigest(companionPath));
+      // The snapshot, as every view reads it; Git facts are read fresh regardless.
+      if (refresh) url.searchParams.set(REFRESH_PARAM, "1");
+      const page = await collectPage(url);
+      const payload = page.payload;
+      const targeted = page.terminal?.target?.path === companionPath;
+      return {
+        changes: payload?.changes ?? [],
+        shipped: payload?.shipped ?? [],
+        ...(payload?.skillInventory ? { skills: payload.skillInventory } : {}),
+        terminalAgents: targeted ? (page.terminal?.agents ?? []) : [],
+        linkedRepositories: payload?.linkedRepositories ?? [],
+        ...(payload?.ticketFormat ? { ticketFormat: payload.ticketFormat } : {}),
+      };
+    },
+  });
+
   const studioServices: StudioServices = {
     writable,
     services: () => services.summaries(),
@@ -573,6 +606,12 @@ export function createStudioFetch(
     modePolicy: policy,
     page: collectPage,
     callService,
+    work: async (digest) => work.work(await companionPathOf(digest)),
+    workAction: async (digest, request) => {
+      const result = await work.act(await companionPathOf(digest), request);
+      if (result.ok && request.action !== "share-preview") boardChanged(digest);
+      return result;
+    },
     vault: async (digest, request) => {
       const { vaultView } = await import("./views/vault/view");
       return vaultView(vault, await companionPathOf(digest), request);

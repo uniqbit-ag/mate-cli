@@ -100,6 +100,7 @@ describe("canonicalHref", () => {
     for (const [path, view] of [
       ["/workflow", "workflow"],
       ["/skills", "skills"],
+      ["/work", "work"],
     ] as const) {
       expect(
         canonicalHref(

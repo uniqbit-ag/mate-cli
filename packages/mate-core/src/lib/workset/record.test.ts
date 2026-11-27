@@ -9,6 +9,7 @@ import {
   advanceWorkset,
   createOutcome,
   createWorkset,
+  findWorkset,
   outcomeTitle,
   readWorksets,
   resolveLinkedChanges,
@@ -30,8 +31,8 @@ beforeEach(() => {
 afterEach(() => fs.rmSync(companion, { recursive: true, force: true }));
 
 function write(id: string, body: string): void {
-  fs.mkdirSync(path.join(companion, "worksets"), { recursive: true });
-  fs.writeFileSync(path.join(companion, "worksets", `${id}.yaml`), body);
+  fs.mkdirSync(path.join(companion, ".mate/scratchpad"), { recursive: true });
+  fs.writeFileSync(path.join(companion, ".mate/scratchpad", `${id}.yaml`), body);
 }
 
 const fixed = () => new Date("2026-10-29T10:00:00.000Z");
@@ -54,7 +55,7 @@ describe("delivery Workset resolution", () => {
       implicit: true,
       diagnostics: [],
     });
-    expect(fs.existsSync(path.join(companion, "worksets"))).toBe(false);
+    expect(fs.existsSync(path.join(companion, ".mate/scratchpad"))).toBe(false);
   });
 
   test("members and archive anchors resolve to the explicit Workset", async () => {
@@ -80,7 +81,7 @@ describe("delivery Workset resolution", () => {
     write("acme-invalid", "id: wrong\n");
     const result = await resolveWorksetOf(companion, "acme-fix");
     expect(result.id).toBeNull();
-    expect(result.diagnostics.join()).toContain("worksets/acme-invalid.yaml: id");
+    expect(result.diagnostics.join()).toContain(".mate/scratchpad/acme-invalid.yaml: id");
   });
 
   test("explicit and implicit identity collision blocks both owners and Factory", async () => {
@@ -125,7 +126,7 @@ describe("the record", () => {
       fixed,
     );
     const document = parse(
-      fs.readFileSync(path.join(companion, "worksets", "acme-login.yaml"), "utf8"),
+      fs.readFileSync(path.join(companion, ".mate/scratchpad", "acme-login.yaml"), "utf8"),
     );
     expect(document).toEqual({
       id: "acme-login",
@@ -148,10 +149,10 @@ describe("the record", () => {
         repository: "acme/web",
       }),
     ).rejects.toThrow(/acme-login already exists/);
-    expect(fs.readFileSync(path.join(companion, "worksets", "acme-login.yaml"), "utf8")).toContain(
-      "original",
-    );
-    expect(fs.readdirSync(path.join(companion, "worksets"))).toEqual(["acme-login.yaml"]);
+    expect(
+      fs.readFileSync(path.join(companion, ".mate/scratchpad", "acme-login.yaml"), "utf8"),
+    ).toContain("original");
+    expect(fs.readdirSync(path.join(companion, ".mate/scratchpad"))).toEqual(["acme-login.yaml"]);
   });
 
   test.each(["Acme", "acme/login", "acme login", "../acme"])(
@@ -160,7 +161,7 @@ describe("the record", () => {
       await expect(
         createWorkset(companion, { id, title: "", intent: "", repository: "acme/web" }),
       ).rejects.toThrow(/kebab-case/);
-      expect(fs.existsSync(path.join(companion, "worksets"))).toBe(false);
+      expect(fs.existsSync(path.join(companion, ".mate/scratchpad"))).toBe(false);
     },
   );
 
@@ -171,7 +172,7 @@ describe("the record", () => {
     );
     await advanceWorkset(companion, "acme-login");
     const document = parse(
-      fs.readFileSync(path.join(companion, "worksets", "acme-login.yaml"), "utf8"),
+      fs.readFileSync(path.join(companion, ".mate/scratchpad", "acme-login.yaml"), "utf8"),
     );
     expect(document.stage).toBe("explore");
     expect(document.exploreStartedAt).toBe("2026-10-29T11:00:00Z");
@@ -187,7 +188,7 @@ describe("invalid records", () => {
     expect(listing.worksets.map((workset) => workset.id)).toEqual(["acme-c"]);
     expect(listing.problems).toEqual([
       {
-        path: path.join("worksets", "acme-a.yaml"),
+        path: path.join(".mate/scratchpad", "acme-a.yaml"),
         reason: 'id "acme-b" does not match the file name acme-a',
       },
     ]);
@@ -266,17 +267,124 @@ describe("linked changes", () => {
     }
   });
 
-  test("writeWorkset replaces a record atomically", async () => {
+  test("writeWorkset replaces a record atomically in a folder that ignores itself", async () => {
     await writeWorkset(companion, record("acme-a", []));
-    expect(fs.readdirSync(path.join(companion, "worksets"))).toEqual(["acme-a.yaml"]);
+    expect(fs.readdirSync(path.join(companion, ".mate/scratchpad")).toSorted()).toEqual([
+      ".gitignore",
+      "acme-a.yaml",
+    ]);
+    expect(fs.readFileSync(path.join(companion, ".mate/scratchpad/.gitignore"), "utf8")).toBe(
+      "*\n",
+    );
+  });
+});
+
+describe("derived Worksets for branch resolution", () => {
+  const change = (name: string, front = "") => {
+    const dir = path.join(companion, "openspec/changes", name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "proposal.md"), `---\n${front}---\n\n# ${name}\n`);
+  };
+
+  test("a slice resolves to its dependency's group; a lone change to itself", async () => {
+    change("acme-api");
+    change("acme-ui", "dependsOn: [acme-api]\n");
+    change("acme-fix");
+    expect(await resolveWorksetOf(companion, "acme-ui")).toMatchObject({
+      id: "acme-api",
+      implicit: true,
+    });
+    expect(await resolveWorksetOf(companion, "acme-fix")).toMatchObject({
+      id: "acme-fix",
+      implicit: true,
+    });
+  });
+
+  test("an unlisted slice of a recorded change resolves to the record, as the inventory groups it", async () => {
+    change("acme-a");
+    change("acme-c", "dependsOn: [acme-a]\n");
+    write("acme-login", "id: acme-login\nrepositories: [acme/web]\nchanges: [acme-a]\n");
+    expect(await resolveWorksetOf(companion, "acme-a")).toMatchObject({
+      id: "acme-login",
+      implicit: false,
+    });
+    expect(await resolveWorksetOf(companion, "acme-c")).toMatchObject({
+      id: "acme-login",
+      implicit: false,
+    });
+  });
+
+  test("a captured idea avoids the names of active changes and their Worksets", async () => {
+    change("acme-login");
+    const created = await createOutcome(companion, { text: "Acme login" }, ["acme/web"], fixed);
+    expect(created.id).not.toBe("acme-login");
+    expect(created.id).toStartWith("acme-login");
+  });
+});
+
+describe("the legacy shared folder", () => {
+  const legacy = (id: string, extra = "") =>
+    fs.writeFileSync(
+      path.join(companion, "worksets", `${id}.yaml`),
+      `id: ${id}\nrepositories: [acme/web]\nchanges: []\n${extra}`,
+    );
+  beforeEach(() => fs.mkdirSync(path.join(companion, "worksets"), { recursive: true }));
+
+  test("legacy records are read and marked; a scratchpad record of the same id wins", async () => {
+    legacy("acme-old", "queuedAt: 2026-11-01T00:00:00.000Z\n");
+    legacy("acme-both");
+    fs.mkdirSync(path.join(companion, ".mate/scratchpad"), { recursive: true });
+    fs.writeFileSync(
+      path.join(companion, ".mate/scratchpad/acme-both.yaml"),
+      "id: acme-both\nrepositories: [acme/web]\nchanges: []\n",
+    );
+    const { worksets } = await readWorksets(companion);
+    expect(worksets.map((entry) => [entry.id, entry.legacy ?? false])).toEqual([
+      ["acme-both", false],
+      ["acme-old", true],
+    ]);
+    expect((await findWorkset(companion, "acme-old"))?.legacy).toBe(true);
+  });
+
+  test("a write moves a legacy record into the scratchpad", async () => {
+    legacy("acme-old");
+    await setWorksetStarted(companion, "acme-old", true);
+    expect(fs.existsSync(path.join(companion, "worksets/acme-old.yaml"))).toBe(false);
+    const moved = await findWorkset(companion, "acme-old");
+    expect(moved?.legacy).toBeUndefined();
+    expect(moved?.queuedAt).toBeString();
+  });
+
+  test("any other write moves a legacy record unstarted: its start may come from another machine", async () => {
+    legacy("acme-old", "queuedAt: 2026-11-01T00:00:00.000Z\n");
+    const record = await findWorkset(companion, "acme-old");
+    await writeWorkset(companion, { ...record!, title: "Acme old" });
+    const moved = await findWorkset(companion, "acme-old");
+    expect(moved?.legacy).toBeUndefined();
+    expect(moved?.queuedAt).toBeUndefined();
+    await writeWorkset(companion, { ...record!, title: "Acme old" }, { started: true });
+    expect((await findWorkset(companion, "acme-old"))?.queuedAt).toBe("2026-11-01T00:00:00.000Z");
+  });
+
+  test("an id taken in the legacy folder is not created again", async () => {
+    legacy("acme-old");
+    await expect(
+      createWorkset(companion, { id: "acme-old", title: "x", intent: "x", repository: "acme/web" }),
+    ).rejects.toThrow("already exists");
   });
 
   test("removeWorkset deletes one record, and a record already gone is no error", async () => {
-    await writeWorkset(companion, record("acme-a", []));
-    await writeWorkset(companion, record("acme-b", []));
+    write("acme-a", "id: acme-a\nrepositories: [acme/web]\n");
+    write("acme-b", "id: acme-b\nrepositories: [acme/web]\n");
     await removeWorkset(companion, "acme-a");
     await removeWorkset(companion, "acme-a");
-    expect(fs.readdirSync(path.join(companion, "worksets"))).toEqual(["acme-b.yaml"]);
+    expect(fs.readdirSync(path.join(companion, ".mate/scratchpad"))).toEqual(["acme-b.yaml"]);
+  });
+
+  test("removeWorkset also deletes a legacy record", async () => {
+    legacy("acme-old");
+    await removeWorkset(companion, "acme-old");
+    expect(fs.readdirSync(path.join(companion, "worksets"))).toEqual([]);
   });
 
   test("removeWorkset refuses an identifier that is no Workset name", async () => {
@@ -311,7 +419,7 @@ describe("started and Later", () => {
     expect(record?.queuedAt).toBe("2026-11-02T09:00:00.000Z");
     await writeWorkset(companion, record!);
     const document = parse(
-      fs.readFileSync(path.join(companion, "worksets", "acme-a.yaml"), "utf8"),
+      fs.readFileSync(path.join(companion, ".mate/scratchpad", "acme-a.yaml"), "utf8"),
     );
     expect(document).toMatchObject({ priority: "focus", queuedAt: "2026-11-02T09:00:00.000Z" });
   });
@@ -330,7 +438,7 @@ describe("started and Later", () => {
       queuedAt: "2026-11-02T09:00:00.000Z",
     });
     const read = () =>
-      parse(fs.readFileSync(path.join(companion, "worksets", "acme-login.yaml"), "utf8"));
+      parse(fs.readFileSync(path.join(companion, ".mate/scratchpad", "acme-login.yaml"), "utf8"));
     expect(read().lane).toBeUndefined();
     expect(read().priority).toBeUndefined();
     await setWorksetStarted(companion, "acme-login", false);
@@ -382,7 +490,7 @@ describe("outcomes", () => {
     );
     expect(record).toMatchObject({ queuedAt: "2026-10-29T10:00:00.000Z" });
     const document = parse(
-      fs.readFileSync(path.join(companion, "worksets", "acme-export.yaml"), "utf8"),
+      fs.readFileSync(path.join(companion, ".mate/scratchpad", "acme-export.yaml"), "utf8"),
     );
     expect(document.queuedAt).toBe("2026-10-29T10:00:00.000Z");
   });
@@ -397,7 +505,7 @@ describe("outcomes", () => {
     await expect(
       createOutcome(companion, { text: "Acme export" }, ["acme/web", "acme/api"]),
     ).rejects.toThrow("choose the Working Repository");
-    expect(fs.existsSync(path.join(companion, "worksets"))).toBe(false);
+    expect(fs.existsSync(path.join(companion, ".mate/scratchpad"))).toBe(false);
   });
 
   test("a text without letters or digits is refused", async () => {
@@ -414,7 +522,10 @@ describe("outcomes", () => {
       fixed,
     );
     expect(record.ticket).toBe("ABC-123");
-    const source = fs.readFileSync(path.join(companion, "worksets", "acme-export.yaml"), "utf8");
+    const source = fs.readFileSync(
+      path.join(companion, ".mate/scratchpad", "acme-export.yaml"),
+      "utf8",
+    );
     expect(source).toContain("intent: Acme export\nticket: ABC-123\nrepositories:");
     const { worksets } = await readWorksets(companion);
     expect(worksets[0]?.ticket).toBe("ABC-123");
@@ -425,7 +536,10 @@ describe("outcomes", () => {
       "acme/web",
     ]);
     expect(record.ticket).toBeUndefined();
-    const source = fs.readFileSync(path.join(companion, "worksets", "acme-export.yaml"), "utf8");
+    const source = fs.readFileSync(
+      path.join(companion, ".mate/scratchpad", "acme-export.yaml"),
+      "utf8",
+    );
     expect(source).not.toContain("ticket");
   });
 
@@ -433,7 +547,7 @@ describe("outcomes", () => {
     await expect(
       createOutcome(companion, { text: "Acme export", ticket: "abc123" }, ["acme/web"]),
     ).rejects.toThrow("ABC-123");
-    expect(fs.existsSync(path.join(companion, "worksets"))).toBe(false);
+    expect(fs.existsSync(path.join(companion, ".mate/scratchpad"))).toBe(false);
   });
 
   test("a record with an invalid ticket is a reported problem", async () => {
