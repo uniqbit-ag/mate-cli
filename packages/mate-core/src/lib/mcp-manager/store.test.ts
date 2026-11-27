@@ -24,8 +24,9 @@ const initial = [
   "  mate: '>=0.21.0'",
   "mcpManager:",
   "  servers:",
+  "    # acme docs server",
   "    acme-docs: { command: acme-docs-mcp, env: [ACME_TOKEN] }",
-  "    acme-db: { command: acme-db-mcp }",
+  '    acme-db: { command: acme-db-mcp, args: ["--database", "acme-primary", "--schema", "acme-reporting", "--read-only"] }',
   "  enabled: { servers: [acme-docs, acme-db] }",
   "audiences:",
   "  analyst:",
@@ -77,6 +78,9 @@ describe("writeMcpManager", () => {
     const text = await fs.readFile(file, "utf8");
     expect(text).toContain("# acme companion");
     expect(text).toContain("# always on");
+    expect(text).toContain("# acme docs server");
+    expect(text).toMatch(/^ {4}acme-docs: \{ command: acme-docs-mcp, env: \[ ?ACME_TOKEN ?\] \}$/m);
+    expect(text).toMatch(/^ {4}acme-db: \{ command: acme-db-mcp, args: \[.*\] \}$/m);
     const after = parse(text);
     expect(after.mcpManager.servers["acme-api"]).toEqual({ url: "https://mcp.acme.example" });
     for (const key of ["allowedAgents", "capabilities", "plugins"]) {
