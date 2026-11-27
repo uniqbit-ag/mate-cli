@@ -60,7 +60,7 @@ describe("selectCompanionLinkInputs", () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 
-  test("preselects existing and marks unregistered companions", async () => {
+  test("preselects existing and names each companion before its path", async () => {
     const existingCompanions = [
       { path: "/work/acme-companion", registered: true },
       { path: "/work/acme-docs", registered: false },
@@ -71,7 +71,8 @@ describe("selectCompanionLinkInputs", () => {
     await tick();
     marked.stdin.write("q");
     await marked.result;
-    expect(marked.screen()).toContain("(not registered) /work/acme-docs");
+    expect(marked.screen()).toContain("acme-companion  /work/acme-companion");
+    expect(marked.screen()).toContain("acme-docs (not registered)  /work/acme-docs");
 
     const wizard = startWizard({ existingCompanions });
     await tick(50);
@@ -122,7 +123,7 @@ describe("selectCompanionLinkInputs", () => {
       clonePath: "/work/acme-companion",
       replace: true,
     });
-    expect(wizard.screen()).toContain("Use the clone at /work/acme-companion");
+    expect(wizard.screen()).toContain("Use acme-companion  /work/acme-companion");
     expect(wizard.screen()).toContain("Clone a new copy");
   });
 

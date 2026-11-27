@@ -190,7 +190,10 @@ function buildSteps(
         field: "clonePath",
         label: "This repository is already cloned on this machine",
         options: [
-          ...clones.map((clone) => ({ key: clone, label: `Use the clone at ${clone}` })),
+          ...clones.map((clone) => ({
+            key: clone,
+            label: `Use ${path.basename(clone)}  ${clone}`,
+          })),
           { key: "new", label: "Clone a new copy" },
         ],
         activeIndex: Math.min(values.cloneActiveIndex, clones.length),
@@ -210,8 +213,8 @@ function buildSteps(
       label: "Existing Companions",
       options: existingCompanions.map((companion) => ({
         key: companion.path,
-        // Marks lead: the menu cuts long paths at the terminal's edge.
-        label: companion.registered ? companion.path : `(not registered) ${companion.path}`,
+        // Name and mark lead: the menu cuts long paths at the terminal's edge.
+        label: `${path.basename(companion.path)}${companion.registered ? "" : " (not registered)"}  ${companion.path}`,
       })),
       activeIndex: values.companionActiveIndex,
       selected: values.companionPaths,
