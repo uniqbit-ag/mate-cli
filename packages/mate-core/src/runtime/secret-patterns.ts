@@ -204,9 +204,10 @@ export interface SecretPathOptions {
   windows?: boolean;
 }
 
-const IS_WINDOWS = process.platform === "win32";
+// Read on call, not at import: Studio's browser bundle imports this module and has no `process`.
+const isWindows = () => process.platform === "win32";
 
-function normalizePath(filePath: string, { windows = IS_WINDOWS }: SecretPathOptions): string {
+function normalizePath(filePath: string, { windows = isWindows() }: SecretPathOptions): string {
   return (windows ? filePath.replaceAll("\\", "/") : filePath).replace(/\/+$/, "");
 }
 
@@ -280,7 +281,7 @@ type BraceSequence = BracePart[];
  */
 function parseBraces(
   glob: string,
-  { windows = IS_WINDOWS }: SecretPathOptions,
+  { windows = isWindows() }: SecretPathOptions,
 ): BraceSequence | null {
   const source = windows ? glob.replaceAll("**\\", "**/") : glob;
   let i = 0;
