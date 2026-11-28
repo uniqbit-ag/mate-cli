@@ -67,6 +67,15 @@ describe("command lines", () => {
     expect(resumeCommand(opencode)).toBe(`mate opencode -- --bg --session ${opencode.id}`);
   });
 
+  test("launch with a first-turn prompt per runtime", () => {
+    expect(launchCommand(claude, "/mate-submit-change acme-queue")).toBe(
+      `mate claude -- --session-id ${claude.id} '/mate-submit-change acme-queue'`,
+    );
+    expect(launchCommand(opencode, "Use the acme skill on change it's.")).toBe(
+      `mate opencode -- --bg --session ${opencode.id} --prompt 'Use the acme skill on change it'\\''s.'`,
+    );
+  });
+
   test("attach per runtime", () => {
     expect(attachCommand(claude)).toBe("claude attach 0b7c1d2e");
     expect(attachCommand(opencode)).toBe(`mate opencode -- --bg --session ${opencode.id}`);
