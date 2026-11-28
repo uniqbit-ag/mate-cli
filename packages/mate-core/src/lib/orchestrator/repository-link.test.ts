@@ -13,7 +13,11 @@ import { repoLocalFrameworkPath, repoLocalRegistryPath } from "../../runtime/rep
 import { CompanionRegistryStore } from "./companion-registry-store";
 import { resolveFrameworkContext } from "./framework-context";
 import { GlobalConfigStore } from "./global-config-store";
-import { RepoLocalRegistryStore, writeRepoLocalFrameworkConfig } from "./repo-local-store";
+import {
+  RepoLocalRegistryStore,
+  removeRepoLocalCompanionPointer,
+  writeRepoLocalFrameworkConfig,
+} from "./repo-local-store";
 import {
   companionRegistryPath,
   CompanionResolver,
@@ -115,6 +119,38 @@ describe("CompanionStore", () => {
     const repos = await store.listRepositories();
 
     expect(repos.map((r) => r.id)).toEqual(["a", "b"]);
+  });
+
+  test("removeRepository drops only the entry for the given folder", async () => {
+    const root = await makeTempDir("companion-store-remove-");
+    const { store, repoPath } = await makeStore(root);
+    const repoPath2 = path.join(root, "working2");
+    await fs.mkdir(repoPath2, { recursive: true });
+    await store.registerRepository({ id: "a", path: repoPath });
+    await store.registerRepository({ id: "b", path: repoPath2 });
+
+    await store.removeRepository(`${repoPath}/`);
+
+    expect((await store.listRepositories()).map((r) => r.id)).toEqual(["b"]);
+  });
+});
+
+describe("removeRepoLocalCompanionPointer", () => {
+  test("drops only the pointer to the given companion", async () => {
+    const root = await makeTempDir("repo-local-remove-pointer-");
+    const store = new RepoLocalRegistryStore(repoLocalRegistryPath(root));
+    await store.save({
+      companions: [
+        { path: path.join(root, "old"), repositoryId: "app", source: "git" },
+        { path: path.join(root, "new"), repositoryId: "app", source: "local" },
+      ],
+    });
+
+    await removeRepoLocalCompanionPointer(root, `${path.join(root, "old")}/`);
+
+    expect((await store.load()).companions.map((pointer) => pointer.path)).toEqual([
+      path.join(root, "new"),
+    ]);
   });
 });
 
@@ -1168,6 +1204,15 @@ describe("findDescendantRepoLocalRegistries", () => {
     }
 
     await expect(findDescendantRepoLocalRegistries(root)).resolves.toEqual(descendants.sort());
+  });
+
+  test("skips a companion's own registry, which links nothing", async () => {
+    const root = await makeTempDir("repo-local-descendants-companion-");
+    const companion = path.join(root, "acme-companion");
+    await fs.mkdir(path.dirname(companionRegistryPath(companion)), { recursive: true });
+    await fs.writeFile(companionRegistryPath(companion), "repos: []\n", "utf8");
+
+    await expect(findDescendantRepoLocalRegistries(root)).resolves.toEqual([]);
   });
 
   test("does not descend into skip-listed directories", async () => {

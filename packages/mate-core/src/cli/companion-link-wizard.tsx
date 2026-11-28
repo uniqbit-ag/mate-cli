@@ -1,5 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource react */
+import path from "node:path";
+
 import { Box, render as inkRender } from "ink";
 import { useEffect } from "react";
 
@@ -17,15 +19,24 @@ const companionLinkWizardDeps = {
 export interface CompanionLinkInputs {
   source: CompanionSource;
   gitUrl?: string;
+  /** A clone already on this machine whose origin is `gitUrl`'s repository; links it instead of cloning. */
+  clonePath?: string;
   localPath?: string;
   companionPaths?: string[];
+  /** True replaces the companions `replacedBy` names, false keeps both. */
+  replace?: boolean;
 }
 
-interface SourceStep {
+export interface ExistingCompanion {
+  path: string;
+  registered: boolean;
+}
+
+interface SelectStep {
   kind: "select";
-  field: "source";
+  field: "source" | "clonePath" | "replace";
   label: string;
-  options: Array<{ key: CompanionSource; label: string }>;
+  options: Array<{ key: string; label: string }>;
   activeIndex: number;
 }
 
@@ -33,7 +44,7 @@ interface CompanionMultiSelectStep {
   kind: "multiselect";
   field: "companionPaths";
   label: string;
-  options: string[];
+  options: Array<{ key: string; label: string }>;
   activeIndex: number;
   selected: Set<string>;
 }
@@ -46,7 +57,7 @@ interface TextStep {
   error?: string;
 }
 
-type WizardStep = SourceStep | CompanionMultiSelectStep | TextStep;
+type WizardStep = SelectStep | CompanionMultiSelectStep | TextStep;
 
 interface WizardAppProps {
   step: WizardStep;
@@ -77,9 +88,8 @@ function CompanionLinkWizardApp({ step, stepNumber, totalSteps, onMounted }: Wiz
   if (step.kind === "multiselect") {
     const enterHint = isLastStep ? "enter confirm" : "enter next";
     const items = step.options.map((option) => ({
-      key: option,
-      label: option,
-      indicator: step.selected.has(option) ? "◉" : "○",
+      ...option,
+      indicator: step.selected.has(option.key) ? "◉" : "○",
     }));
     return (
       <Box flexDirection="column" width="100%">
@@ -106,65 +116,128 @@ function CompanionLinkWizardApp({ step, stepNumber, totalSteps, onMounted }: Wiz
 }
 
 export interface CompanionLinkWizardOptions {
-  existingCompanions?: string[];
+  existingCompanions?: ExistingCompanion[];
+  /** Existing companions whose origin is the URL's repository. */
+  clonesOf?: (gitUrl: string) => string[];
+  /** The linked companions these inputs would replace; empty asks nothing. */
+  replacedBy?: (inputs: CompanionLinkInputs) => string[];
   stdin?: NodeJS.ReadStream;
   stdout?: NodeJS.WriteStream;
   stderr?: NodeJS.WriteStream;
 }
 
-function buildSteps(
-  source: CompanionSource,
-  values: {
-    gitUrl: string;
-    localPath: string;
-    companionPaths: Set<string>;
-    companionActiveIndex: number;
-  },
-  existingCompanions: string[],
-): WizardStep[] {
-  const sourceOptions: SourceStep["options"] = [
-    { key: "git", label: "git" },
-    ...(existingCompanions.length > 0
-      ? [{ key: "existing" as const, label: "existing companion" }]
-      : []),
-    { key: "local", label: "local" },
-  ];
-  const sourceStep: SourceStep = {
-    kind: "select",
-    field: "source",
-    label: "Companion Source",
-    options: sourceOptions,
-    activeIndex: Math.max(
-      0,
-      sourceOptions.findIndex((option) => option.key === source),
-    ),
+const REPLACE = "replace";
+
+interface WizardValues {
+  source: CompanionSource;
+  gitUrl: string;
+  /** Into the matching clones; their count means "Clone a new copy". */
+  cloneActiveIndex: number;
+  localPath: string;
+  companionPaths: Set<string>;
+  companionActiveIndex: number;
+  replace: boolean;
+}
+
+function resultOf(
+  values: WizardValues,
+  clonesOf: (gitUrl: string) => string[],
+): CompanionLinkInputs {
+  const { source } = values;
+  return {
+    source,
+    gitUrl: source === "git" ? values.gitUrl : undefined,
+    clonePath: source === "git" ? clonesOf(values.gitUrl)[values.cloneActiveIndex] : undefined,
+    localPath: source === "local" ? values.localPath : undefined,
+    companionPaths: source === "existing" ? [...values.companionPaths] : undefined,
+    replace: values.replace,
   };
+}
 
-  const sourceSpecificStep: TextStep | CompanionMultiSelectStep =
-    source === "git"
-      ? {
-          kind: "text",
-          field: "gitUrl",
-          label: "Companion Git URL",
-          value: values.gitUrl,
-        }
-      : source === "local"
-        ? {
-            kind: "text",
-            field: "localPath",
-            label: "Local Companion Path",
-            value: values.localPath,
-          }
-        : {
-            kind: "multiselect",
-            field: "companionPaths",
-            label: "Existing Companions",
-            options: existingCompanions,
-            activeIndex: values.companionActiveIndex,
-            selected: values.companionPaths,
-          };
+function buildSteps(
+  values: WizardValues,
+  options: Required<Pick<CompanionLinkWizardOptions, "clonesOf" | "replacedBy">> & {
+    existingCompanions: ExistingCompanion[];
+  },
+): WizardStep[] {
+  const { existingCompanions, clonesOf, replacedBy } = options;
+  const sourceOptions: SelectStep["options"] = [
+    ...(existingCompanions.length > 0
+      ? [{ key: "existing", label: "Use a companion already on this machine" }]
+      : []),
+    { key: "git", label: "Clone from a Git URL into ~/.mate/companions" },
+    { key: "local", label: "Enter the path of another folder" },
+  ];
+  const steps: WizardStep[] = [
+    {
+      kind: "select",
+      field: "source",
+      label: "Companion Source",
+      options: sourceOptions,
+      activeIndex: Math.max(
+        0,
+        sourceOptions.findIndex((option) => option.key === values.source),
+      ),
+    },
+  ];
 
-  return [sourceStep, sourceSpecificStep];
+  const clones = values.source === "git" ? clonesOf(values.gitUrl) : [];
+  if (values.source === "git") {
+    steps.push({ kind: "text", field: "gitUrl", label: "Companion Git URL", value: values.gitUrl });
+    if (clones.length > 0) {
+      steps.push({
+        kind: "select",
+        field: "clonePath",
+        label: "This repository is already cloned on this machine",
+        options: [
+          ...clones.map((clone) => ({
+            key: clone,
+            label: `Use ${path.basename(clone)}  ${clone}`,
+          })),
+          { key: "new", label: "Clone a new copy" },
+        ],
+        activeIndex: Math.min(values.cloneActiveIndex, clones.length),
+      });
+    }
+  } else if (values.source === "local") {
+    steps.push({
+      kind: "text",
+      field: "localPath",
+      label: "Local Companion Path",
+      value: values.localPath,
+    });
+  } else {
+    steps.push({
+      kind: "multiselect",
+      field: "companionPaths",
+      label: "Existing Companions",
+      options: existingCompanions.map((companion) => ({
+        key: companion.path,
+        // Name and mark lead: the menu cuts long paths at the terminal's edge.
+        label: `${path.basename(companion.path)}${companion.registered ? "" : " (not registered)"}  ${companion.path}`,
+      })),
+      activeIndex: values.companionActiveIndex,
+      selected: values.companionPaths,
+    });
+  }
+
+  const replaced = replacedBy(resultOf(values, clonesOf));
+  if (replaced.length > 0) {
+    steps.push({
+      kind: "select",
+      field: "replace",
+      label: "This folder is already linked to another companion",
+      options: [
+        {
+          key: REPLACE,
+          label: `Replace ${replaced.map((companion) => path.basename(companion)).join(", ")}`,
+        },
+        { key: "keep", label: "Keep both" },
+      ],
+      activeIndex: values.replace ? 0 : 1,
+    });
+  }
+  return steps;
 }
 
 export async function selectCompanionLinkInputs(
@@ -174,20 +247,27 @@ export async function selectCompanionLinkInputs(
   const stdout = options.stdout ?? process.stdout;
   const stderr = options.stderr ?? process.stderr;
   const existingCompanions = options.existingCompanions ?? [];
+  const stepOptions = {
+    existingCompanions,
+    clonesOf: options.clonesOf ?? (() => []),
+    replacedBy: options.replacedBy ?? (() => []),
+  };
 
   return new Promise<CompanionLinkInputs | null>((resolve, reject) => {
     let resolved = false;
-    let source: CompanionSource = "git";
-    const values = {
+    const values: WizardValues = {
+      source: existingCompanions.length > 0 ? "existing" : "git",
       gitUrl: "",
+      cloneActiveIndex: 0,
       localPath: "",
       companionPaths: new Set<string>(),
       companionActiveIndex: 0,
+      replace: true,
     };
     let currentStepIndex = 0;
     const keepAlive = setInterval(() => {}, 1 << 30);
     let rendered: ReturnType<typeof inkRender> | undefined;
-    let steps = buildSteps(source, values, existingCompanions);
+    let steps = buildSteps(values, stepOptions);
 
     const cleanup = () => {
       clearInterval(keepAlive);
@@ -205,13 +285,6 @@ export async function selectCompanionLinkInputs(
       resolve(value);
     };
 
-    const buildResult = (): CompanionLinkInputs => ({
-      source,
-      gitUrl: source === "git" ? values.gitUrl : undefined,
-      localPath: source === "local" ? values.localPath : undefined,
-      companionPaths: source === "existing" ? [...values.companionPaths] : undefined,
-    });
-
     const rerender = () => {
       rendered?.rerender(
         <CompanionLinkWizardApp
@@ -222,8 +295,16 @@ export async function selectCompanionLinkInputs(
       );
     };
 
-    const rebuildSteps = () => {
-      steps = buildSteps(source, values, existingCompanions);
+    // Later steps depend on earlier answers, so every submit rebuilds them.
+    const advance = () => {
+      steps = buildSteps(values, stepOptions);
+      if (currentStepIndex < steps.length - 1) {
+        currentStepIndex++;
+        rerender();
+        return;
+      }
+      doResolve(resultOf(values, stepOptions.clonesOf));
+      rendered?.unmount();
     };
 
     const onData = (chunk: string) => {
@@ -232,8 +313,8 @@ export async function selectCompanionLinkInputs(
       if (step.kind === "multiselect" && chunk === " ") {
         const option = step.options[step.activeIndex];
         if (option) {
-          if (step.selected.has(option)) step.selected.delete(option);
-          else step.selected.add(option);
+          if (step.selected.has(option.key)) step.selected.delete(option.key);
+          else step.selected.add(option.key);
         }
         rerender();
         return;
@@ -277,14 +358,7 @@ export async function selectCompanionLinkInputs(
         if (parsed.action !== "submit" || !step.value.trim()) {
           return;
         }
-
-        if (currentStepIndex < steps.length - 1) {
-          currentStepIndex++;
-          rerender();
-        } else {
-          doResolve(buildResult());
-          rendered?.unmount();
-        }
+        advance();
         return;
       }
 
@@ -305,26 +379,19 @@ export async function selectCompanionLinkInputs(
       }
 
       if (step.kind === "select") {
-        source = step.options[step.activeIndex]!.key;
-        rebuildSteps();
-        if (currentStepIndex < steps.length - 1) {
-          currentStepIndex++;
-        }
-        rerender();
+        const key = step.options[step.activeIndex]!.key;
+        if (step.field === "source") values.source = key as CompanionSource;
+        else if (step.field === "clonePath") values.cloneActiveIndex = step.activeIndex;
+        else values.replace = key === REPLACE;
+        advance();
         return;
       }
 
       if (step.selected.size === 0) {
         const option = step.options[step.activeIndex];
-        if (option) step.selected.add(option);
+        if (option) step.selected.add(option.key);
       }
-      if (currentStepIndex < steps.length - 1) {
-        currentStepIndex++;
-        rerender();
-      } else {
-        doResolve(buildResult());
-        rendered?.unmount();
-      }
+      advance();
     };
 
     const onMounted = () => {

@@ -46,3 +46,9 @@ export function forgeRepoOf(host: string, path: string): RemoteRepo | null {
 export function repositoryPath(repo: RemoteRepo): string {
   return `${repo.owner}/${repo.repo}`;
 }
+
+/** `host/owner/repo` for a Git URL, so SSH and HTTPS forms of one repository are equal; null when unparsable. */
+export function remoteIdentity(url: string): string | null {
+  const repo = parseRemote(url);
+  return repo ? `${repo.host}/${repositoryPath(repo)}` : null;
+}

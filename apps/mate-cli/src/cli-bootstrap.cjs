@@ -69,7 +69,7 @@ async function confirm(preview) {
 
 function runProcess(command, args, options) {
   return new Promise((resolve) => {
-    const child = spawn(command, args, options);
+    let child;
     const forward = (signal) => {
       if (child.exitCode === null) child.kill(signal);
     };
@@ -79,8 +79,10 @@ function runProcess(command, args, options) {
     };
     const onInterrupt = () => forward("SIGINT");
     const onTerminate = () => forward("SIGTERM");
+    // Listen before spawning: a signal in between would kill this process and orphan the child.
     process.on("SIGINT", onInterrupt);
     process.on("SIGTERM", onTerminate);
+    child = spawn(command, args, options);
     child.once("error", (error) => {
       cleanup();
       resolve({ error, status: null, signal: null });
