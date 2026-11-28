@@ -151,8 +151,18 @@ describe("mate artifact submit", () => {
     await fs.mkdir(changeDir("a"), { recursive: true });
     const [result] = await run(["x", "--skip-branch"], { runOpenSpec: openSpec(["x"]) });
     expect(result).toMatchObject({ status: "failed", reason: "check-failed" });
-    expect(err).toEqual([`warning: ${result!.warnings[0]!.message}`]);
+    expect(err).toEqual([`warning: ${result!.warnings[0]!.message}`, result!.message]);
+    expect(out).toEqual([JSON.stringify([result])]);
     expect(pushed).toEqual([]);
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("without --json a failed result's lines go to stderr, not stdout", async () => {
+    out = [];
+    err = [];
+    await runArtifactSubmitCommand(["x", "--skip-branch"], deps({ runOpenSpec: openSpec(["x"]) }));
+    expect(out).toEqual([]);
+    expect(err.some((line) => line.startsWith("  delivery: "))).toBe(true);
     expect(process.exitCode).toBe(1);
   });
 
@@ -222,7 +232,7 @@ describe("mate artifact submit", () => {
                 pushed: false,
                 commit: null,
                 reason: "missing",
-                message: "",
+                message: "mate: acme-gone is not submitted.",
               };
         },
       }),
@@ -232,6 +242,7 @@ describe("mate artifact submit", () => {
       "dropped",
       "refused",
     ]);
+    expect(err).toEqual(["mate: acme-gone is not submitted."]);
     expect(process.exitCode).toBe(1);
   });
 });

@@ -271,7 +271,7 @@ describe("runArtifactPublishCommand", () => {
 
   test("serializes a Git-root guard failure as JSON before any publish mutation", async () => {
     const record: string[] = [];
-    const { deps, stdout } = makeDeps(record, { gitError: "working repo target" });
+    const { deps, stdout, stderr } = makeDeps(record, { gitError: "working repo target" });
 
     await runArtifactPublishCommand(["my-change", "--json"], deps);
 
@@ -284,6 +284,7 @@ describe("runArtifactPublishCommand", () => {
     expect(result.status).toBe("error");
     expect(result.message).toContain("publish Git guard rejected");
     expect(result.message).toContain("working repo target");
+    expect(stderr).toEqual([result.message]);
     expect(record).toEqual([]);
     expect(process.exitCode).toBe(1);
   });
@@ -427,6 +428,17 @@ describe("runArtifactPublishCommand — publication units", () => {
     expect(process.exitCode).toBe(1);
   });
 
+  test("--specs --json names a drift failure on stderr", async () => {
+    const { deps, stdout, stderr } = unitDeps([], { changed: [] });
+
+    await runArtifactPublishCommand(["--specs", SPEC, "--json"], deps);
+
+    expect(stderr.join("\n")).toContain("not drifted");
+    expect(stdout).toHaveLength(1);
+    expect(JSON.parse(stdout[0]!)).toMatchObject({ name: "--specs", status: "error" });
+    expect(process.exitCode).toBe(1);
+  });
+
   test("--specs refuses a supplied path outside the canonical spec tree", async () => {
     const record: string[] = [];
     const { deps, stderr } = unitDeps(record, { changed: [SPEC] });
@@ -538,10 +550,12 @@ describe("runArtifactPublishCommand — --all sequencing", () => {
     companionPath: string,
     changed: string[],
     changeStatus: "ok" | "error" = "ok",
-  ): { deps: PublishCommandDeps; stdout: string[] } {
+  ): { deps: PublishCommandDeps; stdout: string[]; stderr: string[] } {
     const stdout: string[] = [];
+    const stderr: string[] = [];
     return {
       stdout,
+      stderr,
       deps: {
         resolveContext: async () => ({ ...makeContext(), companionPath }),
         loadCapabilities: async () => [{ name: "openspec" }],
@@ -574,6 +588,7 @@ describe("runArtifactPublishCommand — --all sequencing", () => {
           },
         }),
         stdout: (l) => stdout.push(l),
+        stderr: (l) => stderr.push(l),
       },
     };
   }
@@ -626,14 +641,16 @@ describe("runArtifactPublishCommand — --all sequencing", () => {
       "openspec/changes/archive/2026-09-14-beta/",
       SPEC,
     ];
-    const { deps: d, stdout } = deps(record, companion, changed, "error");
+    const { deps: d, stdout, stderr } = deps(record, companion, changed, "error");
 
     await runArtifactPublishCommand(["--all", "--json"], d);
 
     expect(record).toEqual(["change:2026-09-10-alpha"]);
-    const results = JSON.parse(stdout[0] ?? "[]") as Array<{ status: string }>;
+    expect(stdout).toHaveLength(1);
+    const results = JSON.parse(stdout[0] ?? "[]") as Array<{ status: string; message: string }>;
     expect(results.length).toBe(1);
     expect(results[0].status).toBe("error");
+    expect(stderr).toContain(results[0].message);
   });
 
   test("a deferred publication halts the queue without failing the run", async () => {

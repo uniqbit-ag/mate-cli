@@ -55,13 +55,27 @@ describe("mate artifact take", () => {
     expect(process.exitCode).toBe(0);
   });
 
-  test("exits non-zero when the change was refused", async () => {
-    await runArtifactTakeCommand(
-      ["acme-alpha"],
-      deps({ ...taken, status: "refused", path: null, reason: "exists", message: "mate: held." }),
-    );
+  const refused: TakeResult = {
+    ...taken,
+    status: "refused",
+    path: null,
+    reason: "exists",
+    message: "mate: held.",
+  };
 
-    expect(out).toEqual(["mate: held."]);
+  test("exits non-zero when the change was refused, naming the reason on stderr", async () => {
+    await runArtifactTakeCommand(["acme-alpha"], deps(refused));
+
+    expect(out).toEqual([]);
+    expect(err).toEqual(["mate: held."]);
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("with --json a refusal keeps stdout to the JSON document", async () => {
+    await runArtifactTakeCommand(["acme-alpha", "--json"], deps(refused));
+
+    expect(out).toEqual([JSON.stringify(refused)]);
+    expect(err).toEqual(["mate: held."]);
     expect(process.exitCode).toBe(1);
   });
 

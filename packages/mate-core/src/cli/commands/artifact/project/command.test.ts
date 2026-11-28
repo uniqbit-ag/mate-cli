@@ -83,6 +83,7 @@ describe("mate artifact project", () => {
     await runArtifactProjectCommand(["acme-login-ui", "--json"], deps(conflict));
 
     expect(JSON.parse(out[0]!)).toEqual(conflict);
+    expect(err).toEqual(["mate: refused."]);
     expect(process.exitCode).toBe(1);
   });
 

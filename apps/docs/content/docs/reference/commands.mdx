@@ -1675,3 +1675,11 @@ the Mate engine requirement is unsatisfied, Mate prints the reason and points
 to `mate install` instead.
 Doctor, setup, link, update, help, and version remain available so the state
 can be repaired.
+
+A command that exits non-zero names the reason on stderr, with and without
+`--json`. With `--json`, stdout holds only the command's JSON document, so read
+stdout alone rather than merging the two streams. In human mode the lines of a
+failed result, such as a failed `mate artifact submit`, go to stderr too.
+Warnings and notices, such as a publication held for its merge, go to stderr
+also when the command exits zero. Forwarders such as
+`mate cap openspec` pass the wrapped tool's streams through unchanged.

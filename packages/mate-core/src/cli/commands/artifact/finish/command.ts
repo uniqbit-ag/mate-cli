@@ -427,16 +427,19 @@ export async function runArtifactPublishCommand(
     );
   } catch (err) {
     const message = `mate: publish Git guard rejected the target: ${String(err)}`;
-    if (json) emitOut(JSON.stringify(refusalResult(type, positionals[0] ?? "", message)));
-    else emitErr(message);
+    emitErr(message);
+    if (json) {
+      const refusal = refusalResult(type, positionals[0] ?? "", message);
+      emitOut(JSON.stringify(allMode ? [refusal] : refusal));
+    }
     process.exitCode = 1;
     return;
   }
 
   const now = deps.now ?? (() => new Date());
   /**
-   * Under `--all --json` the array is the whole output, so the per-publication emission is
-   * suppressed; every other mode lets the engine report each publication as it finishes.
+   * Under `--all --json` the array is the whole stdout, so per-publication stdout is suppressed;
+   * stderr still names each failure as it happens.
    */
   const quiet = allMode && json;
   const scanPublicationFn = deps.scanPublication ?? scanPublication;
@@ -444,7 +447,7 @@ export async function runArtifactPublishCommand(
     git,
     json: !allMode && json,
     stdout: quiet ? (): void => {} : emitOut,
-    stderr: quiet ? (): void => {} : emitErr,
+    stderr: emitErr,
     secretScan: (commitPaths: string[]) => scanPublicationFn(context.companionPath, commitPaths),
   };
 
@@ -467,7 +470,7 @@ export async function runArtifactPublishCommand(
         environment,
         deps.deliveryEnvironment ?? {},
       );
-      if (settled.warning && !quiet) emitErr(`mate: ${settled.warning}`);
+      if (settled.warning) emitErr(`mate: ${settled.warning}`);
       return settled.recorded.length > 0;
     })());
 
@@ -677,9 +680,10 @@ export async function runArtifactPublishCommand(
   const runSpecs = async (requested: string[]): Promise<FinishResult | null> => {
     const drift = await resolveDriftedSpecs(context.companionPath, git, requested);
     if (!drift.ok) {
-      if (!quiet && !json) emitErr(drift.message);
+      const refusal = refusalResult(type, "--specs", drift.message);
+      printFinishResult(refusal, engineDeps);
       process.exitCode = 1;
-      return refusalResult(type, "--specs", drift.message);
+      return refusal;
     }
     if (drift.paths.length === 0) return null;
     const makeSpecsFinisher = deps.specsFinisher ?? openspecSpecsFinisher;
@@ -708,7 +712,7 @@ export async function runArtifactPublishCommand(
       for (const group of queue.groups) {
         // oxlint-disable-next-line no-await-in-loop -- publications push one after another
         const result = await publishGroup(group, true);
-        if (!quiet) printFinishResult(result, { json, stdout: emitOut, stderr: emitErr });
+        printFinishResult(result, engineDeps);
         results.push(result);
         // A group waiting on a merge, a dependency or a publisher does not stop the others.
         if (result.status === "held" || result.status === "awaiting-publisher") continue;
@@ -739,7 +743,7 @@ export async function runArtifactPublishCommand(
         finishContext.holdCache,
       );
       if (hold) {
-        if (!quiet) emitErr(hold);
+        emitErr(hold);
         results.push(nothingToPublish(entry.anchor, hold));
         continue;
       }
@@ -763,10 +767,8 @@ export async function runArtifactPublishCommand(
     if (specResult) results.push(specResult);
     if (blocked) process.exitCode = 1;
 
-    await cleanUpWorktrees(changeResults);
-    printWorktrees(changeResults);
-    if (json) emitOut(JSON.stringify(results));
-    else if (results.length === 0) emitOut("Nothing to publish.");
+    await stop();
+    if (!json && results.length === 0) emitOut("Nothing to publish.");
     return;
   }
 

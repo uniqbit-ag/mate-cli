@@ -72,7 +72,7 @@ function deps(root: string, stdout: string[]): PublishCommandDeps {
     git: () => defaultGitOps(root),
     now: () => new Date(2026, 8, 14),
     stdout: (line) => stdout.push(line),
-    stderr: (line) => stdout.push(line),
+    stderr: () => {},
   };
 }
 

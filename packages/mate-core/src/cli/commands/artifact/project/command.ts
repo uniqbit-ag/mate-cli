@@ -41,7 +41,7 @@ export async function runArtifactProjectCommand(
   argv: string[],
   deps: ProjectCommandDeps = {},
 ): Promise<void> {
-  const { emitOut, emitErr, refuse } = commandOutput(deps);
+  const { emitOut, refuse } = commandOutput(deps);
   const flags = parseFlags(argv, BOOLEAN_FLAGS);
   const [change, ...extra] = positionalArgs(argv, BOOLEAN_FLAGS);
   if (!change || extra.length > 0) {
@@ -53,8 +53,7 @@ export async function runArtifactProjectCommand(
   const result = await (deps.project ?? projectChange)(environment.companionPath, change, {
     fetch: environment.gitAutoMode === true,
   });
-  if (result.status !== "ok") process.exitCode = 1;
+  if (result.status !== "ok") refuse(result.message);
   if (flags.json === true) emitOut(JSON.stringify(result));
   else if (result.status === "ok") for (const line of renderHuman(result)) emitOut(line);
-  else emitErr(result.message);
 }

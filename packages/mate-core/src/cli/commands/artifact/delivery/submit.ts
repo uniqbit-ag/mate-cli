@@ -117,9 +117,11 @@ export async function runArtifactSubmitCommand(
       ...deps,
       ...(environment.artifactType ? { artifactType: environment.artifactType } : {}),
     });
-    if (dropped.some((result) => result.status === "refused")) process.exitCode = 1;
+    for (const result of dropped) {
+      if (result.status === "refused") refuse(result.message);
+      else if (!json) emitOut(result.message);
+    }
     if (json) emitOut(JSON.stringify(dropped));
-    else for (const result of dropped) emitOut(result.message);
     return;
   }
   if ([branch !== undefined, notApplicable !== undefined, skip].filter(Boolean).length > 1) {
@@ -160,7 +162,10 @@ export async function runArtifactSubmitCommand(
   for (const result of results) {
     for (const diagnostic of result.diagnostics) emitErr(`warning: ${diagnostic}`);
   }
-  if (results.some((result) => result.status === "failed")) process.exitCode = 1;
+  for (const result of results) {
+    const failed = result.status === "failed";
+    if (failed) refuse(json ? result.message : null);
+    if (!json) for (const line of renderHuman(result)) (failed ? emitErr : emitOut)(line);
+  }
   if (json) emitOut(JSON.stringify(results));
-  else for (const result of results) for (const line of renderHuman(result)) emitOut(line);
 }

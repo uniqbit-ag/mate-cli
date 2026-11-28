@@ -101,18 +101,18 @@ export interface EngineDeps {
   printResult?: boolean;
 }
 
-/** Prints a result: JSON with `json`, else the message on stdout when it succeeded, stderr otherwise. */
+/**
+ * Prints a result: the message on stdout when it succeeded, stderr otherwise; with `json`, the
+ * JSON document on stdout, plus the message on stderr otherwise.
+ */
 export function printFinishResult(
   result: FinishResult,
   out: Pick<EngineDeps, "json" | "stdout" | "stderr">,
 ): void {
-  if (out.json) {
-    out.stdout(JSON.stringify(result));
-  } else if (result.status === "ok" || result.status === "skipped") {
-    out.stdout(result.message);
-  } else {
-    out.stderr(result.message);
-  }
+  const succeeded = result.status === "ok" || result.status === "skipped";
+  if (!succeeded) out.stderr(result.message);
+  if (out.json) out.stdout(JSON.stringify(result));
+  else if (succeeded) out.stdout(result.message);
 }
 
 /** The publication commit's message: subject, then its `Mate-*` trailers. */

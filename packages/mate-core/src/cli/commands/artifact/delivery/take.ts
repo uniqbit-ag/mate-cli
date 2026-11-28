@@ -40,6 +40,7 @@ export async function runArtifactTakeCommand(
   const result: TakeResult = await (artifactType
     ? take(companionPath, change, { artifactType })
     : take(companionPath, change));
-  if (result.status === "refused") process.exitCode = 1;
-  emitOut(flags.json === true ? JSON.stringify(result) : result.message);
+  if (result.status === "refused") refuse(result.message);
+  if (flags.json === true) emitOut(JSON.stringify(result));
+  else if (result.status !== "refused") emitOut(result.message);
 }
